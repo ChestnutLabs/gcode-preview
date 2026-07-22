@@ -1,6 +1,6 @@
 # RR-001 — Upstream Baseline and Architecture Audit
 
-**Status:** Complete — recommendation ready for E0 acceptance · **Author:** Chestnut Labs
+**Status:** **Accepted (2026-07-22)** — E0 exit gate passed; baseline `develop` @ `15375e56` confirmed · **Author:** Chestnut Labs
 **Date:** 2026-07-22 · **Owning Epic:** E0 (#1) · **Informs:** E1 DD gate (DD-001, DD-002), baseline selection
 **Consolidates:** #11 (ancestry/mapping), #12 (baseline build/test), #13 (architecture audit), #14 (benchmarks),
 #15 (reference comparison), #16 (license inventory), #17 (fixture manifest). Branch mapping is recorded in
