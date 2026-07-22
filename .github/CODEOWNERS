@@ -1,0 +1,28 @@
+# Code owners for ChestnutLabs/gcode-preview
+# Review is required from these owners for the paths below (governance §6.4).
+# Solo-maintainer reality: the maintainer is the default owner; the record still applies.
+
+# Default owner for everything
+*                             @sobechestnut-dev
+
+# License, notices, and provenance (policy §5)
+/LICENSE                      @sobechestnut-dev
+/NOTICE.md                    @sobechestnut-dev
+/THIRD_PARTY_NOTICES.md       @sobechestnut-dev
+/docs/UPSTREAM_PROVENANCE.md  @sobechestnut-dev
+
+# Founding documents, governance, and setup
+/docs/                        @sobechestnut-dev
+/PROJECT_SETUP.md             @sobechestnut-dev
+
+# Security policy
+/SECURITY.md                  @sobechestnut-dev
+
+# CI, workflows, templates, and this file
+/.github/                     @sobechestnut-dev
+
+# Fixture corpus and its manifest (created in E0/E1)
+/test-data/                   @sobechestnut-dev
+
+# Public package API surface (packages appear after the package-boundary DD in E1)
+/packages/                    @sobechestnut-dev
