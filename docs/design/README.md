@@ -15,7 +15,7 @@ boundary. Architecture-sensitive work is **blocked until its DD is Accepted** (g
 |---|---|---|---|---|
 | [DD-001](DD-001-toolpath-ir-and-capability-model.md) | ToolpathIR and Capability Model | E1 | M1 | **Accepted** 2026-07-22 (#26) |
 | [DD-002](DD-002-package-boundaries-and-public-api-versioning.md) | Package Boundaries and Public API Versioning | E1 | M1 | **Accepted** 2026-07-22 (#27) |
-| DD-003 | Worker Parsing, Streaming, Transfer, and Resource Limits | E2 | M2 | Planned |
+| [DD-003](DD-003-worker-parsing-streaming-transfer-and-resource-limits.md) | Worker Parsing, Streaming, Transfer, and Resource Limits | E2 | M2 | **Proposed** (in review, #41) |
 | DD-004 | Three.js Rendering, Geometry, Layer Clipping, and Quality Modes | E3 | M2 | Planned |
 | DD-005 | Dialect Plugin and Container Adapter Contracts | E4 | M3 | Planned |
 | DD-006 | Normalized Live Progress and Source-Position Mapping | E5 | M4 | Planned |
