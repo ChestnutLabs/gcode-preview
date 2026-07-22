@@ -44,6 +44,33 @@ module.exports = {
       }
     },
     {
+      files: ['packages/gcode-parser/**/*.ts', 'packages/gcode-parser/**/*.mts'],
+      rules: {
+        'no-restricted-imports': [
+          'error',
+          {
+            patterns: [
+              { group: ['three', 'three/*'], message: 'gcode-parser must not depend on three (DD-002 §4).' },
+              { group: ['vue', 'vue/*'], message: 'gcode-parser must not depend on Vue (DD-002 §4).' },
+              { group: ['lil-gui'], message: 'gcode-parser must not depend on UI libraries (DD-002 §4).' },
+              {
+                group: ['@chestnutlabs/gcode-renderer*', '@chestnutlabs/gcode-preview*'],
+                message: 'The parser must not import renderers or the viewer facade (DD-002 §4).'
+              },
+              {
+                group: ['*anybridge*', '*AnyBridge*'],
+                message: 'No reusable package may import AnyBridge (DD-002 §4 core rule).'
+              },
+              {
+                group: ['../../../*'],
+                message: 'gcode-parser must not reach outside its package (DD-002 §4).'
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
       files: ['src/**/*.ts'],
       rules: {
         'no-restricted-imports': [
