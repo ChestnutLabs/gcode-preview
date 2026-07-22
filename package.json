@@ -2,6 +2,9 @@
   "name": "gcode-preview",
   "version": "3.0.0-alpha.4",
   "description": "Preview a 3d print from a gcode file",
+  "workspaces": [
+    "packages/*"
+  ],
   "author": "remcoder@gmail.com",
   "license": "MIT",
   "repository": {
@@ -47,6 +50,7 @@
     "eslint:fix": "eslint -c .eslintrc.js . --fix",
     "prettier:fix": "prettier --plugin-search-dir . --write .",
     "test": "vitest run",
+    "test:packages": "npm test --workspaces --if-present",
     "test:watch": "vitest --watch",
     "preversion": "npm run typeCheck && npm run test && npm run lint",
     "version:patch": "npm version patch",

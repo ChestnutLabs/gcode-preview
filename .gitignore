@@ -19,6 +19,9 @@ demo/dist
 demo/lib
 
 # --- Chestnut Labs additions ---
+# Workspace package build output
+/packages/*/dist/
+
 # Private project data and local environment — never published. See PROJECT_SETUP.md.
 /ProjectSource/
 .env
