@@ -1,6 +1,6 @@
 # DD-002 — Package Boundaries and Public API Versioning
 
-**Status:** Proposed <!-- Draft | Proposed | Accepted | Superseded | Rejected -->
+**Status:** **Accepted (2026-07-22)** <!-- Draft | Proposed | Accepted | Superseded | Rejected -->
 **Authors/Owners:** Chestnut Labs
 **Date:** 2026-07-22 · **Last revised:** 2026-07-22
 **Owning Epic:** E1 (#2) · **Milestone:** M1
@@ -8,9 +8,10 @@
 **Related:** DD-001 (#26), RR-001 (#18, accepted), architecture doc §4 & §12, governance §13, master plan §10,
 issues #27 (this DD), #29 (migration)
 
-> **Proposed draft for maintainer review.** Defines boundaries, versioning, and tooling — **not** the physical
-> package extraction, which is phased and gated. One decision is flagged **[DECISION]** (§6 workspace/package
-> manager). No package extraction or `@chestnutlabs/*` publish before this DD is **Accepted**.
+> **Accepted 2026-07-22.** Defines boundaries, versioning, and tooling; physical package extraction stays
+> phased (§7). **Decision log — §6 workspace/package manager → npm workspaces** (keep the inherited toolchain
+> and lockfile; revisit pnpm/Turborepo later only via an ADR). No `@chestnutlabs/*` publish before the release
+> DD (E7/DD-008).
 
 ---
 
@@ -65,7 +66,7 @@ Enforced incrementally — first as module-boundary rules within the single pack
 - **Circular-dependency** check fails CI.
 These land as a bounded implementation issue after acceptance; the *rules* are ratified here.
 
-## 6. [DECISION] Workspace / package manager
+## 6. Workspace / package manager — DECIDED (npm workspaces)
 The inherited repo uses **npm** (`package-lock.json`, `.nvmrc`, npm-based CI). PROJECT_SETUP §6 says use the
 upstream-supported toolchain first and not switch build/package tooling before a DD approves it.
 

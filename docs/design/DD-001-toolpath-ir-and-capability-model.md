@@ -1,6 +1,6 @@
 # DD-001 — ToolpathIR and Capability Model
 
-**Status:** Proposed <!-- Draft | Proposed | Accepted | Superseded | Rejected -->
+**Status:** **Accepted (2026-07-22)** <!-- Draft | Proposed | Accepted | Superseded | Rejected -->
 **Authors/Owners:** Chestnut Labs
 **Date:** 2026-07-22 · **Last revised:** 2026-07-22
 **Owning Epic:** E1 (#2) · **Milestone:** M1
@@ -8,9 +8,10 @@
 **Related:** RR-001 (#18, accepted), DD-002 (#27), issues #26 (this DD), #28 (golden fixtures), #29 (migration),
 architecture doc §5, master plan §8.2
 
-> **This is a Proposed draft for maintainer review.** It defines a contract, not an implementation.
-> Implementation of `ToolpathIR` must not begin until this DD is **Accepted**. Two decisions are flagged
-> **[DECISION]** for explicit sign-off (§4.6 coordinate precision, §12 memory-layout family).
+> **Accepted 2026-07-22.** Implementation of `ToolpathIR` may proceed (as an internal `toolpath-core` module,
+> then extracted per DD-002 §7). **Decisions log:**
+> - **§4.6 Coordinate precision → floating origin:** `Float32` positions relative to a `Float64` `originOffset`.
+> - **§4.2/§12 Memory layout → SoA typed buffers**, with the proposed core/optional channel split accepted.
 
 ---
 
@@ -103,12 +104,12 @@ Every optional/derived datum has an associated `Confidence`. A `capabilities` ma
 fabricated 0/default*; *inferred/approximate values are distinguishable from declared values*; consumers must be
 able to tell users when data is approximated or missing (master plan §9.5).
 
-### 4.6 [DECISION] Coordinate precision
+### 4.6 Coordinate precision — DECIDED (floating origin)
 `Float32` positions (relative to `originOffset`) keep the IR compact and GPU-friendly, but lose precision on
-large absolute coordinates (belt printers, big beds). **Recommendation:** store positions as **`Float32`
-deltas/relative to a `Float64 originOffset`**, giving ~sub-µm precision within any realistic build volume while
-staying transfer/GPU friendly; renderer-side precision handling is DD-004's concern. *Alternative:* `Float64`
-positions (2× memory, no GPU benefit). **Maintainer sign-off requested.**
+large absolute coordinates (belt printers, big beds). **Decided (2026-07-22): floating origin** — store one
+`Float64` `originOffset` in the header and each position as a `Float32` delta relative to it, giving ~sub-µm
+precision within any realistic build volume while staying transfer/GPU friendly. Renderer-side precision
+handling is DD-004's concern. (*Rejected alternative:* full `Float64` positions — 2× memory, no GPU benefit.)
 
 ## 5. Errors & failure behavior
 The IR never throws for missing/odd data — it **degrades honestly** via capabilities + `warnings`:
@@ -166,12 +167,12 @@ wire format (e.g., a flat buffer) and a migration/invalidation policy; it must b
 governance §13 (schema version separate from package version).
 
 ## 12. Alternatives considered
-- **[DECISION] Memory-layout family — RECOMMENDED: SoA typed buffers** (above). *Alternatives:*
+- **Memory-layout family — DECIDED: SoA typed buffers** (above), with the §4.2 core/optional channel split
+  accepted. *Alternatives considered:*
   - **AoS objects** (inherited): rejected — RR-001 memory/GC evidence.
   - **Columnar with lazy per-channel decode**: more complex; premature without a persistence need.
   - **Serialized flatbuffer as the canonical IR**: couples in-memory to wire format prematurely; deferred (§11).
-  Recommendation: SoA typed buffers as the canonical in-memory IR. **Maintainer sign-off requested** on the
-  channel set in §4.2 (which fields are core vs. optional).
+  **Decided:** SoA typed buffers as the canonical in-memory IR, with the §4.2 channel split (core vs. optional).
 - **Capability model as enum vs. per-field flags:** chose a `Confidence` enum + per-field map (simple, honest).
 
 ## 13. Risks
