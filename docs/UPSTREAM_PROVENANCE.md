@@ -79,7 +79,8 @@ not a Chestnut regression.
 | Parser / interpreter (`src/gcode-parser.ts`, `src/interpreter.ts`, `src/state.ts`) | xyz-tools @ `15375e56` | retained (unmodified) | To be evaluated against `ToolpathIR` in E1/E2. |
 | Renderer / scene (`src/scene-manager.ts`, `src/extrusion-geometry.ts`, helpers) | xyz-tools @ `15375e56` | retained (unmodified) | Renderer DD is E3. |
 | Public facade (`src/gcode-preview.ts`) | xyz-tools @ `15375e56` | retained (unmodified) | Facade contract revisited in E1 (DD-002). |
-| `ToolpathIR` | Chestnut (new) | not yet created | Owned by DD-001 (E1). |
+| `ToolpathIR` (`packages/toolpath-core/`) | Chestnut (new) | **original** | DD-001 Accepted; scaffolded in #32 (PR #33). |
+| IR adapter (`src/ir-adapter.ts`) | Chestnut (new) | **original** | DD-001 §9 transitional seam: inherited `Job` → `ToolpathIR` with honest `unavailable` capabilities (#29). |
 | Worker protocol | Chestnut (new) | not yet created | Owned by DD-003 (E2). |
 | Founding docs, governance, templates, `.gitattributes`, README banner | Chestnut (new) | original | This bootstrap. |
 | `.gitignore` `docs` → `/demo/docs/` anchoring | Chestnut (edit) | modified | Frees a tracked `docs/`; keeps generated typedoc output (at `demo/docs`) ignored. |
