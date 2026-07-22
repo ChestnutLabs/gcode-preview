@@ -15,4 +15,4 @@ alternatives.
 
 | ID | Title | Epic | Status |
 |---|---|---|---|
-| RR-001 | Upstream Baseline and Architecture Audit | E0 | In progress (bootstrap evidence recorded; consolidation pending E0 child issues) |
+| [RR-001](RR-001-upstream-baseline-and-architecture-audit.md) | Upstream Baseline and Architecture Audit | E0 | In progress — recommendation proposed (baseline = `develop` @ `15375e56`); full-corpus benchmarks (E0.5) and reference comparison (E0.6) pending before acceptance |
