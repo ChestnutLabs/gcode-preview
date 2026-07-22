@@ -6,11 +6,17 @@ name: Runs All Unit tests
 on:
   push:
     branches:
+      # Chestnut Labs long-lived branches (docs/UPSTREAM_PROVENANCE.md §3)
+      - main
+      - dev
+      # Inherited upstream branch names, kept for upstream-adoption branches
       - develop
       - releases
       - v3.x
   pull_request:
     branches:
+      - main
+      - dev
       - develop
       - releases
       - v3.x
@@ -29,5 +35,6 @@ jobs:
       - run: npm ci
       - run: npm run build
       - run: npm run test
+      - run: npm run test:packages
       - run: npm run typeCheck
       - run: npm run lint
