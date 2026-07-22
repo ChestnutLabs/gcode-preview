@@ -1,3 +1,22 @@
+<!-- CHESTNUT LABS FORK BANNER — do not delete upstream content below this block. -->
+> ### 🌰 Chestnut Labs G-code Preview — fork notice
+>
+> This repository is **[`ChestnutLabs/gcode-preview`](https://github.com/ChestnutLabs/gcode-preview)**, a public **fork of [`xyz-tools/gcode-preview`](https://github.com/xyz-tools/gcode-preview)** (MIT). Chestnut Labs is incrementally evolving it into a reusable, worker-based, **cross-vendor toolpath stack** — container adapters → worker parser + dialects → a versioned `ToolpathIR` → a Three.js renderer → a framework-neutral viewer → a Vue integration package — that applications such as **AnyBridge** consume through published `@chestnutlabs/*` packages. **The reusable core must never depend on a consumer application.**
+>
+> | | |
+> |---|---|
+> | **Founding plan** | [`docs/00_PROJECT_MASTER_PLAN.md`](docs/00_PROJECT_MASTER_PLAN.md) |
+> | **Authoritative process/governance** | [`docs/01_GITHUB_WORKFLOW_PROJECT_GOVERNANCE_AND_DEVELOPMENT_PROCESS.md`](docs/01_GITHUB_WORKFLOW_PROJECT_GOVERNANCE_AND_DEVELOPMENT_PROCESS.md) |
+> | **Architecture & package boundaries** | [`docs/02_ARCHITECTURE_AND_PACKAGE_BOUNDARIES.md`](docs/02_ARCHITECTURE_AND_PACKAGE_BOUNDARIES.md) |
+> | **Upstream / fork / license policy** | [`docs/03_UPSTREAM_FORK_LICENSE_AND_CONTRIBUTION_POLICY.md`](docs/03_UPSTREAM_FORK_LICENSE_AND_CONTRIBUTION_POLICY.md) · [`NOTICE.md`](NOTICE.md) |
+> | **GitHub bootstrap / Epics / milestones** | [`docs/04_GITHUB_BOOTSTRAP_EPICS_MILESTONES_AND_NEXT_STEPS.md`](docs/04_GITHUB_BOOTSTRAP_EPICS_MILESTONES_AND_NEXT_STEPS.md) |
+> | **Environment & private-source handling** | [`PROJECT_SETUP.md`](PROJECT_SETUP.md) |
+> | **Contributing / conduct / security** | [`CONTRIBUTING.md`](CONTRIBUTING.md) · [`CODE_OF_CONDUCT.md`](CODE_OF_CONDUCT.md) · [`SECURITY.md`](SECURITY.md) |
+>
+> **License:** MIT (inherited). The upstream `LICENSE` and copyright notice are preserved; Chestnut additions are also MIT. Chestnut Labs keeps its own roadmap, release cadence, and package APIs. Upstream changes are adopted deliberately through review — **never auto-synced**. Architecture-sensitive implementation is gated behind Design Documents (see governance). **The complete upstream project README is preserved verbatim below.**
+
+---
+
 # GCode Preview [![npm version](http://img.shields.io/npm/v/gcode-preview.svg?style=flat)](https://npmjs.org/package/gcode-preview "View this project on npm") [![MIT license](http://img.shields.io/badge/license-MIT-brightgreen.svg)](http://opensource.org/licenses/MIT)
 A simple [G-code](https://en.wikipedia.org/wiki/G-code) parser & viewer lib with 3D printing in mind. Written in Typescript.
 

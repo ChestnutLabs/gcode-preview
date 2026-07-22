@@ -12,6 +12,16 @@ examples/files
 react-typescript-demo/.env
 dist/*
 demo/build/*
-docs
+# Generated typedoc API output (anchored to its real path so a tracked root docs/ is allowed).
+# Chestnut Labs: was the over-broad pattern `docs`, which also ignored the founding docs/ tree.
+/demo/docs/
 demo/dist
 demo/lib
+
+# --- Chestnut Labs additions ---
+# Private project data and local environment — never published. See PROJECT_SETUP.md.
+/ProjectSource/
+.env
+.env.local
+.env.*.local
+# Do NOT ignore .env.example (documented variable names with blank/safe values).
