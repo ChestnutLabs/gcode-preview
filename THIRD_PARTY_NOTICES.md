@@ -3,12 +3,12 @@
 This project incorporates or depends on third-party software. Their licenses and notices are listed
 here. This inventory is maintained per the
 [Upstream, Fork, License & Contribution Policy](docs/03_UPSTREAM_FORK_LICENSE_AND_CONTRIBUTION_POLICY.md)
-§5.2 and is refreshed as part of release preparation. A machine-generated dependency license report
-will be added to CI/release artifacts in E0/E7.
+§5.2.
 
-> Status at founding baseline (`develop` @ `15375e56`). Versions reflect the inherited
-> `package.json` / `package-lock.json` and will be regenerated, not hand-edited, once a license-report
-> tool is wired into CI.
+**Machine-checked in CI:** `npm run license:check` ([`tools/license-report.mjs`](tools/license-report.mjs))
+walks the production dependency tree of the root package and every workspace package, reports each
+declared license, and **fails CI** if a production dependency carries an unknown or non-permissive
+(copyleft) license. Run `node tools/license-report.mjs` for the current generated report.
 
 ## Runtime dependencies
 
@@ -25,15 +25,22 @@ and Rollup plugins, `typescript`, `vitest`, `happy-dom`, `eslint` + `@typescript
 data is produced from the lockfile by the dependency-license report; this section is a human summary,
 not the source of truth.
 
-## Inherited demo assets
+## Inherited demo assets (reviewed 2026-07-22, issue #16)
 
-The upstream `demo/` directory contains sample G-code and images used by the demonstration app. Their
-provenance is reviewed as part of the E0 license/notice inventory
-([RR-001](docs/research/)). Any asset whose redistribution rights cannot be confirmed is handled per
-the fixture-governance rules and is **not** promoted into the tracked public fixture corpus.
+Third-party material shipped in the inherited `demo/` app:
+
+| Asset | Origin | License | Evidence |
+|---|---|---|---|
+| `demo/bulma-prefixed.min.css` | [Bulma](https://bulma.io) v1.0.2 | MIT | license header intact in file |
+| `demo/js/vue.esm-browser.prod.js` | [Vue](https://vuejs.org) 3 (vendored prod build) | MIT | Vue is MIT-licensed |
+| `demo/lib/**` (created at deploy by `copy-deps`) | three.js, lil-gui | MIT | copied from the MIT npm packages above |
+| `demo/gcodes/*.gcode` | inherited upstream demo corpus | distributed with the MIT repo | tracked in [`test-data/manifest.json`](test-data/manifest.json) with provenance/limitations |
+
+The demo G-code files' slicer/version provenance was not recorded upstream; this limitation is noted
+per-fixture in the manifest. Any future asset whose redistribution rights cannot be confirmed is handled
+per the fixture-governance rules and is **not** promoted into the tracked public fixture corpus.
 
 ## How to regenerate
 
-Once wired in E0/E7, run the project's dependency-license task (to be defined in the release DD) and
-commit the regenerated report. Do not hand-maintain per-package license text where a generated report
-is authoritative.
+Run `node tools/license-report.mjs` (or `npm run license:check` for the CI gate). Do not hand-maintain
+per-package license text where the generated report is authoritative.
