@@ -64,21 +64,36 @@ describe('GCodePreview', () => {
       destroy: vi.fn()
     };
 
-    // Setup mocks
-    vi.mocked(Job).mockImplementation(() => mockJob);
-    vi.mocked(Interpreter).mockImplementation(() => mockInterpreter);
-    vi.mocked(SceneManager).mockImplementation(() => mockSceneManager);
-    vi.mocked(Parser).mockImplementation(() => ({
-      parseGCode: vi.fn().mockReturnValue({
-        commands: ['G0 X0 Y0', 'G1 X10 Y10']
-      }),
-      metadata: { thumbnails: {} }
-    }));
-    vi.mocked(DevGUI).mockImplementation(() => mockDevGui);
-    vi.mocked(Stats).mockImplementation(() => ({
-      update: vi.fn(),
-      dom: document.createElement('div')
-    }));
+    // Setup mocks.
+    // NOTE: mocked classes are invoked with `new`, so their mock implementations must be
+    // regular functions (which have [[Construct]]), not arrow functions. Under vitest 4 an
+    // arrow implementation throws "(...) => ... is not a constructor". See #23.
+    vi.mocked(Job).mockImplementation(function () {
+      return mockJob;
+    });
+    vi.mocked(Interpreter).mockImplementation(function () {
+      return mockInterpreter;
+    });
+    vi.mocked(SceneManager).mockImplementation(function () {
+      return mockSceneManager;
+    });
+    vi.mocked(Parser).mockImplementation(function () {
+      return {
+        parseGCode: vi.fn().mockReturnValue({
+          commands: ['G0 X0 Y0', 'G1 X10 Y10']
+        }),
+        metadata: { thumbnails: {} }
+      };
+    });
+    vi.mocked(DevGUI).mockImplementation(function () {
+      return mockDevGui;
+    });
+    vi.mocked(Stats).mockImplementation(function () {
+      return {
+        update: vi.fn(),
+        dom: document.createElement('div')
+      };
+    });
   });
 
   afterEach(() => {
@@ -283,7 +298,9 @@ describe('GCodePreview', () => {
 
       // Create new mock for second DevGUI instance
       const newMockDevGui = { reset: vi.fn(), destroy: vi.fn() };
-      vi.mocked(DevGUI).mockImplementationOnce(() => newMockDevGui);
+      vi.mocked(DevGUI).mockImplementationOnce(function () {
+        return newMockDevGui;
+      });
 
       preview.devMode = false;
 
