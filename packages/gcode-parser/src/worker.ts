@@ -11,11 +11,17 @@
  * calling `createWorkerHandler(post, { dialects: createDialectRunner([...]) })`.
  */
 import { createDialectRunner } from '@chestnutlabs/gcode-dialects';
-import { createWorkerHandler, type PostFn } from './worker-core.js';
+import { openGcode3mf, sniffGcode3mf } from '@chestnutlabs/gcode-containers';
+import { createWorkerHandler, type ContainerAdapterLike, type PostFn } from './worker-core.js';
 import type { WorkerRequest } from './protocol.js';
 
-/** Built-in adapter set (DD-005 phases 3–5 populate this). */
+/** Built-in dialect adapter set (DD-005 phases 3–5 populate this). */
 const BUILTIN_ADAPTERS: Parameters<typeof createDialectRunner>[0] = [];
+
+/** Built-in container adapters (DD-005 §4.4): .gcode.3mf. */
+const BUILTIN_CONTAINERS: ContainerAdapterLike[] = [
+  { id: 'gcode-3mf', sniff: sniffGcode3mf, open: (bytes) => openGcode3mf(bytes) }
+];
 
 declare const self: {
   postMessage(msg: unknown, transfer?: ArrayBuffer[]): void;
@@ -23,5 +29,8 @@ declare const self: {
 };
 
 const post: PostFn = (msg, transfer) => self.postMessage(msg, transfer);
-const handle = createWorkerHandler(post, { dialects: createDialectRunner(BUILTIN_ADAPTERS) });
+const handle = createWorkerHandler(post, {
+  dialects: createDialectRunner(BUILTIN_ADAPTERS),
+  containers: BUILTIN_CONTAINERS
+});
 self.onmessage = (ev) => handle(ev.data as WorkerRequest);

@@ -12,8 +12,16 @@
       "redistribution": "inherited-with-mit-repo",
       "slicer": "unknown (inherited)",
       "targetFamily": "FDM single-tool",
-      "features": ["extrusion", "travel", "layers", "large-ish"],
-      "expectedCapabilities": { "layers": "inferred", "sourcePositions": "unavailable" },
+      "features": [
+        "extrusion",
+        "travel",
+        "layers",
+        "large-ish"
+      ],
+      "expectedCapabilities": {
+        "layers": "inferred",
+        "sourcePositions": "unavailable"
+      },
       "sizeTier": "small",
       "limitations": "Slicer/version provenance not recorded upstream."
     },
@@ -27,8 +35,14 @@
       "redistribution": "inherited-with-mit-repo",
       "slicer": "unknown (inherited)",
       "targetFamily": "FDM single-tool",
-      "features": ["extrusion", "travel", "layers"],
-      "expectedCapabilities": { "layers": "inferred" },
+      "features": [
+        "extrusion",
+        "travel",
+        "layers"
+      ],
+      "expectedCapabilities": {
+        "layers": "inferred"
+      },
       "sizeTier": "small",
       "limitations": "Slicer/version provenance not recorded upstream."
     },
@@ -42,7 +56,10 @@
       "redistribution": "inherited-with-mit-repo",
       "slicer": "unknown (inherited)",
       "targetFamily": "FDM",
-      "features": ["extrusion", "travel"],
+      "features": [
+        "extrusion",
+        "travel"
+      ],
       "expectedCapabilities": {},
       "sizeTier": "tiny",
       "limitations": "Slicer/version provenance not recorded upstream."
@@ -57,8 +74,13 @@
       "redistribution": "inherited-with-mit-repo",
       "slicer": "n/a (CNC-style Mach3 output)",
       "targetFamily": "CNC-style (incidental compatibility)",
-      "features": ["travel", "non-print"],
-      "expectedCapabilities": { "layers": "unavailable" },
+      "features": [
+        "travel",
+        "non-print"
+      ],
+      "expectedCapabilities": {
+        "layers": "unavailable"
+      },
       "sizeTier": "tiny",
       "limitations": "Not an FDM print; exercises non-print command handling."
     },
@@ -72,8 +94,14 @@
       "redistribution": "inherited-with-mit-repo",
       "slicer": "unknown (inherited)",
       "targetFamily": "FDM single-tool",
-      "features": ["extrusion", "travel", "layers"],
-      "expectedCapabilities": { "layers": "inferred" },
+      "features": [
+        "extrusion",
+        "travel",
+        "layers"
+      ],
+      "expectedCapabilities": {
+        "layers": "inferred"
+      },
       "sizeTier": "small",
       "limitations": "Slicer/version provenance not recorded upstream."
     },
@@ -87,8 +115,14 @@
       "redistribution": "inherited-with-mit-repo",
       "slicer": "unknown (inherited)",
       "targetFamily": "FDM single-tool",
-      "features": ["extrusion", "travel", "layers"],
-      "expectedCapabilities": { "layers": "inferred" },
+      "features": [
+        "extrusion",
+        "travel",
+        "layers"
+      ],
+      "expectedCapabilities": {
+        "layers": "inferred"
+      },
       "sizeTier": "small",
       "limitations": "Slicer/version provenance not recorded upstream."
     },
@@ -102,8 +136,13 @@
       "redistribution": "MIT (original)",
       "slicer": "n/a (adversarial)",
       "targetFamily": "n/a",
-      "features": ["no-valid-commands", "junk"],
-      "expectedCapabilities": { "layers": "unavailable" },
+      "features": [
+        "no-valid-commands",
+        "junk"
+      ],
+      "expectedCapabilities": {
+        "layers": "unavailable"
+      },
       "sizeTier": "adversarial",
       "limitations": "Printable-ASCII junk only (raw binary would fight .gitattributes text normalization)."
     },
@@ -117,7 +156,10 @@
       "redistribution": "MIT (original)",
       "slicer": "n/a (adversarial)",
       "targetFamily": "n/a",
-      "features": ["line-exceeding-maxLineLength", "valid-moves-around-it"],
+      "features": [
+        "line-exceeding-maxLineLength",
+        "valid-moves-around-it"
+      ],
       "expectedCapabilities": {},
       "sizeTier": "adversarial",
       "limitations": "Single 80 KB line between two valid moves; exercises the drain-buffer bound."
@@ -132,7 +174,13 @@
       "redistribution": "MIT (original)",
       "slicer": "n/a (adversarial)",
       "targetFamily": "n/a",
-      "features": ["1e30-coords", "NaN-params", "zero-radius-arc", "negative-R-arc", "huge-E"],
+      "features": [
+        "1e30-coords",
+        "NaN-params",
+        "zero-radius-arc",
+        "negative-R-arc",
+        "huge-E"
+      ],
       "expectedCapabilities": {},
       "sizeTier": "adversarial",
       "limitations": "Asserts bounded, non-crashing behavior; numeric semantics follow the inherited engine."
@@ -147,7 +195,10 @@
       "redistribution": "MIT (original)",
       "slicer": "n/a (adversarial)",
       "targetFamily": "n/a",
-      "features": ["ends-mid-number", "no-trailing-newline"],
+      "features": [
+        "ends-mid-number",
+        "no-trailing-newline"
+      ],
       "expectedCapabilities": {},
       "sizeTier": "adversarial",
       "limitations": "Final unterminated line must still parse."
@@ -162,8 +213,12 @@
       "redistribution": "MIT (original)",
       "slicer": "n/a (adversarial)",
       "targetFamily": "n/a",
-      "features": ["empty-input"],
-      "expectedCapabilities": { "layers": "unavailable" },
+      "features": [
+        "empty-input"
+      ],
+      "expectedCapabilities": {
+        "layers": "unavailable"
+      },
       "sizeTier": "adversarial",
       "limitations": "Empty file must produce an empty, complete IR."
     },
@@ -177,10 +232,159 @@
       "redistribution": "inherited-with-mit-repo",
       "slicer": "unknown (inherited)",
       "targetFamily": "FDM single-tool (spiral/vase mode)",
-      "features": ["extrusion", "travel", "vase-mode"],
+      "features": [
+        "extrusion",
+        "travel",
+        "vase-mode"
+      ],
       "expectedCapabilities": {},
       "sizeTier": "tiny",
       "limitations": "Slicer/version provenance not recorded upstream."
+    },
+    {
+      "id": "container-adv-bad-crc",
+      "path": "test-data/fixtures/containers/adv-bad-crc.gcode.3mf",
+      "sha256": "077df2979041052e48af87d06e5239f333132b3dd130e321a9e67a8ff3686b4e",
+      "bytes": 746,
+      "origin": "Chestnut-constructed container fixture (tools/fixtures/make-gcode-3mf.mjs, deterministic)",
+      "contributor": "chestnutlabs",
+      "redistribution": "chestnut-original-mit",
+      "slicer": "synthetic (Bambu/Orca .gcode.3mf structure)",
+      "targetFamily": "FDM (container)",
+      "features": [
+        "container",
+        "adversarial"
+      ],
+      "expectedCapabilities": {},
+      "sizeTier": "tiny",
+      "limitations": "Deliberately malformed for the DD-005 §7.3 security corpus; must FAIL with the documented structured error."
+    },
+    {
+      "id": "container-adv-duplicate-plate",
+      "path": "test-data/fixtures/containers/adv-duplicate-plate.gcode.3mf",
+      "sha256": "fa488b0558524101e7a0835edb57eac06bc24df21e2f6d6624277bca7cd44570",
+      "bytes": 782,
+      "origin": "Chestnut-constructed container fixture (tools/fixtures/make-gcode-3mf.mjs, deterministic)",
+      "contributor": "chestnutlabs",
+      "redistribution": "chestnut-original-mit",
+      "slicer": "synthetic (Bambu/Orca .gcode.3mf structure)",
+      "targetFamily": "FDM (container)",
+      "features": [
+        "container",
+        "adversarial"
+      ],
+      "expectedCapabilities": {},
+      "sizeTier": "tiny",
+      "limitations": "Deliberately malformed for the DD-005 §7.3 security corpus; must FAIL with the documented structured error."
+    },
+    {
+      "id": "container-adv-encrypted",
+      "path": "test-data/fixtures/containers/adv-encrypted.gcode.3mf",
+      "sha256": "e63128049a964ab0bd029e421962614181cc9ba5b513896c718c3411cd109dde",
+      "bytes": 418,
+      "origin": "Chestnut-constructed container fixture (tools/fixtures/make-gcode-3mf.mjs, deterministic)",
+      "contributor": "chestnutlabs",
+      "redistribution": "chestnut-original-mit",
+      "slicer": "synthetic (Bambu/Orca .gcode.3mf structure)",
+      "targetFamily": "FDM (container)",
+      "features": [
+        "container",
+        "adversarial"
+      ],
+      "expectedCapabilities": {},
+      "sizeTier": "tiny",
+      "limitations": "Deliberately malformed for the DD-005 §7.3 security corpus; must FAIL with the documented structured error."
+    },
+    {
+      "id": "container-adv-header-mismatch",
+      "path": "test-data/fixtures/containers/adv-header-mismatch.gcode.3mf",
+      "sha256": "bb71113cb60a8d357105d2b5d5aa8814434056e76932899ec525c9ef0981fe31",
+      "bytes": 421,
+      "origin": "Chestnut-constructed container fixture (tools/fixtures/make-gcode-3mf.mjs, deterministic)",
+      "contributor": "chestnutlabs",
+      "redistribution": "chestnut-original-mit",
+      "slicer": "synthetic (Bambu/Orca .gcode.3mf structure)",
+      "targetFamily": "FDM (container)",
+      "features": [
+        "container",
+        "adversarial"
+      ],
+      "expectedCapabilities": {},
+      "sizeTier": "tiny",
+      "limitations": "Deliberately malformed for the DD-005 §7.3 security corpus; must FAIL with the documented structured error."
+    },
+    {
+      "id": "container-adv-size-lie",
+      "path": "test-data/fixtures/containers/adv-size-lie.gcode.3mf",
+      "sha256": "1bfcf52fa5731f1d24864d6503318b34dca6c5bfb5de995186debc4a34a6c125",
+      "bytes": 2192,
+      "origin": "Chestnut-constructed container fixture (tools/fixtures/make-gcode-3mf.mjs, deterministic)",
+      "contributor": "chestnutlabs",
+      "redistribution": "chestnut-original-mit",
+      "slicer": "synthetic (Bambu/Orca .gcode.3mf structure)",
+      "targetFamily": "FDM (container)",
+      "features": [
+        "container",
+        "adversarial"
+      ],
+      "expectedCapabilities": {},
+      "sizeTier": "tiny",
+      "limitations": "Deliberately malformed for the DD-005 §7.3 security corpus; must FAIL with the documented structured error."
+    },
+    {
+      "id": "container-adv-traversal-names",
+      "path": "test-data/fixtures/containers/adv-traversal-names.gcode.3mf",
+      "sha256": "d07afd5ccfcc052ad86f283f552b060119d1c6c66258979829c2ade059565df2",
+      "bytes": 662,
+      "origin": "Chestnut-constructed container fixture (tools/fixtures/make-gcode-3mf.mjs, deterministic)",
+      "contributor": "chestnutlabs",
+      "redistribution": "chestnut-original-mit",
+      "slicer": "synthetic (Bambu/Orca .gcode.3mf structure)",
+      "targetFamily": "FDM (container)",
+      "features": [
+        "container",
+        "adversarial"
+      ],
+      "expectedCapabilities": {},
+      "sizeTier": "tiny",
+      "limitations": "Deliberately malformed for the DD-005 §7.3 security corpus; must FAIL with the documented structured error."
+    },
+    {
+      "id": "container-adv-truncated",
+      "path": "test-data/fixtures/containers/adv-truncated.gcode.3mf",
+      "sha256": "db48d67e6059ad8aaaaff0b92646db10d472a770b3e5fe1c23390d3ed2703af7",
+      "bytes": 781,
+      "origin": "Chestnut-constructed container fixture (tools/fixtures/make-gcode-3mf.mjs, deterministic)",
+      "contributor": "chestnutlabs",
+      "redistribution": "chestnut-original-mit",
+      "slicer": "synthetic (Bambu/Orca .gcode.3mf structure)",
+      "targetFamily": "FDM (container)",
+      "features": [
+        "container",
+        "adversarial"
+      ],
+      "expectedCapabilities": {},
+      "sizeTier": "tiny",
+      "limitations": "Deliberately malformed for the DD-005 §7.3 security corpus; must FAIL with the documented structured error."
+    },
+    {
+      "id": "container-mini-project",
+      "path": "test-data/fixtures/containers/mini-project.gcode.3mf",
+      "sha256": "aca93980f6e1f9d96fbe109bd898e4b958aacd77566afe75249496e39b52349b",
+      "bytes": 2652,
+      "origin": "Chestnut-constructed container fixture (tools/fixtures/make-gcode-3mf.mjs, deterministic)",
+      "contributor": "chestnutlabs",
+      "redistribution": "chestnut-original-mit",
+      "slicer": "synthetic (Bambu/Orca .gcode.3mf structure)",
+      "targetFamily": "FDM (container)",
+      "features": [
+        "container",
+        "multi-plate",
+        "machine-metadata"
+      ],
+      "expectedCapabilities": {},
+      "sizeTier": "tiny",
+      "limitations": "Synthetic minimal project; real Bambu/Orca fixtures arrive with the phase-3 adapters."
     }
   ]
 }

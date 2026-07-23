@@ -72,6 +72,7 @@ const renderer = new ToolpathRenderer({
 
 let parsing = false;
 let travelAvailable = false;
+let bedNote = '';
 
 function setStatus(text, isError = false) {
   els.status.textContent = text;
@@ -143,7 +144,7 @@ renderer.onEvent((e) => {
         ? `Decimation active: showing every ${e.decimationApplied}th extrusion segment ` +
           `(layer boundaries kept); travel hidden. ${e.segments.toLocaleString()} segments drawn.`
         : '';
-    els.qualityNote.textContent = `Rendering as: ${e.quality}`;
+    els.qualityNote.textContent = `Rendering as: ${e.quality}${bedNote}`;
   } else if (e.type === 'qualityFallback') {
     els.qualityNote.textContent = `Tubes unavailable — fell back to lines (${e.reason})`;
   } else if (e.type === 'error') {
@@ -198,9 +199,10 @@ async function parseAndRender() {
     enableControls(ir);
     // DD-005 §4.2: this demo opts into file-discovered bed geometry (arrives
     // with the phase-2/3 adapters); mismatches surface via the renderer event.
-    if (result.metadata?.machine) {
-      renderer.setBuildVolume(result.metadata.machine);
-      els.qualityNote.textContent += ` · bed from file (${result.metadata.machine.confidence})`;
+    const machine = result.metadata?.machine;
+    bedNote = machine ? ` · bed from file: ${machine.printerName ?? 'unknown printer'} (${machine.confidence})` : '';
+    if (machine) {
+      renderer.setBuildVolume(machine);
     }
     const caps = Object.entries(ir.header.capabilities)
       .map(([k, v]) => `${k}: ${v}`)

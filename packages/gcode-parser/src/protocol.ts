@@ -34,6 +34,15 @@ export interface WireParseOptions extends ParseOptions {
   dialects?: 'auto' | string[] | false;
   /** Per-adapter structured-cloneable configuration, keyed by adapter id. */
   dialectConfig?: Record<string, unknown>;
+  /**
+   * Container extraction (DD-005 §4.4): 'auto' (default) sniffs sliceable
+   * inputs against the worker entry's registered container adapters; an array
+   * restricts by id; false disables.
+   */
+  containers?: 'auto' | string[] | false;
+  /** Plate selection for multi-plate containers (default 0 + a
+   *  `container-multiple-plates` warning carrying the discovered plate list). */
+  plate?: number;
 }
 
 /** §5.4 provisional progressive-preview threshold (ratified by #61). */

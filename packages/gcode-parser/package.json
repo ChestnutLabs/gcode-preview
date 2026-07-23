@@ -28,6 +28,7 @@
   },
   "dependencies": {
     "@chestnutlabs/toolpath-core": "*",
-    "@chestnutlabs/gcode-dialects": "*"
+    "@chestnutlabs/gcode-dialects": "*",
+    "@chestnutlabs/gcode-containers": "*"
   }
 }

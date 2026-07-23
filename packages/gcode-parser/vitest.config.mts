@@ -8,7 +8,8 @@ export default defineConfig({
       // its dist being built first (npm runs workspace lifecycle scripts in
       // alphabetical order, not dependency order).
       '@chestnutlabs/toolpath-core': fileURLToPath(new URL('../toolpath-core/src/index.ts', import.meta.url)),
-      '@chestnutlabs/gcode-dialects': fileURLToPath(new URL('../gcode-dialects/src/index.ts', import.meta.url))
+      '@chestnutlabs/gcode-dialects': fileURLToPath(new URL('../gcode-dialects/src/index.ts', import.meta.url)),
+      '@chestnutlabs/gcode-containers': fileURLToPath(new URL('../gcode-containers/src/index.ts', import.meta.url))
     }
   },
   test: {
