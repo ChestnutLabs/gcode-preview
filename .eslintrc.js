@@ -108,6 +108,48 @@ module.exports = {
       }
     },
     {
+      files: ['packages/gcode-containers/**/*.ts', 'packages/gcode-containers/**/*.mts'],
+      rules: {
+        'no-restricted-imports': [
+          'error',
+          {
+            patterns: [
+              { group: ['three', 'three/*'], message: 'gcode-containers must not depend on three (DD-002 §4).' },
+              { group: ['vue', 'vue/*'], message: 'gcode-containers must not depend on Vue (DD-002 §4).' },
+              {
+                group: [
+                  '@chestnutlabs/gcode-parser*',
+                  '@chestnutlabs/gcode-dialects*',
+                  '@chestnutlabs/gcode-renderer*',
+                  '@chestnutlabs/gcode-preview*'
+                ],
+                message: 'gcode-containers depends only on toolpath-core (DD-005 §4.5).'
+              },
+              {
+                group: ['node:fs*', 'fs', 'node:child_process', 'child_process', 'node:net', 'node:http*'],
+                message: 'gcode-containers is in-memory only — no filesystem, process, or network access (DD-005 §7).'
+              },
+              {
+                group: ['*anybridge*', '*AnyBridge*'],
+                message: 'No reusable package may import AnyBridge (DD-002 §4 core rule).'
+              },
+              {
+                group: ['../../../*'],
+                message: 'gcode-containers must not reach outside its package (DD-002 §4).'
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      files: ['packages/gcode-containers/src/__tests__/**/*.ts'],
+      rules: {
+        // Tests READ committed fixtures from disk; the shipped library never touches fs (rule above).
+        'no-restricted-imports': 'off'
+      }
+    },
+    {
       files: ['packages/gcode-renderer-three/**/*.ts', 'packages/gcode-renderer-three/**/*.mts'],
       rules: {
         'no-restricted-imports': [

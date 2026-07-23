@@ -29,7 +29,7 @@ annotation) · **unsupported** (generic parse only — geometry always works; me
 
 | Container | Discovery | Plates | Machine metadata | Integrity checks | Security review | Fixtures | Evidence date |
 |---|---|---|---|---|---|---|---|
-| `.gcode.3mf` (Orca/Bambu) | _phase 2_ | — | — | — | **required before release** | — | — |
+| `.gcode.3mf` (Orca/Bambu) | **full** (magic sniff + CD walk) | **full** (multi-plate lifecycle, `{plate}` select, default-0 + warning) | **full** (`printable_area`/`printable_height`/printer/filaments → `MachineGeometry`, `known`) | **full** (CRC32, header agreement, encryption/zip64 rejection, duplicates, incremental caps) | [record prepared — awaiting sign-off](../design/SECURITY-REVIEW-DD-005-containers.md) | `container-mini-project` + 7 adversarial | 2026-07-23 |
 | `.bgcode` (Prusa binary) | _separate DD (non-goal here)_ | — | — | — | — | — | — |
 
 ## Cross-cutting coverage

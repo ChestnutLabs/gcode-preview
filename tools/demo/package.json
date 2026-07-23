@@ -9,6 +9,7 @@
     "dev": "vite"
   },
   "dependencies": {
+    "@chestnutlabs/gcode-containers": "file:../../packages/gcode-containers",
     "@chestnutlabs/gcode-dialects": "file:../../packages/gcode-dialects",
     "@chestnutlabs/gcode-parser": "file:../../packages/gcode-parser",
     "@chestnutlabs/gcode-renderer-three": "file:../../packages/gcode-renderer-three",
