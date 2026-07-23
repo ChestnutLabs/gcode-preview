@@ -8,3 +8,39 @@ declare class TextDecoder {
   constructor(label?: string, options?: { fatal?: boolean; ignoreBOM?: boolean });
   decode(input?: ArrayBufferView | ArrayBuffer, options?: { stream?: boolean }): string;
 }
+
+declare class MessagePortLike {
+  onmessage: ((ev: { data: unknown }) => void) | null;
+  postMessage(value: unknown, transfer?: ArrayBuffer[]): void;
+  close(): void;
+  start?(): void;
+}
+
+/** MessageChannel is global in browsers, workers, and Node ≥15. */
+declare class MessageChannel {
+  readonly port1: MessagePortLike;
+  readonly port2: MessagePortLike;
+}
+
+/** Minimal URL typing (global in browsers, workers, and Node). */
+declare class URL {
+  constructor(url: string, base?: string | URL);
+  readonly href: string;
+  toString(): string;
+}
+
+interface ImportMeta {
+  url: string;
+}
+
+/** Minimal browser Worker typing for the default instantiation path (§4.4a). */
+declare class Worker {
+  constructor(scriptURL: string | URL, options?: { type?: 'classic' | 'module'; name?: string });
+  postMessage(message: unknown, transfer?: ArrayBuffer[]): void;
+  terminate(): void;
+  onmessage: ((ev: { data: unknown }) => void) | null;
+  onerror: ((err: unknown) => void) | null;
+}
+
+declare function setTimeout(handler: () => void, timeout?: number): number;
+declare function clearTimeout(id: number | undefined): void;
