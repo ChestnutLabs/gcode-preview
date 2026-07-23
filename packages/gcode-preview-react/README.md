@@ -4,6 +4,14 @@ Thin React integration for the Chestnut Labs G-code viewer — a reactivity brid
 `@chestnutlabs/gcode-preview-core` with **capability parity** to the Vue and Svelte adapters
 (same engine, same state model, same TypeScript contracts; DD-007 D1 amendment).
 
+```sh
+npm install @chestnutlabs/gcode-preview-react three
+```
+
+(`three` is a peerDependency of the renderer, supported range `^0.178.0` — npm ≥ 7 installs
+it automatically; pnpm/yarn users add it explicitly. See the
+[support policy](../../docs/reference/support-policy.md).)
+
 ## Ready-to-use component
 
 ```tsx

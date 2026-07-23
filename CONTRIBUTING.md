@@ -45,13 +45,20 @@ the body or footer.
 
 ## Local checks (must pass before a PR)
 
+Prerequisite: **Node ≥ 22** (the supported lines are the 22 and 24 LTS releases — see the
+[support policy](docs/reference/support-policy.md)).
+
 ```bash
 npm ci
-npm run build       # rollup production build
-npm run test        # vitest
-npm run typeCheck   # tsc --noEmit
-npm run lint        # prettier --check + eslint
-# or all at once:
+npm run build            # inherited engine build (rollup)
+npm run test             # root vitest suite (goldens, manifest validation)
+npm run test:packages    # all workspace package suites
+npm run typeCheck        # tsc --noEmit
+npm run lint             # prettier --check + eslint
+npm run license:check    # dependency-license gate
+npm run test:consumer-vue  # tarball consumer fixture (packs + installs + tests)
+npm run pack:check       # packaged-artifact gate (pack snapshots + publint + attw)
+# quick subset:
 npm run check
 ```
 

@@ -1,211 +1,200 @@
-<!-- CHESTNUT LABS FORK BANNER — do not delete upstream content below this block. -->
-> ### 🌰 Chestnut Labs G-code Preview — fork notice
->
-> This repository is **[`ChestnutLabs/gcode-preview`](https://github.com/ChestnutLabs/gcode-preview)**, a public **fork of [`xyz-tools/gcode-preview`](https://github.com/xyz-tools/gcode-preview)** (MIT). Chestnut Labs is incrementally evolving it into a reusable, worker-based, **cross-vendor toolpath stack** — container adapters → worker parser + dialects → a versioned `ToolpathIR` → a Three.js renderer → a framework-neutral viewer → a Vue integration package — that applications such as **AnyBridge** consume through published `@chestnutlabs/*` packages. **The reusable core must never depend on a consumer application.**
->
-> | | |
-> |---|---|
-> | **Founding plan** | [`docs/00_PROJECT_MASTER_PLAN.md`](docs/00_PROJECT_MASTER_PLAN.md) |
-> | **Authoritative process/governance** | [`docs/01_GITHUB_WORKFLOW_PROJECT_GOVERNANCE_AND_DEVELOPMENT_PROCESS.md`](docs/01_GITHUB_WORKFLOW_PROJECT_GOVERNANCE_AND_DEVELOPMENT_PROCESS.md) |
-> | **Architecture & package boundaries** | [`docs/02_ARCHITECTURE_AND_PACKAGE_BOUNDARIES.md`](docs/02_ARCHITECTURE_AND_PACKAGE_BOUNDARIES.md) |
-> | **Upstream / fork / license policy** | [`docs/03_UPSTREAM_FORK_LICENSE_AND_CONTRIBUTION_POLICY.md`](docs/03_UPSTREAM_FORK_LICENSE_AND_CONTRIBUTION_POLICY.md) · [`NOTICE.md`](NOTICE.md) |
-> | **GitHub bootstrap / Epics / milestones** | [`docs/04_GITHUB_BOOTSTRAP_EPICS_MILESTONES_AND_NEXT_STEPS.md`](docs/04_GITHUB_BOOTSTRAP_EPICS_MILESTONES_AND_NEXT_STEPS.md) |
-> | **Environment & private-source handling** | [`PROJECT_SETUP.md`](PROJECT_SETUP.md) |
-> | **Contributing / conduct / security** | [`CONTRIBUTING.md`](CONTRIBUTING.md) · [`CODE_OF_CONDUCT.md`](CODE_OF_CONDUCT.md) · [`SECURITY.md`](SECURITY.md) |
->
-> **License:** MIT (inherited). The upstream `LICENSE` and copyright notice are preserved; Chestnut additions are also MIT. Chestnut Labs keeps its own roadmap, release cadence, and package APIs. Upstream changes are adopted deliberately through review — **never auto-synced**. Architecture-sensitive implementation is gated behind Design Documents (see governance). **The complete upstream project README is preserved verbatim below.**
+# Chestnut Labs G-code Preview
 
----
+A worker-based, cross-vendor **G-code toolpath stack** for the browser: parse `.gcode` and
+`.gcode.3mf` off the main thread, normalize them into a versioned intermediate representation
+(`ToolpathIR`), and render an interactive Three.js preview — with first-class **Vue, React, and
+Svelte** integrations that are thin adapters over one shared, framework-neutral engine.
 
-# GCode Preview [![npm version](http://img.shields.io/npm/v/gcode-preview.svg?style=flat)](https://npmjs.org/package/gcode-preview "View this project on npm") [![MIT license](http://img.shields.io/badge/license-MIT-brightgreen.svg)](http://opensource.org/licenses/MIT)
-A simple [G-code](https://en.wikipedia.org/wiki/G-code) parser & viewer lib with 3D printing in mind. Written in Typescript.
+> **Status: pre-release.** The stack is complete and consumable (E0–E6 of the
+> [master plan](docs/00_PROJECT_MASTER_PLAN.md) are closed); the first published line, `v0.1.0`,
+> ships at the end of the current release epic. Until then, consume via `npm pack` tarballs — see
+> *Consuming before the first release* below.
 
-Join us on <a href="https://discord.gg/w2bsGRE6S4">discord</a>
+## What you get
 
-## New org: XYZ Tools
-11-11-2024 This repo was moved to a brand new org which is a collaboration between @remcoder and @sophiedeziel for everything 3D printing related.
+- **Off-thread parsing** — a Web Worker session (`GcodeParseSession`) with streaming input,
+  progressive preview for large files, resource limits, and an adversarial-input corpus behind it.
+- **Cross-vendor dialect handling** — PrusaSlicer, OrcaSlicer/Bambu Studio, Cura, Klipper, Marlin,
+  and RepRap-flavor annotations (features, objects, bed geometry, thumbnails, multi-tool), each
+  claim capability-tagged as `known | inferred | approximated | unavailable` — the stack refuses to
+  fabricate what it cannot know.
+- **`.gcode.3mf` container support** — zero-dependency, bounded ZIP extraction with multi-plate
+  selection, hardened against adversarial archives.
+- **A versioned neutral IR** (`ToolpathIR`) — structure-of-arrays geometry + metadata + source
+  index; the seam between parsing and everything else.
+- **A Three.js renderer** — layer chunks with decimation disclosure, layer-range clip and
+  segment-level scrub, tube or line geometry with automatic quality fallback, per-file build
+  plates, WebGL context-loss recovery.
+- **Honest live progress** (for printer telemetry) — a normalized `ProgressObservation` contract
+  mapped onto the toolpath with tiered confidence: a precise cut + marker when the source position
+  is known, an uncertainty band when it is approximated, stale-signal handling, and user scrub
+  always winning.
+- **Three equal framework adapters** — each ships a ready-to-use `<GcodePreview>` component *and*
+  a lower-level surface, with the same capabilities, options, events, and TypeScript contracts,
+  enforced by a shared behavioral suite that runs against all three in CI.
 
-## Feature summary
-- multi-color
-- tube geometry
-- g2/g3 arcs
-- thumbnail preview
-- build volume
-- examples for various frameworks
+## Packages
 
-## Demo 
+| Package | What it is |
+|---|---|
+| [`@chestnutlabs/toolpath-core`](packages/toolpath-core) | `ToolpathIR`, capability model, progress mapping |
+| [`@chestnutlabs/gcode-parser`](packages/gcode-parser) | Worker parse core + session client (streaming, limits, workers) |
+| [`@chestnutlabs/gcode-dialects`](packages/gcode-dialects) | Slicer/firmware dialect annotators |
+| [`@chestnutlabs/gcode-containers`](packages/gcode-containers) | `.gcode.3mf` / ZIP container adapters |
+| [`@chestnutlabs/gcode-renderer-three`](packages/gcode-renderer-three) | Three.js toolpath renderer (peer: `three`) |
+| [`@chestnutlabs/gcode-preview-core`](packages/gcode-preview-core) | Framework-neutral preview controller + portable behavioral suite |
+| [`@chestnutlabs/gcode-preview-vue`](packages/gcode-preview-vue) | Vue 3 component + `useGcodePreview()` composable |
+| [`@chestnutlabs/gcode-preview-react`](packages/gcode-preview-react) | React component + `useGcodePreview()` hook |
+| [`@chestnutlabs/gcode-preview-svelte`](packages/gcode-preview-svelte) | Svelte component + `createGcodePreview()` store/action |
 
-### Minimal demo
-<img width="433" alt="image" src="https://github.com/user-attachments/assets/3b52c7a9-d1c9-41c5-9c41-570e12825aaf" />
+## Quick start
 
-try it out: https://codepen.io/remcoder/pen/PwYVXBg
+Install the adapter for your framework **plus `three`** (the renderer declares `three` as a
+peerDependency, range `^0.178.0` — npm ≥ 7 installs it automatically; pnpm/yarn users add it
+explicitly):
 
-### Batteries included
-Click to see the [full-fledged demo](https://gcode-preview.web.app/):
-
-[<img title="click to see the demo" width="320" alt="image" src="https://github.com/user-attachments/assets/4e663193-0a01-4fe2-864b-a8ffb18cbcd8">](https://gcode-preview.web.app/)
-
-## Installation
-
- `npm install gcode-preview`
-
-### Quick start
-
-```  
-  import { GCodePreview } from 'gcode-preview';
-
-  const preview = new GCodePreview({
-      canvas: document.querySelector('canvas'),
-      extrusionColor: 'hotpink'
-  });
-  
-  // draw a diagonal line
-  const gcode = 'G0 X0 Y0 Z0.2\nG1 X42 Y42 E10';
-  preview.processGCode(gcode);
+```sh
+npm install @chestnutlabs/gcode-preview-vue three     # or -react / -svelte
 ```
 
-### API Docs
-Check the full API documentation at https://gcode-preview.web.app/docs
+Each adapter has two adoption levels — a complete component, and a lower-level API for building
+your own controls (composable / hook / store) — documented in its package README.
 
-### Vue.js / React / Svelte integration
-<img src="https://vuejs.org/logo.svg" height="40px" />
+### Vue
 
- There's a [Vue.js example](https://github.com/xyz-tools/gcode-preview-examples) that has a [Vue component](https://github.com/xyz-tools/gcode-preview-examples/blob/main/GCodePreview.vue) to wrap the library.
+```vue
+<script setup>
+import { GcodePreview } from '@chestnutlabs/gcode-preview-vue';
+import { shallowRef } from 'vue';
+const file = shallowRef(null);
+</script>
 
- <img src="https://reactjs.org/favicon.ico" height="42px"/>
- 
- @Zeng95 provided a [React & Typescript example](https://github.com/xyz-tools/gcode-preview-react) that has a [React component](https://github.com/xyz-tools/gcode-preview-react/blob/main/src/components/GCodePreview.tsx) to wrap the library.
- 
- <img src='https://svelte.dev/favicon.png' height='42px' />
- 
- There is a [Svelte example](https://github.com/xyz-tools/gcode-preview-svelte) with a [Svelte component](https://github.com/xyz-tools/gcode-preview-svelte/blob/main/src/lib/GCodePreview.svelte).
-
-## Feature description
-
-### Multi-color support
-
-GCode files that were sliced for a multi-tool system can be previewed as such. Assign an array of colors to the `extrusionColor` property, where the index in the array corresponds to the index of the tool: T0..T7. 
-
-example: 
-```
-extrusionColor: ['hotpink', 'indigo', 'lime']
-```
-Here, T0 is hotpink, T1 is indigo and T2 is lime.
-
-<img width="300" alt="image" src="https://github.com/remcoder/gcode-preview/assets/461650/d965d30f-101e-40d3-8ad7-c8257dd7866a">
-
-Supported systems include:
- - Prusa MMU1/2/3 and XL
- - Bambulab AMS & AMS lite
- - Enraged Rabbit Carrot Feeder (ERCF)
- - IDEX machines
- - toolchangers
- - 3D Chameleon
- - Virtual tools (color mixing)
- - and possibly more
-
-### Render extrusion as tubes
-```
-renderTubes : true
+<template>
+  <input type="file" accept=".gcode,.3mf" @change="file = $event.target.files?.[0] ?? null" />
+  <div style="height: 70vh">
+    <GcodePreview :source="file" @ready="(s) => console.log(`${s.segments} segments`)" />
+  </div>
+</template>
 ```
 
-### G2/G3 arc support
-Thanks to @Sindarius arc commands are now supported, which means gcode processed by ArcWelder should be rendered correctly.
+Lower level: [`useGcodePreview()`](packages/gcode-preview-vue/README.md) — canvas ref, worker
+parse, controls, reactive state summaries.
 
-### Thumbnail preview
-Thumbnail previews as generated by PrusaSlicer are detected and parsed. In the gcode these are found in comments, enclosed between 'thumbnail begin' and 'thumbnail end'. The images are encoded as base64 strings but split over multiple lines. These are now parsed and patched back together, but still kept a base64. This allows easy use in the browser for us as [data urls](https://developer.mozilla.org/en-US/docs/Web/HTTP/Basics_of_HTTP/Data_URIs).
+### React
 
-![image](https://github.com/user-attachments/assets/6931167b-d48e-44a8-9233-ec8dbc064a0b) *Thumbnail Preview as generated by PrusaSlicer*
+```tsx
+import { GcodePreview } from '@chestnutlabs/gcode-preview-react';
 
-The thumbnails can be accessed like this: 
-`gcodePreview.parser.metadata.thumbnails['220x124']`
-
-Thumbnails have a `.src` property that will create a usable data url from the base64 string.
-
-See an [example in the demo source](https://github.com/remcoder/gcode-preview/blob/v2.5.0/demo/demo.js#L190-L204).
-
-### Build volume
-The build volume will be rendered if the `buildVolume` parameter is passed. It has the following type: 
-```
-buildVolume: { 
-  x: number; 
-  y: number; 
-  z: number
+function Viewer({ file }) {
+  return (
+    <div style={{ height: '70vh' }}>
+      <GcodePreview source={file} onReady={(s) => console.log(`${s.segments} segments`)} />
+    </div>
+  );
 }
 ```
 
-example:
+StrictMode-safe. Lower level: [`useGcodePreview()`](packages/gcode-preview-react/README.md)
+(`useSyncExternalStore`-backed state, identity-stable handle).
 
-<img src='https://user-images.githubusercontent.com/461650/103179898-c014a100-4890-11eb-8a25-13415c26f0f4.png' width=200>
+### Svelte
+
+```svelte
+<script>
+  import GcodePreview from '@chestnutlabs/gcode-preview-svelte/GcodePreview.svelte';
+  let file = null;
+</script>
+
+<div style="height: 70vh">
+  <GcodePreview source={file} on:ready={(e) => console.log(`${e.detail.segments} segments`)} />
+</div>
+```
+
+Ships as raw `.svelte` (your bundler's Svelte plugin compiles it). Lower level:
+[`createGcodePreview()`](packages/gcode-preview-svelte/README.md) — store contract +
+`use:` canvas action.
+
+All three components share the same defaulted prop surface — `source`, `parseOptions`,
+`buildVolume`, `quality`, `colorMode`, `layerRange`, `scrub`, `showTravel`, `progress`,
+`createWorker` — with matching events/callbacks. `<GcodePreview source={file} />` is the whole
+thin path; the full viewer is reachable without switching APIs.
+
+## Workers: batteries included, escape hatch provided
+
+- **Default (zero setup):** the adapters create the *batteries* worker — every supported dialect
+  adapter plus `.gcode.3mf` support — via the bundler-native `new Worker(new URL(...))` pattern.
+  Vite resolves it out of the box (tested in CI).
+- **Custom:** pass `createWorker` for the slim build, custom dialect adapters, other bundlers, or
+  strict-CSP environments. Both paths are documented in the
+  [Vue package README](packages/gcode-preview-vue/README.md) (shared across adapters by design).
+
+## Format, dialect & capability support
+
+- **Formats:** `.gcode` (plain), `.gcode.3mf` (sliced-plate container; multi-plate via
+  `parseOptions.plate`).
+- **Dialects:** PrusaSlicer, OrcaSlicer/Bambu, Cura, Klipper, Marlin, RepRap-flavor — see the
+  evidence-dated [compatibility matrix](docs/compatibility/dialects-and-containers.md).
+- **Build volume:** per-file discovered bed geometry with consumer-wins precedence (your
+  configured plate is never silently overridden; discovery is emitted instead).
+- **Live progress:** the normalized [progress signal contract](docs/reference/progress-signal-contract.md)
+  plus [consumer notes](docs/reference/progress-consumer-notes.md) for wiring real printer
+  telemetry (Moonraker, Bambu, OctoPrint-class sources).
+- **Support & deprecation policy:** [Node/browser/framework matrix and the rolling support
+  window](docs/reference/support-policy.md).
+
+## See it running
+
+- `tools/demo` — the showcase: full control panel over the whole pipeline (corpus picker,
+  dialect annotations, quality/color modes, layer clip + scrub, simulated live-progress tiers),
+  plus a Vue-component parity page and the visual-regression harness. `npm run dev` inside the
+  directory.
+- `tools/example-react`, `tools/example-svelte` — complete Vite apps per framework, run the same
+  way. All three apps consume the packages exactly as an external consumer would.
+
+## Consuming before the first release
+
+Until `v0.1.0` is on npm, consume via tarballs: build dependency-ordered, `npm pack` each package,
+and install with `file:` references — `tools/consumer-vue/run.mjs` is a working, CI-exercised
+implementation of exactly that recipe.
+
+## Project status & governance
+
+Docs-first: every architecture-sensitive epic passes a Design Document gate before
+implementation. The [master plan](docs/00_PROJECT_MASTER_PLAN.md) controls direction; the
+[docs index](docs/README.md) tracks epic status; accepted designs live in
+[`docs/design/`](docs/design). Current state: E0–E6 closed and accepted (parser, dialects,
+containers, renderer, live progress, multi-framework integration); E7 (release) is in progress —
+versioning, publication, container fuzzing, and a headless still-render entry point land there.
+
+Contributions: see [CONTRIBUTING.md](CONTRIBUTING.md) ·
+security policy: [SECURITY.md](SECURITY.md).
 
 ## Development
-To develop on gcode-preview run:
 
-`npm i && npm run dev`
+```sh
+# Node >= 22
+npm ci
+npm run build            # inherited engine build (rollup)
+npm run test             # root suite (IR goldens, manifest validation, adapters)
+npm run test:packages    # all workspace package suites
+npm run lint && npm run typeCheck && npm run license:check
+npm run test:consumer-vue   # tarball consumer fixture
+npm run pack:check       # packaged-artifact gate (pack snapshots + publint + attw)
+```
 
-This runs the demo app which is fairly complete in using the libs features.
+## Origin & attribution
 
-If you don't need the demo app, just run `npm run dev:watch`.
-
-Both build a dev bundle in the `dist` directory.
-Note the dev bundle:
- - is not minified
- - has no type defs (.d.ts)
-
-### Submitting a PR
-Before submitting a PR run:
-- `npm run build` for a production build
-- `npm run test` for unit tests
-- `npm run typeCheck` for typescript typings
-- `npm run lint` for code style and formatting
-- or all together: `npm run build && npm run test && npm run typeCheck && npm run lint`
-
-To auto-fix simple issues:
-- `npm run lint:fix` or `npm run prettier:fix`
-
-### Production builds
-For working on production builds you can use:
-- `npm run demo` which does a prod build and launches the demo app using local server
-- or just `npm run build` or `npm run build:watch`
-
-## Feedback
-If you have found a bug or if have an idea for a feature, don't hesitate to [create an issue on GitHub](https://github.com/remcoder/gcode-preview/issues/new) or [talk to us on Discord](https://discord.gg/w2bsGRE6S4).
-
-## Contributing
-Want to help out? We are open to your ideas and always willing to get you started! [talk to us on Discord](https://discord.gg/w2bsGRE6S4).
-
- - maybe there is an [open issue](https://github.com/xyz-tools/gcode-preview/issues?q=is%3Aissue%20state%3Aopen%20-label%3Ademo%20-label%3A3.1%2B%20-label%3Ablocked%20-label%3Arefactor) that appeals to you?
- - other things that are always helpful:
-   - testing different gcode files, from different slicers
-   - reporting bugs! Screenshot == ❤️
-   - making GCode Preview suitable for different printer types, like Deltas, Belt printers, IDEX, etc. Even CNC machines
-   - documentation & examples
-   - unit tests
-
-## Contributors 
-- ❤️ Thank you @sophiedeziel for rendering extrusion as tubes.
-- ❤️ Thank you @Sindarius for implementing G2/G3 arc support.
-- ❤️ Thank you @Zeng95 for providing a React & Typescript example.
-
-## Known issues
-### Preview doesn't render in Brave
-This is caused by the device recognition shield in Brave. By changing the setting for "Device Recognition" in Shield settings to "Allow all device recognition attemps" or "Only block cross-site device recognition attemps" you should not get this error.
-https://github.com/mrdoob/three.js/issues/16904
-
-## Sponsors
-
-A big thanks to these sponsors for their contributions. 
-
-[<img width=42 src="http://logo.q42.com/q42-logo.svg" />](http://q42.com)
-
-[<img  src="https://duet3d-media.fra1.digitaloceanspaces.com/strapi/c1d3c11cd0e71c45981cedaa2a9170ee.png">](https://www.duet3d.com/)
-
-
-### Donate
-If you want to show gratitude you can always buy me beer/coffee/filament via [ko-fi](https://ko-fi.com/remcoder) or 
-[PayPal](https://www.paypal.me/remcoder64)
- ^_^
+This project began as a fork of
+[`xyz-tools/gcode-preview`](https://github.com/xyz-tools/gcode-preview) (project identity
+`remcoder/gcode-preview`) by Remco Veldkamp and contributors, MIT-licensed. Chestnut Labs has
+since rebuilt it into the worker-based multi-package stack described above; the inherited Git
+history is preserved, upstream copyright notices are retained in [`LICENSE`](LICENSE), and the
+full attribution and provenance record lives in [`NOTICE.md`](NOTICE.md),
+[`docs/UPSTREAM_PROVENANCE.md`](docs/UPSTREAM_PROVENANCE.md), and the
+[upstream & licensing policy](docs/03_UPSTREAM_FORK_LICENSE_AND_CONTRIBUTION_POLICY.md).
+Upstream changes are adopted deliberately through review, never auto-synced.
 
 ## License
 
-This project is licensed under the [MIT License](LICENSE).
+[MIT](LICENSE) — inherited code © 2017–2025 Remco Veldkamp and the `xyz-tools/gcode-preview`
+contributors; Chestnut Labs additions © 2026 Chestnut Labs.
