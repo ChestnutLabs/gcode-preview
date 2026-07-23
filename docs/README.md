@@ -34,6 +34,7 @@ See also [`../PROJECT_SETUP.md`](../PROJECT_SETUP.md) for the local environment 
 | [`adr/`](adr/) | Architecture Decision Records — one durable decision and its consequences | `ADR-NNN-<slug>.md` |
 | [`research/`](research/) | Research Records — reproducible evidence, comparison, or experiment | `RR-NNN-<slug>.md` |
 | [`compatibility/`](compatibility/) | Compatibility/support matrices with evidence and dates | `<topic>.md` |
+| [`reference/`](reference/) | Consumer-facing contract references and integration notes | `<topic>.md` |
 
 Provenance of inherited vs. Chestnut code, the exact founding baseline, and the branch mapping are
 tracked in [`UPSTREAM_PROVENANCE.md`](UPSTREAM_PROVENANCE.md).
