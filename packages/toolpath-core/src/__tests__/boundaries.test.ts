@@ -38,7 +38,7 @@ describe('package boundaries (DD-002 §5)', () => {
     for (const file of files) {
       const name = file.replace(/\.ts$/, '');
       const text = readFileSync(join(srcDir, file), 'utf8');
-      const deps = [...text.matchAll(/from\s+['"]\.\/([\w-]+)['"]/g)].map((m) => m[1]);
+      const deps = [...text.matchAll(/from\s+['"]\.\/([\w-]+)(?:\.js)?['"]/g)].map((m) => m[1]);
       graph.set(name, deps);
     }
     const visiting = new Set<string>();

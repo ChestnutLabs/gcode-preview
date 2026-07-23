@@ -10,9 +10,9 @@
  * fails to acknowledge within TERMINATE_FALLBACK_MS the session terminates it —
  * strictly a last-resort backstop, asserted against in tests.
  */
-import type { ParseResult } from './parse';
-import { isReadableStreamLike } from './streaming';
-import { PROTOCOL_VERSION, type ParseInputWire, type WireParseOptions, type WorkerResponse } from './protocol';
+import type { ParseResult } from './parse.js';
+import { isReadableStreamLike } from './streaming.js';
+import { PROTOCOL_VERSION, type ParseInputWire, type WireParseOptions, type WorkerResponse } from './protocol.js';
 
 export interface WorkerLike {
   /** Transfer list may carry ArrayBuffers and (in browsers) transferable streams. */

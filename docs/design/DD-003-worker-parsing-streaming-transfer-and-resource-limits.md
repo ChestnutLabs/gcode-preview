@@ -209,8 +209,12 @@ delivers the bounded partial result per the §4.3 terminal-message contract (`do
 `RangeError` from the platform) is caught at the same boundary and mapped to the same structured result —
 an out-of-budget input must never surface as an unhandled exception or a dead worker.
 
-All defaults are numerically **provisional**: revisited against the E2 benchmark results (§8/§14 phase 4)
-before the E2 exit, with changes recorded in this DD.
+~~All defaults are numerically **provisional**: revisited against the E2 benchmark results (§8/§14 phase 4)
+before the E2 exit, with changes recorded in this DD.~~ **Revisited 2026-07-22 (phase 4, #47): defaults
+CONFIRMED as shipped.** The 250 MB tier's natural peak RSS measured 1532 MB — within 0.3 % of
+`maxBufferBytes` (1536 MiB), i.e. the budget is calibrated at the working set of the largest supported
+tier; materially larger inputs stop with a bounded `E_LIMIT_BUFFER_BYTES` partial by design. Evidence:
+[`tools/benchmark/results/e2-worker-benchmark-2026-07-22.md`](../../tools/benchmark/results/e2-worker-benchmark-2026-07-22.md).
 
 ### 7.3 Growable buffers
 SoA channels grow by doubling (amortized O(n)) with a final right-size compaction before transfer, so peak
@@ -230,6 +234,12 @@ Targets (become the E2 exit measurements, from the RR-001 §5.5 baseline; same 1
   memory target above; the benchmark records accounted peak vs. actual RSS to validate the accounting.
 Per governance §10.2, benchmark results are recorded as trend artifacts; deviations documented and accepted
 explicitly, not silently.
+
+**Measured (phase 4, #47, 2026-07-22) — ALL TARGETS MET** (full report:
+[`tools/benchmark/results/e2-worker-benchmark-2026-07-22.md`](../../tools/benchmark/results/e2-worker-benchmark-2026-07-22.md)):
+max main-thread stall **3 ms** @ 250 MB (baseline: a 32.4 s freeze); throughput 7.0–9.1 MB/s; peak RSS
+**1532 MB** @ 250 MB (baseline 3272 MB); pure IR transfer **2 ms** for a 7.7 M-segment IR (zero-copy
+proven); cooperative cancel **83 ms** across a real thread boundary with `terminate()` unused.
 
 ## 9. Migration — DECIDED (port the inherited interpreter, golden-equivalence gated)
 The inherited `Interpreter` (main-thread, three-coupled `Job`/`Path` output) is **ported, not imported**:

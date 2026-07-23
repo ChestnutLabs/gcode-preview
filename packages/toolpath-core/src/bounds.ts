@@ -1,4 +1,4 @@
-import { MoveKind, type ToolpathBounds, type ToolpathSegments, type Vec3 } from './ir';
+import { MoveKind, type ToolpathBounds, type ToolpathSegments, type Vec3 } from './ir.js';
 
 export function emptyBounds(): ToolpathBounds {
   return {

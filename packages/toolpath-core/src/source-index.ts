@@ -1,4 +1,4 @@
-import { type SourceIndex } from './ir';
+import { type SourceIndex } from './ir.js';
 
 /**
  * Build the source-position index: sort segments by their source byte offset so a

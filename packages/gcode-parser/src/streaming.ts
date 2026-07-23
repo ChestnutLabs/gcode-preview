@@ -15,7 +15,7 @@
  * Byte offsets use the same single-byte (ASCII/UTF-8) accounting as the in-memory
  * drivers so stream and sync parses of the same file produce identical IR.
  */
-import { createEngine, type AsyncParseHooks, type AsyncParseResult, type ParseOptions } from './parse';
+import { createEngine, type AsyncParseHooks, type AsyncParseResult, type ParseOptions } from './parse.js';
 
 /** Anything that can hand us chunks of bytes. */
 export type StreamInput = BlobLike | ReadableStreamLike<Uint8Array>;

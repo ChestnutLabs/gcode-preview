@@ -39,7 +39,7 @@ import {
   type Units,
   type Warning
 } from '@chestnutlabs/toolpath-core';
-import { BudgetExceededError, SegmentWriter } from './growable';
+import { BudgetExceededError, SegmentWriter } from './growable.js';
 
 export interface ParseLimits {
   maxInputBytes: number;

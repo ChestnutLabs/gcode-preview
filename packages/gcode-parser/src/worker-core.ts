@@ -6,15 +6,15 @@
  * inbound messages to the returned handler. The Web Worker entry (`worker.ts`)
  * is a two-line shim over this.
  */
-import { parseGcodeToIRAsync, type AsyncParseHooks, type AsyncParseResult, type ParseOptions } from './parse';
-import { isBlobLike, isReadableStreamLike, parseGcodeStreamToIR } from './streaming';
+import { parseGcodeToIRAsync, type AsyncParseHooks, type AsyncParseResult, type ParseOptions } from './parse.js';
+import { isBlobLike, isReadableStreamLike, parseGcodeStreamToIR } from './streaming.js';
 import {
   PROTOCOL_VERSION,
   irTransferList,
   type ParseInputWire,
   type WorkerRequest,
   type WorkerResponse
-} from './protocol';
+} from './protocol.js';
 
 export type PostFn = (msg: WorkerResponse, transfer?: ArrayBuffer[]) => void;
 
