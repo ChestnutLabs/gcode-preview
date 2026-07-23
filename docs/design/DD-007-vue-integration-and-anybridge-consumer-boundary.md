@@ -13,10 +13,28 @@ there), `docs/05_ANYBRIDGE_HANDOFF.md`
 
 ---
 
-> **Accepted 2026-07-23 — D1–D4 with maintainer clarifications and one addition.**
-> **(D1)** both surfaces in one package: a **complete, ready-to-use** `<GcodePreview>` component and
-> the `useGcodePreview` composable; the component must remain a **shell over the same composable
-> and engine, never a separate implementation**. **(D2)** dual/universal worker: batteries default
+> **Accepted 2026-07-23 — D1–D4 with maintainer clarifications and additions** (D1 amended
+> same-day with the multi-framework requirement below).
+> **(D1)** **Ship first-class Vue, React, and Svelte integrations as thin adapters over the shared
+> engine.** Vue is the reference implementation and must include both a **complete, ready-to-use**
+> `<GcodePreview>` component and the `useGcodePreview` composable; the component must remain a
+> **shell over the same composable and engine, never a separate implementation**.
+> *Additional framework-integration requirement:* the upstream repository supported Vue, React, and
+> Svelte integrations — **preserve and modernize that multi-framework capability** as part of the
+> package work, even though AnyBridge currently consumes only Vue. Structure the integrations as
+> thin framework adapters over the same framework-neutral engine, worker, state model, and
+> TypeScript contracts: **Vue** `<GcodePreview>` + `useGcodePreview()`; **React** `<GcodePreview>`
+> + `useGcodePreview()`; **Svelte** `<GcodePreview>` plus an equivalent store/action API. Each
+> framework supports both adoption levels (ready-to-use component with sensible defaults; a
+> lower-level surface for consumers building their own controls/design system). The frameworks
+> must **not** contain separate viewer implementations or drift into different feature sets — they
+> expose equivalent capabilities, props/options, events/callbacks, worker configuration, and
+> TypeScript types wherever framework conventions allow. Vue remains the reference implementation
+> and the integration required by AnyBridge, but React and Svelte must be **publishable,
+> documented, tested through separate example applications, and included in the
+> repository-publication plan** (#109); installation/quick-start examples for all three frameworks
+> go into the rewritten README and documentation.
+> **(D2)** dual/universal worker: batteries default
 > (all supported dialect adapters + `.gcode.3mf`) so consumers work with zero setup, plus a
 > consumer-supplied worker path for smaller builds / custom adapters / unusual bundlers / stricter
 > CSP; **both paths documented, the default path tested with Vite**. **(D3)** `npm pack` tarballs
@@ -69,7 +87,13 @@ asset, types via vue-tsc-compatible declarations, zero store/router/design-syste
 
 - `@chestnutlabs/gcode-preview-vue`: a **headless composable** plus a **thin component** over the
   existing neutral API — parse lifecycle, renderer mount/dispose, progress wiring, capability
-  surfacing. No styling system, no UI chrome beyond the canvas.
+  surfacing. No styling system, no UI chrome beyond the canvas. **Vue is the reference
+  implementation.**
+- **Multi-framework adapters (D1 amendment)**: `@chestnutlabs/gcode-preview-react` (component +
+  hook) and `@chestnutlabs/gcode-preview-svelte` (component + store/action API) as thin adapters
+  over the same shared engine/state model (§4.6) — modernizing the upstream repository's
+  Vue/React/Svelte support. Each ships both adoption levels, its own example application, and
+  parity-locked capabilities/types; both are publishable and join the #109 publication plan.
 - Worker-entry selection surfaced per DD-005 (batteries default; slim/custom supported).
 - Package build (Vite lib + declarations), README + examples, boundary lint.
 - **Consumer contract fixture**: a committed Vue consumer that installs the **packed tarball**
@@ -198,6 +222,45 @@ linked-dev consumption; the packed tarball path (the contract fixture) must need
 This is the "committed consumer builds resolve reproducibly" gate — and it is exactly the shape
 AnyBridge's own integration will take, minus their app concerns.
 
+### 4.6 Multi-framework architecture — ACCEPTED (D1 amendment)
+
+Three frameworks must expose equivalent capability without three viewer implementations. The
+mechanics the Vue composable owns (session/renderer/mapper orchestration, canvas binding, resize,
+bed precedence, progress chain, dispose rules) are framework-agnostic except for reactivity — so
+they extract into a small **framework-neutral controller**:
+
+```ts
+// @chestnutlabs/gcode-preview-core (headless; no vue/react/svelte imports — lint-enforced)
+export function createPreviewController(options: PreviewControllerOptions): PreviewController;
+interface PreviewController {
+  bindCanvas(canvas: HTMLCanvasElement | null): void;
+  parse(input, opts?): Promise<ParseOutcome>;
+  cancel(): void;
+  observeProgress(obs): MappedProgress | null;
+  tickProgress(nowMs): MappedProgress | null;
+  clearProgress(): void;
+  controls: GcodePreviewControls;
+  /** Plain snapshot state + change subscription — each framework maps this to its reactivity. */
+  getState(): GcodePreviewState;
+  onStateChange(cb: (state: GcodePreviewState) => void): () => void;
+  onEvent(cb: (e: PreviewEvent) => void): () => void;
+  raw: { session: GcodeParseSession; renderer: () => ToolpathRenderer | null };
+  dispose(): void;
+}
+```
+
+- **Adapters are reactivity bridges only**: Vue (`shallowReactive` + `onScopeDispose`), React
+  (`useSyncExternalStore` + effect cleanup), Svelte (readable store + component/action lifecycle).
+  Anything beyond the bridge belongs in the controller — that is the drift firewall.
+- **Parity is enforced, not hoped for**: the state/options/controls/event **TypeScript contracts
+  live in `gcode-preview-core`** and are re-exported (never redeclared) by every adapter; a shared
+  behavioral test suite (parse → state → controls → progress → dispose, driven through each
+  adapter) runs in all three packages; the E6 exit includes a capability-parity table.
+- The Vue composable (phase-1 code) **refactors onto the controller** with its public API and
+  tests unchanged — the tests prove the refactor.
+- Note: this supersedes the §12 rejection of a neutral facade — that rejection was explicitly
+  premised on no second framework consumer existing; the amendment creates the second and third.
+
 ## 5. Lifecycle
 
 Component flow: mount → `canvasRef` binds → (source prop set) → worker parse with progressive
@@ -273,7 +336,7 @@ disclosure line, packaged). The README documents an event-log recipe.
 - **Tarball fixture drift** (stale packs): mitigated by CI packing fresh from the workspace on
   every run while the committed lockfile pins the resolution shape.
 
-## 14. Phased delivery
+## 14. Phased delivery (amended: multi-framework phases 5–7)
 
 1. **Package scaffold + composable core** — workspace package, boundary lint row, `useGcodePreview`
    (session+renderer lifecycle, parse, controls, dispose/HMR safety), unit tests. Fixture-manifest
@@ -285,9 +348,18 @@ disclosure line, packaged). The README documents an event-log recipe.
    prove parity.
 4. **Consumer contract fixture** — `tools/consumer-vue` on packed tarballs, contract tests, CI
    wiring, leak test.
-5. **E6 exit** — bundle/leak evidence vs §8, AnyBridge #783 cross-link comment ("consumable
-   surface ready; integration unblocked pending E7 publish or interim tarball/git consumption"),
-   docs current-state, epic checklist.
+5. **Shared controller extraction** (`@chestnutlabs/gcode-preview-core`, §4.6) — the Vue
+   composable's engine glue moves into `createPreviewController`; shared TS contracts + the
+   framework-portable behavioral test suite; the Vue package refactors onto it with its public
+   API and tests unchanged.
+6. **React adapter** (`@chestnutlabs/gcode-preview-react`) — `useGcodePreview` hook
+   (`useSyncExternalStore` bridge) + `<GcodePreview>` component; separate example application;
+   shared behavioral suite green.
+7. **Svelte adapter** (`@chestnutlabs/gcode-preview-svelte`) — store/action API + `<GcodePreview>`
+   component; separate example application; shared behavioral suite green.
+8. **E6 exit** — bundle/leak evidence vs §8 for all adapters, **capability-parity table** across
+   Vue/React/Svelte, AnyBridge #783 cross-link comment, #109 publication-plan update (three
+   frameworks), docs current-state, epic checklist.
 
 ## 15. Acceptance criteria
 
@@ -299,9 +371,26 @@ disclosure line, packaged). The README documents an event-log recipe.
 - [ ] README/examples published; AnyBridge #783 cross-linked with the consumption recipe.
 - [ ] No changes to worker protocol, IR, or any lower package's public surface (beyond an
       additive worker-entry alias if phase 1 finds it necessary — flagged, not silent).
+- [ ] **Multi-framework (D1 amendment)**: React and Svelte adapters ship both adoption levels as
+      thin bridges over `gcode-preview-core` (no separate viewer implementations — shared TS
+      contracts re-exported, never redeclared); the shared behavioral suite passes in all three
+      packages; each has a working example application; the E6 exit records the capability-parity
+      table; #109 covers all three frameworks' install/quick-start docs.
 
 ## Decision log
 
+- **2026-07-23 — D1 amended (maintainer, same-day).** The upstream repository supported Vue,
+  React, and Svelte integrations (upstream README: community `gcode-preview-react` /
+  `gcode-preview-svelte` wrappers) — **preserve and modernize that multi-framework capability**:
+  first-class Vue/React/Svelte adapters over the shared engine, each with both adoption levels,
+  parity-locked capabilities/types (no separate implementations, no feature drift), React/Svelte
+  publishable + documented + tested via separate example apps + included in the #109 publication
+  plan; README quick-starts for all three. Vue remains the reference implementation and the
+  AnyBridge requirement. Architectural consequence recorded in §4.6: the engine glue extracts into
+  `@chestnutlabs/gcode-preview-core` (`createPreviewController`) and adapters become reactivity
+  bridges — superseding the §12 facade rejection, whose premise (no second framework consumer) the
+  amendment removes. Phases 5–7 added (#111 core extraction, #112 React, #113 Svelte); the exit
+  becomes phase 8 (#108).
 - **2026-07-23 — Accepted.** Maintainer accepted **D1–D4 with clarifications**: (D1) component is
   a complete, ready-to-use surface but strictly a shell over the composable/engine; (D2) dual
   worker path — batteries default + consumer-supplied — both documented, default path tested with
