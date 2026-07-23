@@ -14,6 +14,8 @@ export interface BuildVolumeDef {
   z: number;
   /** Grid pitch in mm (default 10). */
   grid?: number;
+  /** Bed minimum corner in printer coordinates (default 0,0 — DD-005 §4.2 machines may offset). */
+  min?: { x: number; y: number };
 }
 
 function lines(positions: number[], color: number, opacity = 1): LineSegments {
@@ -28,15 +30,19 @@ export function createBuildVolume(def: BuildVolumeDef): Group {
   const group = new Group();
   group.name = 'buildVolume';
   const pitch = def.grid ?? 10;
+  const x0 = def.min?.x ?? 0;
+  const y0 = def.min?.y ?? 0;
+  const x1 = x0 + def.x;
+  const y1 = y0 + def.y;
 
-  // Floor grid at z=0 spanning [0..x]×[0..y]: the bed's origin is its corner, so
-  // the volume occupies the same coordinates the G-code (and the toolpath) uses.
+  // Floor grid at z=0 spanning [min..min+size]: the bed occupies the same
+  // coordinates the G-code (and the toolpath) uses.
   const grid: number[] = [];
-  for (let gx = 0; gx <= def.x + 1e-6; gx += pitch) {
-    grid.push(gx, 0, 0, gx, def.y, 0);
+  for (let gx = x0; gx <= x1 + 1e-6; gx += pitch) {
+    grid.push(gx, y0, 0, gx, y1, 0);
   }
-  for (let gy = 0; gy <= def.y + 1e-6; gy += pitch) {
-    grid.push(0, gy, 0, def.x, gy, 0);
+  for (let gy = y0; gy <= y1 + 1e-6; gy += pitch) {
+    grid.push(x0, gy, 0, x1, gy, 0);
   }
   group.add(lines(grid, 0x448844, 0.35));
 
@@ -44,10 +50,10 @@ export function createBuildVolume(def: BuildVolumeDef): Group {
   const z = def.z;
   const box: number[] = [];
   const corners: [number, number][] = [
-    [0, 0],
-    [def.x, 0],
-    [def.x, def.y],
-    [0, def.y]
+    [x0, y0],
+    [x1, y0],
+    [x1, y1],
+    [x0, y1]
   ];
   for (let i = 0; i < 4; i++) {
     const [x1, y1] = corners[i];

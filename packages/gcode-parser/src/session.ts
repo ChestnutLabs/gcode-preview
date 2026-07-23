@@ -202,7 +202,7 @@ export class GcodeParseSession {
         }
         return;
       case 'done':
-        this.settle(active, { ir: msg.ir, stats: msg.stats });
+        this.settle(active, { ir: msg.ir, stats: msg.stats, metadata: msg.metadata });
         return;
       case 'cancelled':
         this.settle(

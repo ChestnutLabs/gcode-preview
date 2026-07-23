@@ -27,6 +27,7 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@chestnutlabs/toolpath-core": "*"
+    "@chestnutlabs/toolpath-core": "*",
+    "@chestnutlabs/gcode-dialects": "*"
   }
 }

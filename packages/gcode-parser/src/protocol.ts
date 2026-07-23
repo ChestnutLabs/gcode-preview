@@ -7,7 +7,7 @@
  * - `error` — failures producing no usable IR; the client REJECTS.
  * - `cancelled` — client rejects with E_CANCELLED; `partial` attached when requested.
  */
-import type { ToolpathIR } from '@chestnutlabs/toolpath-core';
+import type { DialectMetadata, ToolpathIR } from '@chestnutlabs/toolpath-core';
 import type { ParseOptions, ParseStats } from './parse.js';
 import type { BlobLike, ReadableStreamLike } from './streaming.js';
 
@@ -25,6 +25,15 @@ export interface WireParseOptions extends ParseOptions {
    * `false` disables; `{ minInputBytes: 0 }` forces immediate previews.
    */
   partialPreview?: false | { minInputBytes?: number; intervalMs?: number };
+  /**
+   * Dialect annotation (DD-005 §4.5): SERIALIZABLE selection only — adapter
+   * implementations live inside the worker entry. 'auto' (default) runs
+   * detection over the entry's registered set; an array restricts by id;
+   * false disables.
+   */
+  dialects?: 'auto' | string[] | false;
+  /** Per-adapter structured-cloneable configuration, keyed by adapter id. */
+  dialectConfig?: Record<string, unknown>;
 }
 
 /** §5.4 provisional progressive-preview threshold (ratified by #61). */
@@ -64,6 +73,8 @@ export interface DoneMessage {
   id: number;
   ir: ToolpathIR;
   stats: ParseStats;
+  /** Dialect/machine metadata beside the IR (DD-005 §4.2); thumbnails transferred. */
+  metadata?: DialectMetadata;
 }
 
 export interface ErrorMessage {

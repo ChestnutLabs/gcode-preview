@@ -16,6 +16,11 @@ export default defineConfig({
   optimizeDeps: {
     // Serve the workspace packages as real ESM so Vite's `new Worker(new URL(...))`
     // handling applies inside @chestnutlabs/gcode-parser (same as the consumer smoke).
-    exclude: ['@chestnutlabs/gcode-parser', '@chestnutlabs/toolpath-core', '@chestnutlabs/gcode-renderer-three']
+    exclude: [
+      '@chestnutlabs/gcode-parser',
+      '@chestnutlabs/toolpath-core',
+      '@chestnutlabs/gcode-renderer-three',
+      '@chestnutlabs/gcode-dialects'
+    ]
   }
 });

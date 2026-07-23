@@ -57,12 +57,34 @@ export const DEFAULT_LIMITS: ParseLimits = {
   maxWarnings: 10_000
 };
 
+/**
+ * Read-only normalized command event (DD-005 §4.3, amendment 1): observers see
+ * each lexed command BEFORE dispatch and cannot alter parsing.
+ */
+export interface CommandEvent {
+  /** Normalized lowercase word+number, e.g. 'm486'. */
+  gcode: string;
+  params: Readonly<Record<string, number>>;
+  /** The raw line, for vendor syntaxes the lexer's params don't capture. */
+  rawLine: string;
+  srcByte: number;
+  /** Segment count at event time — maps events to segment ranges. */
+  segIndex: number;
+}
+
 export interface ParseOptions {
   parserVersion?: string;
   sourceId?: string;
   limits?: Partial<ParseLimits>;
   /** Layer-detection tolerance (inherited default 0.05). */
   minLayerThreshold?: number;
+  /**
+   * DD-005 §4.3 read-only hooks: observe comments/commands during the parse.
+   * Inert when unset (one branch per line); they cannot alter lexing, dispatch,
+   * or machine state — the golden-gated semantics are untouched.
+   */
+  onComment?: (text: string, srcByte: number) => void;
+  onCommand?: (event: CommandEvent) => void;
 }
 
 export interface StopReason {
@@ -89,6 +111,9 @@ export interface ParseStats {
 export interface ParseResult {
   ir: ToolpathIR;
   stats: ParseStats;
+  /** Dialect/machine metadata (DD-005 §4.2) — populated by the worker pipeline
+   *  when dialect adapters are registered and matched; absent otherwise. */
+  metadata?: import('@chestnutlabs/toolpath-core').DialectMetadata;
 }
 
 export interface AsyncParseHooks {
@@ -457,6 +482,9 @@ export function createEngine(input: string | Uint8Array, opts: ParseOptions): En
     return emitSegment(sx, sy, sz, eachE, kind);
   };
 
+  const onComment = opts.onComment;
+  const onCommand = opts.onCommand;
+
   const processLine = (rawLine: string, offset: number): void => {
     stats.lines++;
     currentSrcByte = offset;
@@ -465,9 +493,17 @@ export function createEngine(input: string | Uint8Array, opts: ParseOptions): En
       warn('line-too-long', `line exceeds maxLineLength=${limits.maxLineLength}; skipped`, offset);
       return;
     }
+    // DD-005 §4.3 read-only observation points — no effect on lexing or state.
+    if (onComment !== undefined) {
+      const ci = rawLine.indexOf(';');
+      if (ci !== -1) onComment(rawLine.slice(ci + 1), offset);
+    }
     const cmd = lexLine(rawLine);
     if (cmd.gcode === '') return;
     stats.commands++;
+    if (onCommand !== undefined) {
+      onCommand({ gcode: cmd.gcode, params: cmd.params, rawLine, srcByte: offset, segIndex: writer.count });
+    }
     let ok = true;
     switch (cmd.gcode) {
       case 'g0':

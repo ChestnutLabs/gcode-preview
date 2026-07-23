@@ -482,6 +482,39 @@ describe('tubes quality mode (phase 4)', () => {
     expect(h.renderer.segmentCount).toBe(0); // retained IR dropped
   });
 
+  it('setBuildVolume applies discovered machine geometry post-parse (#73, DD-005 §4.2)', () => {
+    const h = makeHarness(); // configured volume: 220×220×250
+    h.renderer.setIR(makeIR(1, 3));
+    h.runTicks();
+    const meshesBefore = h.renderer.chunkMeshes.length;
+
+    // Discovered geometry differing >1mm → mismatch reported, volume applied.
+    h.renderer.setBuildVolume({
+      bed: { kind: 'rect', min: { x: 0, y: 0 }, max: { x: 256, y: 256 } },
+      origin: { x: 0, y: 0 },
+      heightMm: 256,
+      confidence: 'known',
+      source: { adapterId: 'test', evidence: 'test' }
+    });
+    const mismatch = h.events.find((e) => e.type === 'error' && e.code === 'machine-geometry-mismatch');
+    expect(mismatch).toBeDefined();
+    // Toolpath meshes untouched; only the volume group was rebuilt.
+    expect(h.renderer.chunkMeshes.length).toBe(meshesBefore);
+
+    // Matching geometry (within 1mm) → no new mismatch.
+    const before = h.events.length;
+    h.renderer.setBuildVolume({ x: 256, y: 256, z: 256 });
+    h.renderer.setBuildVolume({
+      bed: { kind: 'rect', min: { x: 0, y: 0 }, max: { x: 256, y: 256 } },
+      origin: { x: 0, y: 0 },
+      confidence: 'known',
+      source: { adapterId: 'test', evidence: 'test' }
+    });
+    expect(h.events.slice(before).some((e) => e.type === 'error' && e.code === 'machine-geometry-mismatch')).toBe(
+      false
+    );
+  });
+
   it('setQuality rebuilds from the retained IR', () => {
     const h = makeHarness({ quality: 'tubes' });
     h.renderer.setIR(makeIR(2, 5));

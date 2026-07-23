@@ -7,7 +7,8 @@ export default defineConfig({
       // Resolve the sibling workspace from SOURCE so tests/typecheck never depend on
       // its dist being built first (npm runs workspace lifecycle scripts in
       // alphabetical order, not dependency order).
-      '@chestnutlabs/toolpath-core': fileURLToPath(new URL('../toolpath-core/src/index.ts', import.meta.url))
+      '@chestnutlabs/toolpath-core': fileURLToPath(new URL('../toolpath-core/src/index.ts', import.meta.url)),
+      '@chestnutlabs/gcode-dialects': fileURLToPath(new URL('../gcode-dialects/src/index.ts', import.meta.url))
     }
   },
   test: {

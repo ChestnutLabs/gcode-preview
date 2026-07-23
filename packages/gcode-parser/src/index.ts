@@ -10,6 +10,7 @@ export { parseGcodeToIR, parseGcodeToIRAsync, DEFAULT_LIMITS } from './parse.js'
 export type {
   AsyncParseHooks,
   AsyncParseResult,
+  CommandEvent,
   ParseLimits,
   ParseOptions,
   ParseResult,
@@ -22,6 +23,6 @@ export type { StreamInput, BlobLike, ReadableStreamLike } from './streaming.js';
 export { PROTOCOL_VERSION, PARTIAL_PREVIEW_MIN_BYTES, irTransferList } from './protocol.js';
 export type { WireParseOptions, WorkerRequest, WorkerResponse, PartialMessage } from './protocol.js';
 export { createWorkerHandler } from './worker-core.js';
-export type { PostFn } from './worker-core.js';
+export type { PostFn, DialectRunLike, DialectRunnerFactoryLike, WorkerHandlerOptions } from './worker-core.js';
 export { GcodeParseSession, ParseSessionError, CancelledError } from './session.js';
 export type { SessionOptions, WorkerLike, ParseProgress } from './session.js';
