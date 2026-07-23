@@ -1,6 +1,6 @@
 # DD-004 — Three.js Rendering, Geometry, Layer Clipping, and Quality Modes
 
-**Status:** Proposed <!-- Draft | Proposed | Accepted | Superseded | Rejected -->
+**Status:** **Accepted (2026-07-22, all recommendations approved)** <!-- Draft | Proposed | Accepted | Superseded | Rejected -->
 **Authors/Owners:** Chestnut Labs
 **Date:** 2026-07-22 · **Last revised:** 2026-07-22
 **Owning Epic:** E3 (#4) · **Milestone:** M2
@@ -9,9 +9,11 @@
 DD-003 (Accepted — §5.3 TTFP obligation discharged in §5.4 below), RR-001 §5.4 (Sindarius LOD behavior
 spec), E2 benchmark report, issue #53 (this DD), architecture doc §8, master plan §8.4/§9.2/§9.5
 
-> **Proposed draft for maintainer review.** No renderer implementation until Accepted. Decisions flagged
-> **[DECISION]**: §4.3 geometry strategy & quality tiers, §4.4 LOD/decimation thresholds, §4.5 clipping
-> strategy, §5.4 progressive preview verdict (TTFP), §6.2 camera/axis convention.
+> **Accepted 2026-07-22 — all five decisions approved as recommended:** §4.3 lines/tubes quality tiers
+> with layer-aligned chunks; §4.4 every-Nth LOD with mandatory disclosure (thresholds provisional,
+> benchmark-ratified); §4.5 draw-range clipping architecture; §5.4 progressive preview required ≥ the
+> 25 MB threshold via the reserved `partial` protocol slot (E3-scoped follow-up); §6.2 single Z-up→Y-up
+> rotation, public API in printer coordinates. Renderer implementation may proceed per §14 phasing.
 
 ---
 
@@ -71,7 +73,7 @@ Camera interaction is OrbitControls-style (rotate/pan/zoom, reset) and keyboard-
 §9.5). The facade (`@chestnutlabs/gcode-preview`, E6-era) composes this with the parser session; advanced
 consumers may use the renderer directly (DD-002 §4).
 
-### 4.3 [DECISION] Geometry strategy & quality tiers
+### 4.3 Geometry strategy & quality tiers — DECIDED (as recommended)
 | Mode | Geometry | Cost | Use |
 |---|---|---|---|
 | **`lines`** *(default ≥ threshold)* | one interleaved position attribute per chunk, `GL_LINES` (`LineSegments`), 2 verts/segment, vertex colors | ~48 B/segment GPU; build is a tight typed-array loop | large files; always-works fallback |
@@ -82,18 +84,18 @@ consumers may use the renderer directly (DD-002 §4).
   ratified by E3 benchmarks like DD-003 §7.2's were).
 - Fat lines (`LineSegments2`, screen-space width) are an **optional enhancement within `lines` mode** for
   small files only — they cost 4 verts + instancing per segment; plain `GL_LINES` is the scalable path.
-**Recommendation:** as above. *Sign-off requested.*
+**Decided:** as recommended.
 
-### 4.4 [DECISION] LOD / decimation policy (Sindarius behavior spec, RR-001 §5.4)
+### 4.4 LOD / decimation policy — DECIDED (as recommended) (Sindarius behavior spec, RR-001 §5.4)
 When segment count exceeds the interactive budget for the active mode, apply **every-Nth extrusion-move
 decimation** with N stepped by count (provisional: >2 M → N=2, >5 M → N=3, >10 M → N=5), always keeping
 layer-boundary segments so silhouettes and layer counts stay honest; travel moves hide first. Decimation
 is a **render-only** reduction (the IR is untouched) and the active reduction is **reported to the
 consumer** (capability-style event) so the UI can say "preview simplified" — degrade honestly (master
 plan §9.4/§9.5). **Recommendation:** ship the mechanism + provisional thresholds; ratify numbers in the
-E3 benchmark phase. *Sign-off requested.*
+E3 benchmark phase. *(Approved 2026-07-22.)*
 
-### 4.5 [DECISION] Layer clipping & scrub strategy
+### 4.5 Layer clipping & scrub strategy — DECIDED (draw-range architecture)
 Two complementary mechanisms:
 1. **Range clipping = chunk/draw-range selection** (primary): because segments are layer-contiguous,
    `setLayerRange` maps to whole-chunk visibility + `drawRange` trims on boundary chunks — O(chunks),
@@ -103,7 +105,7 @@ Two complementary mechanisms:
    the hook E5's progress overlay will drive (segment index comes from `sourceIndex`/byte mapping).
 The inherited shader-clip (`clipMinY/clipMaxY` uniforms) is **not** carried forward as the primary
 mechanism — it clips by height rather than print order and breaks on non-planar/vase paths.
-**Recommendation:** draw-range architecture. *Sign-off requested.*
+**Recommendation:** draw-range architecture. *(Approved 2026-07-22.)*
 
 ### 4.6 Coloring & visibility
 - Per-segment **vertex colors** computed renderer-side from `tool`/`feature`/`kind` channels + the
@@ -130,7 +132,7 @@ Geometry chunks are built **incrementally across frames** (one/few chunks per rA
 principle as DD-003 §5.2): the first chunks become visible while later ones build, and a 7.7 M-segment
 IR never blocks the main thread for seconds. `buildComplete` fires when all chunks exist.
 
-### 5.4 [DECISION] Time-to-first-preview — the DD-003 §5.3 obligation, discharged
+### 5.4 Time-to-first-preview — DECIDED (progressive preview ≥25 MB threshold) — the DD-003 §5.3 obligation, discharged
 Measured full-parse latency (E2 benchmarks): **~0.5 s @ 3.5 MB · ~1.5 s @ 10 MB · ~11 s @ 100 MB ·
 ~30 s @ 250 MB**. With §5.3 incremental build, first pixels follow the `done` transfer within tens of ms.
 Verdict against the master-plan §9.2 "time to first useful preview" requirement:
@@ -142,7 +144,7 @@ follow-up issue**, activated only for inputs above a size threshold (provisional
 posts layer-aligned partial segment batches (copies — transferred buffers detach, so partials are
 snapshots); the renderer appends chunks as batches arrive; the final `done` transfer replaces the
 snapshot set with the canonical zero-copy IR. MVP phases 1–3 ship parse-then-render; the progressive
-issue lands before the E3 exit so the 100/250 MB tiers meet the requirement. *Sign-off requested.*
+issue lands before the E3 exit so the 100/250 MB tiers meet the requirement. *(Approved 2026-07-22.)*
 
 ## 6. Errors & environment
 
@@ -150,12 +152,12 @@ issue lands before the E3 exit so the 100/250 MB tiers meet the requirement. *Si
 Renderer errors (shader compile, allocation, context) surface as structured events; a failed `tubes`
 build falls back to `lines` with an event rather than failing the preview (degrade honestly).
 
-### 6.2 [DECISION] Camera & axis convention
+### 6.2 Camera & axis convention — DECIDED (as recommended)
 G-code is Z-up; `three` is Y-up. Convention: the scene root applies the Z-up→Y-up rotation once, and the
 **public API speaks G-code/printer coordinates exclusively** (layers along printer-Z). Build volume:
 XY footprint centered per common firmware convention, origin marker at printer (0,0,0); the IR's
 `originOffset` positions geometry absolutely inside the volume. **Recommendation:** as stated (matches
-the inherited demo's observable behavior). *Sign-off requested.*
+the inherited demo's observable behavior). *(Approved 2026-07-22.)*
 
 ## 7. Security & resource limits
 The renderer receives inert IR (no untrusted text). Its resource risks are GPU/memory: geometry bytes are
