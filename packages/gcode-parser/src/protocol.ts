@@ -18,7 +18,17 @@ export interface WireParseOptions extends ParseOptions {
   partialOnCancel?: boolean;
   /** Cooperative yield interval override (tests only; default 50 ms). */
   yieldIntervalMs?: number;
+  /**
+   * Progressive preview (DD-004 §5.4, issue #60). Default 'auto': partial
+   * snapshots stream once bytesProcessed ≥ minInputBytes (default 25 MiB,
+   * provisional until #61 ratifies), at most one per intervalMs (default 1000).
+   * `false` disables; `{ minInputBytes: 0 }` forces immediate previews.
+   */
+  partialPreview?: false | { minInputBytes?: number; intervalMs?: number };
 }
+
+/** §5.4 provisional progressive-preview threshold (ratified by #61). */
+export const PARTIAL_PREVIEW_MIN_BYTES = 25 * 1024 * 1024;
 
 /** Blob is structured-cloneable; ReadableStream is transferred (§4.2). */
 export type ParseInputWire = string | Uint8Array | BlobLike | ReadableStreamLike<Uint8Array>;
@@ -70,7 +80,21 @@ export interface CancelledMessage {
   partial?: { ir: ToolpathIR; stats: ParseStats };
 }
 
-export type WorkerResponse = ProgressMessage | DoneMessage | ErrorMessage | CancelledMessage;
+/**
+ * Progressive-preview snapshot (#60): a path-aligned DELTA of segments since the
+ * previous partial, transferred zero-copy. `header.complete` is always false;
+ * the terminal `done` IR REPLACES the accumulated preview wholesale.
+ */
+export interface PartialMessage {
+  v: number;
+  type: 'partial';
+  id: number;
+  slice: ToolpathIR;
+  /** Total segments emitted across all partials so far (= end of this delta). */
+  cumulativeSegments: number;
+}
+
+export type WorkerResponse = ProgressMessage | PartialMessage | DoneMessage | ErrorMessage | CancelledMessage;
 
 /** Collect every ArrayBuffer backing an IR's typed arrays for zero-copy transfer. */
 export function irTransferList(ir: ToolpathIR): ArrayBuffer[] {

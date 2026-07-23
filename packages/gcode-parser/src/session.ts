@@ -11,6 +11,7 @@
  * strictly a last-resort backstop, asserted against in tests.
  */
 import type { ParseResult } from './parse.js';
+import type { ToolpathIR } from '@chestnutlabs/toolpath-core';
 import { isReadableStreamLike } from './streaming.js';
 import { PROTOCOL_VERSION, type ParseInputWire, type WireParseOptions, type WorkerResponse } from './protocol.js';
 
@@ -78,6 +79,7 @@ export class GcodeParseSession {
   private active: ActiveParse | null = null;
   private nextId = 1;
   private progressListeners = new Set<(p: ParseProgress) => void>();
+  private partialListeners = new Set<(slice: ToolpathIR, cumulativeSegments: number) => void>();
 
   constructor(opts: SessionOptions = {}) {
     const supplied = opts.worker;
@@ -89,6 +91,16 @@ export class GcodeParseSession {
   onProgress(cb: (p: ParseProgress) => void): () => void {
     this.progressListeners.add(cb);
     return () => this.progressListeners.delete(cb);
+  }
+
+  /**
+   * Progressive-preview deltas (#60): path-aligned IR slices streamed while a
+   * large parse runs (`partialPreview` wire option; on by default ≥ 25 MiB).
+   * The resolved `done` IR REPLACES everything the partials showed.
+   */
+  onPartial(cb: (slice: ToolpathIR, cumulativeSegments: number) => void): () => void {
+    this.partialListeners.add(cb);
+    return () => this.partialListeners.delete(cb);
   }
 
   parse(input: ParseInputWire, opts: WireParseOptions = {}): Promise<ParseResult> {
@@ -130,6 +142,7 @@ export class GcodeParseSession {
     }
     this.teardownWorker();
     this.progressListeners.clear();
+    this.partialListeners.clear();
   }
 
   private ensureWorker(): WorkerLike {
@@ -181,6 +194,11 @@ export class GcodeParseSession {
       case 'progress':
         for (const cb of this.progressListeners) {
           cb({ bytesProcessed: msg.bytesProcessed, totalBytes: msg.totalBytes, phase: msg.phase });
+        }
+        return;
+      case 'partial':
+        for (const cb of this.partialListeners) {
+          cb(msg.slice, msg.cumulativeSegments);
         }
         return;
       case 'done':

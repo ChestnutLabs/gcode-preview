@@ -151,6 +151,13 @@ renderer.onEvent((e) => {
   }
 });
 
+// Progressive preview (#60): stream partial slices straight into the scene for
+// large files (worker default: ≥ 25 MB). The final IR replaces the preview.
+session.onPartial((slice, cumulativeSegments) => {
+  renderer.appendPartial(slice);
+  els.qualityNote.textContent = `Preview: ${cumulativeSegments.toLocaleString()} segments streamed…`;
+});
+
 session.onProgress((p) => {
   if (p.totalBytes > 0) {
     els.progress.value = p.bytesProcessed / p.totalBytes;

@@ -9,6 +9,7 @@
 import { parseGcodeToIRAsync, type AsyncParseHooks, type AsyncParseResult, type ParseOptions } from './parse.js';
 import { isBlobLike, isReadableStreamLike, parseGcodeStreamToIR } from './streaming.js';
 import {
+  PARTIAL_PREVIEW_MIN_BYTES,
   PROTOCOL_VERSION,
   irTransferList,
   type ParseInputWire,
@@ -66,7 +67,7 @@ export function createWorkerHandler(post: PostFn): (msg: WorkerRequest) => void 
       }
       activeId = msg.id;
       cancelRequested = false;
-      const { partialOnCancel, yieldIntervalMs, ...parseOpts } = msg.opts ?? {};
+      const { partialOnCancel, yieldIntervalMs, partialPreview, ...parseOpts } = msg.opts ?? {};
 
       let lastProgress = 0;
       const hooks: AsyncParseHooks = {
@@ -80,6 +81,15 @@ export function createWorkerHandler(post: PostFn): (msg: WorkerRequest) => void 
           }
         }
       };
+      // Progressive preview (#60): on by default with the §5.4 25 MiB threshold;
+      // partials transfer zero-copy like the terminal IR.
+      if (partialPreview !== false) {
+        hooks.partialMinBytes = partialPreview?.minInputBytes ?? PARTIAL_PREVIEW_MIN_BYTES;
+        hooks.partialIntervalMs = partialPreview?.intervalMs ?? 1000;
+        hooks.onPartial = (slice, cumulativeSegments) => {
+          post({ v: PROTOCOL_VERSION, type: 'partial', id: msg.id, slice, cumulativeSegments }, irTransferList(slice));
+        };
+      }
       void dispatchParse(msg.input, parseOpts, hooks)
         .then((result) => {
           if (result.cancelled) {
