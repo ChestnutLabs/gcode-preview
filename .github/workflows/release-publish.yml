@@ -49,3 +49,14 @@ jobs:
         env:
           RELEASE_CONFIRM: publish
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+      # DD-008 §15 release gate: verify the JUST-PUBLISHED versions install from the
+      # registry and pass the contract tests. Retries briefly for registry propagation.
+      - name: Registry-mode consumer verification
+        run: |
+          for attempt in 1 2 3 4 5; do
+            if npm run verify:registry -- "${GITHUB_REF_NAME#v}"; then exit 0; fi
+            echo "registry not yet consistent (attempt $attempt) — waiting…"
+            sleep 30
+          done
+          echo "::error::registry-mode verification failed after publish"
+          exit 1
