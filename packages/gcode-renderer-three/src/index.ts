@@ -9,11 +9,17 @@ export { buildChunks, autoDecimation } from './chunks.js';
 export type { ChunkBuildOptions, ChunkBuildResult, GeometryChunk } from './chunks.js';
 export { buildChunkColors } from './colors.js';
 export type { ColorMode, RGB } from './colors.js';
-export { computeDrawState } from './ranges.js';
-export type { ChunkDrawState } from './ranges.js';
+export { computeDrawState, computeOverlayDrawStates } from './ranges.js';
+export type { ChunkDrawState, OverlayDrawStates } from './ranges.js';
 export { buildTubeChunk, TUBES_AUTO_MAX_SEGMENTS } from './tubes.js';
 export type { TubeOptions, TubeChunkGeometry } from './tubes.js';
 export { ToolpathRenderer, chooseQuality, machineToVolume } from './scene.js';
-export type { ToolpathRendererOptions, RendererEvent, GLRendererLike, QualityMode } from './scene.js';
+export type {
+  ToolpathRendererOptions,
+  RendererEvent,
+  GLRendererLike,
+  ProgressPresentationMode,
+  QualityMode
+} from './scene.js';
 export { createBuildVolume } from './build-volume.js';
 export type { BuildVolumeDef } from './build-volume.js';

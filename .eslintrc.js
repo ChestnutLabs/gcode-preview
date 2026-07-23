@@ -151,6 +151,44 @@ module.exports = {
       }
     },
     {
+      files: ['packages/gcode-preview-vue/**/*.ts', 'packages/gcode-preview-vue/**/*.vue'],
+      rules: {
+        'no-restricted-imports': [
+          'error',
+          {
+            patterns: [
+              // vue IS allowed here — this package's one framework dependency (DD-007 §4.4).
+              {
+                group: ['pinia', 'pinia/*', 'vue-router', 'vue-router/*'],
+                message: 'gcode-preview-vue must stay store/router-free (DD-007 §4.4) — hosts own app state.'
+              },
+              { group: ['lil-gui'], message: 'gcode-preview-vue ships no UI chrome (DD-007 §3).' },
+              {
+                group: ['three', 'three/*'],
+                message: 'gcode-preview-vue consumes the renderer package, never three directly (DD-002 §4).'
+              },
+              {
+                group: ['@chestnutlabs/gcode-dialects*', '@chestnutlabs/gcode-containers*'],
+                message: 'Dialects/containers run inside the worker (DD-005 §4.5) — the Vue layer never imports them.'
+              },
+              {
+                group: ['*anybridge*', '*AnyBridge*'],
+                message: 'No reusable package may import AnyBridge (DD-002 §4 core rule).'
+              },
+              {
+                group: ['node:*', 'fs', 'child_process', 'net', 'http', 'https'],
+                message: 'gcode-preview-vue is browser-side only (DD-007 §7).'
+              },
+              {
+                group: ['../../../*'],
+                message: 'gcode-preview-vue must not reach outside its package (DD-002 §4).'
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
       files: ['packages/gcode-renderer-three/**/*.ts', 'packages/gcode-renderer-three/**/*.mts'],
       rules: {
         'no-restricted-imports': [
