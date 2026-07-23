@@ -24,6 +24,8 @@ demo/lib
 # Consumer-smoke build output and local caches (tools/consumer-smoke)
 /tools/consumer-smoke/*/dist/
 /tools/consumer-smoke/*/.electron-cache/
+# Viewer demo build output (tools/demo)
+/tools/demo/dist/
 
 # Private project data and local environment — never published. See PROJECT_SETUP.md.
 /ProjectSource/

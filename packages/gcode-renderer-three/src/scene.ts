@@ -34,6 +34,7 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import type { ToolpathIR } from '@chestnutlabs/toolpath-core';
 import { buildChunks, type ChunkBuildResult, type GeometryChunk } from './chunks.js';
 import { buildChunkColors, type ColorMode } from './colors.js';
+import { computeDrawState } from './ranges.js';
 import { createBuildVolume, type BuildVolumeDef } from './build-volume.js';
 
 export type RendererEvent =
@@ -83,6 +84,11 @@ export class ToolpathRenderer {
   private pendingChunks: GeometryChunk[] = [];
   private builtCount = 0;
   private colorMode: ColorMode;
+  // Clipping state (§4.5): draw-range trims only — geometry is never rebuilt here.
+  private startLayer = 0;
+  private endLayer = Infinity;
+  private scrubSegIndex: number | null = null;
+  private kindVisible: Record<GeometryChunk['kind'], boolean> = { extrude: true, travel: true };
   private listeners = new Set<(e: RendererEvent) => void>();
   private disposed = false;
   private contextLost = false;
@@ -146,6 +152,10 @@ export class ToolpathRenderer {
   setIR(ir: ToolpathIR): void {
     if (this.disposed) return;
     this.ir = ir;
+    // Layer/segment counts belong to the old IR — reset clipping to "show everything".
+    this.startLayer = 0;
+    this.endLayer = Infinity;
+    this.scrubSegIndex = null;
     this.startBuild(ir);
     this.positionToolpath(ir);
     this.frame();
@@ -181,6 +191,7 @@ export class ToolpathRenderer {
       const mesh = new LineSegments(geometry, material);
       mesh.name = `chunk:${chunk.kind}:${chunk.layerStart}-${chunk.layerEnd}`;
       mesh.userData.chunk = chunk;
+      this.applyDrawStateToMesh(mesh, chunk); // honor clipping set during an in-flight build
       this.toolpathGroup.add(mesh);
       this.builtCount++;
     }
@@ -205,6 +216,78 @@ export class ToolpathRenderer {
     }
   }
 
+  /** Number of layers in the retained IR (slider bounds for consumers). */
+  get layerCount(): number {
+    return this.ir?.layers.length ?? 0;
+  }
+
+  /** Number of IR segments (scrub-slider bounds for consumers). */
+  get segmentCount(): number {
+    return this.ir?.segments.count ?? 0;
+  }
+
+  /**
+   * Clip rendering to an inclusive layer range (§4.5). Draw-range trims on the
+   * existing chunk geometry only — no rebuild, no new allocations.
+   */
+  setLayerRange(startLayer: number, endLayer: number): void {
+    if (this.disposed) return;
+    this.startLayer = Math.max(0, Math.floor(startLayer));
+    this.endLayer = Math.floor(endLayer);
+    this.applyDrawState();
+    this.render();
+  }
+
+  /**
+   * Scrub: render only segments with IR index <= segIndex (within the layer
+   * range). `null` clears the scrub cut.
+   */
+  setScrubPosition(segIndex: number | null): void {
+    if (this.disposed) return;
+    this.scrubSegIndex = segIndex === null ? null : Math.max(-1, Math.floor(segIndex));
+    this.applyDrawState();
+    this.render();
+  }
+
+  /** Toggle a move kind (extrusion/travel) on or off (whole-chunk visibility, §4.3). */
+  setKindVisible(kind: GeometryChunk['kind'], visible: boolean): void {
+    if (this.disposed) return;
+    this.kindVisible[kind] = visible;
+    this.applyDrawState();
+    this.render();
+  }
+
+  /**
+   * Capability gate (§4.6): feature coloring needs the IR to actually carry
+   * feature roles — `featureRoles: 'unavailable'` means the UI must disable it,
+   * not render fabricated colors. Single/tool modes are always available.
+   */
+  isColorModeAvailable(mode: ColorMode['mode']): boolean {
+    if (mode !== 'feature') return true;
+    const conf = this.ir?.header.capabilities['featureRoles'];
+    return conf !== undefined && conf !== 'unavailable';
+  }
+
+  private applyDrawState(): void {
+    if (this.ir === null) return;
+    for (const mesh of this.chunkMeshes) {
+      const chunk = mesh.userData.chunk as GeometryChunk | undefined;
+      if (chunk) this.applyDrawStateToMesh(mesh, chunk);
+    }
+  }
+
+  private applyDrawStateToMesh(mesh: LineSegments, chunk: GeometryChunk): void {
+    if (this.ir === null) return;
+    if (!this.kindVisible[chunk.kind]) {
+      mesh.visible = false;
+      return;
+    }
+    const state = computeDrawState(this.ir, chunk, this.startLayer, this.endLayer, this.scrubSegIndex ?? undefined);
+    mesh.visible = state.visible;
+    // GL_LINES: 2 vertices per segment; drawRange is in vertices for non-indexed geometry.
+    (mesh.geometry as BufferGeometry).setDrawRange(state.drawStart * 2, state.drawCount * 2);
+  }
+
   /** Fit the camera to the toolpath bounds (falls back to the build volume). */
   frame(): void {
     if (this.disposed) return;
@@ -226,9 +309,21 @@ export class ToolpathRenderer {
     this.render();
   }
 
-  setColorMode(mode: ColorMode): void {
+  /**
+   * Switch color mode (attribute rewrite, no geometry rebuild — §4.6). Returns
+   * false (and emits an error event) when the mode is capability-gated off.
+   */
+  setColorMode(mode: ColorMode): boolean {
+    if (!this.isColorModeAvailable(mode.mode)) {
+      this.emit({
+        type: 'error',
+        code: 'E_COLOR_MODE_UNAVAILABLE',
+        message: `color mode '${mode.mode}' is unavailable: IR capability featureRoles is missing or 'unavailable'`
+      });
+      return false;
+    }
     this.colorMode = mode;
-    if (this.ir === null) return;
+    if (this.ir === null) return true;
     // Recolor = attribute rewrite, no geometry rebuild (§4.6).
     for (const child of this.toolpathGroup.children) {
       const mesh = child as LineSegments;
@@ -240,6 +335,7 @@ export class ToolpathRenderer {
       );
     }
     this.render();
+    return true;
   }
 
   resize(width: number, height: number): void {

@@ -7,12 +7,34 @@
  * incremental build, context-loss recovery, and disposal are all deterministic.
  */
 import { describe, expect, it } from 'vitest';
-import { MoveKind, ToolpathIRBuilder, type ToolpathIR } from '@chestnutlabs/toolpath-core';
+import { MoveKind, ToolpathIRBuilder, type Confidence, type ToolpathIR } from '@chestnutlabs/toolpath-core';
 import { ToolpathRenderer, type GLRendererLike, type RendererEvent } from '../index.js';
 
-function makeIR(layers: number, perLayer: number): ToolpathIR {
+function makeIR(
+  layers: number,
+  perLayer: number,
+  opts: { travelPerLayer?: number; featureRoles?: Confidence } = {}
+): ToolpathIR {
   const b = new ToolpathIRBuilder({ parserVersion: 'test', units: 'mm', unitsSource: 'known' });
+  if (opts.featureRoles !== undefined) {
+    b.setCapability('featureRoles', opts.featureRoles);
+  }
+  let src = 0;
   for (let l = 0; l < layers; l++) {
+    for (let t = 0; t < (opts.travelPerLayer ?? 0); t++) {
+      b.addSegment({
+        x0: 90 + t,
+        y0: 90,
+        z0: 0.2 * (l + 1),
+        x1: 91 + t,
+        y1: 90,
+        z1: 0.2 * (l + 1),
+        e: 0,
+        kind: MoveKind.Travel,
+        layer: l,
+        srcByte: src++ * 10
+      });
+    }
     for (let s = 0; s < perLayer; s++) {
       b.addSegment({
         x0: 100 + s,
@@ -24,7 +46,7 @@ function makeIR(layers: number, perLayer: number): ToolpathIR {
         e: 1,
         kind: MoveKind.Extrude,
         layer: l,
-        srcByte: (l * perLayer + s) * 10
+        srcByte: src++ * 10
       });
     }
   }
@@ -155,5 +177,130 @@ describe('ToolpathRenderer (phase 2)', () => {
     expect(cam.position.y).toBeGreaterThan(0); // above the bed
     // The controls-less fallback still rendered without throwing.
     expect(h.glCalls.render).toBeGreaterThan(0);
+  });
+});
+
+describe('ToolpathRenderer clipping/scrub/visibility/coloring (phase 3)', () => {
+  it('setLayerRange trims via drawRange only — position attribute identity preserved', () => {
+    const h = makeHarness();
+    const ir = makeIR(4, 10); // 40 extrusion segments, one chunk
+    h.renderer.setIR(ir);
+    h.runTicks();
+    const mesh = h.renderer.chunkMeshes[0];
+    const posBefore = mesh.geometry.getAttribute('position');
+
+    h.renderer.setLayerRange(1, 2); // layers 1..2 = IR segments 10..29
+    expect(mesh.visible).toBe(true);
+    expect(mesh.geometry.drawRange.start).toBe(10 * 2);
+    expect(mesh.geometry.drawRange.count).toBe(20 * 2);
+    // No rebuild: the exact same attribute object is still attached.
+    expect(mesh.geometry.getAttribute('position')).toBe(posBefore);
+
+    h.renderer.setLayerRange(0, Infinity); // restore full
+    expect(mesh.geometry.drawRange.start).toBe(0);
+    expect(mesh.geometry.drawRange.count).toBeGreaterThanOrEqual(40 * 2);
+  });
+
+  it('setScrubPosition cuts at the segment index and composes with the layer range', () => {
+    const h = makeHarness();
+    const ir = makeIR(4, 10);
+    h.renderer.setIR(ir);
+    h.runTicks();
+    const mesh = h.renderer.chunkMeshes[0];
+
+    h.renderer.setScrubPosition(14); // segments 0..14 → 15 segments
+    expect(mesh.geometry.drawRange.start).toBe(0);
+    expect(mesh.geometry.drawRange.count).toBe(15 * 2);
+
+    h.renderer.setLayerRange(1, 3); // starts at segment 10; scrub still cuts at 14
+    expect(mesh.geometry.drawRange.start).toBe(10 * 2);
+    expect(mesh.geometry.drawRange.count).toBe(5 * 2);
+
+    h.renderer.setScrubPosition(null); // clear scrub, range remains
+    expect(mesh.geometry.drawRange.count).toBe(30 * 2);
+  });
+
+  it('setKindVisible toggles travel chunks without touching extrusion state', () => {
+    const h = makeHarness();
+    const ir = makeIR(2, 5, { travelPerLayer: 3 });
+    h.renderer.setIR(ir);
+    h.runTicks();
+    const travel = h.renderer.chunkMeshes.filter((m) => (m.userData.chunk as { kind: string }).kind === 'travel');
+    const extrude = h.renderer.chunkMeshes.filter((m) => (m.userData.chunk as { kind: string }).kind === 'extrude');
+    expect(travel.length).toBeGreaterThan(0);
+    expect(extrude.length).toBeGreaterThan(0);
+
+    h.renderer.setKindVisible('travel', false);
+    expect(travel.every((m) => !m.visible)).toBe(true);
+    expect(extrude.every((m) => m.visible)).toBe(true);
+
+    h.renderer.setKindVisible('travel', true);
+    expect(travel.every((m) => m.visible)).toBe(true);
+  });
+
+  it('clipping set during an in-flight incremental build applies to later-built chunks', () => {
+    const h = makeHarness({ chunksPerTick: 1 });
+    const ir = makeIR(6, 4, { travelPerLayer: 2 }); // extrude + travel chunks
+    h.renderer.setIR(ir);
+    h.renderer.setKindVisible('travel', false); // before ANY tick ran
+    h.runTicks();
+    const travel = h.renderer.chunkMeshes.filter((m) => (m.userData.chunk as { kind: string }).kind === 'travel');
+    expect(travel.length).toBeGreaterThan(0);
+    expect(travel.every((m) => !m.visible)).toBe(true);
+  });
+
+  it('setIR resets clipping to full range', () => {
+    const h = makeHarness();
+    h.renderer.setIR(makeIR(4, 10));
+    h.runTicks();
+    h.renderer.setLayerRange(1, 1);
+    h.renderer.setScrubPosition(12);
+
+    h.renderer.setIR(makeIR(2, 6));
+    h.runTicks();
+    const mesh = h.renderer.chunkMeshes[0];
+    expect(mesh.visible).toBe(true);
+    expect(mesh.geometry.drawRange.start).toBe(0);
+    expect(mesh.geometry.drawRange.count).toBeGreaterThanOrEqual(12 * 2);
+  });
+
+  it('feature color mode is capability-gated: refused when featureRoles is unavailable', () => {
+    const h = makeHarness();
+    h.renderer.setIR(makeIR(1, 4, { featureRoles: 'unavailable' }));
+    h.runTicks();
+    expect(h.renderer.isColorModeAvailable('feature')).toBe(false);
+    expect(h.renderer.isColorModeAvailable('single')).toBe(true);
+    expect(h.renderer.isColorModeAvailable('tool')).toBe(true);
+
+    const ok = h.renderer.setColorMode({ mode: 'feature', palette: [[1, 0, 0]], fallback: [0.5, 0.5, 0.5] });
+    expect(ok).toBe(false);
+    const err = h.events.find((e) => e.type === 'error');
+    expect(err).toBeDefined();
+    expect((err as { code: string }).code).toBe('E_COLOR_MODE_UNAVAILABLE');
+  });
+
+  it('feature color mode is accepted when featureRoles is inferred', () => {
+    const h = makeHarness();
+    h.renderer.setIR(makeIR(1, 4, { featureRoles: 'inferred' }));
+    h.runTicks();
+    expect(h.renderer.isColorModeAvailable('feature')).toBe(true);
+    const ok = h.renderer.setColorMode({ mode: 'feature', palette: [[1, 0, 0]], fallback: [0.5, 0.5, 0.5] });
+    expect(ok).toBe(true);
+    expect(h.events.some((e) => e.type === 'error')).toBe(false);
+  });
+
+  it('range + scrub updates stay within the 16 ms interaction budget at 100k segments', () => {
+    const h = makeHarness();
+    const ir = makeIR(100, 1000); // 100k segments
+    h.renderer.setIR(ir);
+    h.runTicks();
+    expect(h.renderer.segmentCount).toBe(100_000);
+    expect(h.renderer.layerCount).toBe(100);
+
+    const t0 = performance.now();
+    h.renderer.setLayerRange(20, 80);
+    h.renderer.setScrubPosition(70_000);
+    const elapsed = performance.now() - t0;
+    expect(elapsed).toBeLessThan(16);
   });
 });
