@@ -10,6 +10,8 @@ Svelte** integrations that are thin adapters over one shared, framework-neutral 
 > ships at the end of the current release epic. Until then, consume via `npm pack` tarballs — see
 > *Consuming before the first release* below.
 
+![3DBenchy rendered as tubes with feature coloring in the showcase viewer](docs/media/viewer-benchy-tubes.png)
+
 ## What you get
 
 - **Off-thread parsing** — a Web Worker session (`GcodeParseSession`) with streaming input,
@@ -32,6 +34,11 @@ Svelte** integrations that are thin adapters over one shared, framework-neutral 
 - **Three equal framework adapters** — each ships a ready-to-use `<GcodePreview>` component *and*
   a lower-level surface, with the same capabilities, options, events, and TypeScript contracts,
   enforced by a shared behavioral suite that runs against all three in CI.
+
+| Honest live progress | Layer clipping & scrub |
+|---|---|
+| ![Live-progress overlay: the completed portion rendered in full color, the remaining path as a translucent ghost, and an orange marker at the byte-exact print position](docs/media/live-progress-overlay.png) | ![3DBenchy clipped to layer 73 of 174, exposing perimeters and infill with feature coloring](docs/media/layer-clip-benchy.png) |
+| Completed cut + translucent remaining-path ghost + byte-exact position marker (uncertainty band when the signal is approximate) | Draw-range layer clipping — no geometry rebuilds; segment-level scrub works the same way |
 
 ## Packages
 

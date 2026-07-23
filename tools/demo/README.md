@@ -7,6 +7,8 @@ color modes, decimation disclosure). Built on the consumer-smoke Vite harness pa
 (`tools/consumer-smoke/vite-app`) — the packages are consumed via `file:` installs exactly as an
 external consumer would.
 
+![The showcase rendering 3DBenchy as tubes with feature coloring](../../docs/media/viewer-benchy-tubes.png)
+
 ```sh
 cd tools/demo
 npm install
