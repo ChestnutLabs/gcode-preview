@@ -21,7 +21,8 @@ export default defineConfig({
       '@chestnutlabs/toolpath-core',
       '@chestnutlabs/gcode-renderer-three',
       '@chestnutlabs/gcode-dialects',
-      '@chestnutlabs/gcode-containers'
+      '@chestnutlabs/gcode-containers',
+      '@chestnutlabs/gcode-preview-vue'
     ]
   }
 });
