@@ -33,6 +33,17 @@ issue #70 (this DD), maintainer request 2026-07-22 (per-file bed geometry; `.gco
 > ratifies the accumulated evidence (§14). Implementation may begin with the contracts/registry phase;
 > the container phase additionally requires the §7.3 security-review sign-off.
 
+> **Benchmark ratification (2026-07-23, issue #78 — [E4 report](../../tools/benchmark/results/e4-dialect-container-benchmark-2026-07-23.md)):**
+> §7.2 container limits **ratified unchanged**. §8 measured: container open **63–100 ms** @ 250 MB
+> (budget 250), inflate **146–164 MB/s** (budget ≥5), unset-hook cost architectural-zero, active
+> adapter overhead within the machine's −2…+6% noise band (10% regression tripwire committed;
+> reference-machine confirmation recommended — same caveat class as the E3 fps run). **One measured
+> spec addition awaiting maintainer acceptance at the E4 gate:** container-extracted plate streams
+> default `partialMinBytes` to **8 MiB** (explicit consumer settings win) — at the direct-input
+> 25 MiB default, container TTFP measured 3,678 ms (over the 3 s budget); at 8 MiB it is **1,322 ms**
+> with zero total-time cost. Direct-input defaults unchanged. The compatibility matrix is published
+> as the per-phase evidence record; E4 exit additionally requires the §7.3 security-review sign-off.
+
 ## 1. Problem
 
 The parse core is a quirk-faithful, golden-gated port of the inherited generic engine: it produces

@@ -16,8 +16,23 @@ import {
   irTransferList,
   PROTOCOL_VERSION
 } from '../../packages/gcode-parser/dist/index.js';
+import {
+  createDialectRunner,
+  prusaSlicer,
+  orcaBambu,
+  cura,
+  klipper,
+  marlin,
+  repRap
+} from '../../packages/gcode-dialects/dist/index.js';
+import { openGcode3mf, sniffGcode3mf } from '../../packages/gcode-containers/dist/index.js';
 
-const handler = createWorkerHandler((msg, transfer) => parentPort.postMessage(msg, transfer));
+// Batteries-equivalent composition (mirrors packages/gcode-parser/src/worker.ts)
+// so benchmarks measure the real end-to-end pipeline incl. E4 adapters.
+const handler = createWorkerHandler((msg, transfer) => parentPort.postMessage(msg, transfer), {
+  dialects: createDialectRunner([prusaSlicer(), orcaBambu(), cura(), klipper(), marlin(), repRap()]),
+  containers: [{ id: 'gcode-3mf', sniff: sniffGcode3mf, open: (bytes) => openGcode3mf(bytes) }]
+});
 
 let held = null;
 

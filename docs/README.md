@@ -46,7 +46,7 @@ tracked in [`UPSTREAM_PROVENANCE.md`](UPSTREAM_PROVENANCE.md).
 | **E1** ToolpathIR & Package Contracts (#2) | **Closed/Accepted** | DD-001 + DD-002 **Accepted** |
 | **E2** Worker Parser & Large-File Pipeline (#3) | **Closed/Accepted** | DD-003 **Accepted**; all §8 benchmark targets met ([report](../tools/benchmark/results/e2-worker-benchmark-2026-07-22.md)) |
 | **E3** Three.js Renderer & Viewer MVP (#4) | **Closed/Accepted** (2026-07-22) | DD-004 **Accepted + benchmark-ratified** (#61, [report](../tools/benchmark/results/e3-renderer-benchmark-2026-07-22.md)); orbit-fps budgets pending a reference-machine `perfRun()` (accepted deviation) |
-| **E4** Dialect & Container Compatibility (#5) | **In progress** | [DD-005](design/DD-005-dialect-plugin-and-container-adapter-contracts.md) **Accepted with amendments** (#70, 2026-07-22); contracts phase underway; the container phase additionally requires the §7.3 security-review sign-off |
+| **E4** Dialect & Container Compatibility (#5) | **All phases done — awaiting maintainer acceptance + §7.3 sign-off** | [DD-005](design/DD-005-dialect-plugin-and-container-adapter-contracts.md) **Accepted + benchmark-ratified** (#78, [report](../tools/benchmark/results/e4-dialect-container-benchmark-2026-07-23.md)); phases: #73 contracts, #74 `.gcode.3mf` ([security review awaiting sign-off](design/SECURITY-REVIEW-DD-005-containers.md)), #75 Prusa/Orca, #76 Cura/firmware + stream tail, #77 objects/multi-tool, #78 [matrix published](compatibility/dialects-and-containers.md) + benchmarks |
 | E5–E8 | Open, gated | DD-006…DD-008 unwritten — no implementation before each gate |
 
 Shipped so far: `packages/toolpath-core` (SoA `ToolpathIR`, capability model), `packages/gcode-parser`

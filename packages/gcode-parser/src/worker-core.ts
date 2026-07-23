@@ -80,6 +80,14 @@ const DETECT_HEAD_BYTES = 64 * 1024;
 const DETECT_TAIL_BYTES = 16 * 1024;
 /** §4.5 stream replay: max recorded hook events before annotation degrades (visibly). */
 const STREAM_EVENT_CAP = 500_000;
+/**
+ * DD-005 §8 (ratified #78): container-extracted plate streams use a LOWER
+ * progressive-preview threshold than direct inputs — extraction adds fixed
+ * latency and a container already implies a substantial file. Measured: 8 MiB
+ * restores container TTFP to ~1.4 s @ a 100 MB plate (vs 3.7 s at 25 MiB) with
+ * zero total-time cost. An explicit consumer `partialPreview` setting wins.
+ */
+const CONTAINER_PARTIAL_MIN_BYTES = 8 * 1024 * 1024;
 
 /** Detection windows for sliceable inputs (DD-005 §4.5). Non-seekable streams: head/tail arrive in phase 4. */
 async function detectWindows(input: ParseInputWire): Promise<{ headText: string; tailText: string }> {
@@ -247,6 +255,11 @@ export function createWorkerHandler(
                 containerWarnings.push({ ...w, severity: 'warn', count: 1 });
               }
               input = opened.openPlate(plateIdx);
+              // §8: container path defaults to the lower preview threshold
+              // unless the consumer configured partialPreview explicitly.
+              if (partialPreview === undefined && hooks.onPartial !== undefined) {
+                hooks.partialMinBytes = CONTAINER_PARTIAL_MIN_BYTES;
+              }
             }
           }
         }

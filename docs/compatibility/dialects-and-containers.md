@@ -1,8 +1,11 @@
 # Dialect & Container Compatibility Matrix
 
-**Status:** Skeleton (DD-005 §14 phase 1, amendment 5) — populated by every E4 phase as evidence
-accumulates; published and ratified in the final E4 phase. Every row must cite a fixture in
-[`test-data/manifest.json`](../../test-data/manifest.json) and carry an evidence date.
+**Status:** **Published** (DD-005 §14 phase 6, issue #78, 2026-07-23) — the accumulated per-phase
+evidence record. Every populated row cites a fixture in
+[`test-data/manifest.json`](../../test-data/manifest.json) and carries an evidence date; current
+fixtures are Chestnut-constructed synthetic marker structures (real-world redistributable samples
+welcome per governance §11 and will upgrade rows in place). Benchmarks:
+[E4 report](../../tools/benchmark/results/e4-dialect-container-benchmark-2026-07-23.md).
 
 Support levels (honest degradation per DD-001): **full** (capability `known`) · **partial**
 (`inferred`/`approximated`, limitations listed) · **detected-only** (dialect identified, no
