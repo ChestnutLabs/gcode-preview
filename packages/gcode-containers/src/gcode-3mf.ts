@@ -140,7 +140,17 @@ export async function openGcode3mf(
   );
   plates.forEach((p, i) => (p.index = i));
   if (plates.length === 0) {
-    throw new ContainerError('E_CONTAINER_NO_PAYLOAD', 'no Metadata/plate_*.gcode entries found');
+    // Distinguish the common user mistake: a MODEL/PROJECT 3MF (meshes, no
+    // sliced G-code) vs a genuinely empty/unrecognized archive. Slicing is a
+    // slicer's job — tell the user what to export instead.
+    const isModelProject = dir.entries.some((e) => e.name === '3d/3dmodel.model');
+    throw new ContainerError(
+      'E_CONTAINER_NO_PAYLOAD',
+      isModelProject
+        ? 'this is a model/project 3MF (3D meshes, no sliced G-code). The viewer displays sliced output — ' +
+          'in Bambu Studio/OrcaSlicer, slice the plate and use "Export plate sliced file" (.gcode.3mf)'
+        : 'no Metadata/plate_*.gcode entries found'
+    );
   }
   // Amendment 3: a duplicate of a SELECTED PAYLOAD name is an error, not a warning.
   const payloadDup = warnings.find(

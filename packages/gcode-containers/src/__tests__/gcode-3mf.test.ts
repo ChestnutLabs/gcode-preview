@@ -96,6 +96,19 @@ describe('.gcode.3mf container (#74)', () => {
     expect((await drain(opened.openPlate(0))).startsWith('; generated fixture plate 1')).toBe(true);
   });
 
+  it('model/project 3MF (no sliced plates) → explanatory E_CONTAINER_NO_PAYLOAD', async () => {
+    let err: unknown;
+    try {
+      await openGcode3mf(load('model-project.3mf'));
+    } catch (e) {
+      err = e;
+    }
+    expect(err).toBeInstanceOf(ContainerError);
+    expect((err as ContainerError).code).toBe('E_CONTAINER_NO_PAYLOAD');
+    expect((err as ContainerError).message).toContain('model/project 3MF');
+    expect((err as ContainerError).message).toContain('Export plate sliced file');
+  });
+
   it('truncated archive → structured format error', async () => {
     await expectCode(() => openGcode3mf(load('adv-truncated.gcode.3mf')), 'E_CONTAINER_FORMAT');
   });
