@@ -18,6 +18,6 @@ boundary. Architecture-sensitive work is **blocked until its DD is Accepted** (g
 | [DD-003](DD-003-worker-parsing-streaming-transfer-and-resource-limits.md) | Worker Parsing, Streaming, Transfer, and Resource Limits | E2 | M2 | **Accepted** 2026-07-22 with amendments (#41) |
 | [DD-004](DD-004-threejs-rendering-geometry-layer-clipping-and-quality-modes.md) | Three.js Rendering, Geometry, Layer Clipping, and Quality Modes | E3 | M2 | **Accepted** 2026-07-22 (#53) |
 | [DD-005](DD-005-dialect-plugin-and-container-adapter-contracts.md) | Dialect Plugin and Container Adapter Contracts | E4 | M3 | **Accepted** 2026-07-22 with amendments (#70) |
-| DD-006 | Normalized Live Progress and Source-Position Mapping | E5 | M4 | Planned |
-| DD-007 | Vue Integration and AnyBridge Consumer Boundary | E6 | M4 | Planned |
-| DD-008 | Package Release, Compatibility, and Deprecation Policy | E7 | M5 | Planned |
+| [DD-006](DD-006-normalized-live-progress-and-source-position-mapping.md) | Normalized Live Progress and Source-Position Mapping | E5 | M4 | **Accepted** 2026-07-23 (#87) |
+| [DD-007](DD-007-vue-integration-and-anybridge-consumer-boundary.md) | Vue Integration and AnyBridge Consumer Boundary | E6 | M4 | **Accepted** 2026-07-23 with amendments (#101) |
+| [DD-008](DD-008-release-publication-versioning-and-support-policy.md) | Release, Publication Readiness, Versioning & Support Policy | E7 | M5 | **Proposed** 2026-07-23 (#125) |
