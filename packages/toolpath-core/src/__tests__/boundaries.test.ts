@@ -56,12 +56,16 @@ describe('package boundaries (DD-002 §5)', () => {
 
   it('exposes exactly the documented public surface', () => {
     expect(Object.keys(api).sort()).toEqual([
+      'DEFAULT_STALE_AFTER_MS',
       'FeatureRole',
       'IR_SCHEMA_VERSION',
+      'MAX_PROGRESS_NOTES',
       'MoveKind',
+      'PROGRESS_OBSERVATION_VERSION',
       'ToolpathIRBuilder',
       'buildSourceIndex',
       'computeSegmentBounds',
+      'createProgressMapper',
       'emptyBounds',
       'segmentAtByte'
     ]);
