@@ -1,0 +1,51 @@
+# DD-008 D3 (#130): the ONLY path that publishes @chestnutlabs/* — a GitHub Release
+# (tag vX.Y.Z) cut from `main`. Fresh install, every repository gate, then a
+# dependency-ordered `npm publish` ×9 with npm provenance. Trusted publishing (OIDC)
+# is the intended auth; a granular NPM_TOKEN secret is the recorded fallback
+# (DD-008 §4.3 — the @chestnutlabs scope is user-owned; org conversion deferred).
+# No workstation publishing, ever.
+name: Release / publish
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+  id-token: write # npm provenance / trusted publishing
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    if: startsWith(github.event.release.tag_name, 'v')
+    steps:
+      - uses: actions/checkout@v4
+      - name: Refuse to publish from anywhere but main
+        run: |
+          git fetch origin main --depth 1
+          if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
+            echo "release tag ${GITHUB_REF_NAME} is not on main — refusing to publish"
+            exit 1
+          fi
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.x'
+          cache: 'npm'
+          registry-url: 'https://registry.npmjs.org'
+      - run: npm ci
+      # Full repository gate — identical to the required CI check, before anything uploads.
+      - run: npm run build
+      - run: npm run test
+      - run: npm run test:packages
+      - run: npm run typeCheck
+      - run: npm run lint
+      - run: npm run license:check
+      - run: npm run docs:links
+      - run: npm run test:consumer-vue
+      - run: npm run pack:check
+      - run: npm run release:sync-check
+      - name: Publish ×9 with provenance (dependency order)
+        run: npm run release:publish
+        env:
+          RELEASE_CONFIRM: publish
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

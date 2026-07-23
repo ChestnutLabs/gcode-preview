@@ -2,7 +2,7 @@
   "name": "@chestnutlabs/gcode-dialects",
   "version": "0.0.0",
   "private": true,
-  "description": "Slicer/firmware dialect adapters for ToolpathIR annotation (DD-005). Adapters annotate metadata and optional channels \u2014 they can never alter geometry.",
+  "description": "Slicer/firmware dialect adapters for ToolpathIR annotation (DD-005). Adapters annotate metadata and optional channels — they can never alter geometry.",
   "keywords": [
     "gcode",
     "3d-printing",
@@ -46,6 +46,6 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@chestnutlabs/toolpath-core": "*"
+    "@chestnutlabs/toolpath-core": "0.0.0"
   }
 }

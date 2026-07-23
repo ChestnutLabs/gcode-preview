@@ -50,7 +50,7 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@chestnutlabs/toolpath-core": "*"
+    "@chestnutlabs/toolpath-core": "0.0.0"
   },
   "devDependencies": {
     "@types/three": "0.178.0"
