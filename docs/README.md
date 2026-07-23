@@ -38,10 +38,19 @@ See also [`../PROJECT_SETUP.md`](../PROJECT_SETUP.md) for the local environment 
 Provenance of inherited vs. Chestnut code, the exact founding baseline, and the branch mapping are
 tracked in [`UPSTREAM_PROVENANCE.md`](UPSTREAM_PROVENANCE.md).
 
-## Current state (E0 — Fork Foundation & Upstream Audit)
+## Current state (updated 2026-07-22 — E3 in progress)
 
-- Fork created; `main`/`dev` established from the founding baseline; upstream history preserved.
-- Inherited build/test/demo measured (recorded in [`research/`](research/) as **RR-001**).
-- Next gate: **RR-001 — Upstream Baseline and Architecture Audit** must be accepted before E1 begins.
-- First DDs after RR-001: **DD-001 (ToolpathIR & Capability Model)**, **DD-002 (Package Boundaries &
-  Public API Versioning)**.
+| Epic | Status | Gate |
+|---|---|---|
+| **E0** Fork Foundation & Upstream Audit (#1) | **Closed/Accepted** | RR-001 **Accepted** (baseline `develop` @ `15375e56`) |
+| **E1** ToolpathIR & Package Contracts (#2) | **Closed/Accepted** | DD-001 + DD-002 **Accepted** |
+| **E2** Worker Parser & Large-File Pipeline (#3) | **Closed/Accepted** | DD-003 **Accepted**; all §8 benchmark targets met ([report](../tools/benchmark/results/e2-worker-benchmark-2026-07-22.md)) |
+| **E3** Three.js Renderer & Viewer MVP (#4) | **In progress** | DD-004 **Accepted**; phases 1–2 done (#56, #57), next #58 demo page, then #59 tubes, #60 progressive preview, #61 benchmarks |
+| E4–E8 | Open, gated | DD-005…DD-008 unwritten — no implementation before each gate |
+
+Shipped so far: `packages/toolpath-core` (SoA `ToolpathIR`, capability model), `packages/gcode-parser`
+(byte-exact port of the inherited engine, worker protocol v1, streaming, limits, adversarial corpus),
+`packages/gcode-renderer-three` (geometry builders + scene/lifecycle), the IR adapter (`src/ir-adapter.ts`),
+golden/native fixtures + manifest with CI validation, boundary lint, license CI gate, and Vite/Electron
+consumer smoke harnesses. CI (`build`) is a required check on `main`/`dev`; suite ≈275 tests.
+`main` remains at the founding baseline — the first release-to-`main` flow belongs to E7/DD-008.
