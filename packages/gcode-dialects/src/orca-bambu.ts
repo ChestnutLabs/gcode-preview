@@ -48,6 +48,8 @@ interface OrcaState {
   bedSrcByte?: number;
   heightMm?: number;
   printerModel?: string;
+  filamentTypes?: string[];
+  filamentColours?: string[];
   thumbs: ThumbnailCollector;
 }
 
@@ -115,6 +117,10 @@ export function orcaBambu(): DialectAdapter {
         if (Number.isFinite(h)) s.heightMm = h;
       } else if (kv.key === 'printer_model') {
         s.printerModel = kv.value;
+      } else if (kv.key === 'filament_type') {
+        s.filamentTypes = kv.value.split(';').map((v) => v.trim());
+      } else if (kv.key === 'filament_colour') {
+        s.filamentColours = kv.value.split(';').map((v) => v.trim());
       }
     },
     finalize(ir: ToolpathIR, sink) {
@@ -144,6 +150,12 @@ export function orcaBambu(): DialectAdapter {
         }
       }
       if (s.printerModel !== undefined) sink.setRaw('printer_model', s.printerModel);
+      // Multi-tool/AMS metadata (phase 5): filament slots enrich ir.tools.
+      const slots = Math.max(s.filamentTypes?.length ?? 0, s.filamentColours?.length ?? 0);
+      for (let i = 0; i < Math.min(slots, 64); i++) {
+        sink.setFilament({ slot: i, type: s.filamentTypes?.[i], color: s.filamentColours?.[i] });
+        sink.setToolInfo(i, { material: s.filamentTypes?.[i], colorHex: s.filamentColours?.[i] });
+      }
     }
   };
 }

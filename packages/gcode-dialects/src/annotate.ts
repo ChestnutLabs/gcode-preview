@@ -49,6 +49,33 @@ export function applyMarkerRanges(
   return applied;
 }
 
+export interface SegMarker {
+  segIndex: number;
+  value: number; // channel value; 0 = range terminator
+}
+
+/**
+ * Apply SEGMENT-indexed markers (CommandEvent.segIndex — exact, no byte
+ * resolution needed) as contiguous ranges; value 0 terminates (DD-005 phase 5).
+ */
+export function applySegmentMarkers(
+  markers: SegMarker[],
+  segmentCount: number,
+  write: (segStart: number, segEnd: number, value: number) => void
+): number {
+  let applied = 0;
+  for (let i = 0; i < markers.length; i++) {
+    if (markers[i].value === 0) continue;
+    const start = markers[i].segIndex;
+    const end = (i + 1 < markers.length ? markers[i + 1].segIndex : segmentCount) - 1;
+    if (end >= start && start < segmentCount) {
+      write(start, Math.min(end, segmentCount - 1), markers[i].value);
+      applied++;
+    }
+  }
+  return applied;
+}
+
 /** Parse `key = value` / `key: value` slicer comment lines (Prusa tail, Orca header/config blocks). */
 export function parseKeyValue(comment: string): { key: string; value: string } | null {
   const m = /^\s*([A-Za-z_][A-Za-z0-9_]*)\s*[:=]\s*(.*\S)\s*$/.exec(comment);

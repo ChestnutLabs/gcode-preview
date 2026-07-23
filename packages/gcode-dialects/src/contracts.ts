@@ -44,6 +44,8 @@ export interface AnnotationSink {
   defineObject(objectValue: number, name: string): void;
   setMachine(machine: MachineGeometry): void;
   setFilament(info: FilamentInfo): void;
+  /** Enrich a tool's identity (material, '#RRGGBB' color) — merged into ir.tools (DD-005 phase 5). */
+  setToolInfo(tool: number, info: { material?: string; colorHex?: string }): void;
   addThumbnail(thumb: ThumbnailData): void;
   setRaw(key: string, value: string): void;
   upgradeCapability(key: string, confidence: Confidence): void;

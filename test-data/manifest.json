@@ -511,6 +511,50 @@
       "expectedCapabilities": {},
       "sizeTier": "tiny",
       "limitations": "Synthetic marker structure, not copied slicer output; real-world samples welcome per governance §11."
+    },
+    {
+      "id": "dialect-marlin-m486",
+      "path": "test-data/fixtures/dialects/marlin-m486-sample.gcode",
+      "sha256": "92261e9a53b1969c9d2c12bc6f301bb1f5676afce3cbf75725c80ad4d84ba148",
+      "bytes": 335,
+      "origin": "Chestnut-constructed dialect fixture (tools/fixtures/make-dialect-fixtures.mjs, deterministic)",
+      "contributor": "chestnutlabs",
+      "redistribution": "chestnut-original-mit",
+      "slicer": "synthetic (Cura/Marlin M486 objects)",
+      "targetFamily": "FDM multi-object/multi-tool",
+      "features": [
+        "dialect",
+        "objects",
+        "command-hook"
+      ],
+      "expectedCapabilities": {
+        "objects": "known",
+        "featureRoles": "known"
+      },
+      "sizeTier": "tiny",
+      "limitations": "Synthetic marker structure, not copied slicer output; real-world samples welcome per governance §11."
+    },
+    {
+      "id": "dialect-multitool-ams",
+      "path": "test-data/fixtures/dialects/multitool-ams-sample.gcode",
+      "sha256": "025d7e5de2cbe609eb56e169efbebd45910eba8cb051bdef4e2c2d999f48067a",
+      "bytes": 504,
+      "origin": "Chestnut-constructed dialect fixture (tools/fixtures/make-dialect-fixtures.mjs, deterministic)",
+      "contributor": "chestnutlabs",
+      "redistribution": "chestnut-original-mit",
+      "slicer": "synthetic (Orca multi-tool + AMS filaments)",
+      "targetFamily": "FDM multi-object/multi-tool",
+      "features": [
+        "dialect",
+        "multi-tool",
+        "filaments"
+      ],
+      "expectedCapabilities": {
+        "featureRoles": "known",
+        "tools": "known"
+      },
+      "sizeTier": "tiny",
+      "limitations": "Synthetic marker structure, not copied slicer output; real-world samples welcome per governance §11."
     }
   ]
 }
