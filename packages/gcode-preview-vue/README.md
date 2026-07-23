@@ -6,6 +6,14 @@ live progress), and never block your UI. This package is glue only — the engin
 `@chestnutlabs/gcode-parser`, `@chestnutlabs/gcode-renderer-three`, and
 `@chestnutlabs/toolpath-core` (design: DD-007).
 
+```sh
+npm install @chestnutlabs/gcode-preview-vue three
+```
+
+(`three` is a peerDependency of the renderer, supported range `^0.178.0` — npm ≥ 7 installs it
+automatically; pnpm/yarn users add it explicitly. See the
+[support policy](../../docs/reference/support-policy.md).)
+
 Two adoption levels, one implementation (the component is a shell over the composable):
 
 ## Ready-to-use component

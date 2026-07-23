@@ -25,6 +25,7 @@
     "package.json"
   ],
   "gcode-dialects": [
+    "README.md",
     "dist/annotate.d.ts",
     "dist/annotate.d.ts.map",
     "dist/annotate.js",
@@ -55,6 +56,7 @@
     "package.json"
   ],
   "gcode-containers": [
+    "README.md",
     "dist/gcode-3mf.d.ts",
     "dist/gcode-3mf.d.ts.map",
     "dist/gcode-3mf.js",
@@ -67,6 +69,7 @@
     "package.json"
   ],
   "gcode-parser": [
+    "README.md",
     "dist/growable.d.ts",
     "dist/growable.d.ts.map",
     "dist/growable.js",
@@ -97,6 +100,7 @@
     "package.json"
   ],
   "gcode-renderer-three": [
+    "README.md",
     "dist/build-volume.d.ts",
     "dist/build-volume.d.ts.map",
     "dist/build-volume.js",
@@ -121,6 +125,7 @@
     "package.json"
   ],
   "gcode-preview-core": [
+    "README.md",
     "dist/controller.d.ts",
     "dist/controller.d.ts.map",
     "dist/controller.js",
