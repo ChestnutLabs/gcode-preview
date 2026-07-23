@@ -5,11 +5,7 @@ export default defineConfig({
   resolve: {
     alias: {
       // Resolve sibling workspaces from SOURCE (npm runs lifecycle scripts
-      // alphabetically, not in dependency order). Subpath keys before package keys.
-      '@chestnutlabs/gcode-preview-core/testing': fileURLToPath(
-        new URL('../gcode-preview-core/src/testing.ts', import.meta.url)
-      ),
-      '@chestnutlabs/gcode-preview-core': fileURLToPath(new URL('../gcode-preview-core/src/index.ts', import.meta.url)),
+      // alphabetically, not in dependency order).
       '@chestnutlabs/toolpath-core': fileURLToPath(new URL('../toolpath-core/src/index.ts', import.meta.url)),
       '@chestnutlabs/gcode-parser': fileURLToPath(new URL('../gcode-parser/src/index.ts', import.meta.url)),
       '@chestnutlabs/gcode-renderer-three': fileURLToPath(
