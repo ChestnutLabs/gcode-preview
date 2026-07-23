@@ -7,3 +7,4 @@
  * here, and no VueKit/Pinia/router/AnyBridge code may ever enter (DD-002 §4).
  */
 export * from './use-gcode-preview.js';
+export { GcodePreview, type GcodePreviewSource } from './gcode-preview-component.js';
