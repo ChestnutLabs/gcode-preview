@@ -45,6 +45,9 @@ jobs:
       # DD-007 §4.5 consumer contract fixture: pack tarballs, install into the
       # separate consumer app, run its contract tests (issue #107).
       - run: npm run test:consumer-vue
+      # DD-008 §8/§9 packaged-artifact gate: pack-content snapshots ×9 +
+      # publint + arethetypeswrong (issue #128).
+      - run: npm run pack:check
 
   node-24:
 
