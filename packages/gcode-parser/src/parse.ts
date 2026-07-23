@@ -1,5 +1,5 @@
 /**
- * Pure G-code parse core (DD-003 §14 phase 1, issue #44).
+ * Pure G-code parse core (DD-003 §14 phase 1, issue #44; async driver added in phase 2, #45).
  *
  * Ports the inherited xyz-tools interpreter semantics — motion handling (G0/G1),
  * arc flattening (G2/G3 incl. R-mode and full circles), units (G20/G21), homing
@@ -15,6 +15,13 @@
  * fidelity (e.g. truthy `x || state.x` in arcs, tool captured at path start) is
  * required by the golden-equivalence gate; do not "fix" behavior here without a
  * reviewed golden regeneration.
+ *
+ * Two drivers share one engine:
+ * - `parseGcodeToIR` — synchronous (tests, Node tooling).
+ * - `parseGcodeToIRAsync` — the DD-003 §5.2 cooperative driver: processes at most
+ *   `yieldIntervalMs` of CPU work between explicit MessageChannel macrotask yields
+ *   so a queued worker `cancel` message can actually be dispatched; reports
+ *   progress and honors a cancellation hook.
  *
  * Byte offsets assume single-byte (ASCII/UTF-8) G-code, which holds for slicer
  * output; multi-byte comment bytes would skew offsets and are a documented
@@ -84,20 +91,31 @@ export interface ParseResult {
   stats: ParseStats;
 }
 
+export interface AsyncParseHooks {
+  /** Called after each cooperative yield with bytes processed so far. */
+  onProgress?: (bytesProcessed: number, totalBytes: number, segments: number) => void;
+  /** Checked after each yield; returning true stops the parse with a partial result. */
+  shouldCancel?: () => boolean;
+  /** Max CPU ms between yields (DD-003 §5.2 default 50). */
+  yieldIntervalMs?: number;
+}
+
+export interface AsyncParseResult extends ParseResult {
+  cancelled: boolean;
+}
+
 const LAYER_TOLERANCE = 0.05;
 const UNRESOLVED_LAYER = 0xffffffff;
 
-/** Lexed command; mirrors the inherited `Parser.parseCommand` output shape. */
 interface Cmd {
   gcode: string;
   params: Record<string, number>;
-  srcByte: number;
 }
 
 const SPLIT_LETTERS = /([a-zA-Z])/g;
 
 /** Port of the inherited lexer: trim, comment split on ';', letter/value pairs. */
-function lexLine(line: string, srcByte: number): Cmd {
+function lexLine(line: string): Cmd {
   const input = line.trim();
   const cmd = input.split(';')[0];
   const parts = cmd
@@ -116,7 +134,7 @@ function lexLine(line: string, srcByte: number): Cmd {
       params[key] = parseFloat(rest[idx]);
     }
   }
-  return { gcode, params, srcByte };
+  return { gcode, params };
 }
 
 interface PathState {
@@ -138,8 +156,16 @@ interface LayerRec {
   segEnd: number;
 }
 
-/** Parse a whole G-code text into a ToolpathIR. Pure and synchronous. */
-export function parseGcodeToIR(input: string | Uint8Array, opts: ParseOptions = {}): ParseResult {
+interface Engine {
+  text: string;
+  limits: ParseLimits;
+  processLine(rawLine: string, offset: number): void;
+  stopped(): boolean;
+  markInputTooBig(): void;
+  finish(cancelledAtByte?: number): ParseResult;
+}
+
+function createEngine(input: string | Uint8Array, opts: ParseOptions): Engine {
   const limits: ParseLimits = { ...DEFAULT_LIMITS, ...opts.limits };
   const tolerance = opts.minLayerThreshold ?? LAYER_TOLERANCE;
   const text = typeof input === 'string' ? input : new TextDecoder().decode(input);
@@ -400,149 +426,230 @@ export function parseGcodeToIR(input: string | Uint8Array, opts: ParseOptions = 
     return emitSegment(sx, sy, sz, eachE, kind);
   };
 
-  // ---- main loop ----
-  if (byteLength > limits.maxInputBytes) {
-    stopReason = {
-      code: 'E_LIMIT_INPUT_BYTES',
-      message: `input of ${byteLength} B exceeds maxInputBytes=${limits.maxInputBytes} B`,
-      srcByte: 0
-    };
-    truncatedAtByte = 0;
-  } else {
-    let offset = 0;
-    const len = text.length;
-    while (offset < len && stopReason === undefined) {
-      let nl = text.indexOf('\n', offset);
-      if (nl === -1) nl = len;
-      const rawLine = text.slice(offset, nl);
-      stats.lines++;
-      currentSrcByte = offset;
+  const processLine = (rawLine: string, offset: number): void => {
+    stats.lines++;
+    currentSrcByte = offset;
 
-      if (rawLine.length > limits.maxLineLength) {
-        warn('line-too-long', `line exceeds maxLineLength=${limits.maxLineLength}; skipped`, offset);
-      } else {
-        const cmd = lexLine(rawLine, offset);
-        if (cmd.gcode !== '') {
-          stats.commands++;
-          let ok = true;
-          switch (cmd.gcode) {
-            case 'g0':
-            case 'g1':
-              ok = g0(cmd.params);
-              break;
-            case 'g2':
-              ok = g2(cmd.params, true);
-              break;
-            case 'g3':
-              ok = g2(cmd.params, false);
-              break;
-            case 'g20':
-              units = 'in';
-              unitsSeen = true;
-              break;
-            case 'g21':
-              units = 'mm';
-              unitsSeen = true;
-              break;
-            case 'g28':
-              sx = 0;
-              sy = 0;
-              sz = 0;
-              break;
-            case 't0':
-            case 't1':
-            case 't2':
-            case 't3':
-            case 't4':
-            case 't5':
-            case 't6':
-            case 't7':
-              tool = Number(cmd.gcode.slice(1));
-              break;
-            default:
-              warn('unsupported-command', `unsupported command '${cmd.gcode}' preserved as metadata`, offset);
-          }
-          if (!ok) {
-            truncatedAtByte = offset;
-          }
-        }
-      }
-      offset = nl + 1;
+    if (rawLine.length > limits.maxLineLength) {
+      warn('line-too-long', `line exceeds maxLineLength=${limits.maxLineLength}; skipped`, offset);
+      return;
     }
+    const cmd = lexLine(rawLine);
+    if (cmd.gcode === '') return;
+    stats.commands++;
+    let ok = true;
+    switch (cmd.gcode) {
+      case 'g0':
+      case 'g1':
+        ok = g0(cmd.params);
+        break;
+      case 'g2':
+        ok = g2(cmd.params, true);
+        break;
+      case 'g3':
+        ok = g2(cmd.params, false);
+        break;
+      case 'g20':
+        units = 'in';
+        unitsSeen = true;
+        break;
+      case 'g21':
+        units = 'mm';
+        unitsSeen = true;
+        break;
+      case 'g28':
+        sx = 0;
+        sy = 0;
+        sz = 0;
+        break;
+      case 't0':
+      case 't1':
+      case 't2':
+      case 't3':
+      case 't4':
+      case 't5':
+      case 't6':
+      case 't7':
+        tool = Number(cmd.gcode.slice(1));
+        break;
+      default:
+        warn('unsupported-command', `unsupported command '${cmd.gcode}' preserved as metadata`, offset);
+    }
+    if (!ok) {
+      truncatedAtByte = offset;
+    }
+  };
+
+  const finish = (cancelledAtByte?: number): ParseResult => {
     if (stopReason !== undefined && truncatedAtByte === undefined) {
       truncatedAtByte = currentSrcByte;
     }
-  }
+    if (cancelledAtByte !== undefined && stopReason === undefined && truncatedAtByte === undefined) {
+      truncatedAtByte = cancelledAtByte;
+    }
 
-  finishPath();
-  if (layersCleared) {
-    writer.clearLayers();
-    carryLayer = 0;
-  }
+    finishPath();
+    if (layersCleared) {
+      writer.clearLayers();
+      carryLayer = 0;
+    }
 
-  const segments = writer.finalize();
-  stats.segments = segments.count;
+    const segments = writer.finalize();
+    stats.segments = segments.count;
 
-  const origin = { x: ox, y: oy, z: oz };
-  const { bounds, boundsWithTravel } = computeSegmentBounds(segments, origin);
-  const sourceIndex = buildSourceIndex(segments.srcByte, segments.count);
+    const origin = { x: ox, y: oy, z: oz };
+    const { bounds, boundsWithTravel } = computeSegmentBounds(segments, origin);
+    const sourceIndex = buildSourceIndex(segments.srcByte, segments.count);
 
-  // Layer table for the IR (absolute z; seg ranges accumulated above).
-  const irLayers: ToolpathLayer[] =
-    layersCleared || layers.length === 0
-      ? segments.count > 0
-        ? [{ z: oz + segments.z1[0], segStart: 0, segEnd: segments.count - 1 }]
-        : []
-      : layers.map((l) => ({ z: l.z, segStart: l.segStart, segEnd: l.segEnd }));
+    // Layer table for the IR (absolute z; seg ranges accumulated above).
+    const irLayers: ToolpathLayer[] =
+      layersCleared || layers.length === 0
+        ? segments.count > 0
+          ? [{ z: oz + segments.z1[0], segStart: 0, segEnd: segments.count - 1 }]
+          : []
+        : layers.map((l) => ({ z: l.z, segStart: l.segStart, segEnd: l.segEnd }));
 
-  const layersCapability: Confidence =
-    layersCleared || layers.length === 0 ? 'unavailable' : unindexedPaths > 0 ? 'inferred' : 'known';
+    const layersCapability: Confidence =
+      layersCleared || layers.length === 0 ? 'unavailable' : unindexedPaths > 0 ? 'inferred' : 'known';
 
-  const capabilities: Record<string, Confidence> = {
-    geometry: 'known',
-    moveKind: 'known',
-    tools: 'known',
-    layers: layersCapability,
-    extrusionDelta: 'known',
-    feedrate: 'known',
-    sourcePositions: 'known',
-    featureRoles: 'unavailable',
-    objects: 'unavailable'
+    const capabilities: Record<string, Confidence> = {
+      geometry: 'known',
+      moveKind: 'known',
+      tools: 'known',
+      layers: layersCapability,
+      extrusionDelta: 'known',
+      feedrate: 'known',
+      sourcePositions: 'known',
+      featureRoles: 'unavailable',
+      objects: 'unavailable'
+    };
+
+    if (layersCapability === 'unavailable') {
+      warn('layers-unavailable', 'No planar layer index; all segments assigned to layer 0.');
+    } else if (unindexedPaths > 0) {
+      warn('layers-partially-inferred', `${unindexedPaths} path(s) not in the layer index; layer carried forward.`);
+    }
+
+    const tools: ToolInfo[] = [...toolsSeen].sort((a, b) => a - b).map((id) => ({ id }));
+
+    const complete = stopReason === undefined && cancelledAtByte === undefined;
+    const ir: ToolpathIR = {
+      header: {
+        irSchemaVersion: IR_SCHEMA_VERSION,
+        parserVersion: opts.parserVersion ?? '@chestnutlabs/gcode-parser@0.0.0',
+        source: { id: opts.sourceId, byteLength },
+        units,
+        unitsSource: unitsSeen ? 'known' : 'inferred',
+        originOffset: origin,
+        complete,
+        truncatedAtByte: complete ? undefined : truncatedAtByte,
+        dialects: [],
+        warnings: [...warnings.values()],
+        capabilities
+      },
+      segments,
+      layers: irLayers,
+      tools,
+      objects: [],
+      bounds,
+      boundsWithTravel,
+      sourceIndex
+    };
+
+    if (stopReason !== undefined) {
+      stats.stopReason = stopReason;
+    }
+    return { ir, stats };
   };
 
-  if (layersCapability === 'unavailable') {
-    warn('layers-unavailable', 'No planar layer index; all segments assigned to layer 0.');
-  } else if (unindexedPaths > 0) {
-    warn('layers-partially-inferred', `${unindexedPaths} path(s) not in the layer index; layer carried forward.`);
-  }
-
-  const tools: ToolInfo[] = [...toolsSeen].sort((a, b) => a - b).map((id) => ({ id }));
-
-  const ir: ToolpathIR = {
-    header: {
-      irSchemaVersion: IR_SCHEMA_VERSION,
-      parserVersion: opts.parserVersion ?? '@chestnutlabs/gcode-parser@0.0.0',
-      source: { id: opts.sourceId, byteLength },
-      units,
-      unitsSource: unitsSeen ? 'known' : 'inferred',
-      originOffset: origin,
-      complete: stopReason === undefined,
-      truncatedAtByte,
-      dialects: [],
-      warnings: [...warnings.values()],
-      capabilities
+  return {
+    text,
+    limits,
+    processLine,
+    stopped: () => stopReason !== undefined,
+    markInputTooBig: () => {
+      stopReason = {
+        code: 'E_LIMIT_INPUT_BYTES',
+        message: `input of ${byteLength} B exceeds maxInputBytes=${limits.maxInputBytes} B`,
+        srcByte: 0
+      };
+      truncatedAtByte = 0;
     },
-    segments,
-    layers: irLayers,
-    tools,
-    objects: [],
-    bounds,
-    boundsWithTravel,
-    sourceIndex
+    finish
   };
+}
 
-  if (stopReason !== undefined) {
-    stats.stopReason = stopReason;
+/** Parse a whole G-code text into a ToolpathIR. Pure and synchronous. */
+export function parseGcodeToIR(input: string | Uint8Array, opts: ParseOptions = {}): ParseResult {
+  const engine = createEngine(input, opts);
+  const byteLength = typeof input === 'string' ? input.length : input.byteLength;
+  if (byteLength > engine.limits.maxInputBytes) {
+    engine.markInputTooBig();
+    return engine.finish();
   }
-  return { ir, stats };
+  const text = engine.text;
+  const len = text.length;
+  let offset = 0;
+  while (offset < len && !engine.stopped()) {
+    let nl = text.indexOf('\n', offset);
+    if (nl === -1) nl = len;
+    engine.processLine(text.slice(offset, nl), offset);
+    offset = nl + 1;
+  }
+  return engine.finish();
+}
+
+/** Explicit macrotask yield via MessageChannel (DD-003 §5.2 — setTimeout is clamped). */
+function yieldMacrotask(): Promise<void> {
+  return new Promise((resolve) => {
+    const ch = new MessageChannel();
+    ch.port1.onmessage = () => {
+      ch.port1.close();
+      ch.port2.close();
+      resolve();
+    };
+    ch.port2.postMessage(null);
+  });
+}
+
+/**
+ * Cooperative async driver (DD-003 §5.2): identical parsing semantics, but the
+ * loop processes at most `yieldIntervalMs` (default 50) of CPU work between
+ * explicit macrotask yields so queued `cancel` messages are dispatched. Progress
+ * and cancellation are surfaced through hooks.
+ */
+export async function parseGcodeToIRAsync(
+  input: string | Uint8Array,
+  opts: ParseOptions = {},
+  hooks: AsyncParseHooks = {}
+): Promise<AsyncParseResult> {
+  const engine = createEngine(input, opts);
+  const byteLength = typeof input === 'string' ? input.length : input.byteLength;
+  if (byteLength > engine.limits.maxInputBytes) {
+    engine.markInputTooBig();
+    return { ...engine.finish(), cancelled: false };
+  }
+  const yieldEvery = hooks.yieldIntervalMs ?? 50;
+  const text = engine.text;
+  const len = text.length;
+  let offset = 0;
+  let sliceStart = Date.now();
+
+  while (offset < len && !engine.stopped()) {
+    let nl = text.indexOf('\n', offset);
+    if (nl === -1) nl = len;
+    engine.processLine(text.slice(offset, nl), offset);
+    offset = nl + 1;
+
+    if (Date.now() - sliceStart >= yieldEvery) {
+      hooks.onProgress?.(Math.min(offset, len), byteLength, 0);
+      await yieldMacrotask();
+      if (hooks.shouldCancel?.()) {
+        return { ...engine.finish(Math.min(offset, len)), cancelled: true };
+      }
+      sliceStart = Date.now();
+    }
+  }
+  hooks.onProgress?.(len, byteLength, 0);
+  return { ...engine.finish(), cancelled: false };
 }
