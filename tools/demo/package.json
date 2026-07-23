@@ -3,12 +3,13 @@
   "private": true,
   "version": "0.0.0",
   "type": "module",
-  "description": "DD-004 phase 3 demo (issue #58): full worker-parse → renderer pipeline — GcodeParseSession → ToolpathRenderer — over the MIT demo corpus.",
+  "description": "DD-004 phase 3 demo (issue #58): full worker-parse \u2192 renderer pipeline \u2014 GcodeParseSession \u2192 ToolpathRenderer \u2014 over the MIT demo corpus.",
   "scripts": {
     "build": "vite build",
     "dev": "vite"
   },
   "dependencies": {
+    "@chestnutlabs/gcode-dialects": "file:../../packages/gcode-dialects",
     "@chestnutlabs/gcode-parser": "file:../../packages/gcode-parser",
     "@chestnutlabs/gcode-renderer-three": "file:../../packages/gcode-renderer-three",
     "@chestnutlabs/toolpath-core": "file:../../packages/toolpath-core",

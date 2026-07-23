@@ -13,7 +13,7 @@ export { computeDrawState } from './ranges.js';
 export type { ChunkDrawState } from './ranges.js';
 export { buildTubeChunk, TUBES_AUTO_MAX_SEGMENTS } from './tubes.js';
 export type { TubeOptions, TubeChunkGeometry } from './tubes.js';
-export { ToolpathRenderer, chooseQuality } from './scene.js';
+export { ToolpathRenderer, chooseQuality, machineToVolume } from './scene.js';
 export type { ToolpathRendererOptions, RendererEvent, GLRendererLike, QualityMode } from './scene.js';
 export { createBuildVolume } from './build-volume.js';
 export type { BuildVolumeDef } from './build-volume.js';

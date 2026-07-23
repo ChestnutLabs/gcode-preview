@@ -80,6 +80,34 @@ module.exports = {
       }
     },
     {
+      files: ['packages/gcode-dialects/**/*.ts', 'packages/gcode-dialects/**/*.mts'],
+      rules: {
+        'no-restricted-imports': [
+          'error',
+          {
+            patterns: [
+              { group: ['three', 'three/*'], message: 'gcode-dialects must not depend on three (DD-002 §4).' },
+              { group: ['vue', 'vue/*'], message: 'gcode-dialects must not depend on Vue (DD-002 §4).' },
+              { group: ['lil-gui'], message: 'gcode-dialects must not depend on UI libraries (DD-002 §4).' },
+              {
+                group: ['@chestnutlabs/gcode-parser*', '@chestnutlabs/gcode-renderer*', '@chestnutlabs/gcode-preview*'],
+                message:
+                  'gcode-dialects depends only on toolpath-core (DD-005 §4.5) — the parser imports IT, never the reverse.'
+              },
+              {
+                group: ['*anybridge*', '*AnyBridge*'],
+                message: 'No reusable package may import AnyBridge (DD-002 §4 core rule).'
+              },
+              {
+                group: ['../../../*'],
+                message: 'gcode-dialects must not reach outside its package (DD-002 §4).'
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
       files: ['packages/gcode-renderer-three/**/*.ts', 'packages/gcode-renderer-three/**/*.mts'],
       rules: {
         'no-restricted-imports': [

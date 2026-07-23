@@ -35,7 +35,7 @@ import {
   WebGLRenderer
 } from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
-import type { ToolpathIR } from '@chestnutlabs/toolpath-core';
+import type { MachineGeometry, ToolpathIR } from '@chestnutlabs/toolpath-core';
 import { autoDecimation, buildChunks, type ChunkBuildResult, type GeometryChunk } from './chunks.js';
 import { buildChunkColors, type ColorMode } from './colors.js';
 import { computeDrawState } from './ranges.js';
@@ -95,6 +95,34 @@ export interface ToolpathRendererOptions {
 }
 
 const DEFAULT_COLOR: ColorMode = { mode: 'single', color: [0.9, 0.4, 0.7] };
+
+/** Discovered machine geometry → renderable volume (bounding volume for circular/polygon beds, v1). */
+export function machineToVolume(m: MachineGeometry): BuildVolumeDef {
+  const bed = m.bed;
+  if (bed.kind === 'rect') {
+    return { x: bed.max.x - bed.min.x, y: bed.max.y - bed.min.y, z: m.heightMm ?? 250, min: { ...bed.min } };
+  }
+  if (bed.kind === 'circular') {
+    const r = bed.diameter / 2;
+    return {
+      x: bed.diameter,
+      y: bed.diameter,
+      z: m.heightMm ?? 250,
+      min: { x: bed.center.x - r, y: bed.center.y - r }
+    };
+  }
+  let minX = Infinity;
+  let minY = Infinity;
+  let maxX = -Infinity;
+  let maxY = -Infinity;
+  for (const p of bed.points) {
+    minX = Math.min(minX, p.x);
+    minY = Math.min(minY, p.y);
+    maxX = Math.max(maxX, p.x);
+    maxY = Math.max(maxY, p.y);
+  }
+  return { x: maxX - minX, y: maxY - minY, z: m.heightMm ?? 250, min: { x: minX, y: minY } };
+}
 
 /** §8-derived tick budget: half the 16 ms stall budget, leaving frame headroom. */
 const TICK_BUDGET_MS = 8;
@@ -584,6 +612,43 @@ export class ToolpathRenderer {
   render(): void {
     if (this.disposed || this.contextLost) return;
     this.gl.render(this.scene, this.camera);
+  }
+
+  /**
+   * Apply a build volume after construction (DD-005 §4.2 amendment: parse →
+   * discover machine geometry → apply, no renderer reconstruction). Accepts a
+   * plain BuildVolumeDef or a discovered MachineGeometry (circular/polygon beds
+   * render as their bounding volume in v1). Emits `machine-geometry-mismatch`
+   * when a consumer-configured volume disagrees with a discovered one by >1 mm.
+   */
+  setBuildVolume(def: BuildVolumeDef | MachineGeometry): void {
+    if (this.disposed) return;
+    const next = 'bed' in def ? machineToVolume(def) : def;
+    if (this.volumeDef !== null && 'bed' in def) {
+      const dx = Math.abs(this.volumeDef.x - next.x);
+      const dy = Math.abs(this.volumeDef.y - next.y);
+      if (dx > 1 || dy > 1) {
+        this.emit({
+          type: 'error',
+          code: 'machine-geometry-mismatch',
+          message:
+            `file-discovered bed ${next.x}×${next.y} differs from the configured ` +
+            `${this.volumeDef.x}×${this.volumeDef.y} — this file may target a different printer`
+        });
+      }
+    }
+    if (this.volumeGroup !== null) {
+      this.volumeGroup.traverse((obj) => {
+        const mesh = obj as LineSegments;
+        (mesh.geometry as BufferGeometry | undefined)?.dispose?.();
+        (mesh.material as LineBasicMaterial | undefined)?.dispose?.();
+      });
+      this.root.remove(this.volumeGroup);
+    }
+    this.volumeDef = next;
+    this.volumeGroup = createBuildVolume(next);
+    this.root.add(this.volumeGroup);
+    this.render();
   }
 
   /** The quality tier actually built (may differ from requested via auto/fallback). */

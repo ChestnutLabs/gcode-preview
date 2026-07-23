@@ -196,6 +196,12 @@ async function parseAndRender() {
     const ir = result.ir;
     renderer.setIR(ir);
     enableControls(ir);
+    // DD-005 §4.2: this demo opts into file-discovered bed geometry (arrives
+    // with the phase-2/3 adapters); mismatches surface via the renderer event.
+    if (result.metadata?.machine) {
+      renderer.setBuildVolume(result.metadata.machine);
+      els.qualityNote.textContent += ` · bed from file (${result.metadata.machine.confidence})`;
+    }
     const caps = Object.entries(ir.header.capabilities)
       .map(([k, v]) => `${k}: ${v}`)
       .join('\n  ');
