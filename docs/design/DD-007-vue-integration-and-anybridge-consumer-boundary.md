@@ -389,7 +389,7 @@ disclosure line, packaged). The README documents an event-log recipe.
   AnyBridge requirement. Architectural consequence recorded in §4.6: the engine glue extracts into
   `@chestnutlabs/gcode-preview-core` (`createPreviewController`) and adapters become reactivity
   bridges — superseding the §12 facade rejection, whose premise (no second framework consumer) the
-  amendment removes. Phases 5–7 added (#111 core extraction, #112 React, #113 Svelte); the exit
+  amendment removes. Phases 5–7 added (#112 core extraction, #113 React, #114 Svelte); the exit
   becomes phase 8 (#108).
 - **2026-07-23 — Accepted.** Maintainer accepted **D1–D4 with clarifications**: (D1) component is
   a complete, ready-to-use surface but strictly a shell over the composable/engine; (D2) dual
