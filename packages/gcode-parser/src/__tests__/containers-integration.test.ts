@@ -102,6 +102,19 @@ describe('.gcode.3mf through the worker pipeline (#74)', () => {
     session.dispose();
   });
 
+  it('explicit consumer partialPreview settings WIN over the container 8MiB default (#78)', async () => {
+    const session = new GcodeParseSession({ worker: loopbackWorker({ containers: CONTAINERS }) });
+    let partials = 0;
+    session.onPartial(() => partials++);
+    // Consumer explicitly demands a huge threshold: the container default must NOT override it.
+    await session.parse(load('mini-project.gcode.3mf'), {
+      yieldIntervalMs: 5,
+      partialPreview: { minInputBytes: Number.MAX_SAFE_INTEGER, intervalMs: 0 }
+    });
+    expect(partials).toBe(0);
+    session.dispose();
+  });
+
   it('containers:false parses the raw bytes as G-code (honest failure, no sniffing)', async () => {
     const session = new GcodeParseSession({ worker: loopbackWorker({ containers: CONTAINERS }) });
     const result = await session.parse(load('mini-project.gcode.3mf'), { yieldIntervalMs: 5, containers: false });
