@@ -20,6 +20,7 @@
   "main": "dist/gcode-preview.es.js",
   "types": "dist/gcode-preview.d.ts",
   "devDependencies": {
+    "@arethetypeswrong/cli": "^0.18.5",
     "@rollup/plugin-node-resolve": "^16.0.1",
     "@types/node": "^24.0.10",
     "@types/three": "0.178.0",
@@ -28,10 +29,12 @@
     "eslint": "^8.57.1",
     "happy-dom": "^20.0.0",
     "prettier": "^3.6.2",
+    "publint": "^0.3.22",
     "rollup": "^4.44.2",
     "rollup-plugin-dts": "^6.2.1",
     "rollup-plugin-esbuild": "^6.2.1",
     "rollup-plugin-typescript2": "^0.36.0",
+    "three": "0.178.0",
     "typedoc": "^0.28.7",
     "vitest": "^4.1.0"
   },
@@ -52,10 +55,10 @@
     "typedoc": "typedoc",
     "typedoc:watch": "typedoc --watch",
     "check": "npm run test && npm run typeCheck && npm run lint && echo '😅 All checks passed!'",
-    "test:consumer-vue": "node tools/consumer-vue/run.mjs"
+    "test:consumer-vue": "node tools/consumer-vue/run.mjs",
+    "pack:check": "node tools/pack-check.mjs"
   },
   "dependencies": {
-    "lil-gui": "^0.20.0",
-    "three": "0.178.0"
+    "lil-gui": "^0.20.0"
   }
 }
