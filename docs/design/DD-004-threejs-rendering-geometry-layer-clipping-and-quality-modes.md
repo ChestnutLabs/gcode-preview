@@ -15,6 +15,19 @@ spec), E2 benchmark report, issue #53 (this DD), architecture doc §8, master pl
 > 25 MB threshold via the reserved `partial` protocol slot (E3-scoped follow-up); §6.2 single Z-up→Y-up
 > rotation, public API in printer coordinates. Renderer implementation may proceed per §14 phasing.
 
+> **Benchmark ratification (2026-07-22, issue #61 — [E3 report](../../tools/benchmark/results/e3-renderer-benchmark-2026-07-22.md)):**
+> §4.4 LOD steps (>2 M → ×2, >5 M → ×3, >10 M → ×5) and the §4.3 `auto` tubes boundary (≤ 1 M segments)
+> are **ratified unchanged**; the §5.4 partial threshold (25 MiB, 1 s interval) is **ratified unchanged**
+> (TTFP 2,873 ms @ 100 MB / 3,037 ms @ 250 MB — the 100 MB margin is 127 ms; lowering `minInputBytes`
+> stays available as a consumer tuning knob). Two measured refinements are recorded as part of the
+> accepted design: **time-budgeted build ticks** (~8 ms of work per tick — the fixed 4-chunks/tick
+> default violated the §8 stall budget at ≥ 100 MB tiers) and a **2,048-segment chunk target in tubes
+> mode** (a 250 k-segment tube chunk built for ~540 ms). All CPU-side §8 budgets measured PASS; the two
+> orbit-fps budgets **remain provisional pending a reference-machine run** of the committed harness
+> (`tools/demo/vr.html` → `perfRun()`) — the measurement environment for this phase virtualizes WebGL
+> and suspends rAF (documented deviation, report §3). Visual-regression baselines committed
+> (`test-data/visual-baselines/`, tolerance compare via `vrRun()`): 14/14 PASS at capture.
+
 ---
 
 ## 1. Problem

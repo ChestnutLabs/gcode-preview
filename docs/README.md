@@ -45,7 +45,7 @@ tracked in [`UPSTREAM_PROVENANCE.md`](UPSTREAM_PROVENANCE.md).
 | **E0** Fork Foundation & Upstream Audit (#1) | **Closed/Accepted** | RR-001 **Accepted** (baseline `develop` @ `15375e56`) |
 | **E1** ToolpathIR & Package Contracts (#2) | **Closed/Accepted** | DD-001 + DD-002 **Accepted** |
 | **E2** Worker Parser & Large-File Pipeline (#3) | **Closed/Accepted** | DD-003 **Accepted**; all §8 benchmark targets met ([report](../tools/benchmark/results/e2-worker-benchmark-2026-07-22.md)) |
-| **E3** Three.js Renderer & Viewer MVP (#4) | **In progress** | DD-004 **Accepted**; phases 1–2 done (#56, #57), next #58 demo page, then #59 tubes, #60 progressive preview, #61 benchmarks |
+| **E3** Three.js Renderer & Viewer MVP (#4) | **All phases done — awaiting maintainer acceptance** | DD-004 **Accepted + benchmark-ratified** (#61); phases: #56 builders, #57 scene, #58 clipping/scrub/demo, #59 tubes, #60 progressive preview, #61 benchmarks + visual regression ([report](../tools/benchmark/results/e3-renderer-benchmark-2026-07-22.md)); fps budgets pending a reference-machine `perfRun()` |
 | E4–E8 | Open, gated | DD-005…DD-008 unwritten — no implementation before each gate |
 
 Shipped so far: `packages/toolpath-core` (SoA `ToolpathIR`, capability model), `packages/gcode-parser`
