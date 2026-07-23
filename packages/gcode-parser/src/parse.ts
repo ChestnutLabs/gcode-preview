@@ -98,6 +98,16 @@ export interface AsyncParseHooks {
   shouldCancel?: () => boolean;
   /** Max CPU ms between yields (DD-003 §5.2 default 50). */
   yieldIntervalMs?: number;
+  /**
+   * Progressive preview (DD-004 §5.4, issue #60): receives path-aligned delta
+   * snapshots of the IR built so far. Emission starts once bytesProcessed ≥
+   * `partialMinBytes` and repeats at most every `partialIntervalMs`.
+   */
+  onPartial?: (slice: ToolpathIR, cumulativeSegments: number) => void;
+  /** Bytes processed before the first partial may be emitted (default 0 when onPartial set). */
+  partialMinBytes?: number;
+  /** Minimum ms between partial snapshots (default 1000). */
+  partialIntervalMs?: number;
 }
 
 export interface AsyncParseResult extends ParseResult {
@@ -165,6 +175,13 @@ export interface Engine {
   markInputTooBig(): void;
   /** Streaming driver: record the true source byte count as it becomes known. */
   setSourceBytes(bytes: number): void;
+  /**
+   * Progressive-preview delta (issue #60): copy segments [fromSeg, cut) where
+   * `cut` is the current path boundary — every included segment has a resolved
+   * layer. Returns null when nothing new is ready or the copy would break the
+   * §7.2 buffer budget (snapshots are skippable; the parse never is).
+   */
+  snapshot(fromSeg: number): { slice: ToolpathIR; upTo: number } | null;
   finish(cancelledAtByte?: number): ParseResult;
 }
 
@@ -576,11 +593,70 @@ export function createEngine(input: string | Uint8Array, opts: ParseOptions): En
     return { ir, stats };
   };
 
+  // Force a mid-path snapshot cut once the open path grows this large — a
+  // single unbroken extrusion (vase/spiral mode) would otherwise never emit a
+  // preview. Mid-path segments carry UNRESOLVED_LAYER sentinels: preview-grade.
+  const FORCE_CUT_SEGMENTS = 65_536;
+
+  const snapshot = (fromSeg: number): { slice: ToolpathIR; upTo: number } | null => {
+    // Path-aligned cut: segments in the open path still carry UNRESOLVED_LAYER.
+    let cut = path === null ? writer.count : path.segStart;
+    if (cut <= fromSeg && writer.count - fromSeg >= FORCE_CUT_SEGMENTS) {
+      cut = writer.count;
+    }
+    if (cut <= fromSeg || !originSet) return null;
+    let channels;
+    try {
+      channels = writer.snapshotRange(fromSeg, cut);
+    } catch (err) {
+      if (err instanceof BudgetExceededError || err instanceof RangeError) return null; // skip, never stop the parse
+      throw err;
+    }
+    const origin = { x: ox, y: oy, z: oz };
+    const { bounds, boundsWithTravel } = computeSegmentBounds(channels, origin);
+    const lastZ = channels.count > 0 ? oz + channels.z1[channels.count - 1] : oz;
+    const slice: ToolpathIR = {
+      header: {
+        irSchemaVersion: IR_SCHEMA_VERSION,
+        parserVersion: opts.parserVersion ?? '@chestnutlabs/gcode-parser@0.0.0',
+        source: { id: opts.sourceId, byteLength },
+        units,
+        unitsSource: unitsSeen ? 'known' : 'inferred',
+        originOffset: origin,
+        complete: false, // a snapshot is by definition not the whole toolpath
+        dialects: [],
+        warnings: [],
+        capabilities: {
+          geometry: 'known',
+          moveKind: 'known',
+          tools: 'known',
+          // Single coarse layer entry + globally-indexed layer channel: honest
+          // "approximated" — the final IR carries the real table.
+          layers: 'approximated',
+          extrusionDelta: 'known',
+          feedrate: 'known',
+          sourcePositions: 'unavailable', // no per-slice source index is built
+          featureRoles: 'unavailable',
+          objects: 'unavailable'
+        }
+      },
+      segments: channels,
+      layers: channels.count > 0 ? [{ z: lastZ, segStart: 0, segEnd: channels.count - 1 }] : [],
+      tools: [...toolsSeen].sort((a, b) => a - b).map((id) => ({ id })),
+      objects: [],
+      bounds,
+      boundsWithTravel,
+      sourceIndex: { byteOffsets: new Uint32Array(0), segmentIndices: new Uint32Array(0) }
+    };
+    return { slice, upTo: cut };
+  };
+
   return {
     text,
     limits,
     processLine,
     stopped: () => stopReason !== undefined,
+    snapshot,
     markInputTooBig: () => {
       stopReason = {
         code: 'E_LIMIT_INPUT_BYTES',
@@ -648,6 +724,7 @@ export async function parseGcodeToIRAsync(
     return { ...engine.finish(), cancelled: false };
   }
   const yieldEvery = hooks.yieldIntervalMs ?? 50;
+  const partial = makePartialEmitter(engine, hooks);
   const text = engine.text;
   const len = text.length;
   let offset = 0;
@@ -661,6 +738,7 @@ export async function parseGcodeToIRAsync(
 
     if (Date.now() - sliceStart >= yieldEvery) {
       hooks.onProgress?.(Math.min(offset, len), byteLength, 0);
+      partial(Math.min(offset, len));
       await yieldMacrotask();
       if (hooks.shouldCancel?.()) {
         return { ...engine.finish(Math.min(offset, len)), cancelled: true };
@@ -670,4 +748,28 @@ export async function parseGcodeToIRAsync(
   }
   hooks.onProgress?.(len, byteLength, 0);
   return { ...engine.finish(), cancelled: false };
+}
+
+/**
+ * Shared partial-snapshot emitter for the async and streaming drivers (#60):
+ * called at cooperative yield points; emits a delta once bytesProcessed passes
+ * `partialMinBytes` and at most every `partialIntervalMs`.
+ */
+export function makePartialEmitter(engine: Engine, hooks: AsyncParseHooks): (bytesProcessed: number) => void {
+  const onPartial = hooks.onPartial;
+  if (onPartial === undefined) return () => undefined;
+  const minBytes = hooks.partialMinBytes ?? 0;
+  const intervalMs = hooks.partialIntervalMs ?? 1000;
+  let sentSegs = 0;
+  let lastEmit = Date.now();
+  return (bytesProcessed: number): void => {
+    if (bytesProcessed < minBytes) return;
+    const now = Date.now();
+    if (now - lastEmit < intervalMs) return;
+    const snap = engine.snapshot(sentSegs);
+    if (snap === null) return;
+    lastEmit = now;
+    sentSegs = snap.upTo;
+    onPartial(snap.slice, snap.upTo);
+  };
 }

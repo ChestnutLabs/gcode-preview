@@ -15,7 +15,13 @@
  * Byte offsets use the same single-byte (ASCII/UTF-8) accounting as the in-memory
  * drivers so stream and sync parses of the same file produce identical IR.
  */
-import { createEngine, type AsyncParseHooks, type AsyncParseResult, type ParseOptions } from './parse.js';
+import {
+  createEngine,
+  makePartialEmitter,
+  type AsyncParseHooks,
+  type AsyncParseResult,
+  type ParseOptions
+} from './parse.js';
 
 /** Anything that can hand us chunks of bytes. */
 export type StreamInput = BlobLike | ReadableStreamLike<Uint8Array>;
@@ -86,6 +92,7 @@ export async function parseGcodeStreamToIR(
   let overlongWarned = false;
   let cancelled = false;
   let sliceStart = Date.now();
+  const partial = makePartialEmitter(engine, hooks);
 
   const drainCompleteLines = async (): Promise<void> => {
     for (;;) {
@@ -107,6 +114,7 @@ export async function parseGcodeStreamToIR(
 
       if (Date.now() - sliceStart >= yieldEvery) {
         hooks.onProgress?.(bytesRead, knownSize ?? 0, 0);
+        partial(bytesRead);
         await yieldMacrotask();
         if (hooks.shouldCancel?.()) {
           cancelled = true;

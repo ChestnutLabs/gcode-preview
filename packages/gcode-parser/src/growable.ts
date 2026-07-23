@@ -216,6 +216,35 @@ export class SegmentWriter {
     this.layer.fill(0, 0, this._count);
   }
 
+  /**
+   * Copy a segment range into fresh right-sized arrays (progressive-preview
+   * snapshots, DD-004 §5.4 / issue #60). Budget-checked: the copies coexist with
+   * the live buffers until they are transferred away, so they count against
+   * `maxBufferBytes` at creation time. Throws BudgetExceededError when the copy
+   * would break the budget — callers skip the snapshot, never the parse.
+   */
+  snapshotRange(start: number, end: number): FinalChannels {
+    const count = Math.max(0, end - start);
+    this.ensureBudget(count * BYTES_PER_SEGMENT);
+    return {
+      count,
+      x0: this.x0.slice(start, end),
+      y0: this.y0.slice(start, end),
+      z0: this.z0.slice(start, end),
+      x1: this.x1.slice(start, end),
+      y1: this.y1.slice(start, end),
+      z1: this.z1.slice(start, end),
+      e: this.e.slice(start, end),
+      feedrate: this.feedrate.slice(start, end),
+      kind: this.kind.slice(start, end),
+      tool: this.tool.slice(start, end),
+      layer: this.layer.slice(start, end),
+      feature: this.feature.slice(start, end),
+      object: this.object.slice(start, end),
+      srcByte: this.srcByte.slice(start, end)
+    };
+  }
+
   /** Right-size to exact count. Budget-checked (old + new coexist during the copy). */
   finalize(): FinalChannels {
     if (this._count < this.capacity) {

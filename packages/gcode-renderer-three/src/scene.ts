@@ -36,7 +36,7 @@ import {
 } from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import type { ToolpathIR } from '@chestnutlabs/toolpath-core';
-import { buildChunks, type ChunkBuildResult, type GeometryChunk } from './chunks.js';
+import { autoDecimation, buildChunks, type ChunkBuildResult, type GeometryChunk } from './chunks.js';
 import { buildChunkColors, type ColorMode } from './colors.js';
 import { computeDrawState } from './ranges.js';
 import { createBuildVolume, type BuildVolumeDef } from './build-volume.js';
@@ -61,6 +61,7 @@ export type RendererEvent =
       quality: QualityMode;
     }
   | { type: 'qualityFallback'; from: QualityMode; to: QualityMode; reason: string }
+  | { type: 'previewAppend'; cumulativeSegments: number; decimationApplied: number }
   | { type: 'contextlost' }
   | { type: 'restored' }
   | { type: 'error'; code: string; message: string };
@@ -114,6 +115,9 @@ export class ToolpathRenderer {
   private requestedQuality: QualityMode | 'auto';
   private active: QualityMode = 'lines';
   private readonly tubeOptions: TubeOptions;
+  // Progressive-preview state (#60): transient meshes replaced by the final IR.
+  private previewSegments = 0;
+  private previewBounds: { min: Vector3; max: Vector3 } | null = null;
   // Clipping state (§4.5): draw-range trims only — geometry is never rebuilt here.
   private startLayer = 0;
   private endLayer = Infinity;
@@ -198,6 +202,64 @@ export class ToolpathRenderer {
 
   private emit(e: RendererEvent): void {
     for (const cb of this.listeners) cb(e);
+  }
+
+  /**
+   * Progressive preview (#60): append a path-aligned partial slice as transient
+   * geometry. Slices always render as lines (cheap, allocation-light) with
+   * cumulative every-Nth decimation past the §4.4 thresholds; the eventual
+   * `setIR(finalIR)` REPLACES the whole preview set. Preview meshes ignore
+   * layer-range/scrub clipping (their indices are slice-local); kind visibility
+   * still applies.
+   */
+  appendPartial(slice: ToolpathIR): void {
+    if (this.disposed || slice.segments.count === 0) return;
+    if (this.ir !== null) {
+      // Partials for a NEW parse while an old final IR is on screen: the old
+      // scene is stale — drop it and start the preview fresh.
+      this.ir = null;
+      this.buildResult = null;
+      this.clearToolpathGeometry();
+    }
+    const firstPartial = this.previewSegments === 0;
+    this.previewSegments += slice.segments.count;
+    const decimation = autoDecimation(this.previewSegments);
+    let result: ChunkBuildResult;
+    try {
+      result = buildChunks(slice, { decimation });
+    } catch (err) {
+      this.emit({ type: 'error', code: 'E_PREVIEW_BUILD', message: err instanceof Error ? err.message : String(err) });
+      return;
+    }
+    for (const chunk of result.chunks) {
+      const geometry = new BufferGeometry();
+      geometry.setAttribute('position', new BufferAttribute(chunk.positions, 3));
+      geometry.setAttribute('color', new BufferAttribute(buildChunkColors(slice, chunk, this.colorMode), 3));
+      const mesh = new LineSegments(geometry, new LineBasicMaterial({ vertexColors: true }));
+      mesh.name = `preview:${chunk.kind}`;
+      mesh.userData.chunk = chunk;
+      mesh.userData.preview = true;
+      mesh.visible = this.kindVisible[chunk.kind];
+      this.toolpathGroup.add(mesh);
+    }
+    const o = slice.header.originOffset;
+    this.toolpathGroup.position.set(o.x, o.y, o.z);
+    // Track bounds for camera framing before the final IR exists.
+    const b = slice.boundsWithTravel;
+    if (Number.isFinite(b.min.x)) {
+      if (this.previewBounds === null) {
+        this.previewBounds = {
+          min: new Vector3(b.min.x, b.min.y, b.min.z),
+          max: new Vector3(b.max.x, b.max.y, b.max.z)
+        };
+      } else {
+        this.previewBounds.min.min(new Vector3(b.min.x, b.min.y, b.min.z));
+        this.previewBounds.max.max(new Vector3(b.max.x, b.max.y, b.max.z));
+      }
+    }
+    this.emit({ type: 'previewAppend', cumulativeSegments: this.previewSegments, decimationApplied: decimation });
+    if (firstPartial) this.frame();
+    else this.render();
   }
 
   /** Retain the IR and (re)build the scene from it incrementally. */
@@ -383,7 +445,8 @@ export class ToolpathRenderer {
   }
 
   private applyDrawState(): void {
-    if (this.ir === null) return;
+    // No ir-null guard: preview meshes (which exist before any final IR) still
+    // honor kind visibility; the per-mesh path guards the IR-dependent work.
     for (const mesh of this.chunkMeshes) {
       const chunk = mesh.userData.chunk as GeometryChunk | undefined;
       if (chunk) this.applyDrawStateToMesh(mesh, chunk);
@@ -391,6 +454,11 @@ export class ToolpathRenderer {
   }
 
   private applyDrawStateToMesh(mesh: LineSegments | Mesh, chunk: GeometryChunk): void {
+    if (mesh.userData.preview === true) {
+      // Preview meshes: slice-local indices — kind visibility only, no clipping.
+      mesh.visible = this.kindVisible[chunk.kind];
+      return;
+    }
     if (this.ir === null) return;
     if (!this.kindVisible[chunk.kind]) {
       mesh.visible = false;
@@ -413,6 +481,11 @@ export class ToolpathRenderer {
     if (b) {
       center.set((b.min.x + b.max.x) / 2, (b.min.y + b.max.y) / 2, (b.min.z + b.max.z) / 2);
       radius = Math.max(10, center.distanceTo(new Vector3(b.min.x, b.min.y, b.min.z)));
+    } else if (this.previewBounds !== null) {
+      // Progressive preview: frame what has streamed in so far.
+      const p = this.previewBounds;
+      center.set((p.min.x + p.max.x) / 2, (p.min.y + p.max.y) / 2, (p.min.z + p.max.z) / 2);
+      radius = Math.max(10, center.distanceTo(p.min));
     } else if (this.volumeDef) {
       // No toolpath yet: the bed is corner-origin, so its center is (x/2, y/2).
       center.set(this.volumeDef.x / 2, this.volumeDef.y / 2, 0);
@@ -504,6 +577,8 @@ export class ToolpathRenderer {
     }
     this.pendingChunks = [];
     this.builtCount = 0;
+    this.previewSegments = 0;
+    this.previewBounds = null;
   }
 
   dispose(): void {

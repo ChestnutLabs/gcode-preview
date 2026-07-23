@@ -439,6 +439,49 @@ describe('tubes quality mode (phase 4)', () => {
     expect(complete && 'quality' in complete && complete.quality).toBe('lines');
   });
 
+  it('appendPartial streams preview meshes; setIR replaces them wholesale (#60)', () => {
+    const h = makeHarness();
+    const camBefore = h.renderer.camera.position.clone();
+    h.renderer.appendPartial(makeIR(2, 5, { travelPerLayer: 1 }));
+    const preview1 = h.renderer.chunkMeshes.filter((m) => m.userData.preview === true);
+    expect(preview1.length).toBeGreaterThan(0);
+    expect(h.events.some((e) => e.type === 'previewAppend')).toBe(true);
+    // First partial frames the camera onto the preview bounds.
+    expect(h.renderer.camera.position.equals(camBefore)).toBe(false);
+
+    h.renderer.appendPartial(makeIR(2, 5));
+    const preview2 = h.renderer.chunkMeshes.filter((m) => m.userData.preview === true);
+    expect(preview2.length).toBeGreaterThan(preview1.length);
+
+    // Clipping ignores preview meshes (slice-local indices); kind visibility applies.
+    h.renderer.setLayerRange(0, 0);
+    expect(preview2.every((m) => m.visible)).toBe(true);
+    h.renderer.setKindVisible('travel', false);
+    const previewTravel = preview2.filter((m) => (m.userData.chunk as { kind: string }).kind === 'travel');
+    expect(previewTravel.length).toBeGreaterThan(0);
+    expect(previewTravel.every((m) => !m.visible)).toBe(true);
+    h.renderer.setKindVisible('travel', true);
+
+    // Final IR replaces the whole preview set.
+    h.renderer.setIR(makeIR(4, 6));
+    h.runTicks();
+    expect(h.renderer.chunkMeshes.some((m) => m.userData.preview === true)).toBe(false);
+    expect(h.renderer.chunkMeshes.length).toBeGreaterThan(0);
+  });
+
+  it('appendPartial after a final IR starts a fresh preview (new parse)', () => {
+    const h = makeHarness();
+    h.renderer.setIR(makeIR(3, 6));
+    h.runTicks();
+    expect(h.renderer.chunkMeshes.length).toBeGreaterThan(0);
+
+    h.renderer.appendPartial(makeIR(1, 4));
+    const meshes = h.renderer.chunkMeshes;
+    // Old final geometry is gone; only the new preview remains.
+    expect(meshes.every((m) => m.userData.preview === true)).toBe(true);
+    expect(h.renderer.segmentCount).toBe(0); // retained IR dropped
+  });
+
   it('setQuality rebuilds from the retained IR', () => {
     const h = makeHarness({ quality: 'tubes' });
     h.renderer.setIR(makeIR(2, 5));

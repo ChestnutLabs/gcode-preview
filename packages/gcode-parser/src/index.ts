@@ -19,8 +19,8 @@ export type {
 export { BudgetExceededError } from './growable.js';
 export { parseGcodeStreamToIR, isBlobLike, isReadableStreamLike } from './streaming.js';
 export type { StreamInput, BlobLike, ReadableStreamLike } from './streaming.js';
-export { PROTOCOL_VERSION, irTransferList } from './protocol.js';
-export type { WireParseOptions, WorkerRequest, WorkerResponse } from './protocol.js';
+export { PROTOCOL_VERSION, PARTIAL_PREVIEW_MIN_BYTES, irTransferList } from './protocol.js';
+export type { WireParseOptions, WorkerRequest, WorkerResponse, PartialMessage } from './protocol.js';
 export { createWorkerHandler } from './worker-core.js';
 export type { PostFn } from './worker-core.js';
 export { GcodeParseSession, ParseSessionError, CancelledError } from './session.js';
