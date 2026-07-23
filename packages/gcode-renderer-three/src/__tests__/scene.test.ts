@@ -7,9 +7,19 @@
  * incremental build, context-loss recovery, and disposal are all deterministic.
  */
 import { describe, expect, it } from 'vitest';
-import type { LineSegments } from 'three';
+import { Mesh, MeshLambertMaterial, type LineSegments } from 'three';
 import { MoveKind, ToolpathIRBuilder, type Confidence, type ToolpathIR } from '@chestnutlabs/toolpath-core';
-import { createBuildVolume, ToolpathRenderer, type GLRendererLike, type RendererEvent } from '../index.js';
+import {
+  buildChunks,
+  buildTubeChunk,
+  chooseQuality,
+  createBuildVolume,
+  ToolpathRenderer,
+  type GLRendererLike,
+  type QualityMode,
+  type RendererEvent,
+  type TubeOptions
+} from '../index.js';
 
 function makeIR(
   layers: number,
@@ -64,7 +74,14 @@ interface Harness {
 }
 
 function makeHarness(
-  opts: { layers?: number; perLayer?: number; chunksPerTick?: number; target?: number } = {}
+  opts: {
+    layers?: number;
+    perLayer?: number;
+    chunksPerTick?: number;
+    target?: number;
+    quality?: QualityMode | 'auto';
+    tube?: TubeOptions;
+  } = {}
 ): Harness {
   const canvas = document.createElement('canvas');
   const glCalls = { render: 0, dispose: 0 };
@@ -79,6 +96,10 @@ function makeHarness(
     canvas,
     buildVolume: { x: 220, y: 220, z: 250 },
     chunksPerTick: opts.chunksPerTick ?? 1,
+    // Phase-2/3 assertions are written against GL_LINES layouts; phase-4 tests
+    // opt into tubes/auto explicitly.
+    quality: opts.quality ?? 'lines',
+    tube: opts.tube,
     createRenderer: () => stub,
     scheduleFrame: (cb) => ticks.push(cb)
   });
@@ -326,5 +347,106 @@ describe('ToolpathRenderer clipping/scrub/visibility/coloring (phase 3)', () => 
     h.renderer.setScrubPosition(70_000);
     const elapsed = performance.now() - t0;
     expect(elapsed).toBeLessThan(16);
+  });
+});
+
+describe('tubes quality mode (phase 4)', () => {
+  it('buildTubeChunk: continuous run → shared rings, segment-uniform index blocks', () => {
+    const ir = makeIR(1, 4); // 4 continuous extrusion segments, one polyline
+    const chunk = buildChunks(ir).chunks[0];
+    const tube = buildTubeChunk(ir, chunk, { radialSegments: 8 });
+    // One polyline of 4 segments: 5 rings × (8+1) seam-duplicate vertices.
+    expect(tube.vertexCount).toBe(5 * 9);
+    expect(tube.indicesPerSegment).toBe(8 * 6);
+    expect(tube.indices.length).toBe(4 * 48);
+    // Index integrity: every index addresses a real vertex.
+    for (const i of tube.indices) expect(i).toBeLessThan(tube.vertexCount);
+    // Vertex→segment map covers all chunk-local ordinals.
+    expect(tube.vertexSegment.length).toBe(tube.vertexCount);
+    expect(Math.max(...tube.vertexSegment)).toBe(3);
+  });
+
+  it('buildTubeChunk: discontinuity (layer change) starts a new polyline', () => {
+    const ir = makeIR(2, 3); // two layers → z jump between them breaks continuity
+    const chunk = buildChunks(ir).chunks[0];
+    const tube = buildTubeChunk(ir, chunk, { radialSegments: 8 });
+    // Two polylines of 3 segments: (3+1)+(3+1) = 8 rings.
+    expect(tube.vertexCount).toBe(8 * 9);
+    expect(tube.indices.length).toBe(6 * 48);
+  });
+
+  it('buildTubeChunk: vertex budget overrun throws RangeError', () => {
+    const ir = makeIR(1, 4);
+    const chunk = buildChunks(ir).chunks[0];
+    expect(() => buildTubeChunk(ir, chunk, { maxVertices: 10 })).toThrow(RangeError);
+  });
+
+  it('chooseQuality: auto picks tubes ≤ 1M segments, lines above; explicit wins', () => {
+    expect(chooseQuality('auto', 1_000_000)).toBe('tubes');
+    expect(chooseQuality('auto', 1_000_001)).toBe('lines');
+    expect(chooseQuality('lines', 10)).toBe('lines');
+    expect(chooseQuality('tubes', 5_000_000)).toBe('tubes');
+  });
+
+  it('tubes mode: extrusion chunks become lit Meshes, travel stays lines', () => {
+    const h = makeHarness({ quality: 'tubes' });
+    h.renderer.setIR(makeIR(2, 5, { travelPerLayer: 2 }));
+    h.runTicks();
+    expect(h.renderer.activeQuality).toBe('tubes');
+    const extrude = h.renderer.chunkMeshes.filter((m) => (m.userData.chunk as { kind: string }).kind === 'extrude');
+    const travel = h.renderer.chunkMeshes.filter((m) => (m.userData.chunk as { kind: string }).kind === 'travel');
+    expect(extrude.length).toBeGreaterThan(0);
+    expect(extrude.every((m) => m instanceof Mesh && m.material instanceof MeshLambertMaterial)).toBe(true);
+    expect(travel.every((m) => !(m instanceof Mesh))).toBe(true);
+    const complete = h.events.find((e) => e.type === 'buildComplete');
+    expect(complete && 'quality' in complete && complete.quality).toBe('tubes');
+    // auto on a small IR also lands on tubes.
+    const hAuto = makeHarness({ quality: 'auto' });
+    hAuto.renderer.setIR(makeIR(1, 3));
+    hAuto.runTicks();
+    expect(hAuto.renderer.activeQuality).toBe('tubes');
+  });
+
+  it('layer clipping in tubes mode trims by index units — same §4.5 contract as lines', () => {
+    const h = makeHarness({ quality: 'tubes' });
+    h.renderer.setIR(makeIR(4, 10));
+    h.runTicks();
+    const mesh = h.renderer.chunkMeshes[0];
+    const units = mesh.userData.drawUnitsPerSegment as number;
+    expect(units).toBe(48);
+    h.renderer.setLayerRange(1, 2);
+    expect(mesh.geometry.drawRange.start).toBe(10 * units);
+    expect(mesh.geometry.drawRange.count).toBe(20 * units);
+    // Recolor rewrites the tube color attribute without touching positions.
+    const posBefore = mesh.geometry.getAttribute('position');
+    const ok = h.renderer.setColorMode({ mode: 'tool', palette: [[0.2, 0.6, 0.9]] });
+    expect(ok).toBe(true);
+    expect(mesh.geometry.getAttribute('position')).toBe(posBefore);
+    expect(mesh.geometry.getAttribute('color').count).toBe(mesh.geometry.getAttribute('position').count);
+  });
+
+  it('failed tubes build falls back to lines with a qualityFallback event (§6.1)', () => {
+    const h = makeHarness({ quality: 'tubes', tube: { maxVertices: 10 } });
+    h.renderer.setIR(makeIR(2, 5));
+    h.runTicks();
+    const fb = h.events.find((e) => e.type === 'qualityFallback');
+    expect(fb).toBeDefined();
+    expect(fb && 'to' in fb && fb.to).toBe('lines');
+    expect(h.renderer.activeQuality).toBe('lines');
+    expect(h.renderer.chunkMeshes.length).toBeGreaterThan(0);
+    expect(h.renderer.chunkMeshes.every((m) => !(m instanceof Mesh))).toBe(true);
+    const complete = h.events.find((e) => e.type === 'buildComplete');
+    expect(complete && 'quality' in complete && complete.quality).toBe('lines');
+  });
+
+  it('setQuality rebuilds from the retained IR', () => {
+    const h = makeHarness({ quality: 'tubes' });
+    h.renderer.setIR(makeIR(2, 5));
+    h.runTicks();
+    expect(h.renderer.chunkMeshes.some((m) => m instanceof Mesh)).toBe(true);
+    h.renderer.setQuality('lines');
+    h.runTicks();
+    expect(h.renderer.activeQuality).toBe('lines');
+    expect(h.renderer.chunkMeshes.every((m) => !(m instanceof Mesh))).toBe(true);
   });
 });

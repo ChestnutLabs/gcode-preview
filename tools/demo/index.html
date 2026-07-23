@@ -108,7 +108,8 @@
       }
       #stats,
       #disclosure,
-      #status {
+      #status,
+      #qualityNote {
         font-size: 12px;
         color: var(--muted);
         white-space: pre-wrap;
@@ -199,6 +200,15 @@
             <option value="feature">By feature role</option>
           </select>
         </label>
+        <label>
+          Quality
+          <select id="quality">
+            <option value="auto">Auto (tubes ≤ 1M segments)</option>
+            <option value="tubes">Tubes (print-like)</option>
+            <option value="lines">Lines (fast)</option>
+          </select>
+        </label>
+        <p id="qualityNote" role="note"></p>
         <button id="frame" disabled>Frame model</button>
         <p id="disclosure" role="note"></p>
       </fieldset>

@@ -48,6 +48,8 @@ const els = {
   scrubVal: $('scrubVal'),
   travel: $('travel'),
   colorMode: $('colorMode'),
+  quality: $('quality'),
+  qualityNote: $('qualityNote'),
   frame: $('frame'),
   disclosure: $('disclosure'),
   stats: $('stats'),
@@ -64,7 +66,8 @@ for (const [file, label] of CORPUS) {
 const session = new GcodeParseSession();
 const renderer = new ToolpathRenderer({
   canvas: els.canvas,
-  buildVolume: { x: 220, y: 220, z: 250 }
+  buildVolume: { x: 220, y: 220, z: 250 },
+  quality: 'auto'
 });
 
 let parsing = false;
@@ -140,6 +143,9 @@ renderer.onEvent((e) => {
         ? `Decimation active: showing every ${e.decimationApplied}th extrusion segment ` +
           `(layer boundaries kept); travel hidden. ${e.segments.toLocaleString()} segments drawn.`
         : '';
+    els.qualityNote.textContent = `Rendering as: ${e.quality}`;
+  } else if (e.type === 'qualityFallback') {
+    els.qualityNote.textContent = `Tubes unavailable — fell back to lines (${e.reason})`;
   } else if (e.type === 'error') {
     setStatus(`Renderer: ${e.code} — ${e.message}`, true);
   }
@@ -219,6 +225,7 @@ els.colorMode.addEventListener('change', () => {
     renderer.setColorMode(colorModeFor('single'));
   }
 });
+els.quality.addEventListener('change', () => renderer.setQuality(els.quality.value));
 els.frame.addEventListener('click', () => renderer.frame());
 
 // App-level keyboard shortcuts (master plan §9.5); every control is also plain
