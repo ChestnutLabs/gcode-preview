@@ -139,6 +139,17 @@ write(
   ])
 );
 
+// Model/project 3MF (meshes + settings, NO sliced plates) — the common user
+// mistake of loading a saved project instead of an exported sliced file.
+write(
+  'model-project.3mf',
+  makeZip([
+    { name: '3D/3dmodel.model', data: Buffer.from('<model unit="millimeter"><resources/></model>'), deflate: true },
+    { name: 'Metadata/project_settings.config', data: settings, deflate: true },
+    { name: 'Metadata/plate_1.png', data: Buffer.alloc(64, 1), deflate: false }
+  ])
+);
+
 // Adversarial corpus (each exercises one §4.4/§7 defense).
 write(
   'adv-bad-crc.gcode.3mf',

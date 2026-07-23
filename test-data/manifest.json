@@ -385,6 +385,25 @@
       "expectedCapabilities": {},
       "sizeTier": "tiny",
       "limitations": "Synthetic minimal project; real Bambu/Orca fixtures arrive with the phase-3 adapters."
+    },
+    {
+      "id": "container-model-project",
+      "path": "test-data/fixtures/containers/model-project.3mf",
+      "sha256": "effb7b018d0979d0c6e62060e9e3968b8d6a432fc35166c19c21c375c0201f72",
+      "bytes": 682,
+      "origin": "Chestnut-constructed container fixture (tools/fixtures/make-gcode-3mf.mjs, deterministic)",
+      "contributor": "chestnutlabs",
+      "redistribution": "chestnut-original-mit",
+      "slicer": "synthetic (Bambu/Orca project-3MF structure, unsliced)",
+      "targetFamily": "FDM (container)",
+      "features": [
+        "container",
+        "model-project",
+        "negative"
+      ],
+      "expectedCapabilities": {},
+      "sizeTier": "tiny",
+      "limitations": "Must FAIL with the explanatory E_CONTAINER_NO_PAYLOAD (model/project, not sliced)."
     }
   ]
 }
