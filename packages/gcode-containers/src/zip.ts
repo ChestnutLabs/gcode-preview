@@ -300,12 +300,20 @@ export async function* streamEntry(bytes: Uint8Array, entry: ZipEntry, cap: numb
   const ds = new DecompressionStream('deflate-raw');
   const writer = ds.writable.getWriter();
   const reader = ds.readable.getReader();
+  // The writer side must never become an unobserved rejection: on corrupt
+  // deflate data the stream errors BOTH ends, and an unawaited writer promise
+  // crashes the process as an unhandled rejection even though the reader path
+  // converts its copy of the error (found by the #131 fuzzer — see the
+  // fuzz-regressions corpus). Capture instead of floating.
+  let writeError: unknown;
   const writeAll = (async () => {
     for (let o = 0; o < compressed.byteLength; o += INFLATE_CHUNK) {
       await writer.write(compressed.subarray(o, Math.min(o + INFLATE_CHUNK, compressed.byteLength)));
     }
     await writer.close();
-  })();
+  })().catch((e: unknown) => {
+    writeError = e;
+  });
   try {
     for (;;) {
       const { done, value } = await reader.read();
@@ -313,7 +321,9 @@ export async function* streamEntry(bytes: Uint8Array, entry: ZipEntry, cap: numb
       if (value !== undefined && value.byteLength > 0) yield guard(value);
     }
     await writeAll;
+    if (writeError !== undefined) throw writeError;
   } catch (err) {
+    await writeAll; // settled by construction; never rejects
     if (err instanceof ContainerError) throw err;
     throw new ContainerError(
       'E_CONTAINER_INFLATE',

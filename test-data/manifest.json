@@ -1,5 +1,5 @@
 {
-  "$comment": "Fixture manifest per governance §11 and PROJECT_SETUP §1.1. Every tracked fixture used by tests must have an entry here. Fields: id (stable), path (repo-relative), sha256, bytes, origin, contributor, redistribution, slicer, targetFamily, features, expectedCapabilities, sizeTier, limitations.",
+  "$comment": "Fixture manifest per governance \u00a711 and PROJECT_SETUP \u00a71.1. Every tracked fixture used by tests must have an entry here. Fields: id (stable), path (repo-relative), sha256, bytes, origin, contributor, redistribution, slicer, targetFamily, features, expectedCapabilities, sizeTier, limitations.",
   "schemaVersion": 1,
   "fixtures": [
     {
@@ -257,7 +257,7 @@
       ],
       "expectedCapabilities": {},
       "sizeTier": "tiny",
-      "limitations": "Deliberately malformed for the DD-005 §7.3 security corpus; must FAIL with the documented structured error."
+      "limitations": "Deliberately malformed for the DD-005 \u00a77.3 security corpus; must FAIL with the documented structured error."
     },
     {
       "id": "container-adv-duplicate-plate",
@@ -275,7 +275,7 @@
       ],
       "expectedCapabilities": {},
       "sizeTier": "tiny",
-      "limitations": "Deliberately malformed for the DD-005 §7.3 security corpus; must FAIL with the documented structured error."
+      "limitations": "Deliberately malformed for the DD-005 \u00a77.3 security corpus; must FAIL with the documented structured error."
     },
     {
       "id": "container-adv-encrypted",
@@ -293,7 +293,7 @@
       ],
       "expectedCapabilities": {},
       "sizeTier": "tiny",
-      "limitations": "Deliberately malformed for the DD-005 §7.3 security corpus; must FAIL with the documented structured error."
+      "limitations": "Deliberately malformed for the DD-005 \u00a77.3 security corpus; must FAIL with the documented structured error."
     },
     {
       "id": "container-adv-header-mismatch",
@@ -311,7 +311,7 @@
       ],
       "expectedCapabilities": {},
       "sizeTier": "tiny",
-      "limitations": "Deliberately malformed for the DD-005 §7.3 security corpus; must FAIL with the documented structured error."
+      "limitations": "Deliberately malformed for the DD-005 \u00a77.3 security corpus; must FAIL with the documented structured error."
     },
     {
       "id": "container-adv-size-lie",
@@ -329,7 +329,7 @@
       ],
       "expectedCapabilities": {},
       "sizeTier": "tiny",
-      "limitations": "Deliberately malformed for the DD-005 §7.3 security corpus; must FAIL with the documented structured error."
+      "limitations": "Deliberately malformed for the DD-005 \u00a77.3 security corpus; must FAIL with the documented structured error."
     },
     {
       "id": "container-adv-traversal-names",
@@ -347,7 +347,7 @@
       ],
       "expectedCapabilities": {},
       "sizeTier": "tiny",
-      "limitations": "Deliberately malformed for the DD-005 §7.3 security corpus; must FAIL with the documented structured error."
+      "limitations": "Deliberately malformed for the DD-005 \u00a77.3 security corpus; must FAIL with the documented structured error."
     },
     {
       "id": "container-adv-truncated",
@@ -365,7 +365,7 @@
       ],
       "expectedCapabilities": {},
       "sizeTier": "tiny",
-      "limitations": "Deliberately malformed for the DD-005 §7.3 security corpus; must FAIL with the documented structured error."
+      "limitations": "Deliberately malformed for the DD-005 \u00a77.3 security corpus; must FAIL with the documented structured error."
     },
     {
       "id": "container-mini-project",
@@ -426,7 +426,7 @@
         "layers": "inferred"
       },
       "sizeTier": "tiny",
-      "limitations": "Synthetic marker structure, not copied slicer output; real-world samples welcome per governance §11."
+      "limitations": "Synthetic marker structure, not copied slicer output; real-world samples welcome per governance \u00a711."
     },
     {
       "id": "dialect-orca-bambu-style",
@@ -449,7 +449,7 @@
         "objects": "known"
       },
       "sizeTier": "tiny",
-      "limitations": "Synthetic marker structure, not copied slicer output; real-world samples welcome per governance §11."
+      "limitations": "Synthetic marker structure, not copied slicer output; real-world samples welcome per governance \u00a711."
     },
     {
       "id": "dialect-cura-style",
@@ -470,7 +470,7 @@
         "featureRoles": "known"
       },
       "sizeTier": "tiny",
-      "limitations": "Synthetic marker structure, not copied slicer output; real-world samples welcome per governance §11."
+      "limitations": "Synthetic marker structure, not copied slicer output; real-world samples welcome per governance \u00a711."
     },
     {
       "id": "dialect-klipper-prusa",
@@ -492,7 +492,7 @@
         "featureRoles": "known"
       },
       "sizeTier": "tiny",
-      "limitations": "Synthetic marker structure, not copied slicer output; real-world samples welcome per governance §11."
+      "limitations": "Synthetic marker structure, not copied slicer output; real-world samples welcome per governance \u00a711."
     },
     {
       "id": "dialect-reprap-style",
@@ -510,7 +510,7 @@
       ],
       "expectedCapabilities": {},
       "sizeTier": "tiny",
-      "limitations": "Synthetic marker structure, not copied slicer output; real-world samples welcome per governance §11."
+      "limitations": "Synthetic marker structure, not copied slicer output; real-world samples welcome per governance \u00a711."
     },
     {
       "id": "dialect-marlin-m486",
@@ -532,7 +532,7 @@
         "featureRoles": "known"
       },
       "sizeTier": "tiny",
-      "limitations": "Synthetic marker structure, not copied slicer output; real-world samples welcome per governance §11."
+      "limitations": "Synthetic marker structure, not copied slicer output; real-world samples welcome per governance \u00a711."
     },
     {
       "id": "dialect-multitool-ams",
@@ -554,14 +554,14 @@
         "tools": "known"
       },
       "sizeTier": "tiny",
-      "limitations": "Synthetic marker structure, not copied slicer output; real-world samples welcome per governance §11."
+      "limitations": "Synthetic marker structure, not copied slicer output; real-world samples welcome per governance \u00a711."
     },
     {
       "id": "progress-anycubic-percent",
       "path": "test-data/fixtures/progress/anycubic-percent.json",
       "sha256": "2a830fc70d65557867a90f2a2031ec698e960d659828116cc7ce1c5fcbd5fed0",
       "bytes": 1270,
-      "origin": "Chestnut-authored progress contract fixture shaped after real AnyBridge telemetry (DD-006 §1.1 survey 2026-07-23)",
+      "origin": "Chestnut-authored progress contract fixture shaped after real AnyBridge telemetry (DD-006 \u00a71.1 survey 2026-07-23)",
       "contributor": "chestnutlabs",
       "redistribution": "chestnut-original-mit",
       "slicer": "n/a (telemetry observation stream: Anycubic print report (percent + curr_layer))",
@@ -579,7 +579,7 @@
       "path": "test-data/fixtures/progress/bambu-percent-layer.json",
       "sha256": "8012ae5f7e7e9834ded40cf862b0a902a11276906970ca2120460c9c9e38f00a",
       "bytes": 2169,
-      "origin": "Chestnut-authored progress contract fixture shaped after real AnyBridge telemetry (DD-006 §1.1 survey 2026-07-23)",
+      "origin": "Chestnut-authored progress contract fixture shaped after real AnyBridge telemetry (DD-006 \u00a71.1 survey 2026-07-23)",
       "contributor": "chestnutlabs",
       "redistribution": "chestnut-original-mit",
       "slicer": "n/a (telemetry observation stream: Bambu MQTT push_status (mc_percent job basis + layer_num))",
@@ -597,7 +597,7 @@
       "path": "test-data/fixtures/progress/byte-exact.json",
       "sha256": "96f75a472356e8928ac560f5b80b2c3e1c3025701d3a7f0d55ec8069ece41959",
       "bytes": 2725,
-      "origin": "Chestnut-authored progress contract fixture shaped after real AnyBridge telemetry (DD-006 §1.1 survey 2026-07-23)",
+      "origin": "Chestnut-authored progress contract fixture shaped after real AnyBridge telemetry (DD-006 \u00a71.1 survey 2026-07-23)",
       "contributor": "chestnutlabs",
       "redistribution": "chestnut-original-mit",
       "slicer": "n/a (telemetry observation stream: Moonraker virtual_sdcard.file_position (future byte-exact tier))",
@@ -615,7 +615,7 @@
       "path": "test-data/fixtures/progress/klipper-byte-fraction.json",
       "sha256": "d3418eb30312be90e5460284792730ddec8d9c6736d61d867b1498ebd63bb9db",
       "bytes": 2042,
-      "origin": "Chestnut-authored progress contract fixture shaped after real AnyBridge telemetry (DD-006 §1.1 survey 2026-07-23)",
+      "origin": "Chestnut-authored progress contract fixture shaped after real AnyBridge telemetry (DD-006 \u00a71.1 survey 2026-07-23)",
       "contributor": "chestnutlabs",
       "redistribution": "chestnut-original-mit",
       "slicer": "n/a (telemetry observation stream: Klipper virtual_sdcard.progress (byte fraction) +/- SET_PRINT_STATS_INFO)",
@@ -627,6 +627,28 @@
       "expectedCapabilities": {},
       "sizeTier": "tiny",
       "limitations": "Observation sequence + expected MappedProgress outputs, not G-code; exercises percent(bytes) promotion, layer-vs-percent cross-checks with band widening."
+    },
+    {
+      "id": "fuzz-deflate-corrupt-stream",
+      "path": "test-data/fixtures/fuzz-regressions/deflate-corrupt-stream.zip",
+      "sha256": "5c19a9ae42ca6c88dcb203d261204d55e9e51f53290925f530b79f101018907b",
+      "bytes": 119,
+      "origin": "Chestnut-constructed fuzzing regression (#131): deterministic ZIP with one deflate entry corrupted mid-stream; reproduces an unobserved DecompressionStream writer rejection. Build recipe in the fixture README.",
+      "contributor": "chestnutlabs",
+      "redistribution": "chestnut-original-mit",
+      "slicer": "n/a (synthetic ZIP)",
+      "targetFamily": "container (adversarial)",
+      "features": [
+        "container",
+        "adversarial",
+        "fuzz-regression",
+        "corrupt-deflate"
+      ],
+      "expectedCapabilities": {
+        "geometry": "unavailable"
+      },
+      "sizeTier": "small",
+      "limitations": "Not a real print; a minimized crash reproduction. Streaming its single entry must raise E_CONTAINER_INFLATE, never crash the process."
     }
   ]
 }
