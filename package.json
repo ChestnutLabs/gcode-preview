@@ -56,7 +56,8 @@
     "typedoc:watch": "typedoc --watch",
     "check": "npm run test && npm run typeCheck && npm run lint && echo '😅 All checks passed!'",
     "test:consumer-vue": "node tools/consumer-vue/run.mjs",
-    "pack:check": "node tools/pack-check.mjs"
+    "pack:check": "node tools/pack-check.mjs",
+    "docs:links": "node tools/link-check.mjs"
   },
   "dependencies": {
     "lil-gui": "^0.20.0"

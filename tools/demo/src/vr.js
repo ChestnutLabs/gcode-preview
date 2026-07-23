@@ -121,7 +121,7 @@ function compare(name, cur, base) {
 }
 
 async function loadIR(file) {
-  const buf = await (await fetch(`./${file}`)).arrayBuffer();
+  const buf = await (await fetch(`./gcodes/${file}`)).arrayBuffer();
   return parseGcodeToIR(new Uint8Array(buf)).ir;
 }
 

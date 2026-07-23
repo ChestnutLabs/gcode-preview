@@ -42,6 +42,8 @@ jobs:
       - run: npm run typeCheck
       - run: npm run lint
       - run: npm run license:check
+      # DD-008 §9 public-docs link check (issue #129).
+      - run: npm run docs:links
       # DD-007 §4.5 consumer contract fixture: pack tarballs, install into the
       # separate consumer app, run its contract tests (issue #107).
       - run: npm run test:consumer-vue

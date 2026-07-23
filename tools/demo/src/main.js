@@ -10,13 +10,14 @@ import { createProgressMapper } from '@chestnutlabs/toolpath-core';
 
 // Inherited MIT demo corpus (see test-data/manifest.json), served by Vite's publicDir.
 const CORPUS = [
-  ['3DBenchy.gcode', '3DBenchy (3.7 MB)'],
-  ['calicat.gcode', 'Calicat (635 KB)'],
-  ['vase.gcode', 'Vase (spiral mode)'],
-  ['screw.gcode', 'Screw'],
-  ['plant-sign.gcode', 'Plant sign'],
-  ['easel.gcode', 'Easel (19 KB)'],
-  ['mach3.gcode', 'Mach3 (CNC-style)']
+  ['gcodes/3DBenchy.gcode', '3DBenchy (3.7 MB)'],
+  ['gcodes/calicat.gcode', 'Calicat (635 KB)'],
+  ['gcodes/vase.gcode', 'Vase (spiral mode)'],
+  ['gcodes/screw.gcode', 'Screw'],
+  ['gcodes/plant-sign.gcode', 'Plant sign'],
+  ['gcodes/easel.gcode', 'Easel (19 KB)'],
+  ['gcodes/mach3.gcode', 'Mach3 (CNC-style)'],
+  ['fixtures/containers/mini-project.gcode.3mf', 'mini-project.gcode.3mf (container)']
 ];
 
 const TOOL_PALETTE = [
