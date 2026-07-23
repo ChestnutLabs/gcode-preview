@@ -38,7 +38,7 @@ See also [`../PROJECT_SETUP.md`](../PROJECT_SETUP.md) for the local environment 
 Provenance of inherited vs. Chestnut code, the exact founding baseline, and the branch mapping are
 tracked in [`UPSTREAM_PROVENANCE.md`](UPSTREAM_PROVENANCE.md).
 
-## Current state (updated 2026-07-22 — E3 in progress)
+## Current state (updated 2026-07-23 — E5 gate open)
 
 | Epic | Status | Gate |
 |---|---|---|
@@ -47,7 +47,8 @@ tracked in [`UPSTREAM_PROVENANCE.md`](UPSTREAM_PROVENANCE.md).
 | **E2** Worker Parser & Large-File Pipeline (#3) | **Closed/Accepted** | DD-003 **Accepted**; all §8 benchmark targets met ([report](../tools/benchmark/results/e2-worker-benchmark-2026-07-22.md)) |
 | **E3** Three.js Renderer & Viewer MVP (#4) | **Closed/Accepted** (2026-07-22) | DD-004 **Accepted + benchmark-ratified** (#61, [report](../tools/benchmark/results/e3-renderer-benchmark-2026-07-22.md)); orbit-fps budgets pending a reference-machine `perfRun()` (accepted deviation) |
 | **E4** Dialect & Container Compatibility (#5) | **Closed/Accepted** (2026-07-23) | [DD-005](design/DD-005-dialect-plugin-and-container-adapter-contracts.md) **Accepted + benchmark-ratified** incl. the container-threshold ratification; [§7.3 security review signed off](design/SECURITY-REVIEW-DD-005-containers.md); [matrix published](compatibility/dialects-and-containers.md) ([report](../tools/benchmark/results/e4-dialect-container-benchmark-2026-07-23.md)) |
-| E5–E8 | Open, gated | DD-006…DD-008 unwritten — no implementation before each gate; E5 (live progress + source-position mapping, M4) is next |
+| **E5** Live Progress Mapping (#6) | **In Progress** — at the DD gate | [DD-006](design/DD-006-normalized-live-progress-and-source-position-mapping.md) **Proposed** (issue #87) with real AnyBridge telemetry evidence; awaiting maintainer decisions — no implementation before acceptance |
+| E6–E8 | Open, gated | DD-007/DD-008 unwritten — no implementation before each gate |
 
 Shipped so far: `packages/toolpath-core` (SoA `ToolpathIR`, capability model), `packages/gcode-parser`
 (byte-exact port of the inherited engine, worker protocol v1, streaming, limits, adversarial corpus),
