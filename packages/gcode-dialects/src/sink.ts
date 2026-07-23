@@ -32,6 +32,7 @@ export class BufferedAnnotationSink implements AnnotationSink {
   private objects = new Map<number, string>();
   private machine: MachineGeometry | null = null;
   private filaments: FilamentInfo[] = [];
+  private toolInfos = new Map<number, { material?: string; colorHex?: string }>();
   private thumbnails: ThumbnailData[] = [];
   private raw = new Map<string, string>();
   private capabilities = new Map<string, Confidence>();
@@ -70,6 +71,10 @@ export class BufferedAnnotationSink implements AnnotationSink {
 
   setFilament(info: FilamentInfo): void {
     if (this.filaments.length < 64) this.filaments.push(info);
+  }
+
+  setToolInfo(tool: number, info: { material?: string; colorHex?: string }): void {
+    if (this.toolInfos.size < 64) this.toolInfos.set(tool, info);
   }
 
   addThumbnail(thumb: ThumbnailData): void {
@@ -116,6 +121,22 @@ export class BufferedAnnotationSink implements AnnotationSink {
         ir.objects.push({ id: String(ir.objects.length + 1) });
       }
       ir.objects[channelValue - 1] = { id: String(channelValue), name };
+    }
+    for (const [toolId, info] of this.toolInfos) {
+      let entry = ir.tools.find((t) => t.id === toolId);
+      if (entry === undefined) {
+        entry = { id: toolId };
+        ir.tools.push(entry);
+        ir.tools.sort((a, b) => a.id - b.id);
+      }
+      if (info.material !== undefined) entry.material = info.material;
+      if (info.colorHex !== undefined) {
+        const m = /^#?([0-9a-f]{6})$/i.exec(info.colorHex.trim());
+        if (m !== null) {
+          const v = parseInt(m[1], 16);
+          entry.color = { r: ((v >> 16) & 0xff) / 255, g: ((v >> 8) & 0xff) / 255, b: (v & 0xff) / 255, a: 1 };
+        }
+      }
     }
     for (const [key, confidence] of this.capabilities) {
       ir.header.capabilities[key] = confidence;

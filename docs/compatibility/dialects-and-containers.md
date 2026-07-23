@@ -21,8 +21,8 @@ annotation) · **unsupported** (generic parse only — geometry always works; me
 
 | Dialect | Detection | Object exclusion | Notes | Fixtures | Evidence date |
 |---|---|---|---|---|---|
-| Klipper | **full** (`EXCLUDE_OBJECT_*`/macros head; `gcode_flavor` tail) | `EXCLUDE_OBJECT_*` semantics: _phase 5_ | composes with slicer adapters (proven: PrusaSlicer+Klipper) | `dialect-klipper-prusa` | 2026-07-23 |
-| Marlin | **full** (`;FLAVOR:Marlin`; `gcode_flavor` tail) | `M486` semantics: _phase 5_ | composes (proven: Cura+Marlin) | `dialect-cura-style` | 2026-07-23 |
+| Klipper | **full** (`EXCLUDE_OBJECT_*`/macros head; `gcode_flavor` tail) | **full** (`EXCLUDE_OBJECT_DEFINE/START/END` → `objects: known`, exact seg indices) | composes with slicer adapters (proven: PrusaSlicer+Klipper) | `dialect-klipper-prusa` | 2026-07-23 |
+| Marlin | **full** (`;FLAVOR:Marlin`; `gcode_flavor` tail) | **full** (`M486 S<idx>`/`S-1` → `objects: known`) | composes (proven: Cura+Marlin) | `dialect-cura-style` | 2026-07-23 |
 | RepRap-style | **full** (`;FLAVOR:RepRap`; `gcode_flavor` tail) | — | detection-only | `dialect-reprap-style` | 2026-07-23 |
 
 ## Containers
@@ -36,6 +36,6 @@ annotation) · **unsupported** (generic parse only — geometry always works; me
 
 | Capability | Mechanism | Status |
 |---|---|---|
-| Multi-tool / AMS / IDEX | tool metadata via adapters | _phase 5_ |
+| Multi-tool / AMS / IDEX | core `tool` channel (T commands) + adapter `filament_type/colour` → `ir.tools` material/color | **full** (`dialect-multitool-ams`, 2026-07-23) |
 | Arc moves (G2/G3) | core parser (golden-gated) | **full** since E2 |
 | Per-file build plate in the viewer | `metadata.machine` → `setBuildVolume` (DD-005 §4.2) | mechanism shipped (phase 1); data arrives phases 2–3 |

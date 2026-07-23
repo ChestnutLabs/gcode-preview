@@ -145,6 +145,48 @@ describe('Cura + firmware adapters (#76)', () => {
   });
 });
 
+describe('object exclusion + multi-tool (#77)', () => {
+  it('Klipper EXCLUDE_OBJECT_* commands populate the object channel with exact seg indices', () => {
+    const { ir } = annotatedParse(load('klipper-prusa-sample.gcode'));
+    expect(ir.header.capabilities.objects).toBe('known');
+    const values = new Set(Array.from(ir.segments.object));
+    expect(values.has(1)).toBe(true); // 'cube'
+    expect(ir.objects[0]).toEqual({ id: '1', name: 'cube' });
+    // Segments after EXCLUDE_OBJECT_END belong to no object.
+    expect(ir.segments.object[ir.segments.count - 1]).toBe(0);
+    // Segments inside the START..END block carry the object value.
+    const inBlock = Array.from(ir.segments.object).filter((v) => v === 1).length;
+    expect(inBlock).toBe(5); // the 5-segment square between START and END
+  });
+
+  it('Marlin M486 S<idx> blocks populate objects; S-1 terminates', () => {
+    const { ir } = annotatedParse(load('marlin-m486-sample.gcode'));
+    expect(ir.header.dialects.map((d) => d.id).sort()).toEqual(['cura', 'marlin']);
+    expect(ir.header.capabilities.objects).toBe('known');
+    const arr = Array.from(ir.segments.object);
+    expect(new Set(arr).has(1)).toBe(true);
+    expect(new Set(arr).has(2)).toBe(true);
+    expect(ir.objects[0].name).toBe('object 0');
+    expect(ir.objects[1].name).toBe('object 1');
+    // Travel between the M486 S-1 and the next S1 belongs to no object.
+    const firstTwo = arr.indexOf(2);
+    expect(arr.slice(0, firstTwo)).toContain(0);
+  });
+
+  it('multi-tool AMS metadata enriches ir.tools (material + color) from filament config', () => {
+    const { ir, metadata } = annotatedParse(load('multitool-ams-sample.gcode'));
+    // Tool channel from core T commands: both tools present.
+    expect(new Set(Array.from(ir.segments.tool)).size).toBe(2);
+    const t0 = ir.tools.find((t) => t.id === 0);
+    const t1 = ir.tools.find((t) => t.id === 1);
+    expect(t0?.material).toBe('PLA');
+    expect(t1?.material).toBe('PETG');
+    expect(t0?.color?.g).toBeCloseTo(0xaa / 255, 5);
+    expect(t1?.color?.b).toBeCloseTo(0xee / 255, 5);
+    expect(metadata?.filaments?.length).toBe(2);
+  });
+});
+
 describe('annotate helpers (#75)', () => {
   it('base64 decode round-trips and rejects invalid input', () => {
     expect(Array.from(decodeBase64('iVBORw==') ?? [])).toEqual([0x89, 0x50, 0x4e, 0x47]);

@@ -131,6 +131,50 @@ fs.writeFileSync(path.join(outDir, 'klipper-prusa-sample.gcode'), klipperPrusa);
 const reprap = [';FLAVOR:RepRap', 'G21', 'G0 X30 Y30 Z0.2', ...square(60, 60, 30, 1, 1500), ''].join('\n');
 fs.writeFileSync(path.join(outDir, 'reprap-style-sample.gcode'), reprap);
 
+// Marlin M486 object exclusion (phase 5): Cura output with numbered objects.
+const m486 = [
+  ';FLAVOR:Marlin',
+  ';Generated with Cura_SteamEngine 5.7.0',
+  'G21',
+  'M486 T2',
+  'G0 X50 Y50 Z0.2',
+  'M486 S0',
+  ';TYPE:WALL-OUTER',
+  ...square(70, 70, 30, 1, 1500),
+  'M486 S-1',
+  'G0 X120 Y120 Z0.2',
+  'M486 S1',
+  ';TYPE:WALL-OUTER',
+  ...square(140, 140, 30, 10, 1500),
+  'M486 S-1',
+  ''
+].join('\n');
+fs.writeFileSync(path.join(outDir, 'marlin-m486-sample.gcode'), m486);
+
+// Multi-tool/AMS (phase 5): Orca-style with T0/T1 changes + filament config.
+const multitool = [
+  '; BambuStudio 01.09.00.60',
+  '; HEADER_BLOCK_START',
+  '; printer_model: Bambu Lab X1 Carbon',
+  '; HEADER_BLOCK_END',
+  'G21',
+  'T0',
+  'G0 X60 Y60 Z0.2',
+  '; FEATURE: Outer wall',
+  ...square(80, 80, 30, 1, 1500),
+  'T1',
+  'G0 X120 Y120 Z0.2',
+  '; FEATURE: Outer wall',
+  ...square(140, 140, 30, 10, 1500),
+  '; CONFIG_BLOCK_START',
+  '; filament_type = PLA;PETG',
+  '; filament_colour = #22AA55;#5566EE',
+  '; printable_area = 0x0,256x0,256x256,0x256',
+  '; CONFIG_BLOCK_END',
+  ''
+].join('\n');
+fs.writeFileSync(path.join(outDir, 'multitool-ams-sample.gcode'), multitool);
+
 console.log('prusa-style-sample.gcode:', prusa.length, 'B');
 console.log('orca-bambu-style-sample.gcode:', orca.length, 'B');
 console.log('cura-style-sample.gcode:', curaSample.length, 'B');
