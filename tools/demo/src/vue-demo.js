@@ -7,7 +7,14 @@
 import { createApp, defineComponent, h, ref, shallowRef, computed } from 'vue';
 import { GcodePreview } from '@chestnutlabs/gcode-preview-vue';
 
-const CORPUS = ['easel.gcode', 'calicat.gcode', '3DBenchy.gcode', 'vase.gcode', 'screw.gcode'];
+const CORPUS = [
+  'gcodes/easel.gcode',
+  'gcodes/calicat.gcode',
+  'gcodes/3DBenchy.gcode',
+  'gcodes/vase.gcode',
+  'gcodes/screw.gcode',
+  'fixtures/containers/mini-project.gcode.3mf'
+];
 
 const App = defineComponent({
   setup() {
@@ -77,7 +84,7 @@ const App = defineComponent({
                 value: fixture.value,
                 onChange: (e) => (fixture.value = e.target.value)
               },
-              CORPUS.map((f) => h('option', { value: f }, f))
+              CORPUS.map((f) => h('option', { value: f }, f.split('/').pop()))
             )
           ]),
           h('button', { onClick: load }, 'Load'),

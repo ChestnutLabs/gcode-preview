@@ -2,9 +2,9 @@ import { defineConfig } from 'vite';
 
 export default defineConfig({
   base: './',
-  // Serve the MIT demo corpus (inherited upstream, tracked in test-data/manifest.json)
-  // at /<name>.gcode without copying the files into this app.
-  publicDir: '../../test-data/gcodes',
+  // Serve the tracked test-data tree (MIT corpus at /gcodes/*, container fixtures at
+  // /fixtures/**) without copying files into this app.
+  publicDir: '../../test-data',
   server: {
     port: 5199,
     strictPort: true
