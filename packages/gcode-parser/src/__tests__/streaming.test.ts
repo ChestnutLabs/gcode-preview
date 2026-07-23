@@ -59,7 +59,7 @@ function chunkedStream(bytes: Uint8Array, chunkSize: number): ReadableStream<Uin
 
 describe('streaming inputs (#46)', () => {
   it('ReadableStream parse is byte-identical to the in-memory parse (3DBenchy, awkward 1013 B chunks)', async () => {
-    const bytes = new Uint8Array(readFileSync(join(repoRoot, 'demo/gcodes/3DBenchy.gcode')));
+    const bytes = new Uint8Array(readFileSync(join(repoRoot, 'test-data/gcodes/3DBenchy.gcode')));
     const sync = parseGcodeToIR(bytes);
     const streamed = await parseGcodeStreamToIR(chunkedStream(bytes, 1013), {}, { yieldIntervalMs: 10 });
 
@@ -72,7 +72,7 @@ describe('streaming inputs (#46)', () => {
   });
 
   it('Blob parse matches too, and a Blob larger than maxInputBytes is refused upfront', async () => {
-    const bytes = new Uint8Array(readFileSync(join(repoRoot, 'demo/gcodes/calicat.gcode')));
+    const bytes = new Uint8Array(readFileSync(join(repoRoot, 'test-data/gcodes/calicat.gcode')));
     const sync = parseGcodeToIR(bytes);
     const viaBlob = await parseGcodeStreamToIR(new Blob([bytes]), {}, { yieldIntervalMs: 10 });
     expect(digests(viaBlob.ir)).toEqual(digests(sync.ir));

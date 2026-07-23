@@ -6,7 +6,7 @@ manifest entry may be tracked. Private/customer files stay in the gitignored `Pr
 
 - **[`manifest.json`](manifest.json)** — one entry per fixture used by tests: stable id, path, sha256,
   origin, redistribution status, slicer/target, features, expected capabilities, size tier, limitations.
-  The initial seed covers the **inherited MIT `demo/gcodes/` corpus** (fixtures live at their inherited
+  The initial seed covers the **inherited MIT corpus, now at `test-data/gcodes/`** (moved from `demo/gcodes/` in #128; fixtures keep their inherited
   paths; the manifest references them rather than duplicating ~6 MB of files).
 - **[`golden/`](golden/)** — golden `ToolpathIR` summaries (issue #28, DD-001 §8): one JSON per fixture
   with segment/layer/tool counts, rounded bounds, capability map, warning codes, and FNV-1a digests of

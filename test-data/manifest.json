@@ -4,7 +4,7 @@
   "fixtures": [
     {
       "id": "demo-3dbenchy",
-      "path": "demo/gcodes/3DBenchy.gcode",
+      "path": "test-data/gcodes/3DBenchy.gcode",
       "sha256": "d3d324f2bf7ca989a33353b84e83b8761eb970fdd97ad99b315f9292140b2a79",
       "bytes": 3696324,
       "origin": "Inherited upstream demo corpus (xyz-tools/gcode-preview, MIT); 3DBenchy model by Creative Tools",
@@ -27,7 +27,7 @@
     },
     {
       "id": "demo-calicat",
-      "path": "demo/gcodes/calicat.gcode",
+      "path": "test-data/gcodes/calicat.gcode",
       "sha256": "3d8b0e3f7ea23e842a119a3ea8bd763c5ac733407b189112fa1f290386577e28",
       "bytes": 635291,
       "origin": "Inherited upstream demo corpus (MIT)",
@@ -48,7 +48,7 @@
     },
     {
       "id": "demo-easel",
-      "path": "demo/gcodes/easel.gcode",
+      "path": "test-data/gcodes/easel.gcode",
       "sha256": "e8ec89595ac8448bc73c4f241b17444da4fc93f112c7c5e3fed5f8b596455a42",
       "bytes": 19422,
       "origin": "Inherited upstream demo corpus (MIT)",
@@ -66,7 +66,7 @@
     },
     {
       "id": "demo-mach3",
-      "path": "demo/gcodes/mach3.gcode",
+      "path": "test-data/gcodes/mach3.gcode",
       "sha256": "f14f820da67d87dedad62351c850964158dc369599e7c1a01052231e88683d20",
       "bytes": 1612,
       "origin": "Inherited upstream demo corpus (MIT)",
@@ -86,7 +86,7 @@
     },
     {
       "id": "demo-plant-sign",
-      "path": "demo/gcodes/plant-sign.gcode",
+      "path": "test-data/gcodes/plant-sign.gcode",
       "sha256": "682df8ed71acc21f3a920368be5b6c90c65e864b624a1308fd01ae7670958ea4",
       "bytes": 546280,
       "origin": "Inherited upstream demo corpus (MIT)",
@@ -107,7 +107,7 @@
     },
     {
       "id": "demo-screw",
-      "path": "demo/gcodes/screw.gcode",
+      "path": "test-data/gcodes/screw.gcode",
       "sha256": "629d168cc78c003eb8bf94f17da014986e511e0a636a10493443dc5f3eb165e2",
       "bytes": 751173,
       "origin": "Inherited upstream demo corpus (MIT)",
@@ -224,7 +224,7 @@
     },
     {
       "id": "demo-vase",
-      "path": "demo/gcodes/vase.gcode",
+      "path": "test-data/gcodes/vase.gcode",
       "sha256": "43c92ab3ea4a4807000ad19aaef25dceffa56b550605e51cc429ad790aae3fb0",
       "bytes": 306428,
       "origin": "Inherited upstream demo corpus (MIT)",

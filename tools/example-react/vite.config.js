@@ -5,7 +5,7 @@ export default defineConfig({
   // Automatic JSX runtime without @vitejs/plugin-react (no HMR fast-refresh needed here).
   esbuild: { jsx: 'automatic' },
   // Serve the MIT demo corpus (inherited upstream, tracked in test-data/manifest.json).
-  publicDir: '../../demo/gcodes',
+  publicDir: '../../test-data/gcodes',
   server: {
     port: 5201,
     strictPort: true
