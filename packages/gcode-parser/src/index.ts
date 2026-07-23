@@ -6,7 +6,7 @@
  * full limit wiring land in phase 3 (#46). Depends only on
  * @chestnutlabs/toolpath-core.
  */
-export { parseGcodeToIR, parseGcodeToIRAsync, DEFAULT_LIMITS } from './parse';
+export { parseGcodeToIR, parseGcodeToIRAsync, DEFAULT_LIMITS } from './parse.js';
 export type {
   AsyncParseHooks,
   AsyncParseResult,
@@ -15,13 +15,13 @@ export type {
   ParseResult,
   ParseStats,
   StopReason
-} from './parse';
-export { BudgetExceededError } from './growable';
-export { parseGcodeStreamToIR, isBlobLike, isReadableStreamLike } from './streaming';
-export type { StreamInput, BlobLike, ReadableStreamLike } from './streaming';
-export { PROTOCOL_VERSION, irTransferList } from './protocol';
-export type { WireParseOptions, WorkerRequest, WorkerResponse } from './protocol';
-export { createWorkerHandler } from './worker-core';
-export type { PostFn } from './worker-core';
-export { GcodeParseSession, ParseSessionError, CancelledError } from './session';
-export type { SessionOptions, WorkerLike, ParseProgress } from './session';
+} from './parse.js';
+export { BudgetExceededError } from './growable.js';
+export { parseGcodeStreamToIR, isBlobLike, isReadableStreamLike } from './streaming.js';
+export type { StreamInput, BlobLike, ReadableStreamLike } from './streaming.js';
+export { PROTOCOL_VERSION, irTransferList } from './protocol.js';
+export type { WireParseOptions, WorkerRequest, WorkerResponse } from './protocol.js';
+export { createWorkerHandler } from './worker-core.js';
+export type { PostFn } from './worker-core.js';
+export { GcodeParseSession, ParseSessionError, CancelledError } from './session.js';
+export type { SessionOptions, WorkerLike, ParseProgress } from './session.js';

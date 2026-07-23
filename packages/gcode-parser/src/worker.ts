@@ -5,8 +5,8 @@
  * `new Worker(new URL('./worker.js', import.meta.url), { type: 'module' })`
  * in `session.ts`. All logic lives in the transport-agnostic `worker-core`.
  */
-import { createWorkerHandler, type PostFn } from './worker-core';
-import type { WorkerRequest } from './protocol';
+import { createWorkerHandler, type PostFn } from './worker-core.js';
+import type { WorkerRequest } from './protocol.js';
 
 declare const self: {
   postMessage(msg: unknown, transfer?: ArrayBuffer[]): void;

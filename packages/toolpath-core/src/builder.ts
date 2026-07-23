@@ -10,9 +10,9 @@ import {
   type Units,
   type Vec3,
   type Warning
-} from './ir';
-import { computeSegmentBounds } from './bounds';
-import { buildSourceIndex } from './source-index';
+} from './ir.js';
+import { computeSegmentBounds } from './bounds.js';
+import { buildSourceIndex } from './source-index.js';
 
 /** One motion segment in absolute model coordinates. The builder stores it as a delta from the origin. */
 export interface SegmentInput {

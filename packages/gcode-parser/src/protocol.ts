@@ -8,8 +8,8 @@
  * - `cancelled` — client rejects with E_CANCELLED; `partial` attached when requested.
  */
 import type { ToolpathIR } from '@chestnutlabs/toolpath-core';
-import type { ParseOptions, ParseStats } from './parse';
-import type { BlobLike, ReadableStreamLike } from './streaming';
+import type { ParseOptions, ParseStats } from './parse.js';
+import type { BlobLike, ReadableStreamLike } from './streaming.js';
 
 export const PROTOCOL_VERSION = 1;
 

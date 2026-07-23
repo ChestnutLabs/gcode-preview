@@ -5,7 +5,7 @@
  * and is the replacement seam for the whole toolpath stack: the parser writes it, renderers
  * and analyzers read it.
  */
-export * from './ir';
-export * from './builder';
-export * from './bounds';
-export * from './source-index';
+export * from './ir.js';
+export * from './builder.js';
+export * from './bounds.js';
+export * from './source-index.js';
