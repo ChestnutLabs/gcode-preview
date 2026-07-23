@@ -148,6 +148,9 @@ thin path; the full viewer is reachable without switching APIs.
   telemetry (Moonraker, Bambu, OctoPrint-class sources).
 - **Support & deprecation policy:** [Node/browser/framework matrix and the rolling support
   window](docs/reference/support-policy.md).
+- **Headless still render:** [`renderStill`](docs/reference/still-render.md) — a single
+  non-interactive image from a Worker `OffscreenCanvas`, Electron hidden window, or headless
+  Chromium (server-side thumbnails).
 
 ## See it running
 

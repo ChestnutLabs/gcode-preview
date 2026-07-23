@@ -22,7 +22,8 @@ export default defineConfig({
       '@chestnutlabs/gcode-renderer-three',
       '@chestnutlabs/gcode-dialects',
       '@chestnutlabs/gcode-containers',
-      '@chestnutlabs/gcode-preview-vue'
+      '@chestnutlabs/gcode-preview-vue',
+      '@chestnutlabs/gcode-preview-core'
     ]
   }
 });

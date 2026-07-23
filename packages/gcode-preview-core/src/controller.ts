@@ -25,6 +25,7 @@ import {
   type GLRendererLike,
   type ProgressPresentationMode,
   type QualityMode,
+  type RenderTargetCanvas,
   type RendererEvent,
   type TubeOptions
 } from '@chestnutlabs/gcode-renderer-three';
@@ -63,7 +64,7 @@ export interface PreviewControllerOptions {
     colorMode?: ColorMode;
     tube?: TubeOptions;
     /** Advanced/test injectables — pass-throughs of the renderer's own contract. */
-    createRenderer?: (canvas: HTMLCanvasElement) => GLRendererLike;
+    createRenderer?: (canvas: RenderTargetCanvas) => GLRendererLike;
     scheduleFrame?: (cb: () => void) => void;
     chunksPerTick?: number;
   };

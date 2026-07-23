@@ -16,6 +16,7 @@ export type { TubeOptions, TubeChunkGeometry } from './tubes.js';
 export { ToolpathRenderer, chooseQuality, machineToVolume } from './scene.js';
 export type {
   ToolpathRendererOptions,
+  RenderTargetCanvas,
   RendererEvent,
   GLRendererLike,
   ProgressPresentationMode,

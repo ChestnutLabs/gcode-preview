@@ -5,3 +5,4 @@
  * The portable behavioral suite ships via the `./testing` subpath.
  */
 export * from './controller.js';
+export { renderStill, type RenderStillOptions, type RenderStillResult, type StillCameraPose } from './render-still.js';
