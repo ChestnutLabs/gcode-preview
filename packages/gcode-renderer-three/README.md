@@ -5,6 +5,8 @@ G-code Preview stack (design: DD-004, live-progress overlay: DD-006).
 
 > **Peer dependency:** `three` (supported range `^0.178.0`) — install it alongside this package.
 
+![3DBenchy rendered as tubes with feature coloring](https://raw.githubusercontent.com/ChestnutLabs/gcode-preview/dev/docs/media/viewer-benchy-tubes.png)
+
 - Layer-chunked line geometry with decimation + disclosure; tube geometry with automatic
   quality fallback
 - Layer-range clipping and segment-level scrub via draw ranges (no rebuilds)
