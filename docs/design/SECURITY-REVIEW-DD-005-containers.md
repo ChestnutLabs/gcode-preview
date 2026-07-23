@@ -28,8 +28,14 @@ the adversarial corpus is generated deterministically by
 | 11 | zip64 | detected → `E_CONTAINER_ZIP64` structured rejection (v1 scope per amendment 3) | directory-parse checks | ☑ rejected-by-design |
 
 **Residual risks / notes for the reviewer**
-- Fuzzing is corpus-based (crafted adversarial archives), not coverage-guided; a coverage-guided fuzz
-  pass over `readDirectory`/`streamEntry` is recommended before any public release (E7 gate).
+- ~~Fuzzing is corpus-based (crafted adversarial archives), not coverage-guided; a coverage-guided
+  fuzz pass over `readDirectory`/`streamEntry` is recommended before any public release (E7 gate).~~
+  **DISCHARGED (E7 phase 4, #131, 2026-07-23):** Jazzer.js coverage-guided fuzz targets over both
+  entry points (`packages/gcode-containers/fuzz/`), a scheduled weekly deep run
+  (`.github/workflows/fuzz-containers.yml`), and per-PR replay of a minimized regression corpus
+  (`test-data/fixtures/fuzz-regressions/`, tested by `fuzz-corpus.test.ts`). The first run found and
+  fixed a real defect — an unobserved `DecompressionStream` writer rejection crashed the process on
+  corrupt deflate data (now `E_CONTAINER_INFLATE`); the minimized input is a permanent regression.
 - `DecompressionStream` is platform code (browser/Node) — inflate bombs are bounded by our
   incremental caps, not by trusting the platform.
 - Data-descriptor entries (flag bit 3) accept the central directory's sizes/CRC as authoritative;

@@ -30,6 +30,11 @@ We do **not** require a public proof-of-concept file for exploitable archive/par
 reproductions privately. If a fixture is needed for a regression test, we will produce a **sanitized,
 minimized** fixture with recorded provenance.
 
+The same rule governs our own coverage-guided fuzzing (`gcode-containers`, weekly
+`fuzz-containers.yml`): a finding is triaged privately, fixed, then reduced to a small, legal,
+redistributable input before it is committed to the public regression corpus
+(`test-data/fixtures/fuzz-regressions/`) — never a raw crash blob.
+
 ## Supported versions
 
 The project is pre-1.0 and under active foundation work. Until the first stable package line is
