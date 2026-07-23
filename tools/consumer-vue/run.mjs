@@ -29,6 +29,7 @@ const PACKAGES = [
   'gcode-containers',
   'gcode-parser',
   'gcode-renderer-three',
+  'gcode-preview-core',
   'gcode-preview-vue'
 ];
 

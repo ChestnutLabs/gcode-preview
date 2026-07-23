@@ -66,7 +66,7 @@ export class StubWorker {
 export const MACHINE: MachineGeometry = {
   bed: { kind: 'rect', min: { x: 0, y: 0 }, max: { x: 256, y: 256 } },
   heightMm: 256,
-  origin: 'front-left',
+  origin: { x: 0, y: 0 },
   confidence: 'known',
   source: { adapterId: 'test', evidence: 'stub' }
 };

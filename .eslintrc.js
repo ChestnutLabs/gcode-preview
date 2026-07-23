@@ -151,6 +151,50 @@ module.exports = {
       }
     },
     {
+      // src only: the vitest config is node-side tooling, not shipped code.
+      files: ['packages/gcode-preview-core/src/**/*.ts'],
+      rules: {
+        'no-restricted-imports': [
+          'error',
+          {
+            patterns: [
+              // The framework-neutral controller (DD-007 §4.6): NO framework may enter.
+              {
+                group: ['vue', 'vue/*', 'react', 'react/*', 'react-dom*', 'svelte', 'svelte/*'],
+                message:
+                  'gcode-preview-core is framework-neutral (DD-007 §4.6) — adapters bridge, core never imports them.'
+              },
+              {
+                group: ['pinia', 'pinia/*', 'vue-router', 'vue-router/*'],
+                message: 'No state/router libs (DD-007 §4.4).'
+              },
+              { group: ['lil-gui'], message: 'gcode-preview-core ships no UI chrome (DD-007 §3).' },
+              {
+                group: ['three', 'three/*'],
+                message: 'gcode-preview-core consumes the renderer package, never three directly (DD-002 §4).'
+              },
+              {
+                group: ['@chestnutlabs/gcode-dialects*', '@chestnutlabs/gcode-containers*'],
+                message: 'Dialects/containers run inside the worker (DD-005 §4.5) — the controller never imports them.'
+              },
+              {
+                group: ['*anybridge*', '*AnyBridge*'],
+                message: 'No reusable package may import AnyBridge (DD-002 §4 core rule).'
+              },
+              {
+                group: ['node:*', 'fs', 'child_process', 'net', 'http', 'https'],
+                message: 'gcode-preview-core is browser-side only (DD-007 §7).'
+              },
+              {
+                group: ['../../../*'],
+                message: 'gcode-preview-core must not reach outside its package (DD-002 §4).'
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
       files: ['packages/gcode-preview-vue/**/*.ts', 'packages/gcode-preview-vue/**/*.vue'],
       rules: {
         'no-restricted-imports': [

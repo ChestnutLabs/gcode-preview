@@ -1,8 +1,8 @@
 {
-  "name": "@chestnutlabs/gcode-preview-vue",
+  "name": "@chestnutlabs/gcode-preview-core",
   "version": "0.0.0",
   "private": true,
-  "description": "Thin Vue 3 integration for the Chestnut Labs G-code viewer (DD-007): useGcodePreview composable + GcodePreview component over the framework-neutral parser/renderer/progress packages.",
+  "description": "Framework-neutral preview controller for the Chestnut Labs G-code viewer (DD-007 §4.6): the shared engine glue, state model, and TypeScript contracts beneath the Vue/React/Svelte adapters.",
   "license": "MIT",
   "type": "module",
   "sideEffects": false,
@@ -13,6 +13,10 @@
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
+    },
+    "./testing": {
+      "types": "./dist/testing.d.ts",
+      "import": "./dist/testing.js"
     }
   },
   "files": [
@@ -29,13 +33,6 @@
   "dependencies": {
     "@chestnutlabs/gcode-parser": "*",
     "@chestnutlabs/gcode-renderer-three": "*",
-    "@chestnutlabs/toolpath-core": "*",
-    "@chestnutlabs/gcode-preview-core": "*"
-  },
-  "peerDependencies": {
-    "vue": "^3.4.0"
-  },
-  "devDependencies": {
-    "vue": "^3.4.0"
+    "@chestnutlabs/toolpath-core": "*"
   }
 }
