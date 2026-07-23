@@ -1,0 +1,97 @@
+{
+  "meta": {
+    "surface": "Moonraker virtual_sdcard.file_position (byte-exact; the future AnyBridge JobProgress tier per DD-006 §1.1)",
+    "notes": "byte tier point mapping; before-first-segment honesty; identity size demotion and hash kill; regression note; staleness.",
+    "dd": "DD-006 §4.3 tier 1 / §4.4"
+  },
+  "irSpec": {
+    "layers": 6,
+    "segsPerLayer": 2,
+    "srcByteStart": 10,
+    "srcByteStride": 100,
+    "source": {
+      "byteLength": 1210,
+      "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    }
+  },
+  "steps": [
+    {
+      "obs": {
+        "v": 1,
+        "timestampMs": 1000,
+        "position": { "byte": 510 },
+        "file": {
+          "sizeBytes": 1210,
+          "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        },
+        "state": "printing"
+      },
+      "expect": { "segIndex": 5, "basis": "byte", "confidence": "known", "band": [5, 5], "layerIndex": 2 }
+    },
+    {
+      "obs": { "v": 1, "timestampMs": 2000, "position": { "byte": 5 }, "state": "printing" },
+      "expect": {
+        "segIndex": null,
+        "basis": "byte",
+        "confidence": "known",
+        "band": null,
+        "layerIndex": null,
+        "noteCodes": ["before-first-segment"]
+      }
+    },
+    {
+      "obs": {
+        "v": 1,
+        "timestampMs": 3000,
+        "position": { "byte": 600 },
+        "file": { "sizeBytes": 2000 },
+        "state": "printing"
+      },
+      "expect": {
+        "segIndex": 3,
+        "basis": "byte",
+        "confidence": "approximated",
+        "band": [2, 4],
+        "layerIndex": 1,
+        "noteCodes": ["file-mismatch"]
+      }
+    },
+    {
+      "obs": {
+        "v": 1,
+        "timestampMs": 4000,
+        "position": { "byte": 1100 },
+        "file": {
+          "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        },
+        "state": "printing"
+      },
+      "expect": {
+        "segIndex": null,
+        "basis": "none",
+        "confidence": "unavailable",
+        "band": null,
+        "noteCodes": ["file-mismatch"]
+      }
+    },
+    {
+      "obs": { "v": 1, "timestampMs": 5000, "position": { "byte": 1110 }, "state": "printing" },
+      "expect": { "segIndex": 11, "basis": "byte", "confidence": "known", "band": [11, 11], "layerIndex": 5 }
+    },
+    {
+      "obs": { "v": 1, "timestampMs": 6000, "position": { "byte": 110 }, "state": "printing" },
+      "expect": {
+        "segIndex": 1,
+        "basis": "byte",
+        "confidence": "known",
+        "band": [1, 1],
+        "layerIndex": 0,
+        "noteCodes": ["position-regressed"]
+      }
+    },
+    {
+      "tick": 20000,
+      "expect": { "segIndex": 1, "stale": true }
+    }
+  ]
+}

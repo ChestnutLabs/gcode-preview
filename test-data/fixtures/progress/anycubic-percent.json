@@ -1,0 +1,45 @@
+{
+  "meta": {
+    "surface": "Anycubic print report (AnyBridge common.py) — progress 0-100 (host-normalized to 0..1) + curr_layer",
+    "notes": "Percent-only early stream; layer joins later; cancelled keeps the last mapped position with a note.",
+    "dd": "DD-006 §1.1 / §4.3 / §4.4.3"
+  },
+  "irSpec": {
+    "layers": 4,
+    "segsPerLayer": 5,
+    "srcByteStart": 10,
+    "srcByteStride": 100,
+    "source": { "byteLength": 2010 }
+  },
+  "steps": [
+    {
+      "obs": { "v": 1, "timestampMs": 1000, "position": { "percent": 0.5 }, "state": "printing" },
+      "expect": {
+        "segIndex": 10,
+        "basis": "percent",
+        "confidence": "approximated",
+        "band": [9, 14],
+        "layerIndex": 2
+      }
+    },
+    {
+      "obs": {
+        "v": 1,
+        "timestampMs": 2000,
+        "position": { "percent": 0.6, "layer": 2 },
+        "state": "printing"
+      },
+      "expect": { "segIndex": 14, "basis": "layer", "confidence": "inferred", "band": [10, 14], "layerIndex": 2 }
+    },
+    {
+      "obs": { "v": 1, "timestampMs": 3000, "state": "cancelled" },
+      "expect": {
+        "segIndex": 14,
+        "basis": "layer",
+        "confidence": "inferred",
+        "layerIndex": 2,
+        "noteCodes": ["job-cancelled"]
+      }
+    }
+  ]
+}
