@@ -7,8 +7,9 @@
  * incremental build, context-loss recovery, and disposal are all deterministic.
  */
 import { describe, expect, it } from 'vitest';
+import type { LineSegments } from 'three';
 import { MoveKind, ToolpathIRBuilder, type Confidence, type ToolpathIR } from '@chestnutlabs/toolpath-core';
-import { ToolpathRenderer, type GLRendererLike, type RendererEvent } from '../index.js';
+import { createBuildVolume, ToolpathRenderer, type GLRendererLike, type RendererEvent } from '../index.js';
 
 function makeIR(
   layers: number,
@@ -287,6 +288,29 @@ describe('ToolpathRenderer clipping/scrub/visibility/coloring (phase 3)', () => 
     const ok = h.renderer.setColorMode({ mode: 'feature', palette: [[1, 0, 0]], fallback: [0.5, 0.5, 0.5] });
     expect(ok).toBe(true);
     expect(h.events.some((e) => e.type === 'error')).toBe(false);
+  });
+
+  it('build volume is corner-origin: bed spans [0..x]×[0..y] in printer coordinates', () => {
+    const volume = createBuildVolume({ x: 220, y: 220, z: 250 });
+    let minX = Infinity;
+    let maxX = -Infinity;
+    let minY = Infinity;
+    let maxY = -Infinity;
+    for (const child of volume.children) {
+      const pos = (child as LineSegments).geometry.getAttribute('position');
+      for (let i = 0; i < pos.count; i++) {
+        minX = Math.min(minX, pos.getX(i));
+        maxX = Math.max(maxX, pos.getX(i));
+        minY = Math.min(minY, pos.getY(i));
+        maxY = Math.max(maxY, pos.getY(i));
+      }
+    }
+    // Corner-origin bed: no negative coordinates; extents match the volume —
+    // the same coordinates the G-code (and toolpath) renders at (#58 follow-up).
+    expect(minX).toBe(0);
+    expect(minY).toBe(0);
+    expect(maxX).toBe(220);
+    expect(maxY).toBe(220);
   });
 
   it('range + scrub updates stay within the 16 ms interaction budget at 100k segments', () => {

@@ -2,8 +2,9 @@
  * Build-volume visualization (DD-004 §4.2/§6.2, phase 2).
  *
  * Printer-coordinate space (Z-up; the scene root applies the Y-up rotation once):
- * an XY-centered floor grid at z=0, a wireframe box of the volume, and an origin
- * marker at printer (0,0,0). Kept deliberately simple in phase 2.
+ * a floor grid at z=0 spanning [0..x]×[0..y] — cartesian-printer convention, the
+ * bed origin is the CORNER, matching the G-code coordinates the toolpath renders
+ * at — a wireframe box of the volume, and an origin marker at printer (0,0,0).
  */
 import { BufferGeometry, Float32BufferAttribute, Group, LineBasicMaterial, LineSegments } from 'three';
 
@@ -26,17 +27,16 @@ function lines(positions: number[], color: number, opacity = 1): LineSegments {
 export function createBuildVolume(def: BuildVolumeDef): Group {
   const group = new Group();
   group.name = 'buildVolume';
-  const hx = def.x / 2;
-  const hy = def.y / 2;
   const pitch = def.grid ?? 10;
 
-  // Floor grid at z=0, centered on XY (common firmware convention).
+  // Floor grid at z=0 spanning [0..x]×[0..y]: the bed's origin is its corner, so
+  // the volume occupies the same coordinates the G-code (and the toolpath) uses.
   const grid: number[] = [];
-  for (let gx = -hx; gx <= hx + 1e-6; gx += pitch) {
-    grid.push(gx, -hy, 0, gx, hy, 0);
+  for (let gx = 0; gx <= def.x + 1e-6; gx += pitch) {
+    grid.push(gx, 0, 0, gx, def.y, 0);
   }
-  for (let gy = -hy; gy <= hy + 1e-6; gy += pitch) {
-    grid.push(-hx, gy, 0, hx, gy, 0);
+  for (let gy = 0; gy <= def.y + 1e-6; gy += pitch) {
+    grid.push(0, gy, 0, def.x, gy, 0);
   }
   group.add(lines(grid, 0x448844, 0.35));
 
@@ -44,10 +44,10 @@ export function createBuildVolume(def: BuildVolumeDef): Group {
   const z = def.z;
   const box: number[] = [];
   const corners: [number, number][] = [
-    [-hx, -hy],
-    [hx, -hy],
-    [hx, hy],
-    [-hx, hy]
+    [0, 0],
+    [def.x, 0],
+    [def.x, def.y],
+    [0, def.y]
   ];
   for (let i = 0; i < 4; i++) {
     const [x1, y1] = corners[i];
