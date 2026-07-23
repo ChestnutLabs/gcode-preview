@@ -125,9 +125,38 @@ async function loadIR(file) {
   return parseGcodeToIR(new Uint8Array(buf)).ir;
 }
 
+/** Deterministic MappedProgress states over an IR (DD-006 phase 3 overlay baselines). */
+function overlayStates(ir) {
+  const count = ir.segments.count;
+  const seg = Math.floor(count * 0.55);
+  const layer = ir.segments.layer[seg];
+  const entry = ir.layers[layer];
+  const base = { layerIndex: layer, stale: false, notes: [] };
+  return {
+    'overlay-exact': { ...base, segIndex: seg, basis: 'byte', confidence: 'known', band: [seg, seg] },
+    'overlay-band': {
+      ...base,
+      segIndex: entry.segEnd,
+      basis: 'layer',
+      confidence: 'inferred',
+      band: [entry.segStart, entry.segEnd]
+    },
+    'overlay-stale': { ...base, segIndex: seg, basis: 'byte', confidence: 'known', band: [seg, seg], stale: true }
+  };
+}
+const OVERLAY_FILE = 'calicat.gcode';
+
 window.vrRun = async () => {
   const results = [];
   const captures = {};
+  const record = (key, cap) => {
+    captures[key] = cap;
+    const verdict = compare(key, cap, baseline[key]);
+    results.push(verdict);
+    log(
+      `${key}: ${verdict.status}${verdict.meanAbsGrid !== undefined ? ` (grid Δ ${verdict.meanAbsGrid}, lit Δ ${verdict.litDelta})` : ''}`
+    );
+  };
   for (const file of CORPUS) {
     const ir = await loadIR(file);
     for (const quality of ['lines', 'tubes']) {
@@ -137,13 +166,22 @@ window.vrRun = async () => {
       r.setIR(ir);
       r.flushBuild();
       fixedCamera(r);
-      const cap = capture();
-      captures[key] = cap;
-      const verdict = compare(key, cap, baseline[key]);
-      results.push(verdict);
-      log(
-        `${key}: ${verdict.status}${verdict.meanAbsGrid !== undefined ? ` (grid Δ ${verdict.meanAbsGrid}, lit Δ ${verdict.litDelta})` : ''}`
-      );
+      record(key, capture());
+      await new Promise((res) => setTimeout(res, 30));
+    }
+  }
+  // Live-progress overlay states (DD-006 §4.5): marker/ghost, band, stale — lines mode.
+  {
+    const ir = await loadIR(OVERLAY_FILE);
+    const states = overlayStates(ir);
+    for (const [name, progress] of Object.entries(states)) {
+      const key = `${OVERLAY_FILE}:lines:${name}`;
+      const r = makeRenderer();
+      r.setIR(ir);
+      r.flushBuild();
+      fixedCamera(r);
+      r.setProgress(progress);
+      record(key, capture());
       await new Promise((res) => setTimeout(res, 30));
     }
   }

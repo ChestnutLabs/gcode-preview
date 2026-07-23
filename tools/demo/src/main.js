@@ -6,6 +6,7 @@
  */
 import { GcodeParseSession, CancelledError } from '@chestnutlabs/gcode-parser';
 import { ToolpathRenderer } from '@chestnutlabs/gcode-renderer-three';
+import { createProgressMapper } from '@chestnutlabs/toolpath-core';
 
 // Inherited MIT demo corpus (see test-data/manifest.json), served by Vite's publicDir.
 const CORPUS = [
@@ -53,6 +54,9 @@ const els = {
   frame: $('frame'),
   disclosure: $('disclosure'),
   stats: $('stats'),
+  progressTier: $('progressTier'),
+  progressPlay: $('progressPlay'),
+  progressNote: $('progressNote'),
   canvas: $('view')
 };
 
@@ -197,6 +201,7 @@ async function parseAndRender() {
     const ir = result.ir;
     renderer.setIR(ir);
     enableControls(ir);
+    enableSim(ir, bytes);
     // DD-005 §4.2: this demo opts into file-discovered bed geometry (arrives
     // with the phase-2/3 adapters); mismatches surface via the renderer event.
     const machine = result.metadata?.machine;
@@ -226,6 +231,109 @@ async function parseAndRender() {
     els.cancel.disabled = true;
     els.progress.hidden = true;
   }
+}
+
+// ---------------------------------------------------------------------------
+// Simulated live telemetry (DD-006 phase 3, #92): drive the mapper + overlay
+// with observation streams shaped like the real §1.1 surfaces — no printer
+// needed to verify exact/band/stale/hidden presentations.
+// ---------------------------------------------------------------------------
+const sim = { mapper: null, ir: null, fileBytes: 0, timer: null, staleTimer: null, fraction: 0 };
+
+function stopSim(clearOverlay) {
+  if (sim.timer !== null) clearInterval(sim.timer);
+  if (sim.staleTimer !== null) clearInterval(sim.staleTimer);
+  sim.timer = null;
+  sim.staleTimer = null;
+  els.progressPlay.textContent = 'Play';
+  if (clearOverlay && sim.mapper !== null) {
+    sim.mapper.reset();
+    renderer.setProgress(null);
+    els.progressNote.textContent = 'Stopped.';
+  }
+}
+
+function simObservation(fraction) {
+  const tier = els.progressTier.value;
+  const base = { v: 1, timestampMs: Date.now(), state: fraction >= 1 ? 'complete' : 'printing' };
+  const layerCount = sim.ir.layers.length;
+  switch (tier) {
+    case 'byte':
+      return { ...base, position: { byte: Math.round(fraction * sim.fileBytes) } };
+    case 'percent-bytes':
+      return { ...base, position: { percent: fraction, percentBasis: 'bytes' } };
+    case 'layer':
+      return {
+        ...base,
+        position: { layer: Math.min(layerCount - 1, Math.floor(fraction * layerCount)), totalLayers: layerCount }
+      };
+    case 'percent-job':
+      return { ...base, position: { percent: fraction, percentBasis: 'job' } };
+    case 'mismatch':
+      return {
+        ...base,
+        position: { byte: Math.round(fraction * sim.fileBytes) },
+        file: { sizeBytes: Math.round(sim.fileBytes * 1.5), name: 'some-other-file.gcode' }
+      };
+    default:
+      return base;
+  }
+}
+
+function simStep() {
+  sim.fraction = Math.min(1, sim.fraction + 0.004);
+  const mappedResult = sim.mapper.observe(simObservation(sim.fraction));
+  renderer.setProgress(mappedResult);
+  const notes = mappedResult.notes.map((n) => n.code).join(', ');
+  els.progressNote.textContent =
+    `${(sim.fraction * 100).toFixed(1)}% · basis: ${mappedResult.basis} · ` +
+    `confidence: ${mappedResult.confidence} · shown as: ${renderer.progressPresentation}` +
+    (notes ? ` · notes: ${notes}` : '');
+  if (sim.fraction >= 1) stopSim(false);
+}
+
+els.progressPlay.addEventListener('click', () => {
+  if (sim.timer !== null) {
+    // Pause: stop observing but keep ticking the mapper — after staleAfterMs
+    // the overlay visibly grays out (honest staleness, not a frozen lie).
+    stopSim(false);
+    els.progressPlay.textContent = 'Resume';
+    els.progressNote.textContent += ' · paused (overlay goes stale in ~10 s)';
+    sim.staleTimer = setInterval(() => {
+      const ticked = sim.mapper.tick(Date.now());
+      renderer.setProgress(ticked);
+      if (ticked.stale) {
+        els.progressNote.textContent = `Stale — last position held, shown as: ${renderer.progressPresentation}`;
+        clearInterval(sim.staleTimer);
+        sim.staleTimer = null;
+      }
+    }, 1000);
+    return;
+  }
+  if (sim.mapper === null) return;
+  if (sim.staleTimer !== null) clearInterval(sim.staleTimer);
+  sim.staleTimer = null;
+  if (sim.fraction >= 1) sim.fraction = 0;
+  els.progressPlay.textContent = 'Pause';
+  sim.timer = setInterval(simStep, 100);
+});
+
+els.progressTier.addEventListener('change', () => {
+  if (sim.mapper !== null) {
+    sim.mapper.reset();
+    sim.fraction = 0;
+  }
+});
+
+function enableSim(ir, fileBytes) {
+  stopSim(false);
+  sim.ir = ir;
+  sim.fileBytes = fileBytes;
+  sim.fraction = 0;
+  sim.mapper = createProgressMapper(ir, { fileSizeBytes: fileBytes });
+  els.progressTier.disabled = false;
+  els.progressPlay.disabled = false;
+  els.progressNote.textContent = 'Pick a tier and press Play.';
 }
 
 els.parse.addEventListener('click', () => void parseAndRender());
@@ -278,4 +386,4 @@ window.addEventListener('resize', fitCanvas);
 new ResizeObserver(fitCanvas).observe(main);
 
 // Debug/inspection handle (also used by automated demo verification).
-window.viewer = { renderer, session };
+window.viewer = { renderer, session, sim };
