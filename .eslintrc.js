@@ -80,6 +80,33 @@ module.exports = {
       }
     },
     {
+      files: ['packages/gcode-renderer-three/**/*.ts', 'packages/gcode-renderer-three/**/*.mts'],
+      rules: {
+        'no-restricted-imports': [
+          'error',
+          {
+            patterns: [
+              // three IS allowed here (DD-002 §4) — the renderer's one framework dependency.
+              { group: ['vue', 'vue/*'], message: 'the renderer must not depend on Vue (DD-002 §4).' },
+              { group: ['lil-gui'], message: 'the renderer must not depend on UI libraries (DD-002 §4).' },
+              {
+                group: ['@chestnutlabs/gcode-parser', '@chestnutlabs/gcode-parser/*', '@chestnutlabs/gcode-dialects*'],
+                message: 'The renderer consumes ToolpathIR only — never parser internals or dialect recognizers (DD-004 §4.1).'
+              },
+              {
+                group: ['*anybridge*', '*AnyBridge*'],
+                message: 'No reusable package may import AnyBridge (DD-002 §4 core rule).'
+              },
+              {
+                group: ['../../../*'],
+                message: 'gcode-renderer-three must not reach outside its package (DD-002 §4).'
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
       files: ['src/**/*.ts'],
       rules: {
         'no-restricted-imports': [
