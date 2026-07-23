@@ -188,7 +188,15 @@ function benchRenderer(ir, label) {
   const count = ir.segments.count;
   const mk = (f) => {
     const seg = Math.min(count - 1, Math.round(f * count));
-    return { segIndex: seg, basis: 'byte', confidence: 'known', band: [seg, seg], layerIndex: null, stale: false, notes: [] };
+    return {
+      segIndex: seg,
+      basis: 'byte',
+      confidence: 'known',
+      band: [seg, seg],
+      layerIndex: null,
+      stale: false,
+      notes: []
+    };
   };
   // One-time overlay warm-up (ghost/band mesh creation across all chunks).
   const tw = performance.now();
@@ -224,7 +232,14 @@ function benchRenderer(ir, label) {
   }
   const chunks = renderer.chunkMeshes.length;
   renderer.dispose();
-  return { label, segments: count, chunks, warmupMs: Math.round(warmupMs * 100) / 100, exact: stats(times), band: stats(bandTimes) };
+  return {
+    label,
+    segments: count,
+    chunks,
+    warmupMs: Math.round(warmupMs * 100) / 100,
+    exact: stats(times),
+    band: stats(bandTimes)
+  };
 }
 
 const TIERS = [
