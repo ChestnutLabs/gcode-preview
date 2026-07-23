@@ -254,3 +254,6 @@ function fitCanvas() {
 fitCanvas();
 window.addEventListener('resize', fitCanvas);
 new ResizeObserver(fitCanvas).observe(main);
+
+// Debug/inspection handle (also used by automated demo verification).
+window.viewer = { renderer, session };

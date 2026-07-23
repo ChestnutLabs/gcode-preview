@@ -76,6 +76,7 @@ export class ToolpathRenderer {
   private readonly root = new Group();
   private readonly toolpathGroup = new Group();
   private volumeGroup: Group | null = null;
+  private volumeDef: BuildVolumeDef | null = null;
   readonly camera: PerspectiveCamera;
   private controls: OrbitControls | null = null;
 
@@ -112,9 +113,22 @@ export class ToolpathRenderer {
     this.canvas = opts.canvas;
     this.chunksPerTick = opts.chunksPerTick ?? 4;
     this.colorMode = opts.colorMode ?? DEFAULT_COLOR;
+    // Default scheduler: rAF for frame alignment, with a timeout backstop so
+    // work still progresses when rAF is suspended (hidden/throttled tabs —
+    // otherwise a parse finishing in a background tab would never finish
+    // uploading). Whichever fires first runs the callback exactly once.
     this.scheduleFrame =
       opts.scheduleFrame ??
-      ((cb) => (typeof requestAnimationFrame === 'function' ? requestAnimationFrame(() => cb()) : setTimeout(cb, 16)));
+      ((cb) => {
+        let ran = false;
+        const run = (): void => {
+          if (ran) return;
+          ran = true;
+          cb();
+        };
+        if (typeof requestAnimationFrame === 'function') requestAnimationFrame(run);
+        setTimeout(run, 50);
+      });
     this.gl = (opts.createRenderer ?? ((canvas) => new WebGLRenderer({ canvas, antialias: true })))(opts.canvas);
 
     // Single Z-up→Y-up conversion (§6.2); everything below is printer coordinates.
@@ -122,6 +136,7 @@ export class ToolpathRenderer {
     this.scene.add(this.root);
     this.root.add(this.toolpathGroup);
     if (opts.buildVolume) {
+      this.volumeDef = opts.buildVolume;
       this.volumeGroup = createBuildVolume(opts.buildVolume);
       this.root.add(this.volumeGroup);
     }
@@ -137,6 +152,7 @@ export class ToolpathRenderer {
 
     this.canvas.addEventListener('webglcontextlost', this.onContextLost);
     this.canvas.addEventListener('webglcontextrestored', this.onContextRestored);
+    this.frame(); // sensible initial view (bed-centered until an IR arrives)
   }
 
   onEvent(cb: (e: RendererEvent) => void): () => void {
@@ -297,6 +313,10 @@ export class ToolpathRenderer {
     if (b) {
       center.set((b.min.x + b.max.x) / 2, (b.min.y + b.max.y) / 2, (b.min.z + b.max.z) / 2);
       radius = Math.max(10, center.distanceTo(new Vector3(b.min.x, b.min.y, b.min.z)));
+    } else if (this.volumeDef) {
+      // No toolpath yet: the bed is corner-origin, so its center is (x/2, y/2).
+      center.set(this.volumeDef.x / 2, this.volumeDef.y / 2, 0);
+      radius = Math.max(10, Math.max(this.volumeDef.x, this.volumeDef.y) * 0.75);
     }
     // Printer coords → scene coords through the root rotation (x, z, -y).
     const target = new Vector3(center.x, center.z, -center.y);
