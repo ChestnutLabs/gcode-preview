@@ -450,6 +450,67 @@
       },
       "sizeTier": "tiny",
       "limitations": "Synthetic marker structure, not copied slicer output; real-world samples welcome per governance §11."
+    },
+    {
+      "id": "dialect-cura-style",
+      "path": "test-data/fixtures/dialects/cura-style-sample.gcode",
+      "sha256": "97a934b19101ee0578ce41735a8a529b7a8b77073e83aeb327bef68b26be3625",
+      "bytes": 622,
+      "origin": "Chestnut-constructed dialect fixture (tools/fixtures/make-dialect-fixtures.mjs, deterministic)",
+      "contributor": "chestnutlabs",
+      "redistribution": "chestnut-original-mit",
+      "slicer": "synthetic (Cura comment structure, Marlin flavor)",
+      "targetFamily": "FDM",
+      "features": [
+        "dialect",
+        "feature-roles",
+        "firmware-composition"
+      ],
+      "expectedCapabilities": {
+        "featureRoles": "known"
+      },
+      "sizeTier": "tiny",
+      "limitations": "Synthetic marker structure, not copied slicer output; real-world samples welcome per governance §11."
+    },
+    {
+      "id": "dialect-klipper-prusa",
+      "path": "test-data/fixtures/dialects/klipper-prusa-sample.gcode",
+      "sha256": "c988d88e815e9d244d1cca3f4f8b1939a8276b5f608204e0b806f2abfe96902c",
+      "bytes": 583,
+      "origin": "Chestnut-constructed dialect fixture (tools/fixtures/make-dialect-fixtures.mjs, deterministic)",
+      "contributor": "chestnutlabs",
+      "redistribution": "chestnut-original-mit",
+      "slicer": "synthetic (PrusaSlicer for Klipper)",
+      "targetFamily": "FDM",
+      "features": [
+        "dialect",
+        "feature-roles",
+        "firmware-composition",
+        "bed-shape"
+      ],
+      "expectedCapabilities": {
+        "featureRoles": "known"
+      },
+      "sizeTier": "tiny",
+      "limitations": "Synthetic marker structure, not copied slicer output; real-world samples welcome per governance §11."
+    },
+    {
+      "id": "dialect-reprap-style",
+      "path": "test-data/fixtures/dialects/reprap-style-sample.gcode",
+      "sha256": "19756f206634c21a6613542a65bc021a0a6be37d3ea92215a86c3aa3017ca541",
+      "bytes": 111,
+      "origin": "Chestnut-constructed dialect fixture (tools/fixtures/make-dialect-fixtures.mjs, deterministic)",
+      "contributor": "chestnutlabs",
+      "redistribution": "chestnut-original-mit",
+      "slicer": "synthetic (RepRap flavor header)",
+      "targetFamily": "FDM",
+      "features": [
+        "dialect",
+        "firmware-detection"
+      ],
+      "expectedCapabilities": {},
+      "sizeTier": "tiny",
+      "limitations": "Synthetic marker structure, not copied slicer output; real-world samples welcome per governance §11."
     }
   ]
 }

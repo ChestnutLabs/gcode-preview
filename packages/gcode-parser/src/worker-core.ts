@@ -78,6 +78,8 @@ export interface WorkerHandlerOptions {
 const PROGRESS_THROTTLE_MS = 100;
 const DETECT_HEAD_BYTES = 64 * 1024;
 const DETECT_TAIL_BYTES = 16 * 1024;
+/** §4.5 stream replay: max recorded hook events before annotation degrades (visibly). */
+const STREAM_EVENT_CAP = 500_000;
 
 /** Detection windows for sliceable inputs (DD-005 §4.5). Non-seekable streams: head/tail arrive in phase 4. */
 async function detectWindows(input: ParseInputWire): Promise<{ headText: string; tailText: string }> {
@@ -273,6 +275,36 @@ export function createWorkerHandler(
           }
         }
 
+        // §4.5 non-seekable stream tail detection: no up-front windows exist,
+        // so record hook events (bounded) plus head/tail text during the parse
+        // and REPLAY into a late-detected run afterwards. Container plate
+        // streams don't need this — their run detects via containerMeta.
+        type RecordedEvent = { kind: 'comment'; t: string; b: number } | { kind: 'command'; e: CommandEvent };
+        let streamReplay: {
+          events: RecordedEvent[];
+          overflow: boolean;
+          windows: { head: string; tail: string };
+        } | null = null;
+        if (
+          run === null &&
+          selection !== false &&
+          handlerOpts.dialects !== undefined &&
+          opened === null &&
+          isReadableStreamLike(input)
+        ) {
+          const rec = { events: [] as RecordedEvent[], overflow: false, windows: { head: '', tail: '' } };
+          streamReplay = rec;
+          hooks.captureWindows = rec.windows;
+          (parseOpts as ParseOptions).onComment = (t, b) => {
+            if (rec.events.length < STREAM_EVENT_CAP) rec.events.push({ kind: 'comment', t, b });
+            else rec.overflow = true;
+          };
+          (parseOpts as ParseOptions).onCommand = (e) => {
+            if (rec.events.length < STREAM_EVENT_CAP) rec.events.push({ kind: 'command', e });
+            else rec.overflow = true;
+          };
+        }
+
         const result = await dispatchParse(input, parseOpts, hooks);
         if (result.cancelled) {
           const partial = partialOnCancel ? { ir: result.ir, stats: result.stats } : undefined;
@@ -281,6 +313,31 @@ export function createWorkerHandler(
             partial ? irTransferList(partial.ir) : undefined
           );
           return;
+        }
+        if (streamReplay !== null) {
+          if (streamReplay.overflow) {
+            result.ir.header.warnings.push({
+              code: 'dialect-stream-truncated',
+              message:
+                'stream exceeded the dialect replay budget; annotation skipped — ' +
+                'use Uint8Array/Blob input for full annotation of very large files',
+              severity: 'warn',
+              count: 1
+            });
+          } else {
+            run = handlerOpts.dialects!.createRun({
+              selection: selection as 'auto' | string[],
+              config: dialectConfig,
+              headText: streamReplay.windows.head,
+              tailText: streamReplay.windows.tail
+            });
+            if (run !== null) {
+              for (const ev of streamReplay.events) {
+                if (ev.kind === 'comment') run.onComment(ev.t, ev.b);
+                else run.onCommand(ev.e);
+              }
+            }
+          }
         }
         let metadata: DialectMetadata | undefined;
         if (run !== null) {
