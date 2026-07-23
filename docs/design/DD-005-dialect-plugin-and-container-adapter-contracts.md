@@ -42,7 +42,11 @@ issue #70 (this DD), maintainer request 2026-07-22 (per-file bed geometry; `.gco
 > default `partialMinBytes` to **8 MiB** (explicit consumer settings win) — at the direct-input
 > 25 MiB default, container TTFP measured 3,678 ms (over the 3 s budget); at 8 MiB it is **1,322 ms**
 > with zero total-time cost. Direct-input defaults unchanged. The compatibility matrix is published
-> as the per-phase evidence record; E4 exit additionally requires the §7.3 security-review sign-off.
+> as the per-phase evidence record.
+>
+> **E4 accepted 2026-07-23** — including the container-threshold ratification above and the **§7.3
+> security-review sign-off** (record: [SECURITY-REVIEW-DD-005-containers.md](SECURITY-REVIEW-DD-005-containers.md)).
+> Every §15 acceptance criterion is met; the coverage-guided-fuzzing recommendation carries to E7.
 
 ## 1. Problem
 
