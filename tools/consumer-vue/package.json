@@ -1,0 +1,23 @@
+{
+  "name": "consumer-vue-fixture",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "description": "DD-007 phase 4 consumer contract fixture (issue #107): a genuinely separate Vue app installing the packed @chestnutlabs tarballs — the pre-publication proof that committed consumer builds resolve reproducibly.",
+  "scripts": {
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@chestnutlabs/gcode-containers": "file:tarballs/chestnutlabs-gcode-containers.tgz",
+    "@chestnutlabs/gcode-dialects": "file:tarballs/chestnutlabs-gcode-dialects.tgz",
+    "@chestnutlabs/gcode-parser": "file:tarballs/chestnutlabs-gcode-parser.tgz",
+    "@chestnutlabs/gcode-preview-vue": "file:tarballs/chestnutlabs-gcode-preview-vue.tgz",
+    "@chestnutlabs/gcode-renderer-three": "file:tarballs/chestnutlabs-gcode-renderer-three.tgz",
+    "@chestnutlabs/toolpath-core": "file:tarballs/chestnutlabs-toolpath-core.tgz",
+    "vue": "^3.4.0"
+  },
+  "devDependencies": {
+    "happy-dom": "^15.0.0",
+    "vitest": "^4.0.0"
+  }
+}
