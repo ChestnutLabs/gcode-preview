@@ -42,3 +42,17 @@ annotation) · **unsupported** (generic parse only — geometry always works; me
 | Multi-tool / AMS / IDEX | core `tool` channel (T commands) + adapter `filament_type/colour` → `ir.tools` material/color | **full** (`dialect-multitool-ams`, 2026-07-23) |
 | Arc moves (G2/G3) | core parser (golden-gated) | **full** since E2 |
 | Per-file build plate in the viewer | `metadata.machine` → `setBuildVolume` (DD-005 §4.2) | mechanism shipped (phase 1); data arrives phases 2–3 |
+
+## Live progress tiers (DD-006, E5)
+
+What each surveyed telemetry surface can drive on the overlay, per the DD-006 §1.1 evidence and
+the [progress-signal contract](../reference/progress-signal-contract.md). "Presentation" is what
+the viewer honestly shows — marker only for byte-exact.
+
+| Surface (host-normalized) | Facts available | Best tier | Presentation | Evidence |
+|---|---|---|---|---|
+| Klipper / Moonraker `virtual_sdcard.file_position` | exact byte offset | byte (`known`) | marker + completed/ghost | fixture `progress-byte-exact` (2026-07-23); *unplumbed in AnyBridge today — additive upgrade* |
+| Klipper / Moonraker `virtual_sdcard.progress` | byte-fraction percent (+ layers only with `SET_PRINT_STATS_INFO`) | percent-bytes promotion (`approximated`) or layer (`inferred`) | band | fixture `progress-klipper-byte-fraction` (2026-07-23) |
+| Bambu MQTT `push_status` | `mc_percent` (job basis) + `layer_num`/`total_layer_num` | layer (`inferred`) | whole-layer band | fixture `progress-bambu-percent-layer` (2026-07-23) |
+| Anycubic families (print report) | percent (0–100) + `curr_layer` | layer (`inferred`) / percent (`approximated`) | band | fixture `progress-anycubic-percent` (2026-07-23) |
+| Any surface reporting source lines/commands | — none surveyed emit them | reserved (D3) | falls through with `line-unmapped` | DD-006 §1.1 survey |
