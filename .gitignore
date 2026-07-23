@@ -21,6 +21,9 @@ demo/lib
 # --- Chestnut Labs additions ---
 # Workspace package build output
 /packages/*/dist/
+# Consumer-smoke build output and local caches (tools/consumer-smoke)
+/tools/consumer-smoke/*/dist/
+/tools/consumer-smoke/*/.electron-cache/
 
 # Private project data and local environment — never published. See PROJECT_SETUP.md.
 /ProjectSource/

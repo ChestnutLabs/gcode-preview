@@ -1,0 +1,18 @@
+{
+  "name": "gcode-parser-vite-smoke",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "description": "DD-003 §4.4/§11 consumer smoke: a minimal Vite app consuming @chestnutlabs/gcode-parser's default worker path.",
+  "scripts": {
+    "build": "vite build",
+    "dev": "vite"
+  },
+  "dependencies": {
+    "@chestnutlabs/gcode-parser": "file:../../../packages/gcode-parser",
+    "@chestnutlabs/toolpath-core": "file:../../../packages/toolpath-core"
+  },
+  "devDependencies": {
+    "vite": "^6.0.0"
+  }
+}
