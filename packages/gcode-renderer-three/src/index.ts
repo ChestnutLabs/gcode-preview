@@ -11,3 +11,7 @@ export { buildChunkColors } from './colors.js';
 export type { ColorMode, RGB } from './colors.js';
 export { computeDrawState } from './ranges.js';
 export type { ChunkDrawState } from './ranges.js';
+export { ToolpathRenderer } from './scene.js';
+export type { ToolpathRendererOptions, RendererEvent, GLRendererLike } from './scene.js';
+export { createBuildVolume } from './build-volume.js';
+export type { BuildVolumeDef } from './build-volume.js';

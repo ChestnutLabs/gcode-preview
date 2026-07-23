@@ -2,7 +2,7 @@
   "name": "@chestnutlabs/gcode-renderer-three",
   "version": "0.0.0",
   "private": true,
-  "description": "Three.js toolpath renderer consuming ToolpathIR (DD-004). Phase 1: pure geometry builders.",
+  "description": "Three.js toolpath renderer consuming ToolpathIR (DD-004). Phases 1-2: geometry builders + scene/lifecycle.",
   "license": "MIT",
   "type": "module",
   "sideEffects": false,
@@ -27,6 +27,10 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@chestnutlabs/toolpath-core": "*"
+    "@chestnutlabs/toolpath-core": "*",
+    "three": "0.178.0"
+  },
+  "devDependencies": {
+    "@types/three": "0.178.0"
   }
 }
