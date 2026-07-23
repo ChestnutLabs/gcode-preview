@@ -13,7 +13,7 @@
  * Usage: node tools/consumer-vue/run.mjs   (repo root or anywhere)
  */
 import { execSync } from 'node:child_process';
-import { mkdirSync, renameSync, readdirSync, rmSync } from 'node:fs';
+import { mkdirSync, readFileSync, renameSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 
@@ -57,8 +57,36 @@ for (const pkg of PACKAGES) {
   renameSync(join(tarballDir, packed), join(tarballDir, `chestnutlabs-${pkg}.tgz`));
 }
 
+console.log('\n== reconcile lockfile with fresh tarballs (bytes differ; shape must not) ==');
+// npm pack is not byte-reproducible (tar timestamps), so the committed lockfile's
+// tarball integrity hashes can never match a fresh pack. Strip integrity for the
+// file: tarball entries only — the reproducibility claim under test is the RESOLUTION
+// SHAPE (everything @chestnutlabs from local tarballs, nothing from a registry),
+// asserted explicitly after install.
+const lockPath = join(here, 'package-lock.json');
+const lock = JSON.parse(readFileSync(lockPath, 'utf8'));
+for (const [key, entry] of Object.entries(lock.packages ?? {})) {
+  if (key.includes('node_modules/@chestnutlabs/') || entry.resolved?.startsWith('file:')) {
+    delete entry.integrity;
+  }
+}
+writeFileSync(lockPath, JSON.stringify(lock, null, 2) + '\n');
+
 console.log('\n== install fixture app from tarballs ==');
 run('npm install --no-audit --no-fund', here);
+
+console.log('\n== assert resolution shape (the D3 reproducibility claim) ==');
+const after = JSON.parse(readFileSync(lockPath, 'utf8'));
+const chestnut = Object.entries(after.packages ?? {}).filter(([k]) => k.includes('node_modules/@chestnutlabs/'));
+if (chestnut.length !== PACKAGES.length) {
+  throw new Error(`expected ${PACKAGES.length} @chestnutlabs packages resolved, found ${chestnut.length}`);
+}
+for (const [key, entry] of chestnut) {
+  if (!(entry.resolved ?? '').includes('tarballs/')) {
+    throw new Error(`${key} resolved from '${entry.resolved}' — expected the local tarball, never a registry`);
+  }
+}
+console.log(`resolution shape OK: ${chestnut.length}/${PACKAGES.length} @chestnutlabs packages from local tarballs`);
 
 console.log('\n== contract tests ==');
 run('npm test', here);
