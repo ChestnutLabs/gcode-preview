@@ -143,9 +143,10 @@ module.exports = {
       }
     },
     {
-      files: ['packages/gcode-containers/src/__tests__/**/*.ts'],
+      files: ['packages/gcode-containers/src/__tests__/**/*.ts', 'packages/gcode-dialects/src/__tests__/**/*.ts'],
       rules: {
-        // Tests READ committed fixtures from disk; the shipped library never touches fs (rule above).
+        // Tests read committed fixtures and drive the real parser to produce IRs;
+        // the shipped libraries keep the full restrictions above.
         'no-restricted-imports': 'off'
       }
     },

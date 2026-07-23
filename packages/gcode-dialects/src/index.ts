@@ -11,3 +11,15 @@ export type { DialectAdapter, DetectInput, AnnotationSink, CommandEvent } from '
 export { createDialectRunner } from './registry.js';
 export type { DialectRunnerFactory, DialectRun, DialectRunInput, DialectRunResult } from './registry.js';
 export { BufferedAnnotationSink } from './sink.js';
+export { prusaSlicer } from './prusaslicer.js';
+export { orcaBambu } from './orca-bambu.js';
+export {
+  segAtOrAfterByte,
+  applyMarkerRanges,
+  parseKeyValue,
+  parseAreaPoints,
+  bedFromPoints,
+  decodeBase64,
+  ThumbnailCollector
+} from './annotate.js';
+export type { RangeMarker } from './annotate.js';

@@ -1,0 +1,66 @@
+{
+  "irSchemaVersion": 1,
+  "segmentCount": 27,
+  "layerCount": 2,
+  "toolCount": 1,
+  "originOffset": {
+    "x": 0,
+    "y": 0,
+    "z": 0
+  },
+  "bounds": {
+    "min": {
+      "x": 50,
+      "y": 50,
+      "z": 0.2
+    },
+    "max": {
+      "x": 150,
+      "y": 150,
+      "z": 0.4
+    }
+  },
+  "boundsWithTravel": {
+    "min": {
+      "x": 0,
+      "y": 0,
+      "z": 0
+    },
+    "max": {
+      "x": 150,
+      "y": 150,
+      "z": 0.4
+    }
+  },
+  "capabilities": {
+    "geometry": "known",
+    "moveKind": "known",
+    "tools": "known",
+    "layers": "inferred",
+    "extrusionDelta": "unavailable",
+    "feedrate": "unavailable",
+    "sourcePositions": "unavailable",
+    "featureRoles": "unavailable",
+    "objects": "unavailable"
+  },
+  "warningCodes": [
+    "adapter-lossy-source",
+    "layers-partially-inferred"
+  ],
+  "bufferDigests": {
+    "x0": "bd70f37f",
+    "y0": "84d7eb07",
+    "z0": "7981d421",
+    "x1": "4c26c13b",
+    "y1": "968ec2b3",
+    "z1": "82e51e36",
+    "e": "397a9e35",
+    "feedrate": "a5377608",
+    "kind": "093fe8cc",
+    "tool": "a657db5d",
+    "layer": "f5312b04",
+    "feature": "0b316b57",
+    "object": "397a9e35",
+    "srcByte": "397a9e35"
+  }
+}

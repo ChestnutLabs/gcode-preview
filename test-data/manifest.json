@@ -244,8 +244,8 @@
     {
       "id": "container-adv-bad-crc",
       "path": "test-data/fixtures/containers/adv-bad-crc.gcode.3mf",
-      "sha256": "077df2979041052e48af87d06e5239f333132b3dd130e321a9e67a8ff3686b4e",
-      "bytes": 746,
+      "sha256": "817ec0210d8e01ab2e553e22ffee77ea5b53c7489578bd8f6a17802a752717bb",
+      "bytes": 805,
       "origin": "Chestnut-constructed container fixture (tools/fixtures/make-gcode-3mf.mjs, deterministic)",
       "contributor": "chestnutlabs",
       "redistribution": "chestnut-original-mit",
@@ -262,8 +262,8 @@
     {
       "id": "container-adv-duplicate-plate",
       "path": "test-data/fixtures/containers/adv-duplicate-plate.gcode.3mf",
-      "sha256": "fa488b0558524101e7a0835edb57eac06bc24df21e2f6d6624277bca7cd44570",
-      "bytes": 782,
+      "sha256": "e4f0dd6bd9e52be3f9d9222afc2447f9c74446dbcabd8f0c1bd08877a96f435c",
+      "bytes": 901,
       "origin": "Chestnut-constructed container fixture (tools/fixtures/make-gcode-3mf.mjs, deterministic)",
       "contributor": "chestnutlabs",
       "redistribution": "chestnut-original-mit",
@@ -280,8 +280,8 @@
     {
       "id": "container-adv-encrypted",
       "path": "test-data/fixtures/containers/adv-encrypted.gcode.3mf",
-      "sha256": "e63128049a964ab0bd029e421962614181cc9ba5b513896c718c3411cd109dde",
-      "bytes": 418,
+      "sha256": "c0c2c5554c3a4b749abd83efd047a65d966ddaede584692cee37ea1471a44152",
+      "bytes": 477,
       "origin": "Chestnut-constructed container fixture (tools/fixtures/make-gcode-3mf.mjs, deterministic)",
       "contributor": "chestnutlabs",
       "redistribution": "chestnut-original-mit",
@@ -298,8 +298,8 @@
     {
       "id": "container-adv-header-mismatch",
       "path": "test-data/fixtures/containers/adv-header-mismatch.gcode.3mf",
-      "sha256": "bb71113cb60a8d357105d2b5d5aa8814434056e76932899ec525c9ef0981fe31",
-      "bytes": 421,
+      "sha256": "18ec26cfc1abd52936504982288e9b434e215d954fc7bb1178527b96818caa54",
+      "bytes": 480,
       "origin": "Chestnut-constructed container fixture (tools/fixtures/make-gcode-3mf.mjs, deterministic)",
       "contributor": "chestnutlabs",
       "redistribution": "chestnut-original-mit",
@@ -334,8 +334,8 @@
     {
       "id": "container-adv-traversal-names",
       "path": "test-data/fixtures/containers/adv-traversal-names.gcode.3mf",
-      "sha256": "d07afd5ccfcc052ad86f283f552b060119d1c6c66258979829c2ade059565df2",
-      "bytes": 662,
+      "sha256": "40c38455831f691d0ea4f2f32e7d165cc9c107f6cfa623a790afdfdf3d4e39a1",
+      "bytes": 721,
       "origin": "Chestnut-constructed container fixture (tools/fixtures/make-gcode-3mf.mjs, deterministic)",
       "contributor": "chestnutlabs",
       "redistribution": "chestnut-original-mit",
@@ -352,8 +352,8 @@
     {
       "id": "container-adv-truncated",
       "path": "test-data/fixtures/containers/adv-truncated.gcode.3mf",
-      "sha256": "db48d67e6059ad8aaaaff0b92646db10d472a770b3e5fe1c23390d3ed2703af7",
-      "bytes": 781,
+      "sha256": "802192489f333aa27fdd089dcb0d957d9d16667799d4daf798a202930d7608a5",
+      "bytes": 827,
       "origin": "Chestnut-constructed container fixture (tools/fixtures/make-gcode-3mf.mjs, deterministic)",
       "contributor": "chestnutlabs",
       "redistribution": "chestnut-original-mit",
@@ -370,8 +370,8 @@
     {
       "id": "container-mini-project",
       "path": "test-data/fixtures/containers/mini-project.gcode.3mf",
-      "sha256": "aca93980f6e1f9d96fbe109bd898e4b958aacd77566afe75249496e39b52349b",
-      "bytes": 2652,
+      "sha256": "a7b6620cb730d15ce6db5d3f480066254aba0207252e3aaff6c2e43094da19a3",
+      "bytes": 2802,
       "origin": "Chestnut-constructed container fixture (tools/fixtures/make-gcode-3mf.mjs, deterministic)",
       "contributor": "chestnutlabs",
       "redistribution": "chestnut-original-mit",
@@ -404,6 +404,52 @@
       "expectedCapabilities": {},
       "sizeTier": "tiny",
       "limitations": "Must FAIL with the explanatory E_CONTAINER_NO_PAYLOAD (model/project, not sliced)."
+    },
+    {
+      "id": "dialect-prusa-style",
+      "path": "test-data/fixtures/dialects/prusa-style-sample.gcode",
+      "sha256": "6ea4aafc7383d2820ca384ba2919aba751195adcd8cf72b249bf62b44039fad8",
+      "bytes": 848,
+      "origin": "Chestnut-constructed dialect fixture (tools/fixtures/make-dialect-fixtures.mjs, deterministic)",
+      "contributor": "chestnutlabs",
+      "redistribution": "chestnut-original-mit",
+      "slicer": "synthetic (PrusaSlicer comment structure)",
+      "targetFamily": "FDM single/multi-object",
+      "features": [
+        "dialect",
+        "feature-roles",
+        "bed-shape",
+        "thumbnail"
+      ],
+      "expectedCapabilities": {
+        "featureRoles": "known",
+        "layers": "inferred"
+      },
+      "sizeTier": "tiny",
+      "limitations": "Synthetic marker structure, not copied slicer output; real-world samples welcome per governance §11."
+    },
+    {
+      "id": "dialect-orca-bambu-style",
+      "path": "test-data/fixtures/dialects/orca-bambu-style-sample.gcode",
+      "sha256": "8bd6d06034af201e43a5f57eea18f028458d29aa412220207bef32dc1dbfba90",
+      "bytes": 918,
+      "origin": "Chestnut-constructed dialect fixture (tools/fixtures/make-dialect-fixtures.mjs, deterministic)",
+      "contributor": "chestnutlabs",
+      "redistribution": "chestnut-original-mit",
+      "slicer": "synthetic (Orca/Bambu comment structure)",
+      "targetFamily": "FDM single/multi-object",
+      "features": [
+        "dialect",
+        "feature-roles",
+        "objects",
+        "printable-area"
+      ],
+      "expectedCapabilities": {
+        "featureRoles": "known",
+        "objects": "known"
+      },
+      "sizeTier": "tiny",
+      "limitations": "Synthetic marker structure, not copied slicer output; real-world samples welcome per governance §11."
     }
   ]
 }

@@ -63,9 +63,9 @@ describe('.gcode.3mf container (#74)', () => {
     const opened = await openGcode3mf(load('mini-project.gcode.3mf'));
     const text1 = await drain(opened.openPlate(0));
     const text2 = await drain(opened.openPlate(1));
-    expect(text1.startsWith('; generated fixture plate 1')).toBe(true);
-    expect(text2.startsWith('; generated fixture plate 2')).toBe(true);
-    expect(text1.split('\n').length).toBe(402);
+    expect(text1).toContain('; generated fixture plate 1');
+    expect(text2).toContain('; generated fixture plate 2');
+    expect(text1.split('\n').length).toBe(405); // header + FEATURE markers + 400 moves
     expect(() => opened.openPlate(9)).toThrow(ContainerError);
   });
 
@@ -93,7 +93,7 @@ describe('.gcode.3mf container (#74)', () => {
     expect(opened.plates.length).toBe(1);
     const hostile = opened.metadata.warnings.filter((w) => w.code === 'container-entry-hostile-name');
     expect(hostile.length).toBe(2);
-    expect((await drain(opened.openPlate(0))).startsWith('; generated fixture plate 1')).toBe(true);
+    expect(await drain(opened.openPlate(0))).toContain('; generated fixture plate 1');
   });
 
   it('model/project 3MF (no sliced plates) → explanatory E_CONTAINER_NO_PAYLOAD', async () => {
