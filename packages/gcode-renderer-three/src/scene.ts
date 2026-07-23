@@ -72,17 +72,24 @@ export type RendererEvent =
   | { type: 'restored' }
   | { type: 'error'; code: string; message: string };
 
+/**
+ * Render target: a DOM canvas (interactive hosts) or an OffscreenCanvas
+ * (workers / headless still-render, #132). Both are EventTargets with WebGL2,
+ * so the scene layer treats them uniformly.
+ */
+export type RenderTargetCanvas = HTMLCanvasElement | OffscreenCanvas;
+
 /** Minimal surface of WebGLRenderer the scene layer uses — injectable for tests. */
 export interface GLRendererLike {
   render(scene: Scene, camera: PerspectiveCamera): void;
   setSize(width: number, height: number, updateStyle?: boolean): void;
   setPixelRatio?(ratio: number): void;
   dispose(): void;
-  domElement: HTMLCanvasElement;
+  domElement: RenderTargetCanvas;
 }
 
 export interface ToolpathRendererOptions {
-  canvas: HTMLCanvasElement;
+  canvas: RenderTargetCanvas;
   buildVolume?: BuildVolumeDef;
   /**
    * Count-based tick override (tests/deterministic hosts): exactly N chunks per
@@ -95,8 +102,15 @@ export interface ToolpathRendererOptions {
   quality?: QualityMode | 'auto';
   /** Tube profile parameters (tubes mode only). */
   tube?: TubeOptions;
+  /**
+   * Preserve the WebGL drawing buffer so the canvas can be read back after a
+   * render returns (`toDataURL` / `convertToBlob` / `readPixels`). Off by
+   * default (interactive rendering is faster without it); the headless
+   * still-render path (#132) turns it on so a single render is capturable.
+   */
+  preserveDrawingBuffer?: boolean;
   /** Injectables for tests / exotic hosts. */
-  createRenderer?: (canvas: HTMLCanvasElement) => GLRendererLike;
+  createRenderer?: (canvas: RenderTargetCanvas) => GLRendererLike;
   scheduleFrame?: (cb: () => void) => void;
 }
 
@@ -130,13 +144,18 @@ export function machineToVolume(m: MachineGeometry): BuildVolumeDef {
   return { x: maxX - minX, y: maxY - minY, z: m.heightMm ?? 250, min: { x: minX, y: minY } };
 }
 
+/** True for a real DOM canvas (has DOM-only members OffscreenCanvas lacks). */
+function isHtmlCanvas(c: RenderTargetCanvas): c is HTMLCanvasElement {
+  return typeof (c as Partial<HTMLCanvasElement>).addEventListener === 'function' && 'style' in c;
+}
+
 /** §8-derived tick budget: half the 16 ms stall budget, leaving frame headroom. */
 const TICK_BUDGET_MS = 8;
 /** Tubes chunk target: ~2k segments keeps a single tube-chunk build under the stall budget. */
 const TUBES_CHUNK_TARGET = 2048;
 
 export class ToolpathRenderer {
-  private readonly canvas: HTMLCanvasElement;
+  private readonly canvas: RenderTargetCanvas;
   private readonly gl: GLRendererLike;
   private readonly scheduleFrame: (cb: () => void) => void;
   private readonly chunksPerTick: number | undefined;
@@ -235,7 +254,15 @@ export class ToolpathRenderer {
         if (typeof requestAnimationFrame === 'function') requestAnimationFrame(run);
         setTimeout(run, 50);
       });
-    this.gl = (opts.createRenderer ?? ((canvas) => new WebGLRenderer({ canvas, antialias: true })))(opts.canvas);
+    this.gl = (
+      opts.createRenderer ??
+      ((canvas) =>
+        new WebGLRenderer({
+          canvas: canvas as HTMLCanvasElement,
+          antialias: true,
+          preserveDrawingBuffer: opts.preserveDrawingBuffer ?? false
+        }))
+    )(opts.canvas);
 
     // Single Z-up→Y-up conversion (§6.2); everything below is printer coordinates.
     this.root.rotation.x = -Math.PI / 2;
@@ -254,11 +281,18 @@ export class ToolpathRenderer {
 
     this.camera = new PerspectiveCamera(50, 1, 0.1, 10000);
     this.camera.position.set(-100, 200, 250);
-    try {
-      this.controls = new OrbitControls(this.camera, this.gl.domElement);
-      this.controls.addEventListener('change', () => this.render());
-    } catch {
-      this.controls = null; // headless hosts without full DOM events
+    const domEl = this.gl.domElement;
+    // OrbitControls needs a real DOM element; an OffscreenCanvas (headless
+    // still-render, #132) has no pointer events, so there is nothing to orbit.
+    if (isHtmlCanvas(domEl)) {
+      try {
+        this.controls = new OrbitControls(this.camera, domEl);
+        this.controls.addEventListener('change', () => this.render());
+      } catch {
+        this.controls = null; // headless hosts without full DOM events
+      }
+    } else {
+      this.controls = null;
     }
 
     this.canvas.addEventListener('webglcontextlost', this.onContextLost);
