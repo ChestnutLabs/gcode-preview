@@ -91,7 +91,8 @@ module.exports = {
               { group: ['lil-gui'], message: 'the renderer must not depend on UI libraries (DD-002 §4).' },
               {
                 group: ['@chestnutlabs/gcode-parser', '@chestnutlabs/gcode-parser/*', '@chestnutlabs/gcode-dialects*'],
-                message: 'The renderer consumes ToolpathIR only — never parser internals or dialect recognizers (DD-004 §4.1).'
+                message:
+                  'The renderer consumes ToolpathIR only — never parser internals or dialect recognizers (DD-004 §4.1).'
               },
               {
                 group: ['*anybridge*', '*AnyBridge*'],
