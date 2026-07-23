@@ -195,6 +195,48 @@ module.exports = {
       }
     },
     {
+      // src only (the vitest config is node-side tooling). .svelte files are outside
+      // eslint's TS parser; the shipped TS surface carries the boundary rules.
+      files: ['packages/gcode-preview-svelte/src/**/*.ts'],
+      rules: {
+        'no-restricted-imports': [
+          'error',
+          {
+            patterns: [
+              // svelte types only in the component (raw-shipped); the TS surface stays framework-free.
+              {
+                group: ['vue', 'vue/*', 'react', 'react/*', 'react-dom*', 'svelte', 'svelte/*'],
+                message:
+                  'gcode-preview-svelte TS surface is structural-only (DD-007 §4.6) — the raw .svelte component is the only svelte-importing file.'
+              },
+              { group: ['lil-gui'], message: 'gcode-preview-svelte ships no UI chrome (DD-007 §3).' },
+              {
+                group: ['three', 'three/*'],
+                message: 'gcode-preview-svelte consumes the renderer package, never three directly (DD-002 §4).'
+              },
+              {
+                group: ['@chestnutlabs/gcode-dialects*', '@chestnutlabs/gcode-containers*'],
+                message:
+                  'Dialects/containers run inside the worker (DD-005 §4.5) — the Svelte layer never imports them.'
+              },
+              {
+                group: ['*anybridge*', '*AnyBridge*'],
+                message: 'No reusable package may import AnyBridge (DD-002 §4 core rule).'
+              },
+              {
+                group: ['node:*', 'fs', 'child_process', 'net', 'http', 'https'],
+                message: 'gcode-preview-svelte is browser-side only (DD-007 §7).'
+              },
+              {
+                group: ['../../../*'],
+                message: 'gcode-preview-svelte must not reach outside its package (DD-002 §4).'
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
       // src only (the vitest config is node-side tooling).
       files: ['packages/gcode-preview-react/src/**/*.ts', 'packages/gcode-preview-react/src/**/*.tsx'],
       rules: {
