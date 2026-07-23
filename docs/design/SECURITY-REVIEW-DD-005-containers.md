@@ -1,8 +1,10 @@
 # Security Review Record — DD-005 §7.3 Container Extraction
 
 **Scope:** `@chestnutlabs/gcode-containers` v1 (`.gcode.3mf`, issue #74)
-**Status:** **Implementation complete — AWAITING MAINTAINER SIGN-OFF** (the E4 gate requires it)
-**Prepared:** 2026-07-23 · **Reviewer:** _pending_
+**Status:** **SIGNED OFF** — granted by the maintainer with the E4 acceptance (2026-07-23, epic #5
+closure comment). Residual-risk notes below remain open items for the E7 release gate
+(coverage-guided fuzzing recommended before any public release).
+**Prepared:** 2026-07-23 · **Reviewer:** maintainer (sobechestnut-dev), via E4 acceptance 2026-07-23
 
 Checklist from DD-005 §7.3, with implementation + evidence for each item. Evidence tests live in
 [`packages/gcode-containers/src/__tests__/gcode-3mf.test.ts`](../../packages/gcode-containers/src/__tests__/gcode-3mf.test.ts)
@@ -33,4 +35,5 @@ the adversarial corpus is generated deterministically by
 - Data-descriptor entries (flag bit 3) accept the central directory's sizes/CRC as authoritative;
   the local header carries zeros in that mode and is not treated as a mismatch.
 
-**Sign-off:** _maintainer signature + date pending — required before E4 exit (DD-005 §15)._
+**Sign-off:** granted 2026-07-23 by the maintainer as part of the E4 acceptance (epic #5 closure
+comment records it). DD-005 §15 requirement satisfied.
