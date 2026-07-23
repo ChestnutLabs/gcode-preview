@@ -3,7 +3,30 @@
   "version": "0.0.0",
   "private": true,
   "description": "Thin Svelte integration for the Chestnut Labs G-code viewer (DD-007 D1 amendment): createGcodePreview store/action API + GcodePreview component as a reactivity bridge over @chestnutlabs/gcode-preview-core.",
+  "keywords": [
+    "gcode",
+    "3d-printing",
+    "toolpath",
+    "cnc",
+    "chestnutlabs",
+    "svelte",
+    "store",
+    "component",
+    "viewer",
+    "preview"
+  ],
+  "author": "Chestnut Labs",
+  "homepage": "https://github.com/ChestnutLabs/gcode-preview#readme",
+  "bugs": "https://github.com/ChestnutLabs/gcode-preview/issues",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ChestnutLabs/gcode-preview.git",
+    "directory": "packages/gcode-preview-svelte"
+  },
   "license": "MIT",
+  "engines": {
+    "node": ">=22"
+  },
   "type": "module",
   "sideEffects": false,
   "main": "./dist/index.js",
