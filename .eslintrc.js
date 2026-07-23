@@ -14,6 +14,15 @@ module.exports = {
     browser: true
   },
   overrides: [
+    // Electron consumer-smoke main process is intentionally CommonJS (Electron default).
+    {
+      files: ['tools/consumer-smoke/electron-app/**/*.js'],
+      env: { node: true, browser: false },
+      parserOptions: { sourceType: 'script' },
+      rules: {
+        '@typescript-eslint/no-require-imports': 'off'
+      }
+    },
     // DD-002 §5 dependency guardrails — reusable packages must not import renderers,
     // frameworks, or consumer applications; lower layers never import higher layers.
     {
