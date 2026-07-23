@@ -42,6 +42,11 @@ from the protected `Release / publish` workflow on a tag from `main` — never f
   via OIDC at first publish, `v0.1.0` uses the token and later releases switch to OIDC.
 - 2FA-on-publish set on the owning account. These are **maintainer prerequisites** for phase 7,
   confirmed during the phase-6 rehearsal.
+- **GitHub Actions PR creation** (discovered at the first #130 run): the org-level setting
+  *Allow GitHub Actions to create and approve pull requests* (ChestnutLabs → Settings → Actions →
+  General), plus the same repo-level toggle, must be enabled for `release-version.yml` to open the
+  Version Packages PR itself. Until then the workflow still pushes `changeset-release/dev`
+  correctly and the PR is opened manually once — the flow is degraded, not broken.
 
 ## Branch-protection plan (documented per #130; applied at the phase-6 rehearsal)
 
