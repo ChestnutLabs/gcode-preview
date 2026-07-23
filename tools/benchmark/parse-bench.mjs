@@ -7,7 +7,7 @@
  *
  * Each file is parsed in an isolated child process (fresh heap) so peak memory and
  * out-of-memory outcomes are attributed per file. Real fixtures come from the MIT
- * `demo/gcodes/` corpus; large tiers are SYNTHETIC (repetition of demo/gcodes/3DBenchy.gcode)
+ * `test-data/gcodes/` corpus; large tiers are SYNTHETIC (repetition of test-data/gcodes/3DBenchy.gcode)
  * and are generated to the OS temp dir — never committed.
  *
  * Usage:
@@ -118,11 +118,11 @@ function makeSynthetic(seedPath, targetBytes, outPath) {
 }
 
 async function orchestrate() {
-  const demoDir = path.join(repoRoot, 'demo', 'gcodes');
+  const demoDir = path.join(repoRoot, 'test-data', 'gcodes');
   const real = fs
     .readdirSync(demoDir)
     .filter((f) => f.endsWith('.gcode'))
-    .map((f) => ({ label: `demo/gcodes/${f} (MIT)`, file: path.join(demoDir, f), synthetic: false }));
+    .map((f) => ({ label: `test-data/gcodes/${f} (MIT)`, file: path.join(demoDir, f), synthetic: false }));
 
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'gcode-bench-'));
   const seed = path.join(demoDir, '3DBenchy.gcode');

@@ -3,7 +3,7 @@
   "entryPoints": [
     "src/*.ts", "src/helpers/*.ts"
   ],
-  "out": "demo/docs",
+  "out": "docs-api",
   "includeVersion": true,
   "excludeInternal": true,
   "excludeExternals": true,

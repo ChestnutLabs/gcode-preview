@@ -13,7 +13,7 @@ npm install
 npm run dev     # http://localhost:5199
 ```
 
-The fixture picker serves the inherited MIT demo corpus (`demo/gcodes/`, tracked in
+The fixture picker serves the inherited MIT demo corpus (`test-data/gcodes/`, tracked in
 `test-data/manifest.json`) via Vite's `publicDir` — nothing is copied or duplicated. Any local
 G-code file can be loaded through the file input (parsed as a `Blob` through the same worker path).
 

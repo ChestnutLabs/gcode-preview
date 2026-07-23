@@ -5,7 +5,7 @@ export default defineConfig({
   base: './',
   plugins: [svelte()],
   // Serve the MIT demo corpus (inherited upstream, tracked in test-data/manifest.json).
-  publicDir: '../../demo/gcodes',
+  publicDir: '../../test-data/gcodes',
   server: {
     port: 5202,
     strictPort: true

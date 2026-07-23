@@ -21,22 +21,20 @@ declared license, and **fails CI** if a production dependency carries an unknown
 
 Inherited dev tooling is MIT/ISC/Apache-2.0-class open source, including (non-exhaustive): `rollup`
 and Rollup plugins, `typescript`, `vitest`, `happy-dom`, `eslint` + `@typescript-eslint/*`,
-`prettier`, `typedoc`, `concurrently`, `copyfiles`, and `live-server`. Full, authoritative license
-data is produced from the lockfile by the dependency-license report; this section is a human summary,
-not the source of truth.
+`prettier`, and `typedoc`. Full, authoritative license data is produced from the lockfile by the
+dependency-license report; this section is a human summary, not the source of truth.
 
-## Inherited demo assets (reviewed 2026-07-22, issue #16)
+## Inherited G-code corpus (reviewed 2026-07-22, issue #16; relocated 2026-07-23, #128)
 
-Third-party material shipped in the inherited `demo/` app:
+The inherited upstream `demo/` app and its vendored assets (Bulma CSS, a vendored Vue prod build)
+were removed in #128 (DD-008 D4) — the app is superseded by `tools/demo` and the framework example
+apps, whose dependencies come from npm and are covered by the lockfile-driven license report.
 
 | Asset | Origin | License | Evidence |
 |---|---|---|---|
-| `demo/bulma-prefixed.min.css` | [Bulma](https://bulma.io) v1.0.2 | MIT | license header intact in file |
-| `demo/js/vue.esm-browser.prod.js` | [Vue](https://vuejs.org) 3 (vendored prod build) | MIT | Vue is MIT-licensed |
-| `demo/lib/**` (created at deploy by `copy-deps`) | three.js, lil-gui | MIT | copied from the MIT npm packages above |
-| `demo/gcodes/*.gcode` | inherited upstream demo corpus | distributed with the MIT repo | tracked in [`test-data/manifest.json`](test-data/manifest.json) with provenance/limitations |
+| `test-data/gcodes/*.gcode` (moved from `demo/gcodes/` in #128) | inherited upstream demo corpus | distributed with the MIT repo | tracked in [`test-data/manifest.json`](test-data/manifest.json) with provenance/limitations |
 
-The demo G-code files' slicer/version provenance was not recorded upstream; this limitation is noted
+The G-code files' slicer/version provenance was not recorded upstream; this limitation is noted
 per-fixture in the manifest. Any future asset whose redistribution rights cannot be confirmed is handled
 per the fixture-governance rules and is **not** promoted into the tracked public fixture corpus.
 

@@ -4,7 +4,7 @@ export default defineConfig({
   base: './',
   // Serve the MIT demo corpus (inherited upstream, tracked in test-data/manifest.json)
   // at /<name>.gcode without copying the files into this app.
-  publicDir: '../../demo/gcodes',
+  publicDir: '../../test-data/gcodes',
   server: {
     port: 5199,
     strictPort: true

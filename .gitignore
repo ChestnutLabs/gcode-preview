@@ -1,23 +1,13 @@
-demo/js/gcode-preview.js
-demo/js/three.min.js
 src/.rpt2_cache
 node_modules
 dist/__tests__
 .rpt2_cache
 yarn-error.log
-.firebase/hosting.*
 TODO.md
 .DS_Store
-examples/files
-react-typescript-demo/.env
 dist/*
-demo/build/*
-# Generated typedoc API output (anchored to its real path so a tracked root docs/ is allowed).
-# Chestnut Labs: was the over-broad pattern `docs`, which also ignored the founding docs/ tree.
-/demo/docs/
-demo/dist
-demo/lib
-
+# Generated typedoc API output.
+/docs-api/
 # --- Chestnut Labs additions ---
 # Workspace package build output
 /packages/*/dist/

@@ -39,7 +39,7 @@ function makeSynthetic(seedPath, targetBytes, outPath) {
   fs.closeSync(fd);
 }
 
-const demoDir = path.join(repoRoot, 'demo', 'gcodes');
+const demoDir = path.join(repoRoot, 'test-data', 'gcodes');
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'gcode-wbench-'));
 const seed = path.join(demoDir, '3DBenchy.gcode');
 const tiers = [
@@ -48,7 +48,7 @@ const tiers = [
   ['synthetic ~250MB', 250 * 1024 * 1024]
 ];
 const corpus = [
-  { label: 'demo/3DBenchy (3.5MB)', file: seed },
+  { label: 'test-data/3DBenchy (3.5MB)', file: seed },
   ...tiers.map(([label, target], i) => {
     const out = path.join(tmp, `synthetic-${i}.gcode`);
     makeSynthetic(seed, target, out);
