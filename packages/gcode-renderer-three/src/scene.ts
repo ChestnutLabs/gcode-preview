@@ -22,9 +22,13 @@
 import {
   BufferAttribute,
   BufferGeometry,
+  DirectionalLight,
   Group,
+  HemisphereLight,
   LineBasicMaterial,
   LineSegments,
+  Mesh,
+  MeshLambertMaterial,
   PerspectiveCamera,
   Scene,
   Vector3,
@@ -36,10 +40,27 @@ import { buildChunks, type ChunkBuildResult, type GeometryChunk } from './chunks
 import { buildChunkColors, type ColorMode } from './colors.js';
 import { computeDrawState } from './ranges.js';
 import { createBuildVolume, type BuildVolumeDef } from './build-volume.js';
+import { buildTubeChunk, TUBES_AUTO_MAX_SEGMENTS, type TubeOptions } from './tubes.js';
+
+/** §4.3 quality tiers. `auto` picks by segment count (chooseQuality). */
+export type QualityMode = 'lines' | 'tubes';
+
+/** §4.3 `auto` decision, exported for tests and consumers. */
+export function chooseQuality(requested: QualityMode | 'auto', totalSegments: number): QualityMode {
+  if (requested !== 'auto') return requested;
+  return totalSegments <= TUBES_AUTO_MAX_SEGMENTS ? 'tubes' : 'lines';
+}
 
 export type RendererEvent =
   | { type: 'buildProgress'; chunksBuilt: number; chunksTotal: number }
-  | { type: 'buildComplete'; segments: number; decimationApplied: number; travelHidden: boolean }
+  | {
+      type: 'buildComplete';
+      segments: number;
+      decimationApplied: number;
+      travelHidden: boolean;
+      quality: QualityMode;
+    }
+  | { type: 'qualityFallback'; from: QualityMode; to: QualityMode; reason: string }
   | { type: 'contextlost' }
   | { type: 'restored' }
   | { type: 'error'; code: string; message: string };
@@ -59,6 +80,10 @@ export interface ToolpathRendererOptions {
   /** Chunks uploaded per scheduler tick (bounded work per frame, §5.3). Default 4. */
   chunksPerTick?: number;
   colorMode?: ColorMode;
+  /** §4.3 quality tier; 'auto' (default) picks tubes ≤ 1 M segments, else lines. */
+  quality?: QualityMode | 'auto';
+  /** Tube profile parameters (tubes mode only). */
+  tube?: TubeOptions;
   /** Injectables for tests / exotic hosts. */
   createRenderer?: (canvas: HTMLCanvasElement) => GLRendererLike;
   scheduleFrame?: (cb: () => void) => void;
@@ -85,6 +110,10 @@ export class ToolpathRenderer {
   private pendingChunks: GeometryChunk[] = [];
   private builtCount = 0;
   private colorMode: ColorMode;
+  // §4.3 quality state: what the consumer asked for vs what is actually built.
+  private requestedQuality: QualityMode | 'auto';
+  private active: QualityMode = 'lines';
+  private readonly tubeOptions: TubeOptions;
   // Clipping state (§4.5): draw-range trims only — geometry is never rebuilt here.
   private startLayer = 0;
   private endLayer = Infinity;
@@ -113,6 +142,8 @@ export class ToolpathRenderer {
     this.canvas = opts.canvas;
     this.chunksPerTick = opts.chunksPerTick ?? 4;
     this.colorMode = opts.colorMode ?? DEFAULT_COLOR;
+    this.requestedQuality = opts.quality ?? 'auto';
+    this.tubeOptions = opts.tube ?? {};
     // Default scheduler: rAF for frame alignment, with a timeout backstop so
     // work still progresses when rAF is suspended (hidden/throttled tabs —
     // otherwise a parse finishing in a background tab would never finish
@@ -135,6 +166,11 @@ export class ToolpathRenderer {
     this.root.rotation.x = -Math.PI / 2;
     this.scene.add(this.root);
     this.root.add(this.toolpathGroup);
+    // Lights for tubes mode (lit MeshLambert); LineBasicMaterial ignores them.
+    this.scene.add(new HemisphereLight(0xffffff, 0x35404d, 1.6));
+    const sun = new DirectionalLight(0xffffff, 1.1);
+    sun.position.set(1, 2, 1.5);
+    this.scene.add(sun);
     if (opts.buildVolume) {
       this.volumeDef = opts.buildVolume;
       this.volumeGroup = createBuildVolume(opts.buildVolume);
@@ -190,9 +226,60 @@ export class ToolpathRenderer {
       this.emit({ type: 'error', code: 'E_GEOMETRY_BUILD', message: err instanceof Error ? err.message : String(err) });
       return;
     }
+    this.active = chooseQuality(this.requestedQuality, this.buildResult.totalSegmentsIncluded);
     this.pendingChunks = [...this.buildResult.chunks];
     this.builtCount = 0;
     this.scheduleFrame(() => this.buildTick());
+  }
+
+  /** A failed tubes build degrades to lines — evented, never silent (§6.1). */
+  private fallbackToLines(reason: string): void {
+    this.emit({ type: 'qualityFallback', from: 'tubes', to: 'lines', reason });
+    this.active = 'lines';
+    this.clearToolpathGeometry();
+    if (this.buildResult !== null) {
+      this.pendingChunks = [...this.buildResult.chunks];
+      this.scheduleFrame(() => this.buildTick());
+    }
+  }
+
+  /** Expand per-segment colors (6 floats/seg) to tube ring vertices. */
+  private tubeVertexColors(chunk: GeometryChunk, vertexSegment: Uint32Array): Float32Array {
+    if (this.ir === null) return new Float32Array(vertexSegment.length * 3);
+    const perSeg = buildChunkColors(this.ir, chunk, this.colorMode);
+    const colors = new Float32Array(vertexSegment.length * 3);
+    for (let v = 0; v < vertexSegment.length; v++) {
+      const s = vertexSegment[v] * 6;
+      colors[v * 3] = perSeg[s];
+      colors[v * 3 + 1] = perSeg[s + 1];
+      colors[v * 3 + 2] = perSeg[s + 2];
+    }
+    return colors;
+  }
+
+  private makeChunkMesh(chunk: GeometryChunk): LineSegments | Mesh {
+    if (this.active === 'tubes' && chunk.kind === 'extrude') {
+      // Throws on budget overrun — caught by buildTick's fallback path.
+      const tube = buildTubeChunk(this.ir as ToolpathIR, chunk, this.tubeOptions);
+      const geometry = new BufferGeometry();
+      geometry.setAttribute('position', new BufferAttribute(tube.positions, 3));
+      geometry.setAttribute('normal', new BufferAttribute(tube.normals, 3));
+      geometry.setAttribute('color', new BufferAttribute(this.tubeVertexColors(chunk, tube.vertexSegment), 3));
+      geometry.setIndex(new BufferAttribute(tube.indices, 1));
+      const mesh = new Mesh(geometry, new MeshLambertMaterial({ vertexColors: true }));
+      mesh.userData.drawUnitsPerSegment = tube.indicesPerSegment;
+      mesh.userData.vertexSegment = tube.vertexSegment;
+      return mesh;
+    }
+    const geometry = new BufferGeometry();
+    geometry.setAttribute('position', new BufferAttribute(chunk.positions, 3));
+    geometry.setAttribute(
+      'color',
+      new BufferAttribute(buildChunkColors(this.ir as ToolpathIR, chunk, this.colorMode), 3)
+    );
+    const mesh = new LineSegments(geometry, new LineBasicMaterial({ vertexColors: true }));
+    mesh.userData.drawUnitsPerSegment = 2; // GL_LINES: 2 vertices per segment
+    return mesh;
   }
 
   /** Upload a bounded number of chunks, then reschedule (§5.3). Public for tests. */
@@ -200,11 +287,21 @@ export class ToolpathRenderer {
     if (this.disposed || this.ir === null || this.buildResult === null) return;
     const batch = this.pendingChunks.splice(0, this.chunksPerTick);
     for (const chunk of batch) {
-      const geometry = new BufferGeometry();
-      geometry.setAttribute('position', new BufferAttribute(chunk.positions, 3));
-      geometry.setAttribute('color', new BufferAttribute(buildChunkColors(this.ir, chunk, this.colorMode), 3));
-      const material = new LineBasicMaterial({ vertexColors: true });
-      const mesh = new LineSegments(geometry, material);
+      let mesh: LineSegments | Mesh;
+      try {
+        mesh = this.makeChunkMesh(chunk);
+      } catch (err) {
+        if (this.active === 'tubes') {
+          this.fallbackToLines(err instanceof Error ? err.message : String(err));
+        } else {
+          this.emit({
+            type: 'error',
+            code: 'E_GEOMETRY_BUILD',
+            message: err instanceof Error ? err.message : String(err)
+          });
+        }
+        return;
+      }
       mesh.name = `chunk:${chunk.kind}:${chunk.layerStart}-${chunk.layerEnd}`;
       mesh.userData.chunk = chunk;
       this.applyDrawStateToMesh(mesh, chunk); // honor clipping set during an in-flight build
@@ -220,7 +317,8 @@ export class ToolpathRenderer {
         type: 'buildComplete',
         segments: this.buildResult.totalSegmentsIncluded,
         decimationApplied: this.buildResult.decimationApplied,
-        travelHidden: this.buildResult.travelHidden
+        travelHidden: this.buildResult.travelHidden,
+        quality: this.active
       });
     }
   }
@@ -292,7 +390,7 @@ export class ToolpathRenderer {
     }
   }
 
-  private applyDrawStateToMesh(mesh: LineSegments, chunk: GeometryChunk): void {
+  private applyDrawStateToMesh(mesh: LineSegments | Mesh, chunk: GeometryChunk): void {
     if (this.ir === null) return;
     if (!this.kindVisible[chunk.kind]) {
       mesh.visible = false;
@@ -300,8 +398,10 @@ export class ToolpathRenderer {
     }
     const state = computeDrawState(this.ir, chunk, this.startLayer, this.endLayer, this.scrubSegIndex ?? undefined);
     mesh.visible = state.visible;
-    // GL_LINES: 2 vertices per segment; drawRange is in vertices for non-indexed geometry.
-    (mesh.geometry as BufferGeometry).setDrawRange(state.drawStart * 2, state.drawCount * 2);
+    // Segment-uniform draw units (§4.5, identical contract in both quality modes):
+    // lines = 2 vertices/segment; tubes = indicesPerSegment indices/segment.
+    const units = (mesh.userData.drawUnitsPerSegment as number | undefined) ?? 2;
+    (mesh.geometry as BufferGeometry).setDrawRange(state.drawStart * units, state.drawCount * units);
   }
 
   /** Fit the camera to the toolpath bounds (falls back to the build volume). */
@@ -344,15 +444,15 @@ export class ToolpathRenderer {
     }
     this.colorMode = mode;
     if (this.ir === null) return true;
-    // Recolor = attribute rewrite, no geometry rebuild (§4.6).
-    for (const child of this.toolpathGroup.children) {
-      const mesh = child as LineSegments;
+    // Recolor = attribute rewrite, no geometry rebuild (§4.6) — both quality modes.
+    for (const mesh of this.chunkMeshes) {
       const chunk = mesh.userData.chunk as GeometryChunk | undefined;
       if (!chunk) continue;
-      (mesh.geometry as BufferGeometry).setAttribute(
-        'color',
-        new BufferAttribute(buildChunkColors(this.ir, chunk, mode), 3)
-      );
+      const vertexSegment = mesh.userData.vertexSegment as Uint32Array | undefined;
+      const colors = vertexSegment
+        ? this.tubeVertexColors(chunk, vertexSegment)
+        : buildChunkColors(this.ir, chunk, mode);
+      (mesh.geometry as BufferGeometry).setAttribute('color', new BufferAttribute(colors, 3));
     }
     this.render();
     return true;
@@ -371,9 +471,26 @@ export class ToolpathRenderer {
     this.gl.render(this.scene, this.camera);
   }
 
-  /** Currently built chunk meshes (stable API for phase 3's draw-range work). */
-  get chunkMeshes(): LineSegments[] {
-    return this.toolpathGroup.children.filter((c): c is LineSegments => c instanceof LineSegments);
+  /** The quality tier actually built (may differ from requested via auto/fallback). */
+  get activeQuality(): QualityMode {
+    return this.active;
+  }
+
+  /** Change the quality tier; rebuilds from the retained IR when one is set. */
+  setQuality(quality: QualityMode | 'auto'): void {
+    if (this.disposed) return;
+    this.requestedQuality = quality;
+    if (this.ir !== null) {
+      this.startBuild(this.ir);
+      this.render();
+    }
+  }
+
+  /** Currently built chunk meshes: LineSegments (lines/travel) or Mesh (tubes). */
+  get chunkMeshes(): (LineSegments | Mesh)[] {
+    return this.toolpathGroup.children.filter(
+      (c): c is LineSegments | Mesh => (c as LineSegments | Mesh).userData?.chunk !== undefined
+    );
   }
 
   private clearToolpathGeometry(): void {
