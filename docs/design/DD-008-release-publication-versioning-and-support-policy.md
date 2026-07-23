@@ -1,6 +1,6 @@
 # DD-008 — Release, Publication Readiness, Versioning & Support Policy
 
-**Status:** **Proposed** <!-- Draft | Proposed | Accepted | Superseded | Rejected -->
+**Status:** **Accepted (2026-07-23, D1–D7 with amendments to D3/D5/D6; adds the §4.8 headless still-render disposition)** <!-- Draft | Proposed | Accepted | Superseded | Rejected -->
 **Authors/Owners:** Chestnut Labs
 **Date:** 2026-07-23 · **Last revised:** 2026-07-23
 **Owning Epic:** E7 (#8) · **Milestone:** M5
@@ -18,6 +18,50 @@ issue #118 (full-chrome proposal), issue #125 (this DD), AnyBridge #783 (first c
 > packages become real, installable, supported artifacts — and it carries the maintainer's
 > non-negotiable precondition from DD-007 D3: **the repository must stand on its own publicly
 > before any package is released.**
+
+---
+
+> **Accepted 2026-07-23 — maintainer decisions recorded verbatim.**
+> **(D1)** Lockstep versioning across all nine public packages for the `0.x` lifecycle, beginning
+> with `0.1.0`. The packages are currently developed and tested as one stack, so independent
+> versions would create mixed-version combinations that CI does not verify. **Re-evaluate
+> independent versioning before `1.0.0`**, once package boundaries and mixed-version compatibility
+> testing are mature.
+> **(D2)** Changesets using a fixed group, with human-authored changesets reviewed in PRs and
+> generated release PRs. **Do not auto-publish directly from ordinary merges.**
+> **(D3)** Protected CI publication from tagged commits on `main`, using npm provenance and
+> trusted publishing. Publish the initial packages under the **existing user-owned `@chestnutlabs`
+> npm scope** — it is currently a user scope, not an organization; converting it into an npm
+> organization is **deferred and is not a `v0.1.0` blocker**. No manual workstation publishing.
+> **(D4)** Complete Chestnut Labs README and repository identity rewrite. Remove the verbatim
+> upstream README and obsolete upstream workflows. Preserve upstream attribution through Git
+> history, `LICENSE`, `NOTICE`, and a **concise README acknowledgment**. **Audit and preserve any
+> useful, legal, redistributable fixtures before replacing the inherited `demo/`.**
+> **(D5 — amended)** Ship the polished `tools/demo` showcase, **but do not make the demo the only
+> usable product**. The release must include a complete reusable framework-neutral viewer surface,
+> with Vue, React, and Svelte as **equal first-class thin integrations exposing the same
+> capabilities**, with **parity tests across all three integrations**. Defer only a broader
+> opinionated `GcodePreviewStudio` workbench layer (extensive built-in chrome, file management,
+> editing tools, styling decisions) to a later demand-driven DD.
+> **(D6 — amended)** Vue `^3.4`, React `^18 || ^19`, Svelte `^4 || ^5` support matrix accepted.
+> **Node support amended to the supported Node 22 and 24 LTS lines, with `engines.node >= 22`** —
+> no new support promise for EOL Node 20. Define "evergreen browsers" as an **auditable rolling
+> support window** and include the **designated AnyBridge Electron baseline**. **`three` becomes a
+> peerDependency with a narrow supported range**, with an exact version pinned as a dev/test
+> dependency.
+> **(D7)** Jazzer.js coverage-guided fuzzing over `readDirectory` and `streamEntry`, with per-PR
+> adversarial-corpus replay and a weekly deep run. **Minimize failures into small, legal,
+> redistributable regression fixtures** before committing them to the public corpus.
+> **(Addition — headless still renderer, AnyBridge #791)** The reusable headless/offscreen
+> still-render capability **belongs in `gcode-preview`**. AnyBridge owns only its
+> `ThumbnailWorker` integration, translating AnyBridge's shared `RenderSpec` into neutral
+> still-render options, and caching/storage/job-file-identity/workflow behavior. Following the
+> mandated audit (§4.8): the capability is a **bounded adapter** around the existing renderer, so
+> a **minimal supported still-render entry point is included in `v0.1.0`**, tracked as a dedicated
+> cross-linked issue and recorded on the roadmap — not buried in this DD, and AnyBridge does not
+> maintain a permanent duplicate rendering harness.
+> **Release gates:** framework-integration parity and registry-mode consumer verification are
+> **explicit `v0.1.0` release gates** (§15).
 
 ---
 
@@ -59,6 +103,8 @@ adapters — proven by CI, benchmarks, and a tarball consumer fixture. But nothi
    posture (`three`), deprecation window.
 5. **Coverage-guided fuzzing** over `gcode-containers` `readDirectory`/`streamEntry` (E4 §7.3).
 6. **#118 decision** — the optional full-chrome surface.
+7. **Headless still-render entry point** (added at acceptance, §4.8) — the reusable
+   non-interactive still-image capability AnyBridge #791 consumes.
 
 ## 3. Non-goals
 
@@ -75,7 +121,7 @@ adapters — proven by CI, benchmarks, and a tarball consumer fixture. But nothi
 Decision points are marked **D1–D7**. Each lists options with a recommendation; §14's phase plan
 assumes the recommendations and will be adjusted to the actual decisions.
 
-### 4.1 D1 — Versioning model: lockstep vs independent
+### 4.1 D1 — Versioning model: lockstep vs independent — ACCEPTED (Option A: lockstep `0.x` from `0.1.0`; independent versioning re-evaluated before `1.0.0`)
 
 Nine packages whose contracts move together: the IR is shared, the behavioral suite runs
 identically across three adapters (DD-007's anti-drift firewall), and every epic so far changed
@@ -95,7 +141,7 @@ several packages at once.
   patch = fixes. **1.0.0 criteria** (proposed): AnyBridge consuming the registry packages in
   production, one deprecation cycle exercised, and no breaking change for two consecutive minors.
 
-### 4.2 D2 — Changelog & release automation tooling
+### 4.2 D2 — Changelog & release automation tooling — ACCEPTED (Option A: Changesets, fixed group; no auto-publish from ordinary merges)
 
 - **Option A (recommended): Changesets** (`@changesets/cli`) in **fixed** mode over all nine
   packages. PRs that change published behavior add a changeset file (human-written, reviewable in
@@ -109,7 +155,7 @@ several packages at once.
   release becomes a nine-file chore with human error in exactly the place (version/range rewriting)
   automation is safest.
 
-### 4.3 D3 — Publish flow, protected CI, and `main` promotion
+### 4.3 D3 — Publish flow, protected CI, and `main` promotion — ACCEPTED (Option A, amended: the `@chestnutlabs` scope is currently user-owned; org conversion deferred, not a `v0.1.0` blocker)
 
 The epic's standing risk note: *publishing from an unreviewed workstation is prohibited — require
 protected CI publication.* Proposed flow (Option A, recommended):
@@ -128,17 +174,17 @@ protected CI publication.* Proposed flow (Option A, recommended):
    released versions from the registry into the fixture app instead of local tarballs; same
    contract tests + real worker parse) plus a fresh-`create-vite` smoke install documented in the
    README quick-start form.
-4. **Maintainer prerequisites** (cannot be done by automation, needed before phase 6): the
-   `chestnutlabs` npm organization must exist and grant publish rights; trusted-publishing (or a
-   granular token) must be configured for the repo; 2FA-on-publish policy set at the org level.
+4. **Maintainer prerequisites** (cannot be done by automation, needed before the release phase):
+   trusted publishing configured for the repo against the **existing user-owned `@chestnutlabs`
+   scope** (amended: it is a user scope today, not an organization — org conversion is deferred
+   and not a `v0.1.0` blocker); 2FA-on-publish policy set on the owning account.
 - **Option B**: publish on every `main` merge (no tag step) — rejected: removes the deliberate
   release act. **Option C**: manual workstation publish with `--otp` — rejected by the epic's own
   risk note.
 
-### 4.4 D4 — Repository publication pass (#109): identity, README, and upstream-material disposition
+### 4.4 D4 — Repository publication pass (#109): identity, README, and upstream-material disposition — ACCEPTED (Option A; attribution via Git history + LICENSE + NOTICE + a concise README acknowledgment; `demo/` fixture audit is mandatory before replacement)
 
-The repo must stand alone publicly. Proposed disposition (Option A, recommended — each bullet is
-individually overridable):
+The repo must stand alone publicly. Accepted disposition:
 
 - **Root README: full rewrite.** Lead with what the project *is now*: the nine-package worker-based
   cross-vendor toolpath stack; feature/capability overview; install + quick-start for **all three
@@ -166,7 +212,7 @@ individually overridable):
   publishes), version decoupled from the upstream `3.0.0-alpha.4` line, repository/author/bugs/
   homepage → ChestnutLabs, upstream author credit preserved in NOTICE (not erased from history).
   `engines.node >= 20` declared (matches CI).
-- **Nine package manifests completed**: `private` removed (at phase 6, not before), descriptions/
+- **Nine package manifests completed**: `private` removed (at phase 7, not before), descriptions/
   keywords/homepage/bugs/`repository` (with `directory:`)/author/license/`sideEffects: false`
   audited, `files` whitelists verified against `npm pack --dry-run` snapshots, `exports` maps
   validated (§4.6 tooling).
@@ -174,7 +220,15 @@ individually overridable):
   Chestnut-authored (E0) — reviewed and refreshed rather than rewritten; PROJECT_SETUP's
   private-source (`ProjectSource/`) handling stays.
 
-### 4.5 D5 — #118: optional full-chrome viewer surface
+### 4.5 D5 — #118: optional full-chrome viewer surface — ACCEPTED (Option A, amended)
+
+> **Amendment:** the showcase must **not** be the only usable product — the release includes the
+> complete reusable framework-neutral viewer surface with Vue/React/Svelte as equal first-class
+> thin integrations exposing the same capabilities, with **parity tests across all three**
+> (the shared behavioral suite from DD-007 is that mechanism and becomes an explicit release
+> gate, §15). Only the broader opinionated `GcodePreviewStudio` workbench layer (extensive
+> built-in chrome, file management, editing tools, styling decisions) is deferred to a later
+> demand-driven DD.
 
 - **Option A (recommended): staged.** Now (inside #109's docs work): promote `tools/demo` into the
   **polished showcase** — full control panel, dialect/container/progress demonstrations, linked
@@ -187,27 +241,28 @@ individually overridable):
 - **Option C**: do nothing — rejected: the showcase is nearly free and the README needs a live
   demo target anyway.
 
-### 4.6 D6 — Support & deprecation policy (published with the release)
+### 4.6 D6 — Support & deprecation policy (published with the release) — ACCEPTED (amended: Node 22/24 LTS with `engines.node >= 22`; auditable rolling browser window + AnyBridge Electron baseline; `three` as peerDependency)
 
-Proposed support matrix v1 (documented in `docs/reference/support-policy.md` + README):
+Accepted support matrix v1 (documented in `docs/reference/support-policy.md` + README):
 
 | Surface | Supported |
 |---|---|
-| Browsers | evergreen Chromium/Firefox/Safari with `module` workers + WebGL2 (matches DD-003/DD-004 assumptions) |
+| Browsers | **auditable rolling window** (amended): current and previous major of Chromium/Firefox/Safari with `module` workers + WebGL2 (matches DD-003/DD-004 assumptions), **plus the designated AnyBridge Electron baseline** — the concrete versions are named and dated in the support doc and refreshed per release |
 | Bundlers | Vite (tested in CI via examples + fixture); webpack 5-class bundlers supported via the documented `createWorker` escape hatch |
-| Node | ≥ 20 (SSR-import safety only — no headless rendering claim) |
+| Node | **≥ 22 (`engines.node >= 22`)** — the supported Node 22 and 24 LTS lines (amended: no new support promise for EOL Node 20); SSR-import safety only — headless *rendering* support is §4.8 |
 | Vue | `^3.4` (reference adapter) |
 | React | `^18 || ^19` |
 | Svelte | `^4 || ^5` (raw-`.svelte` shipping means the consumer's compiler is authoritative) |
-| three | pinned exact version, currently `0.178.0` (see below) |
+| three | **peerDependency with a narrow supported range** (initially `^0.178.0`), with the exact version (`0.178.0`) pinned as a dev/test dependency (amended — see below) |
 
-- **`three` dependency posture** — sub-decision: **(a) (recommended)** keep `three` a *regular,
-  exact-pinned dependency* of `gcode-renderer-three`: zero-setup DX (adapter consumers never
-  install three), no accidental version skew inside the stack; consumers who also use three
-  directly can dedupe when versions match and we document the caveat. Revisit as a peerDependency
-  only if real consumers report duplication pain (that change is breaking → migration note).
-  **(b)** peerDependency `^0.178` — upstream's model, but it pushes an install burden onto every
-  adapter consumer and lets skew *into* the stack.
+- **`three` dependency posture — DECIDED (amended): peerDependency.** `three` becomes a
+  *peerDependency of `gcode-renderer-three` with a narrow supported range* (initially
+  `^0.178.0`); the workspace pins the exact version as a dev/test dependency so CI and examples
+  keep testing one known-good three. Consequences to implement and document: adapter consumers
+  add `three` to their install (quick-starts updated accordingly; npm ≥ 7 auto-installs peers so
+  the practical burden is small), the supported range is narrow deliberately (three's 0.x minors
+  are breaking by convention — widening the range is a per-release, evidence-backed decision),
+  and version skew now surfaces as an explicit peer warning instead of a silent duplicate.
 - **Deprecation policy**: a deprecated API keeps working for **≥ 1 minor** with a console warning +
   changelog + migration note before removal (pre-1.0); breaking changes carry the
   `breaking-change` label + migration notes + AnyBridge impact check (DD-002 §8, restated as
@@ -215,7 +270,7 @@ Proposed support matrix v1 (documented in `docs/reference/support-policy.md` + R
 - Support statements are **evidence-backed**: anything listed as "tested" must map to a CI job or
   a recorded verification; everything else is worded as "expected to work".
 
-### 4.7 D7 — Coverage-guided fuzzing (E4 §7.3 carried item)
+### 4.7 D7 — Coverage-guided fuzzing (E4 §7.3 carried item) — ACCEPTED (Option A: Jazzer.js; failures minimized into small, legal, redistributable regression fixtures before public-corpus commit)
 
 Target: `gcode-containers` `readDirectory`/`streamEntry` (attacker-supplied ZIP/3MF bytes; the
 package is zero-dep by design and already carries an adversarial corpus + resource limits).
@@ -232,6 +287,52 @@ package is zero-dep by design and already carries an adversarial corpus + resour
 - Fuzzing the *parser* text path is explicitly out of scope here (it consumes attacker-supplied
   text too, but has streaming limits and the E2 adversarial corpus; extending fuzzing there is a
   natural follow-up issue, not a release blocker).
+
+### 4.8 Headless still-render entry point (AnyBridge #791) — ADDED AT ACCEPTANCE; audit verdict: bounded adapter → ships in `v0.1.0`
+
+**Maintainer decision (recorded verbatim in the header):** the reusable headless/offscreen
+still-render capability belongs in `gcode-preview`; AnyBridge owns only its `ThumbnailWorker`
+integration, the translation of AnyBridge's shared `RenderSpec` into neutral still-render options,
+and caching/storage/job-identity/workflow behavior. The disposition was gated on an audit of the
+existing renderer.
+
+**Audit result (2026-07-23): the capability is a *bounded adapter* — the renderer is already
+headless-shaped.** Evidence, all pre-existing by design:
+
+- The GL backend is **injectable** (`ToolpathRendererOptions.createRenderer`; the unit suites
+  inject a stub GL today).
+- The frame scheduler is **injectable** (`scheduleFrame`), and the default guards
+  `requestAnimationFrame` existence with a `setTimeout` backstop — the build loop runs without
+  rAF.
+- `OrbitControls` construction is wrapped in try/catch explicitly commented *"headless hosts
+  without full DOM events"*.
+- `frame()` places the camera **deterministically from model bounds**; `buildComplete` signals
+  full geometry upload; `render()` is an explicit synchronous call. The E3/E5 visual-regression
+  harness already performs deterministic load → build → frame → render → pixel-capture (17/17
+  stable baselines) — a still renderer is that exact sequence as a supported API.
+- The remaining environmental requirement is a **real WebGL2 context + canvas**, which exists in
+  any Chromium-class context: an Electron hidden window or worker `OffscreenCanvas` (exactly
+  AnyBridge's `ThumbnailWorker` environment), or headless Chromium in CI.
+
+**Scope of the `v0.1.0` entry point** (dedicated feature issue, cross-linked to AnyBridge #791):
+
+- `renderStill(source | ir, options)` — a framework-neutral function (home: `gcode-preview-core`,
+  since it composes parse + render exactly like `createPreviewController`; the renderer package
+  gains only whatever typing widening `OffscreenCanvas` needs). Input: G-code bytes or a
+  pre-parsed `ToolpathIR`; options: canvas (HTML or Offscreen), size, camera (deterministic
+  `frame()` default + explicit pose override), quality/color/tube/build-volume/layer-range —
+  the same neutral options the controller exposes; output: the rendered canvas/pixels (the
+  caller extracts PNG via its environment's `convertToBlob`/`toDataURL`) plus build stats.
+  Build runs to completion before the single render (no progressive frames).
+- **Determinism promise:** same environment ⇒ identical output (the vr-harness property).
+  Cross-GPU/driver pixel identity is *not* promised (antialiasing variance) — consumers cache by
+  job identity, not pixel hash (AnyBridge already does).
+- **Environment support:** Chromium-class contexts (Electron hidden window / `OffscreenCanvas`
+  worker / headless Chromium). **Pure-Node GPU-less rendering is explicitly out of scope** — that
+  (software rasterization or a WebGL shim) is the substantial-infrastructure path and would be
+  the dedicated E8/`v0.2.0`-class DD if ever needed. Documented as such in the support policy.
+- Tested with a Node-driven headless-Chromium (or worker `OffscreenCanvas`) CI check asserting
+  determinism against a committed baseline, reusing the vr-harness technique.
 
 ## 5. Lifecycle
 
@@ -290,7 +391,7 @@ release. `dev` remains the integration branch; nothing else changes in the worki
 ## 10. Migration
 
 - For consumers, nothing to migrate *from* (first release); AnyBridge migrates tarball `file:`
-  links → registry ranges (recipe already in #783; this DD adds the "switch note" as a phase-6
+  links → registry ranges (recipe already in #783; this DD adds the "switch note" as a phase-7
   deliverable).
 - Root `package.json` identity change may affect local tooling that greps the old name — checked
   against `tools/` scripts in phase 1.
@@ -313,7 +414,7 @@ ranges (vue/react/svelte) cannot coexist in one manifest sanely.
 
 | Risk | Mitigation |
 |---|---|
-| npm org/scope not ready when phase 6 arrives | Maintainer prerequisite called out in §4.3; phases 1–5 don't depend on it |
+| npm scope/trusted-publishing not ready when phase 7 arrives | Maintainer prerequisite called out in §4.3 (user-owned scope suffices; org deferred); phases 1–6 don't depend on it |
 | Upstream-material removal deletes something fixtures reference | Manifest CI gate + phase-1 audit before deletion |
 | Lockstep versioning bumps packages with no changes | Accepted cost (documented); changelog says "no changes — version alignment" |
 | Trusted publishing unsupported for the setup | Granular-token fallback specified |
@@ -321,38 +422,56 @@ ranges (vue/react/svelte) cannot coexist in one manifest sanely.
 | README rewrite drifts from reality over time | Link-check in CI; docs updates are already part of the per-epic rhythm |
 | First `main` promotion is a giant PR | It's a fast-forward-shaped merge of already-reviewed history; the release PR reviews *the release*, not the delta |
 
-## 14. Phased delivery (proposed)
+## 14. Phased delivery — ACCEPTED (seven phases; still-render added per §4.8)
 
 1. **Phase 1 — Repo identity & upstream-material disposition** (#109 part A): root `package.json`
-   identity; remove upstream workflows + `demo/` (after corpus audit); nine package manifests
-   completed (still `private`); pack-snapshot + publint/attw CI step.
-2. **Phase 2 — README & public docs rewrite** (#109 part B): root README (D4 shape, ×3 framework
-   quick-starts, both worker paths, support/attribution sections); support-policy reference doc
-   (D6); package READMEs aligned; link-check; CONTRIBUTING/status refresh; showcase promotion of
-   `tools/demo` (D5, if accepted).
+   identity + `engines.node >= 22` (D6); remove upstream workflows + `demo/` (**after the D4
+   fixture audit — useful, legal, redistributable fixtures preserved first**); nine package
+   manifests completed (still `private`), including the **`three` → peerDependency move with the
+   dev/test exact pin** (D6); pack-snapshot + publint/attw CI step; CI Node lines aligned to
+   22/24.
+2. **Phase 2 — README & public docs rewrite** (#109 part B): root README (D4 shape: ×3 framework
+   quick-starts incl. the `three` peer install, both worker paths, support + concise-attribution
+   sections); support-policy reference doc (D6: auditable rolling browser window, dated versions,
+   AnyBridge Electron baseline); package READMEs aligned; link-check; CONTRIBUTING/status
+   refresh; showcase promotion of `tools/demo` (D5 — not the only usable product).
 3. **Phase 3 — Versioning & release automation**: Changesets (fixed group) + baseline changesets;
    release workflow (D3) with dry-run publish proof; branch-protection updates for `main`
    promotion.
-4. **Phase 4 — Container fuzzing** (E4 §7.3): Jazzer harness ×2 entry points, corpus replay in PR
-   path, scheduled deep run, triage process per SECURITY.md.
-5. **Phase 5 — Release rehearsal**: full dry-run from release PR to packaged-artifact verification;
-   registry-mode fixture ready; #109 checklist walked and checked off item by item.
-6. **Phase 6 — `v0.1.0`**: `main` promotion PR, tag + Release, protected publish ×9 with
-   provenance, post-publish registry fixture + smoke install, AnyBridge #783 switch note, E7 exit
-   evidence report. **Requires the §4.3 maintainer prerequisites.**
+4. **Phase 4 — Container fuzzing** (E4 §7.3, D7): Jazzer harness ×2 entry points, corpus replay
+   in PR path, scheduled weekly deep run, triage per SECURITY.md, findings minimized into small
+   legal redistributable fixtures before public commit.
+5. **Phase 5 — Headless still-render entry point** (§4.8, AnyBridge #791): `renderStill` in
+   `gcode-preview-core` + any renderer typing widening; determinism CI check against a committed
+   baseline; documented environment support incl. the Electron/`OffscreenCanvas` path; reference
+   doc for still-render options (the neutral surface AnyBridge's `RenderSpec` translates onto).
+6. **Phase 6 — Release rehearsal**: full dry-run from release PR to packaged-artifact
+   verification; registry-mode fixture ready; #109 checklist walked and checked off item by item.
+7. **Phase 7 — `v0.1.0`**: `main` promotion PR, tag + Release, protected publish ×9 with
+   provenance from the user-owned `@chestnutlabs` scope, post-publish registry fixture + smoke
+   install, AnyBridge #783 + #791 switch notes, E7 exit evidence report. **Requires the §4.3
+   maintainer prerequisites.**
 
-Each phase is a separately reviewable PR train with tests; phases 1–2 may interleave with 3–4;
-phase 6 is last and gated on everything green.
+Each phase is a separately reviewable PR train with tests; phases 1–2 may interleave with 3–5;
+phase 7 is last and gated on everything green.
 
 ## 15. Acceptance criteria
 
-- [ ] D1–D7 decided by the maintainer and recorded verbatim; DD marked Accepted
+- [x] D1–D7 decided by the maintainer and recorded verbatim; DD marked Accepted (2026-07-23)
 - [ ] Phased issues opened per §14 (adjusted to decisions), including closing #109 and #118
-- [ ] Repository stands alone publicly (all #109 checkboxes) **before** phase 6 runs
+- [ ] Repository stands alone publicly (all #109 checkboxes) **before** phase 7 runs
+- [ ] **Release gate (explicit): framework-integration parity** — the shared behavioral suite
+      green across Vue/React/Svelte on the release candidate; the three integrations expose the
+      same capabilities (D5 amendment)
+- [ ] **Release gate (explicit): registry-mode consumer verification** — the consumer fixture
+      passes against the actually-published registry packages (D3/§9)
 - [ ] First stable `@chestnutlabs/*` line published from protected CI with provenance; install/
       import verified from the registry
-- [ ] Support/deprecation policy published; changelog automation live
+- [ ] Support/deprecation policy published (Node 22/24, rolling browser window + Electron
+      baseline, `three` peer range); changelog automation live
 - [ ] E4 §7.3 fuzzing condition discharged with corpus committed
+- [ ] Headless still-render entry point shipped, deterministically tested, and cross-linked to
+      AnyBridge #791 (§4.8); roadmap records the pure-Node path as the deferred E8-class item
 - [ ] `main` promoted; founding-baseline freeze formally ends
 
 ## Decision log
@@ -360,3 +479,5 @@ phase 6 is last and gated on everything green.
 | Date | Decision | By |
 |---|---|---|
 | 2026-07-23 | DD-008 drafted as Proposed; decision menu D1–D7 open | Chestnut Labs |
+| 2026-07-23 | **Accepted.** D1 lockstep `0.x` from `0.1.0` (independent versioning re-evaluated before `1.0.0`); D2 Changesets fixed group, no auto-publish from ordinary merges; D3 protected-CI publish with provenance/trusted publishing from the **user-owned** `@chestnutlabs` scope (org conversion deferred, not a `v0.1.0` blocker); D4 full identity rewrite, upstream README/workflows removed, attribution via history+LICENSE+NOTICE+concise README acknowledgment, `demo/` fixture audit mandatory; D5 **amended** — showcase ships but is not the only usable product; framework-neutral surface + three equal first-class integrations with parity tests; only the Studio workbench layer deferred; D6 **amended** — Node 22/24 LTS `engines >= 22`, auditable rolling browser window + AnyBridge Electron baseline, `three` as peerDependency (narrow range) with exact dev/test pin; D7 Jazzer.js, failures minimized into small legal redistributable fixtures | Maintainer |
+| 2026-07-23 | **Addition:** headless still-render capability (AnyBridge #791) belongs in `gcode-preview`; audit mandated. Audit verdict: bounded adapter → minimal supported `renderStill` entry point in `v0.1.0` (§4.8, phase 5); pure-Node GPU-less path recorded as the deferred E8-class item. Framework parity + registry-mode verification made explicit `v0.1.0` release gates | Maintainer + audit |
