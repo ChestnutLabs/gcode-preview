@@ -156,20 +156,24 @@ interface LayerRec {
   segEnd: number;
 }
 
-interface Engine {
+/** Internal engine surface shared by the sync, async, and streaming drivers. Not public API. */
+export interface Engine {
   text: string;
   limits: ParseLimits;
   processLine(rawLine: string, offset: number): void;
   stopped(): boolean;
   markInputTooBig(): void;
+  /** Streaming driver: record the true source byte count as it becomes known. */
+  setSourceBytes(bytes: number): void;
   finish(cancelledAtByte?: number): ParseResult;
 }
 
-function createEngine(input: string | Uint8Array, opts: ParseOptions): Engine {
+/** Internal: build an engine over decoded text (streaming passes '' and feeds lines itself). */
+export function createEngine(input: string | Uint8Array, opts: ParseOptions): Engine {
   const limits: ParseLimits = { ...DEFAULT_LIMITS, ...opts.limits };
   const tolerance = opts.minLayerThreshold ?? LAYER_TOLERANCE;
   const text = typeof input === 'string' ? input : new TextDecoder().decode(input);
-  const byteLength = typeof input === 'string' ? text.length : input.byteLength;
+  let byteLength = typeof input === 'string' ? text.length : input.byteLength;
 
   const warnings = new Map<string, Warning>();
   const stats: ParseStats = {
@@ -261,6 +265,16 @@ function createEngine(input: string | Uint8Array, opts: ParseOptions): Engine {
     } catch (err) {
       if (err instanceof BudgetExceededError) {
         stopReason = { code: 'E_LIMIT_BUFFER_BYTES', message: err.message, srcByte: currentSrcByte };
+        return false;
+      }
+      if (err instanceof RangeError) {
+        // Engine-level allocation failure (§7.2 amendment): mapped to the same
+        // structured bounded result, never an unhandled exception or dead worker.
+        stopReason = {
+          code: 'E_LIMIT_BUFFER_BYTES',
+          message: `platform allocation failure: ${err.message}`,
+          srcByte: currentSrcByte
+        };
         return false;
       }
       throw err;
@@ -574,6 +588,10 @@ function createEngine(input: string | Uint8Array, opts: ParseOptions): Engine {
         srcByte: 0
       };
       truncatedAtByte = 0;
+    },
+    setSourceBytes: (bytes: number) => {
+      byteLength = bytes;
+      stats.bytes = bytes;
     },
     finish
   };

@@ -6,12 +6,27 @@
  * inbound messages to the returned handler. The Web Worker entry (`worker.ts`)
  * is a two-line shim over this.
  */
-import { parseGcodeToIRAsync } from './parse';
-import { PROTOCOL_VERSION, irTransferList, type WorkerRequest, type WorkerResponse } from './protocol';
+import { parseGcodeToIRAsync, type AsyncParseHooks, type AsyncParseResult, type ParseOptions } from './parse';
+import { isBlobLike, isReadableStreamLike, parseGcodeStreamToIR } from './streaming';
+import {
+  PROTOCOL_VERSION,
+  irTransferList,
+  type ParseInputWire,
+  type WorkerRequest,
+  type WorkerResponse
+} from './protocol';
 
 export type PostFn = (msg: WorkerResponse, transfer?: ArrayBuffer[]) => void;
 
 const PROGRESS_THROTTLE_MS = 100;
+
+/** Route by input form (§4.2): streams/Blobs use the line-drain driver, memory uses the async driver. */
+function dispatchParse(input: ParseInputWire, opts: ParseOptions, hooks: AsyncParseHooks): Promise<AsyncParseResult> {
+  if (isBlobLike(input) || isReadableStreamLike(input)) {
+    return parseGcodeStreamToIR(input, opts, hooks);
+  }
+  return parseGcodeToIRAsync(input, opts, hooks);
+}
 
 export function createWorkerHandler(post: PostFn): (msg: WorkerRequest) => void {
   let activeId: number | null = null;
@@ -54,7 +69,7 @@ export function createWorkerHandler(post: PostFn): (msg: WorkerRequest) => void 
       const { partialOnCancel, yieldIntervalMs, ...parseOpts } = msg.opts ?? {};
 
       let lastProgress = 0;
-      void parseGcodeToIRAsync(msg.input, parseOpts, {
+      const hooks: AsyncParseHooks = {
         yieldIntervalMs,
         shouldCancel: () => cancelRequested,
         onProgress: (bytesProcessed, totalBytes) => {
@@ -64,7 +79,8 @@ export function createWorkerHandler(post: PostFn): (msg: WorkerRequest) => void 
             post({ v: PROTOCOL_VERSION, type: 'progress', id: msg.id, bytesProcessed, totalBytes, phase: 'parsing' });
           }
         }
-      })
+      };
+      void dispatchParse(msg.input, parseOpts, hooks)
         .then((result) => {
           if (result.cancelled) {
             const partial = partialOnCancel ? { ir: result.ir, stats: result.stats } : undefined;

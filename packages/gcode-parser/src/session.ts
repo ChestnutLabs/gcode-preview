@@ -11,10 +11,12 @@
  * strictly a last-resort backstop, asserted against in tests.
  */
 import type { ParseResult } from './parse';
-import { PROTOCOL_VERSION, type WireParseOptions, type WorkerResponse } from './protocol';
+import { isReadableStreamLike } from './streaming';
+import { PROTOCOL_VERSION, type ParseInputWire, type WireParseOptions, type WorkerResponse } from './protocol';
 
 export interface WorkerLike {
-  postMessage(msg: unknown, transfer?: ArrayBuffer[]): void;
+  /** Transfer list may carry ArrayBuffers and (in browsers) transferable streams. */
+  postMessage(msg: unknown, transfer?: unknown[]): void;
   terminate(): void;
   onmessage: ((ev: { data: unknown }) => void) | null;
   onerror: ((err: unknown) => void) | null;
@@ -89,7 +91,7 @@ export class GcodeParseSession {
     return () => this.progressListeners.delete(cb);
   }
 
-  parse(input: string | Uint8Array, opts: WireParseOptions = {}): Promise<ParseResult> {
+  parse(input: ParseInputWire, opts: WireParseOptions = {}): Promise<ParseResult> {
     if (this.active !== null) {
       return Promise.reject(new ParseSessionError('E_BUSY', 'a parse is already in progress on this session'));
     }
@@ -97,7 +99,11 @@ export class GcodeParseSession {
     const id = this.nextId++;
     return new Promise<ParseResult>((resolve, reject) => {
       this.active = { id, resolve, reject, partialOnCancel: opts.partialOnCancel === true };
-      const transfer = typeof input === 'string' ? undefined : [input.buffer as ArrayBuffer];
+      // §4.2 wire strategy: Uint8Array transfers its buffer (zero-copy); a
+      // ReadableStream is transferred; a Blob is a cheap cloneable handle.
+      let transfer: unknown[] | undefined;
+      if (input instanceof Uint8Array) transfer = [input.buffer];
+      else if (isReadableStreamLike(input) && typeof input !== 'string') transfer = [input];
       worker.postMessage({ v: PROTOCOL_VERSION, type: 'parse', id, input, opts }, transfer);
     });
   }

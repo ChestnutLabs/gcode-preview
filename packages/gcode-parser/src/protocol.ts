@@ -9,6 +9,7 @@
  */
 import type { ToolpathIR } from '@chestnutlabs/toolpath-core';
 import type { ParseOptions, ParseStats } from './parse';
+import type { BlobLike, ReadableStreamLike } from './streaming';
 
 export const PROTOCOL_VERSION = 1;
 
@@ -19,7 +20,8 @@ export interface WireParseOptions extends ParseOptions {
   yieldIntervalMs?: number;
 }
 
-export type ParseInputWire = string | Uint8Array;
+/** Blob is structured-cloneable; ReadableStream is transferred (§4.2). */
+export type ParseInputWire = string | Uint8Array | BlobLike | ReadableStreamLike<Uint8Array>;
 
 export interface ParseRequest {
   v: number;
