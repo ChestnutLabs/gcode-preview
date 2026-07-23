@@ -46,7 +46,7 @@ tracked in [`UPSTREAM_PROVENANCE.md`](UPSTREAM_PROVENANCE.md).
 | **E1** ToolpathIR & Package Contracts (#2) | **Closed/Accepted** | DD-001 + DD-002 **Accepted** |
 | **E2** Worker Parser & Large-File Pipeline (#3) | **Closed/Accepted** | DD-003 **Accepted**; all §8 benchmark targets met ([report](../tools/benchmark/results/e2-worker-benchmark-2026-07-22.md)) |
 | **E3** Three.js Renderer & Viewer MVP (#4) | **Closed/Accepted** (2026-07-22) | DD-004 **Accepted + benchmark-ratified** (#61, [report](../tools/benchmark/results/e3-renderer-benchmark-2026-07-22.md)); orbit-fps budgets pending a reference-machine `perfRun()` (accepted deviation) |
-| **E4** Dialect & Container Compatibility (#5) | **In progress — DD gate** | [DD-005](design/DD-005-dialect-plugin-and-container-adapter-contracts.md) **Proposed** (#70) — awaiting maintainer decisions; no implementation before acceptance + the §7.3 security-review gate |
+| **E4** Dialect & Container Compatibility (#5) | **In progress** | [DD-005](design/DD-005-dialect-plugin-and-container-adapter-contracts.md) **Accepted with amendments** (#70, 2026-07-22); contracts phase underway; the container phase additionally requires the §7.3 security-review sign-off |
 | E5–E8 | Open, gated | DD-006…DD-008 unwritten — no implementation before each gate |
 
 Shipped so far: `packages/toolpath-core` (SoA `ToolpathIR`, capability model), `packages/gcode-parser`
