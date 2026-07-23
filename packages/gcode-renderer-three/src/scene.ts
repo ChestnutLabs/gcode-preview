@@ -28,17 +28,19 @@ import {
   LineBasicMaterial,
   LineSegments,
   Mesh,
+  MeshBasicMaterial,
   MeshLambertMaterial,
   PerspectiveCamera,
   Scene,
+  SphereGeometry,
   Vector3,
   WebGLRenderer
 } from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
-import type { MachineGeometry, ToolpathIR } from '@chestnutlabs/toolpath-core';
+import type { MachineGeometry, MappedProgress, ToolpathIR } from '@chestnutlabs/toolpath-core';
 import { autoDecimation, buildChunks, type ChunkBuildResult, type GeometryChunk } from './chunks.js';
 import { buildChunkColors, type ColorMode } from './colors.js';
-import { computeDrawState } from './ranges.js';
+import { computeDrawState, computeOverlayDrawStates } from './ranges.js';
 import { createBuildVolume, type BuildVolumeDef } from './build-volume.js';
 import { buildTubeChunk, TUBES_AUTO_MAX_SEGMENTS, type TubeOptions } from './tubes.js';
 
@@ -51,8 +53,12 @@ export function chooseQuality(requested: QualityMode | 'auto', totalSegments: nu
   return totalSegments <= TUBES_AUTO_MAX_SEGMENTS ? 'tubes' : 'lines';
 }
 
+/** How the live-progress overlay is currently presented (DD-006 §4.5). */
+export type ProgressPresentationMode = 'exact' | 'band' | 'stale' | 'hidden';
+
 export type RendererEvent =
   | { type: 'buildProgress'; chunksBuilt: number; chunksTotal: number }
+  | { type: 'progress-presentation-changed'; mode: ProgressPresentationMode; reason?: string }
   | {
       type: 'buildComplete';
       segments: number;
@@ -160,6 +166,34 @@ export class ToolpathRenderer {
   private endLayer = Infinity;
   private scrubSegIndex: number | null = null;
   private kindVisible: Record<GeometryChunk['kind'], boolean> = { extrude: true, travel: true };
+  // Live-progress overlay state (DD-006 §4.5, phase 3): completed cut + ghost + marker/band.
+  private progress: MappedProgress | null = null;
+  private presentationMode: ProgressPresentationMode = 'hidden';
+  private markerMesh: Mesh | null = null;
+  // Shared overlay materials (created once; disposed with the renderer). The ghost is a
+  // uniform desaturated translucent pass; the band is the "somewhere in here" emphasis.
+  private readonly ghostMaterial = new LineBasicMaterial({
+    color: 0x8a94a0,
+    transparent: true,
+    opacity: 0.22,
+    depthWrite: false
+  });
+  private readonly bandMaterial = new LineBasicMaterial({ color: 0xffa000, transparent: true, opacity: 0.9 });
+  private readonly staleBandMaterial = new LineBasicMaterial({ color: 0x9e9e9e, transparent: true, opacity: 0.5 });
+  // Marker materials render on top (depthTest off, transparent pass + high renderOrder so
+  // they draw AFTER the ghost lines): the marker is a position INDICATOR — half-buried in
+  // the extrusion it sits on and behind nearer path lines, it would otherwise be invisible.
+  private readonly markerMaterial = new MeshBasicMaterial({
+    color: 0xff6d00,
+    transparent: true, // joins the transparent pass — sorted after the ghost via renderOrder
+    depthTest: false
+  });
+  private readonly staleMarkerMaterial = new MeshBasicMaterial({
+    color: 0x9e9e9e,
+    transparent: true,
+    opacity: 0.7,
+    depthTest: false
+  });
   private listeners = new Set<(e: RendererEvent) => void>();
   private disposed = false;
   private contextLost = false;
@@ -307,6 +341,12 @@ export class ToolpathRenderer {
     this.startLayer = 0;
     this.endLayer = Infinity;
     this.scrubSegIndex = null;
+    // A mapped progress refers to the OLD IR's segment indices — never carry it across.
+    this.progress = null;
+    if (this.presentationMode !== 'hidden') {
+      this.presentationMode = 'hidden';
+      this.emit({ type: 'progress-presentation-changed', mode: 'hidden', reason: 'new-ir' });
+    }
     this.startBuild(ir);
     this.positionToolpath(ir);
     this.frame();
@@ -521,6 +561,22 @@ export class ToolpathRenderer {
       const chunk = mesh.userData.chunk as GeometryChunk | undefined;
       if (chunk) this.applyDrawStateToMesh(mesh, chunk);
     }
+    this.updateMarker();
+  }
+
+  /**
+   * The overlay's completed/ghost cut segment indices, or null when the overlay is hidden.
+   * The completed cut sits at the band's lower edge, the ghost starts after its upper edge
+   * (DD-006 §4.5); a point position (`known`) collapses the band to nothing.
+   */
+  private overlayCuts(): { lo: number; hi: number } | null {
+    if (this.presentationMode === 'hidden' || this.progress === null) return null;
+    const p = this.progress;
+    const lo = p.band !== null ? p.band[0] - 1 : (p.segIndex ?? -1);
+    const hi = p.band !== null ? p.band[1] : (p.segIndex ?? -1);
+    // A point band ([s, s]) means exact: completed through s, no emphasis segments.
+    if (p.band !== null && p.band[0] === p.band[1]) return { lo: p.band[0], hi: p.band[1] };
+    return { lo, hi };
   }
 
   private applyDrawStateToMesh(mesh: LineSegments | Mesh, chunk: GeometryChunk): void {
@@ -532,14 +588,149 @@ export class ToolpathRenderer {
     if (this.ir === null) return;
     if (!this.kindVisible[chunk.kind]) {
       mesh.visible = false;
+      this.setOverlayMeshes(mesh, chunk, null, false);
       return;
     }
-    const state = computeDrawState(this.ir, chunk, this.startLayer, this.endLayer, this.scrubSegIndex ?? undefined);
+    // User scrub always wins the cut (D5); otherwise the overlay's completed cut applies.
+    const scrubActive = this.scrubSegIndex !== null;
+    const overlay = this.overlayCuts();
+    const upper = scrubActive ? (this.scrubSegIndex as number) : overlay !== null ? overlay.lo : undefined;
+    const state = computeDrawState(this.ir, chunk, this.startLayer, this.endLayer, upper);
     mesh.visible = state.visible;
     // Segment-uniform draw units (§4.5, identical contract in both quality modes):
     // lines = 2 vertices/segment; tubes = indicesPerSegment indices/segment.
     const units = (mesh.userData.drawUnitsPerSegment as number | undefined) ?? 2;
     (mesh.geometry as BufferGeometry).setDrawRange(state.drawStart * units, state.drawCount * units);
+    this.setOverlayMeshes(mesh, chunk, overlay, scrubActive);
+  }
+
+  /**
+   * Maintain the per-chunk ghost/band overlay passes (DD-006 §4.5). Both are LineSegments
+   * over the chunk's LINE positions — in tubes mode this *is* the required line-style ghost
+   * (§8), and no geometry is duplicated in lines mode (the position attribute is shared).
+   * During user scrub the ghost is dropped (scrub owns the cut) but the band emphasis stays.
+   */
+  private setOverlayMeshes(
+    mesh: LineSegments | Mesh,
+    chunk: GeometryChunk,
+    overlay: { lo: number; hi: number } | null,
+    scrubActive: boolean
+  ): void {
+    let ghost = mesh.userData.overlayGhost as LineSegments | undefined;
+    let band = mesh.userData.overlayBand as LineSegments | undefined;
+    if (overlay === null) {
+      if (ghost !== undefined) ghost.visible = false;
+      if (band !== undefined) band.visible = false;
+      return;
+    }
+    if (ghost === undefined) {
+      // Lazy warm-up on the first live observation. Lines mode shares the main mesh's
+      // position attribute; tubes mode wraps the chunk's (retained) line positions.
+      const mainIsLines = (mesh.userData.drawUnitsPerSegment as number | undefined) === 2;
+      const position = mainIsLines
+        ? ((mesh.geometry as BufferGeometry).getAttribute('position') as BufferAttribute)
+        : new BufferAttribute(chunk.positions, 3);
+      const makePass = (material: LineBasicMaterial, name: string): LineSegments => {
+        const geometry = new BufferGeometry();
+        geometry.setAttribute('position', position);
+        const pass = new LineSegments(geometry, material);
+        pass.name = `${name}:${chunk.kind}:${chunk.layerStart}-${chunk.layerEnd}`;
+        pass.userData.overlayFor = mesh;
+        this.toolpathGroup.add(pass);
+        return pass;
+      };
+      ghost = makePass(this.ghostMaterial, 'overlay-ghost');
+      band = makePass(this.bandMaterial, 'overlay-band');
+      mesh.userData.overlayGhost = ghost;
+      mesh.userData.overlayBand = band;
+    }
+    const states = computeOverlayDrawStates(
+      this.ir as ToolpathIR,
+      chunk,
+      this.startLayer,
+      this.endLayer,
+      overlay.lo,
+      overlay.hi
+    );
+    ghost.visible = !scrubActive && states.ghost.visible;
+    (ghost.geometry as BufferGeometry).setDrawRange(states.ghost.drawStart * 2, states.ghost.drawCount * 2);
+    (band as LineSegments).visible = states.band.visible;
+    (band as LineSegments).material = this.presentationMode === 'stale' ? this.staleBandMaterial : this.bandMaterial;
+    ((band as LineSegments).geometry as BufferGeometry).setDrawRange(
+      states.band.drawStart * 2,
+      states.band.drawCount * 2
+    );
+  }
+
+  /** Position marker: shown only for `known` positions — a point for an approximate tier
+   *  would be false precision (DD-006 §4.5); approximate tiers get the band instead. */
+  private updateMarker(): void {
+    const p = this.progress;
+    const show =
+      this.ir !== null &&
+      this.presentationMode !== 'hidden' &&
+      p !== null &&
+      p.confidence === 'known' &&
+      p.segIndex !== null;
+    if (!show) {
+      if (this.markerMesh !== null) this.markerMesh.visible = false;
+      return;
+    }
+    if (this.markerMesh === null) {
+      this.markerMesh = new Mesh(new SphereGeometry(1.5, 16, 12), this.markerMaterial);
+      this.markerMesh.name = 'overlay-marker';
+      this.markerMesh.userData.overlayMarker = true;
+      this.markerMesh.renderOrder = 10; // after the toolpath — depthTest is off
+      this.toolpathGroup.add(this.markerMesh);
+    }
+    const ir = this.ir as ToolpathIR;
+    // Model-relative size (fixed mm vanish on large models / small canvases), clamped sane.
+    const b = ir.bounds;
+    if (Number.isFinite(b.min.x)) {
+      const modelRadius = Math.hypot(b.max.x - b.min.x, b.max.y - b.min.y, b.max.z - b.min.z) / 2;
+      this.markerMesh.scale.setScalar(Math.max(1.5, Math.min(5, modelRadius * 0.035)) / 1.5);
+    }
+    const seg = (p as MappedProgress).segIndex as number;
+    this.markerMesh.position.set(ir.segments.x1[seg], ir.segments.y1[seg], ir.segments.z1[seg]);
+    this.markerMesh.material = this.presentationMode === 'stale' ? this.staleMarkerMaterial : this.markerMaterial;
+    this.markerMesh.visible = true;
+  }
+
+  /**
+   * Live-progress overlay input (DD-006 §4.5): a `MappedProgress` from the core mapper, or
+   * null to hide the overlay entirely. Presentation is decided by confidence — exact gets a
+   * marker, approximate gets an uncertainty band, stale grays out, unavailable hides — and
+   * every mode change emits `progress-presentation-changed`.
+   */
+  setProgress(p: MappedProgress | null): void {
+    if (this.disposed) return;
+    this.progress = p;
+    let mode: ProgressPresentationMode;
+    let reason: string | undefined;
+    if (p === null || p.confidence === 'unavailable') {
+      mode = 'hidden';
+      reason = p?.notes[0]?.code;
+    } else if (p.stale) {
+      mode = 'stale';
+      reason = 'observation-stale';
+    } else {
+      mode = p.confidence === 'known' ? 'exact' : 'band';
+    }
+    if (mode !== this.presentationMode) {
+      this.presentationMode = mode;
+      this.emit(
+        reason === undefined
+          ? { type: 'progress-presentation-changed', mode }
+          : { type: 'progress-presentation-changed', mode, reason }
+      );
+    }
+    this.applyDrawState();
+    this.render();
+  }
+
+  /** Current overlay presentation (DD-006 §4.5) — mirrors the last emitted mode. */
+  get progressPresentation(): ProgressPresentationMode {
+    return this.presentationMode;
   }
 
   /** Fit the camera to the toolpath bounds (falls back to the build volume). */
@@ -686,6 +877,7 @@ export class ToolpathRenderer {
     this.builtCount = 0;
     this.previewSegments = 0;
     this.previewBounds = null;
+    this.markerMesh = null; // its geometry was disposed with the group children above
   }
 
   dispose(): void {
@@ -701,6 +893,11 @@ export class ToolpathRenderer {
         (mesh.material as LineBasicMaterial | undefined)?.dispose?.();
       });
     }
+    this.ghostMaterial.dispose();
+    this.bandMaterial.dispose();
+    this.staleBandMaterial.dispose();
+    this.markerMaterial.dispose();
+    this.staleMarkerMaterial.dispose();
     this.controls?.dispose();
     this.gl.dispose();
     this.listeners.clear();

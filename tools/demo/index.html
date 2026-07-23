@@ -214,6 +214,22 @@
       </fieldset>
 
       <fieldset>
+        <legend>Live progress (simulated)</legend>
+        <label>
+          Telemetry tier
+          <select id="progressTier" disabled>
+            <option value="byte">Byte-exact (Moonraker file_position)</option>
+            <option value="percent-bytes">Percent of bytes (Klipper virtual_sdcard)</option>
+            <option value="layer">Layer (Bambu/Anycubic)</option>
+            <option value="percent-job">Job percent (Bambu mc_percent)</option>
+            <option value="mismatch">Wrong file (identity mismatch)</option>
+          </select>
+        </label>
+        <button id="progressPlay" disabled>Play</button>
+        <p id="progressNote" role="note">Parse a file to enable simulated telemetry.</p>
+      </fieldset>
+
+      <fieldset>
         <legend>Result</legend>
         <p id="stats">—</p>
       </fieldset>

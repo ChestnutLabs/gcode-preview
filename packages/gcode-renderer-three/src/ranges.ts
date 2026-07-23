@@ -78,3 +78,47 @@ export function computeDrawState(
   const drawCount = Math.max(0, end - start);
   return { visible: drawCount > 0, drawStart: start, drawCount };
 }
+
+/** Per-chunk split for the live-progress overlay (DD-006 §4.5). */
+export interface OverlayDrawStates {
+  /** Segments completed by the printer (IR index <= loSeg), within the layer range. */
+  completed: ChunkDrawState;
+  /** Uncertainty band (loSeg < index <= hiSeg) — empty when loSeg === hiSeg. */
+  band: ChunkDrawState;
+  /** Remaining path (index > hiSeg) — the translucent ghost pass. */
+  ghost: ChunkDrawState;
+}
+
+/**
+ * Split a chunk into completed / band / ghost draw ranges around a progress position
+ * (DD-006 §4.5): the completed cut sits at `loSeg`, the ghost starts after `hiSeg`,
+ * and the emphasis band covers the uncertainty between them. Same O(log n) bounds as
+ * `computeDrawState`; composes with the layer range by intersection. Pass `loSeg = -1`
+ * for "nothing completed yet" (everything after the band is ghost).
+ */
+export function computeOverlayDrawStates(
+  ir: ToolpathIR,
+  chunk: GeometryChunk,
+  startLayer: number,
+  endLayer: number,
+  loSeg: number,
+  hiSeg: number
+): OverlayDrawStates {
+  const all = computeDrawState(ir, chunk, startLayer, endLayer);
+  if (!all.visible) {
+    const empty: ChunkDrawState = { visible: false, drawStart: 0, drawCount: 0 };
+    return { completed: empty, band: empty, ghost: empty };
+  }
+  const toLo = computeDrawState(ir, chunk, startLayer, endLayer, loSeg);
+  const toHi = hiSeg === loSeg ? toLo : computeDrawState(ir, chunk, startLayer, endLayer, hiSeg);
+  const loEnd = toLo.drawStart + toLo.drawCount;
+  const hiEnd = toHi.drawStart + toHi.drawCount;
+  const allEnd = all.drawStart + all.drawCount;
+  const bandCount = Math.max(0, hiEnd - loEnd);
+  const ghostCount = Math.max(0, allEnd - hiEnd);
+  return {
+    completed: { ...toLo, visible: toLo.visible && toLo.drawCount > 0 },
+    band: { visible: bandCount > 0, drawStart: loEnd, drawCount: bandCount },
+    ghost: { visible: ghostCount > 0, drawStart: hiEnd, drawCount: ghostCount }
+  };
+}
