@@ -195,6 +195,50 @@ module.exports = {
       }
     },
     {
+      // src only (the vitest config is node-side tooling).
+      files: ['packages/gcode-preview-react/src/**/*.ts', 'packages/gcode-preview-react/src/**/*.tsx'],
+      rules: {
+        'no-restricted-imports': [
+          'error',
+          {
+            patterns: [
+              // react IS allowed here — this adapter's one framework dependency (DD-007 §4.6).
+              {
+                group: ['vue', 'vue/*', 'svelte', 'svelte/*'],
+                message:
+                  'gcode-preview-react bridges React only (DD-007 §4.6) — other frameworks have their own adapters.'
+              },
+              {
+                group: ['redux', 'redux/*', 'react-redux*', 'zustand*', 'react-router*'],
+                message: 'gcode-preview-react must stay store/router-free (DD-007 §4.4) — hosts own app state.'
+              },
+              { group: ['lil-gui'], message: 'gcode-preview-react ships no UI chrome (DD-007 §3).' },
+              {
+                group: ['three', 'three/*'],
+                message: 'gcode-preview-react consumes the renderer package, never three directly (DD-002 §4).'
+              },
+              {
+                group: ['@chestnutlabs/gcode-dialects*', '@chestnutlabs/gcode-containers*'],
+                message: 'Dialects/containers run inside the worker (DD-005 §4.5) — the React layer never imports them.'
+              },
+              {
+                group: ['*anybridge*', '*AnyBridge*'],
+                message: 'No reusable package may import AnyBridge (DD-002 §4 core rule).'
+              },
+              {
+                group: ['node:*', 'fs', 'child_process', 'net', 'http', 'https'],
+                message: 'gcode-preview-react is browser-side only (DD-007 §7).'
+              },
+              {
+                group: ['../../../*'],
+                message: 'gcode-preview-react must not reach outside its package (DD-002 §4).'
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
       files: ['packages/gcode-preview-vue/**/*.ts', 'packages/gcode-preview-vue/**/*.vue'],
       rules: {
         'no-restricted-imports': [
