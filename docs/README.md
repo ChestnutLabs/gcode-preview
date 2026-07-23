@@ -45,8 +45,9 @@ tracked in [`UPSTREAM_PROVENANCE.md`](UPSTREAM_PROVENANCE.md).
 | **E0** Fork Foundation & Upstream Audit (#1) | **Closed/Accepted** | RR-001 **Accepted** (baseline `develop` @ `15375e56`) |
 | **E1** ToolpathIR & Package Contracts (#2) | **Closed/Accepted** | DD-001 + DD-002 **Accepted** |
 | **E2** Worker Parser & Large-File Pipeline (#3) | **Closed/Accepted** | DD-003 **Accepted**; all §8 benchmark targets met ([report](../tools/benchmark/results/e2-worker-benchmark-2026-07-22.md)) |
-| **E3** Three.js Renderer & Viewer MVP (#4) | **All phases done — awaiting maintainer acceptance** | DD-004 **Accepted + benchmark-ratified** (#61); phases: #56 builders, #57 scene, #58 clipping/scrub/demo, #59 tubes, #60 progressive preview, #61 benchmarks + visual regression ([report](../tools/benchmark/results/e3-renderer-benchmark-2026-07-22.md)); fps budgets pending a reference-machine `perfRun()` |
-| E4–E8 | Open, gated | DD-005…DD-008 unwritten — no implementation before each gate |
+| **E3** Three.js Renderer & Viewer MVP (#4) | **Closed/Accepted** (2026-07-22) | DD-004 **Accepted + benchmark-ratified** (#61, [report](../tools/benchmark/results/e3-renderer-benchmark-2026-07-22.md)); orbit-fps budgets pending a reference-machine `perfRun()` (accepted deviation) |
+| **E4** Dialect & Container Compatibility (#5) | **In progress — DD gate** | [DD-005](design/DD-005-dialect-plugin-and-container-adapter-contracts.md) **Proposed** (#70) — awaiting maintainer decisions; no implementation before acceptance + the §7.3 security-review gate |
+| E5–E8 | Open, gated | DD-006…DD-008 unwritten — no implementation before each gate |
 
 Shipped so far: `packages/toolpath-core` (SoA `ToolpathIR`, capability model), `packages/gcode-parser`
 (byte-exact port of the inherited engine, worker protocol v1, streaming, limits, adversarial corpus),
