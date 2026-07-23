@@ -1,6 +1,6 @@
 # DD-006 — Normalized Live Progress and Source-Position Mapping
 
-**Status:** **Proposed** <!-- Draft | Proposed | Accepted | Superseded | Rejected -->
+**Status:** **Accepted (2026-07-23, D1–D5 as proposed; D3 clarified)** <!-- Draft | Proposed | Accepted | Superseded | Rejected -->
 **Authors/Owners:** Chestnut Labs
 **Date:** 2026-07-23 · **Last revised:** 2026-07-23
 **Owning Epic:** E5 (#6) · **Milestone:** M4
@@ -10,6 +10,22 @@ deliberately **unchanged** by this DD), DD-004 §4.5 (draw-range scrub machinery
 DD-005 §4.2 (`ParseResult.metadata` precedent for side-band data), E5 epic (#6), issue #87 (this DD),
 AnyBridge #783 (ownership boundary: AnyBridge owns telemetry normalization), master plan §18 (the
 fallback-hierarchy decision this DD closes with real telemetry evidence)
+
+---
+
+> **Accepted 2026-07-23 — all five decisions as proposed, with one clarification.**
+> **(D1)** `ProgressObservation`/`ProgressMapper` live in `toolpath-core`. **(D2)** confidence reuses
+> DD-001's `known | inferred | approximated | unavailable`. **(D3)** the optional `line`/command
+> observation fields are **reserved in the v1 contract**, and the parser line index is **deferred
+> until a real adapter or integration supplies line/command progress**; *clarification:* the reserved
+> fields and their serialization must remain **forward-compatible and be covered by contract tests**
+> (§4.1, §9). **(D4)** explicit `percentBasis`: byte-based percent may promote to the byte tier when
+> file size is known; job-based/unknown percent stays `approximated` with an appropriately wide band.
+> **(D5)** full v1 overlay: completed cut + translucent remaining-path ghost + marker/uncertainty
+> band, line-style ghosting for tubes, and **user scrubbing always takes precedence** over the live
+> overlay. Phases must be **independently reviewable**, with tests for tier selection, confidence
+> behavior, file-identity mismatch, stale observations, uncertainty-band widening, and scrub
+> precedence.
 
 ---
 
@@ -83,7 +99,7 @@ Conclusions this DD is built on:
 
 ## 4. Data contracts / API
 
-### 4.1 `ProgressObservation` v1 — PROPOSED
+### 4.1 `ProgressObservation` v1 — ACCEPTED (D1, D3 clarified)
 
 Lives in `@chestnutlabs/toolpath-core` (`progress.ts`), following the DD-005 §4.2 precedent that
 cross-package data contracts live in core (decision D1). Serializable (structured-clone-safe), so a
@@ -114,7 +130,7 @@ export interface ProgressObservation {
 }
 ```
 
-### 4.2 `ProgressMapper` and `MappedProgress` — PROPOSED
+### 4.2 `ProgressMapper` and `MappedProgress` — ACCEPTED (D1, D2)
 
 ```ts
 export interface MappedProgress {
@@ -153,7 +169,7 @@ The mapper is **main-thread, allocation-light, O(log n)** per observation (binar
 transferred to the consumer, so mapping happens where the observation arrives. Worker protocol v1
 is untouched.
 
-### 4.3 Fallback hierarchy and confidence — PROPOSED (closes master plan §18)
+### 4.3 Fallback hierarchy and confidence — ACCEPTED (D3, D4; closes master plan §18)
 
 Highest-precision fact present in the observation wins; each tier's confidence is fixed:
 
@@ -177,7 +193,7 @@ with `ir.layers.length`. Rules: if `totalLayers` is present and differs from `ir
 > 2, add `layer-count-mismatch`, treat the reported layer as a *fraction* (`layer/totalLayers`)
 through tier 5 instead of trusting the index; else clamp into range (out-of-range adds a note).
 
-### 4.4 Stale / disconnected / mismatch — PROPOSED
+### 4.4 Stale / disconnected / mismatch — ACCEPTED
 
 **4.4.1 Byte domain.** `position.byte` (and percent-of-bytes promotion) refers to **the byte stream
 the parser consumed**. For plain `.gcode` that is the file itself. For `.gcode.3mf` it is the
@@ -200,7 +216,7 @@ observing (→ stale) or calls `reset()` (→ overlay hidden). `state:'complete'
 segment with `known` confidence regardless of position facts; `cancelled`/`unknown` keep the last
 mapped position but add a note.
 
-### 4.5 Renderer progress overlay — PROPOSED
+### 4.5 Renderer progress overlay — ACCEPTED (D5)
 
 `ToolpathRenderer` (DD-004) gains one input and one event; no shader work in v1:
 
@@ -270,7 +286,10 @@ n) with no allocation growth, and the overlay adds at most one ghost + one band 
 ## 9. Testing
 
 - **Unit**: hierarchy selection, each tier's mapping math, cross-check widening, layer-numbering
-  edge cases, identity mismatch demotions, regression/staleness state machine, v-skew handling.
+  edge cases, identity mismatch demotions, regression/staleness state machine, v-skew handling, and
+  **reserved-field forward compatibility** (D3 clarification): observations carrying `line`,
+  `percentBasis` values, or unknown extra fields must round-trip structured-clone/JSON serialization
+  unchanged and map without error today (falling through the hierarchy with a note, never throwing).
 - **Contract fixtures** (`test-data/fixtures/progress/`, manifest-tracked): pinned observation
   sequences shaped exactly like §1.1's real streams — a Bambu-style `mc_percent`+`layer_num` run,
   an Anycubic-style percent run, a Klipper byte-fraction run with and without
@@ -278,7 +297,9 @@ n) with no allocation growth, and the overlay adds at most one ghost + one band 
   `MappedProgress` outputs against corpus IR. JSON in, JSON expected: AnyBridge consumes the same
   fixtures without importing this repo's code (satisfies the epic's cross-repo evidence bullet).
 - **Renderer**: presentation-mode transitions (exact→band→stale→hidden) as unit tests over draw
-  state; visual-regression baselines for marker/band/ghost added to the E3 vr harness.
+  state; **scrub-precedence tests** (user scrub active ⇒ scrub owns the cut, overlay reduced, and
+  full overlay restored on release — D5); visual-regression baselines for marker/band/ghost added
+  to the E3 vr harness.
 - **Demo**: simulated-telemetry playback (scrub-bar-driven fake observations at each tier) so the
   overlay is verifiable in-browser without a printer.
 
@@ -348,6 +369,12 @@ package. Consumers that never call `setProgress` see zero behavior change.
 
 ## Decision log
 
+- **2026-07-23 — Accepted.** Maintainer accepted **D1–D5 as proposed**, clarifying D3: reserved
+  `line`/command fields stay in the v1 contract with mapping deferred until a real adapter or
+  integration supplies line/command progress, and the reserved fields + serialization must remain
+  forward-compatible under contract tests (§9). Phases must be independently reviewable, with tests
+  for tier selection, confidence behavior, file-identity mismatch, stale observations,
+  uncertainty-band widening, and scrub precedence. Implementation issues opened under epic #6.
 - **2026-07-23 — Proposed.** Open maintainer decisions:
   - **D1** Contract + mapper home: `toolpath-core` (proposed) vs. a new `toolpath-progress`
     package.
