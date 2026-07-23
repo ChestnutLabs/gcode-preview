@@ -1,6 +1,6 @@
 # DD-007 — Vue Integration and AnyBridge Consumer Boundary
 
-**Status:** **Proposed** <!-- Draft | Proposed | Accepted | Superseded | Rejected -->
+**Status:** **Accepted (2026-07-23, D1–D4 with clarifications; D3 adds the E7 repository-publication mandate)** <!-- Draft | Proposed | Accepted | Superseded | Rejected -->
 **Authors/Owners:** Chestnut Labs
 **Date:** 2026-07-23 · **Last revised:** 2026-07-23
 **Owning Epic:** E6 (#7) · **Milestone:** M4
@@ -10,6 +10,29 @@ composable owns), DD-004 (renderer lifecycle it mounts), DD-005 §4.5 (worker en
 exposes), DD-006 (progress surface it wires), architecture doc §`gcode-preview-vue`, E6 epic (#7),
 issue #101 (this DD), **AnyBridge #783** (the consumer-side epic; all AnyBridge-specific work lives
 there), `docs/05_ANYBRIDGE_HANDOFF.md`
+
+---
+
+> **Accepted 2026-07-23 — D1–D4 with maintainer clarifications and one addition.**
+> **(D1)** both surfaces in one package: a **complete, ready-to-use** `<GcodePreview>` component and
+> the `useGcodePreview` composable; the component must remain a **shell over the same composable
+> and engine, never a separate implementation**. **(D2)** dual/universal worker: batteries default
+> (all supported dialect adapters + `.gcode.3mf`) so consumers work with zero setup, plus a
+> consumer-supplied worker path for smaller builds / custom adapters / unusual bundlers / stricter
+> CSP; **both paths documented, the default path tested with Vite**. **(D3)** `npm pack` tarballs
+> into a genuinely separate test application as the pre-publication proof; **additionally, since
+> these packages are now intended to publish, E7 must include a complete repository-publication
+> pass** — the repo still reads as the upstream fork and must stand on its own publicly before any
+> release: rewrite the README around the current project (capabilities, packages, dialects,
+> consumers; install + quick-start for both component and composable; both worker paths; `.gcode`/
+> `.gcode.3mf`/build-volume/live-progress/dialect support), update package names/descriptions/
+> keywords/repository links/exports/metadata, clearly document upstream relationship and
+> attribution, review licensing/notices/contribution/development docs and project status, and
+> remove or rewrite stale fork-specific material. Tracked as an E7-linked issue opened with this
+> acceptance; scope lands in DD-008. **(D4)** the component carries the **full supported surface**
+> through props and matching events, with advanced props **optional with sensible defaults** so
+> `<GcodePreview :source="file" />` stays the thin adoption path — no API switch required to reach
+> the full viewer.
 
 ---
 
@@ -65,7 +88,7 @@ asset, types via vue-tsc-compatible declarations, zero store/router/design-syste
 
 ## 4. Data contracts / API
 
-### 4.1 Package shape — PROPOSED (decision D1)
+### 4.1 Package shape — ACCEPTED (D1: component is a shell over the composable, never a separate implementation)
 
 One package, two entry styles — a headless composable for hosts that own their DOM/UX (AnyBridge's
 FileInspector case) and a thin component for drop-in use (examples, second consumers):
@@ -129,7 +152,7 @@ export interface GcodePreviewHandle {
 
 The component exposes the composable handle via `defineExpose` for template-ref access.
 
-### 4.2 Lifecycle & environment safety — PROPOSED
+### 4.2 Lifecycle & environment safety — ACCEPTED
 
 - **Import-safe everywhere**: no `window`/`Worker`/WebGL access at module scope; everything
   constructs on first mount/`parse`. SSR imports succeed; rendering requires a browser (a
@@ -143,7 +166,7 @@ The component exposes the composable handle via `defineExpose` for template-ref 
 - **Reactivity boundary**: IR/typed arrays are **never** made reactive (`shallowRef`/`markRaw`) —
   wrapping a 40 B/segment SoA in proxies would be a silent performance disaster.
 
-### 4.3 Worker asset & bundling — PROPOSED (decision D2)
+### 4.3 Worker asset & bundling — ACCEPTED (D2: dual path, both documented, default tested with Vite)
 
 Default worker: `new Worker(new URL('@chestnutlabs/gcode-parser/worker', import.meta.url), { type: 'module' })`
 wrapped in `createDefaultWorker()` inside the package. Vite (the evidenced consumer tooling)
@@ -152,7 +175,7 @@ Vite + Electron. Consumers with other bundlers (or CSP worker restrictions) pass
 The package README documents the `optimizeDeps.exclude` requirement (workspace gotcha) for
 linked-dev consumption; the packed tarball path (the contract fixture) must need **no** config.
 
-### 4.4 Boundary & versioning — PROPOSED
+### 4.4 Boundary & versioning — ACCEPTED
 
 - Dependencies: `@chestnutlabs/toolpath-core`, `@chestnutlabs/gcode-parser`,
   `@chestnutlabs/gcode-renderer-three`. Peers: `vue ^3.4`, `three` (matching the renderer's peer).
@@ -162,7 +185,7 @@ linked-dev consumption; the packed tarball path (the contract fixture) must need
 - The AnyBridge side consumes ONLY the public package surface — enforced socially by #783's
   ownership table and technically by this repo never importing from AnyBridge.
 
-### 4.5 Consumer contract fixture — PROPOSED (decision D3)
+### 4.5 Consumer contract fixture — ACCEPTED (D3: tarballs; E7 gains the repository-publication pass)
 
 `tools/consumer-vue/` (extends the consumer-smoke family): a minimal Vite+Vue app that
 1. installs the **packed tarballs** (all four `@chestnutlabs/*` packages via `npm pack`, committed
@@ -279,6 +302,15 @@ disclosure line, packaged). The README documents an event-log recipe.
 
 ## Decision log
 
+- **2026-07-23 — Accepted.** Maintainer accepted **D1–D4 with clarifications**: (D1) component is
+  a complete, ready-to-use surface but strictly a shell over the composable/engine; (D2) dual
+  worker path — batteries default + consumer-supplied — both documented, default path tested with
+  Vite; (D3) tarball fixture confirmed **and** — packages now being intended for publication — E7
+  gains a mandatory **repository-publication pass** (README rewrite around the current project,
+  package metadata, upstream attribution, licensing/contribution review, stale fork material
+  removed; the repo must stand alone publicly before release) tracked as an E7-linked issue and
+  scoped into DD-008; (D4) full prop/event surface with advanced props optional and defaulted so
+  `:source`-only stays the thin path. Implementation issues opened under epic #7.
 - **2026-07-23 — Proposed.** Open maintainer decisions:
   - **D1** Package shape: headless composable + thin component in one package (proposed) vs.
     component-only or split packages.
