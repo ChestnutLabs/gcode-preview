@@ -12,6 +12,8 @@ import { parseGcodeToIR } from '../../../gcode-parser/src/parse';
 import { createDialectRunner } from '../registry';
 import { prusaSlicer } from '../prusaslicer';
 import { orcaBambu } from '../orca-bambu';
+import { cura } from '../cura';
+import { klipper, marlin, repRap } from '../firmware';
 import { decodeBase64, parseAreaPoints } from '../annotate';
 
 const fixtureDir = path.resolve(
@@ -20,9 +22,11 @@ const fixtureDir = path.resolve(
 );
 const load = (name: string): string => fs.readFileSync(path.join(fixtureDir, name), 'utf8');
 
+const ALL_ADAPTERS = () => [prusaSlicer(), orcaBambu(), cura(), klipper(), marlin(), repRap()];
+
 /** Run text through parse + a dialect run exactly like the worker does. */
 function annotatedParse(text: string) {
-  const runner = createDialectRunner([prusaSlicer(), orcaBambu()]);
+  const runner = createDialectRunner(ALL_ADAPTERS());
   const run = runner.createRun({
     selection: 'auto',
     headText: text.slice(0, 64 * 1024),
@@ -105,6 +109,39 @@ describe('Orca/Bambu adapter (#75)', () => {
       containerMeta: { printer_model: 'Bambu Lab X1C' }
     });
     expect(run?.detections[0]).toMatchObject({ dialectId: 'orca-bambu', confidence: 'inferred' });
+  });
+});
+
+describe('Cura + firmware adapters (#76)', () => {
+  it('Cura + Marlin COMPOSE: slicer roles annotated, firmware flavor identified', () => {
+    const { ir } = annotatedParse(load('cura-style-sample.gcode'));
+    const ids = ir.header.dialects.map((d) => d.id).sort();
+    expect(ids).toEqual(['cura', 'marlin']);
+    expect(ir.header.capabilities.featureRoles).toBe('known');
+    const roles = new Set(Array.from(ir.segments.feature));
+    expect(roles.has(FeatureRole.Skirt)).toBe(true);
+    expect(roles.has(FeatureRole.ExternalPerimeter)).toBe(true);
+    expect(roles.has(FeatureRole.Perimeter)).toBe(true);
+    expect(roles.has(FeatureRole.Infill)).toBe(true);
+    expect(roles.has(FeatureRole.SolidInfill)).toBe(true); // SKIN
+  });
+
+  it('PrusaSlicer + Klipper COMPOSE on a Klipper-targeted file (acceptance case)', () => {
+    const { ir, metadata } = annotatedParse(load('klipper-prusa-sample.gcode'));
+    const ids = ir.header.dialects.map((d) => d.id).sort();
+    expect(ids).toEqual(['klipper', 'prusaslicer']);
+    expect(ir.header.capabilities.featureRoles).toBe('known');
+    expect(metadata?.machine?.bed).toEqual({ kind: 'rect', min: { x: 0, y: 0 }, max: { x: 300, y: 300 } });
+    expect(metadata?.machine?.printerName).toBe('Voron24');
+  });
+
+  it('RepRap flavor detects alone; unknown files still match nothing', () => {
+    const { ir } = annotatedParse(load('reprap-style-sample.gcode'));
+    expect(ir.header.dialects.map((d) => d.id)).toEqual(['reprap']);
+    expect(ir.header.capabilities.featureRoles).toBe('unavailable'); // no markers → honest
+
+    const runner = createDialectRunner(ALL_ADAPTERS());
+    expect(runner.createRun({ selection: 'auto', headText: 'G0 X1\nG1 X2 E1', tailText: '' })).toBeNull();
   });
 });
 

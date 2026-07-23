@@ -133,6 +133,14 @@ export interface AsyncParseHooks {
   partialMinBytes?: number;
   /** Minimum ms between partial snapshots (default 1000). */
   partialIntervalMs?: number;
+  /**
+   * DD-005 §4.5 stream detection windows: when set, the STREAMING driver fills
+   * `head` with the first ≤64 KB of decoded text and keeps `tail` as a bounded
+   * rolling window (last ≤16 KB) — read after the parse for late dialect
+   * detection on non-seekable streams. In-memory drivers ignore this (their
+   * windows are sliceable up front).
+   */
+  captureWindows?: { head: string; tail: string };
 }
 
 export interface AsyncParseResult extends ParseResult {

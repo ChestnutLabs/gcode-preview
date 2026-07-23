@@ -14,16 +14,16 @@ annotation) · **unsupported** (generic parse only — geometry always works; me
 |---|---|---|---|---|---|---|---|---|
 | PrusaSlicer | **full** (header; tail settings) | **full** (`;TYPE:` → roles, `known`) | — (Prusa object comments: phase 5) | **partial** (`bed_shape` → rect/polygon, `inferred`) | — | **full** (bounded `; thumbnail` blocks) | `dialect-prusa-style` | 2026-07-23 |
 | OrcaSlicer / Bambu Studio | **full** (header; container metadata) | **full** (`; FEATURE:` → roles, `known`) | **full** (start/stop printing object → `objects: known`) | **partial** (`printable_area` `inferred`; container config `known` outranks) | **partial** (container filaments) | container PNGs (phase 5) | `dialect-orca-bambu-style`, `container-mini-project` | 2026-07-23 |
-| Cura | _phase 4_ | — | — | — | — | — | — | — |
+| Cura | **full** (`Cura_SteamEngine` header) | **full** (`;TYPE:` UPPERCASE → roles, `known`) | — | **unsupported** (machine size lives in the packed settings blob — v1 non-goal) | — | — | `dialect-cura-style` | 2026-07-23 |
 | Slic3r-family (legacy) | _unplanned_ | — | — | — | — | — | — | — |
 
 ## Dialects (firmware flavor — composes with slicer adapters)
 
 | Dialect | Detection | Object exclusion | Notes | Fixtures | Evidence date |
 |---|---|---|---|---|---|
-| Klipper | _phase 4_ | `EXCLUDE_OBJECT_*` (_phase 5_) | — | — | — |
-| Marlin | _phase 4_ | `M486` (_phase 5_) | — | — | — |
-| RepRap-style | _phase 4_ | — | — | — | — |
+| Klipper | **full** (`EXCLUDE_OBJECT_*`/macros head; `gcode_flavor` tail) | `EXCLUDE_OBJECT_*` semantics: _phase 5_ | composes with slicer adapters (proven: PrusaSlicer+Klipper) | `dialect-klipper-prusa` | 2026-07-23 |
+| Marlin | **full** (`;FLAVOR:Marlin`; `gcode_flavor` tail) | `M486` semantics: _phase 5_ | composes (proven: Cura+Marlin) | `dialect-cura-style` | 2026-07-23 |
+| RepRap-style | **full** (`;FLAVOR:RepRap`; `gcode_flavor` tail) | — | detection-only | `dialect-reprap-style` | 2026-07-23 |
 
 ## Containers
 

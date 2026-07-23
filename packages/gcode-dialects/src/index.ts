@@ -13,6 +13,8 @@ export type { DialectRunnerFactory, DialectRun, DialectRunInput, DialectRunResul
 export { BufferedAnnotationSink } from './sink.js';
 export { prusaSlicer } from './prusaslicer.js';
 export { orcaBambu } from './orca-bambu.js';
+export { cura } from './cura.js';
+export { klipper, marlin, repRap } from './firmware.js';
 export {
   segAtOrAfterByte,
   applyMarkerRanges,

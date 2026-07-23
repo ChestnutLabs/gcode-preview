@@ -10,13 +10,28 @@
  * `worker-slim.ts`; custom adapters use a consumer-supplied worker entry
  * calling `createWorkerHandler(post, { dialects: createDialectRunner([...]) })`.
  */
-import { createDialectRunner, orcaBambu, prusaSlicer } from '@chestnutlabs/gcode-dialects';
+import {
+  createDialectRunner,
+  cura,
+  klipper,
+  marlin,
+  orcaBambu,
+  prusaSlicer,
+  repRap
+} from '@chestnutlabs/gcode-dialects';
 import { openGcode3mf, sniffGcode3mf } from '@chestnutlabs/gcode-containers';
 import { createWorkerHandler, type ContainerAdapterLike, type PostFn } from './worker-core.js';
 import type { WorkerRequest } from './protocol.js';
 
-/** Built-in dialect adapter set (DD-005 phase 3; phases 4–5 extend it). */
-const BUILTIN_ADAPTERS: Parameters<typeof createDialectRunner>[0] = [prusaSlicer(), orcaBambu()];
+/** Built-in dialect adapter set (DD-005 phases 3–4; phase 5 adds command semantics). */
+const BUILTIN_ADAPTERS: Parameters<typeof createDialectRunner>[0] = [
+  prusaSlicer(),
+  orcaBambu(),
+  cura(),
+  klipper(),
+  marlin(),
+  repRap()
+];
 
 /** Built-in container adapters (DD-005 §4.4): .gcode.3mf. */
 const BUILTIN_CONTAINERS: ContainerAdapterLike[] = [

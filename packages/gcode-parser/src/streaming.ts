@@ -158,7 +158,16 @@ export async function parseGcodeStreamToIR(
         break;
       }
 
-      buffer += decoder.decode(value, { stream: true });
+      const decoded = decoder.decode(value, { stream: true });
+      // §4.5 stream detection windows: bounded head + rolling tail capture.
+      const windows = hooks.captureWindows;
+      if (windows !== undefined) {
+        if (windows.head.length < 64 * 1024) {
+          windows.head = (windows.head + decoded).slice(0, 64 * 1024);
+        }
+        windows.tail = (windows.tail + decoded).slice(-16 * 1024);
+      }
+      buffer += decoded;
       boundBuffer();
       await drainCompleteLines();
     }
