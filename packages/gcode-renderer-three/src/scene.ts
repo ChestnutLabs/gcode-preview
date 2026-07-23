@@ -78,7 +78,11 @@ export interface GLRendererLike {
 export interface ToolpathRendererOptions {
   canvas: HTMLCanvasElement;
   buildVolume?: BuildVolumeDef;
-  /** Chunks uploaded per scheduler tick (bounded work per frame, §5.3). Default 4. */
+  /**
+   * Count-based tick override (tests/deterministic hosts): exactly N chunks per
+   * tick. Default (unset): TIME-budgeted ticks — chunks build until ~8 ms of
+   * work has elapsed (§8: no main-thread stall > 16 ms during incremental build).
+   */
   chunksPerTick?: number;
   colorMode?: ColorMode;
   /** §4.3 quality tier; 'auto' (default) picks tubes ≤ 1 M segments, else lines. */
@@ -92,11 +96,16 @@ export interface ToolpathRendererOptions {
 
 const DEFAULT_COLOR: ColorMode = { mode: 'single', color: [0.9, 0.4, 0.7] };
 
+/** §8-derived tick budget: half the 16 ms stall budget, leaving frame headroom. */
+const TICK_BUDGET_MS = 8;
+/** Tubes chunk target: ~2k segments keeps a single tube-chunk build under the stall budget. */
+const TUBES_CHUNK_TARGET = 2048;
+
 export class ToolpathRenderer {
   private readonly canvas: HTMLCanvasElement;
   private readonly gl: GLRendererLike;
   private readonly scheduleFrame: (cb: () => void) => void;
-  private readonly chunksPerTick: number;
+  private readonly chunksPerTick: number | undefined;
 
   private readonly scene = new Scene();
   private readonly root = new Group();
@@ -144,7 +153,7 @@ export class ToolpathRenderer {
 
   constructor(opts: ToolpathRendererOptions) {
     this.canvas = opts.canvas;
-    this.chunksPerTick = opts.chunksPerTick ?? 4;
+    this.chunksPerTick = opts.chunksPerTick;
     this.colorMode = opts.colorMode ?? DEFAULT_COLOR;
     this.requestedQuality = opts.quality ?? 'auto';
     this.tubeOptions = opts.tube ?? {};
@@ -289,6 +298,20 @@ export class ToolpathRenderer {
       return;
     }
     this.active = chooseQuality(this.requestedQuality, this.buildResult.totalSegmentsIncluded);
+    if (this.active === 'tubes') {
+      // Tube geometry is ~50× the build cost of lines: rebuild with a small
+      // chunk target so no single chunk can exceed the §8 stall budget.
+      try {
+        this.buildResult = buildChunks(ir, { decimation: 'auto', targetSegmentsPerChunk: TUBES_CHUNK_TARGET });
+      } catch (err) {
+        this.emit({
+          type: 'error',
+          code: 'E_GEOMETRY_BUILD',
+          message: err instanceof Error ? err.message : String(err)
+        });
+        return;
+      }
+    }
     this.pendingChunks = [...this.buildResult.chunks];
     this.builtCount = 0;
     this.scheduleFrame(() => this.buildTick());
@@ -299,6 +322,14 @@ export class ToolpathRenderer {
     this.emit({ type: 'qualityFallback', from: 'tubes', to: 'lines', reason });
     this.active = 'lines';
     this.clearToolpathGeometry();
+    if (this.ir !== null) {
+      // Re-chunk at the lines-mode target (the tubes build used small chunks).
+      try {
+        this.buildResult = buildChunks(this.ir, { decimation: 'auto' });
+      } catch {
+        this.buildResult = null;
+      }
+    }
     if (this.buildResult !== null) {
       this.pendingChunks = [...this.buildResult.chunks];
       this.scheduleFrame(() => this.buildTick());
@@ -344,11 +375,21 @@ export class ToolpathRenderer {
     return mesh;
   }
 
-  /** Upload a bounded number of chunks, then reschedule (§5.3). Public for tests. */
+  /** Upload a bounded amount of work, then reschedule (§5.3/§8). Public for tests. */
   buildTick(): void {
     if (this.disposed || this.ir === null || this.buildResult === null) return;
-    const batch = this.pendingChunks.splice(0, this.chunksPerTick);
-    for (const chunk of batch) {
+    // Count mode (explicit chunksPerTick — deterministic tests) or time-budget
+    // mode (default): at least one chunk per tick, stopping once ~TICK_BUDGET_MS
+    // of work has elapsed (§8: no >16 ms stall during incremental build).
+    const tickStart = performance.now();
+    let built = 0;
+    while (this.pendingChunks.length > 0) {
+      if (this.chunksPerTick !== undefined) {
+        if (built >= this.chunksPerTick) break;
+      } else if (built > 0 && performance.now() - tickStart >= TICK_BUDGET_MS) {
+        break;
+      }
+      const chunk = this.pendingChunks.shift() as GeometryChunk;
       let mesh: LineSegments | Mesh;
       try {
         mesh = this.makeChunkMesh(chunk);
@@ -369,6 +410,7 @@ export class ToolpathRenderer {
       this.applyDrawStateToMesh(mesh, chunk); // honor clipping set during an in-flight build
       this.toolpathGroup.add(mesh);
       this.builtCount++;
+      built++;
     }
     this.emit({ type: 'buildProgress', chunksBuilt: this.builtCount, chunksTotal: this.buildResult.chunks.length });
     this.render();

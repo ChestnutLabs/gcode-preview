@@ -29,6 +29,17 @@ App-level shortcuts (active when focus is not inside a form control):
 | `t` | toggle travel moves |
 | `f` | frame the model |
 
+## Visual regression + GL benchmarks (`vr.html`, issue #61)
+
+`http://localhost:5199/vr.html` hosts the E3 harness (governance §10.2): deterministic corpus renders
+at a fixed camera in both quality modes, compared against `src/vr-baseline.json` (16×16 grayscale grid
++ lit-ratio, tolerances: grid ≤ 10/255, lit ± 0.05); baseline PNGs live in
+`test-data/visual-baselines/`. Run `vrRun()` in the console for the compare, `perfRun()` for the
+GL-side §8 measurements (orbit fps, real build-tick stalls) — **the two §8 fps budgets are ratified on
+a reference machine with hardware GL**, not in virtualized panes. To regenerate baselines after an
+intentional visual change: run `vrRun()`, then save `window.vrResults.captures` (metrics → the JSON,
+PNG dataURLs → the baseline directory) and commit both with the change that caused them.
+
 ## Honesty behaviors to look for
 
 - **Decimation disclosure:** on IRs over the §4.4 thresholds a yellow notice states the exact

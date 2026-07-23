@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>E3 visual regression + GL benchmark harness (#61)</title>
+    <style>
+      body {
+        margin: 0;
+        font: 13px/1.5 system-ui, sans-serif;
+        background: #16181d;
+        color: #e6e9ef;
+        padding: 12px;
+      }
+      canvas {
+        border: 1px solid #333a46;
+        display: block;
+        margin-bottom: 10px;
+      }
+      pre {
+        white-space: pre-wrap;
+        font-size: 12px;
+      }
+      .pass {
+        color: #6ad06a;
+      }
+      .fail {
+        color: #ef6a6a;
+      }
+    </style>
+  </head>
+  <body>
+    <h3>E3 renderer harness — visual regression &amp; real-GL benchmarks (issue #61)</h3>
+    <canvas id="vr" width="800" height="600"></canvas>
+    <pre id="out">loading…</pre>
+    <script type="module" src="./src/vr.js"></script>
+  </body>
+</html>
