@@ -104,8 +104,19 @@ function makeZip(entries) {
 }
 
 function plateGcode(plate, lines) {
-  const out = [`; generated fixture plate ${plate}`, 'G0 X10 Y10 Z0.2'];
-  for (let i = 1; i <= lines; i++) out.push(`G1 X${10 + (i % 40)} Y${10 + ((i * 3) % 30)} E${i} F1500`);
+  // Bambu-style header + FEATURE markers so the container + orca-bambu
+  // dialect COMPOSITION path is exercised end to end (DD-005 phase 3).
+  const out = [
+    '; BambuStudio 01.09.00.60',
+    `; generated fixture plate ${plate}`,
+    'G0 X10 Y10 Z0.2',
+    '; FEATURE: Outer wall'
+  ];
+  const half = Math.floor(lines / 2);
+  for (let i = 1; i <= lines; i++) {
+    if (i === half) out.push('; FEATURE: Sparse infill');
+    out.push(`G1 X${10 + (i % 40)} Y${10 + ((i * 3) % 30)} E${i} F1500`);
+  }
   return Buffer.from(out.join('\n'), 'utf8');
 }
 

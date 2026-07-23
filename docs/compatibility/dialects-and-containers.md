@@ -12,8 +12,8 @@ annotation) · **unsupported** (generic parse only — geometry always works; me
 
 | Dialect | Detection | Feature roles | Objects | Bed geometry | Tools/filament | Thumbnails | Fixtures | Evidence date |
 |---|---|---|---|---|---|---|---|---|
-| PrusaSlicer | _phase 3_ | — | — | — | — | — | — | — |
-| OrcaSlicer / Bambu Studio | _phase 3_ | — | — | — | — | — | — | — |
+| PrusaSlicer | **full** (header; tail settings) | **full** (`;TYPE:` → roles, `known`) | — (Prusa object comments: phase 5) | **partial** (`bed_shape` → rect/polygon, `inferred`) | — | **full** (bounded `; thumbnail` blocks) | `dialect-prusa-style` | 2026-07-23 |
+| OrcaSlicer / Bambu Studio | **full** (header; container metadata) | **full** (`; FEATURE:` → roles, `known`) | **full** (start/stop printing object → `objects: known`) | **partial** (`printable_area` `inferred`; container config `known` outranks) | **partial** (container filaments) | container PNGs (phase 5) | `dialect-orca-bambu-style`, `container-mini-project` | 2026-07-23 |
 | Cura | _phase 4_ | — | — | — | — | — | — | — |
 | Slic3r-family (legacy) | _unplanned_ | — | — | — | — | — | — | — |
 

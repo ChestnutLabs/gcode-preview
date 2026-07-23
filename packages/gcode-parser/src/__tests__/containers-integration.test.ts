@@ -8,6 +8,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { openGcode3mf, sniffGcode3mf } from '@chestnutlabs/gcode-containers';
+import { createDialectRunner, orcaBambu, prusaSlicer } from '@chestnutlabs/gcode-dialects';
+import { FeatureRole } from '@chestnutlabs/toolpath-core';
 import { createWorkerHandler, type WorkerHandlerOptions } from '../worker-core';
 import { GcodeParseSession, ParseSessionError, type WorkerLike } from '../session';
 import type { WorkerRequest } from '../protocol';
@@ -79,6 +81,25 @@ describe('.gcode.3mf through the worker pipeline (#74)', () => {
       expect((err as ParseSessionError).code, fixture).toBe(code);
       session.dispose();
     }
+  });
+
+  it('COMPOSITION (#75): container machine (known) + dialect feature annotation together', async () => {
+    // Batteries-equivalent worker: container adapter + phase-3 dialect adapters.
+    const session = new GcodeParseSession({
+      worker: loopbackWorker({ containers: CONTAINERS, dialects: createDialectRunner([prusaSlicer(), orcaBambu()]) })
+    });
+    const result = await session.parse(load('mini-project.gcode.3mf'), { yieldIntervalMs: 5 });
+    // Dialect detected FROM CONTAINER METADATA (plate stream has no head window);
+    // FEATURE comments annotated during the streaming parse.
+    expect(result.metadata?.dialects?.[0]).toMatchObject({ dialectId: 'orca-bambu' });
+    expect(result.ir.header.capabilities.featureRoles).toBe('known');
+    const roles = new Set(Array.from(result.ir.segments.feature));
+    expect(roles.has(FeatureRole.ExternalPerimeter)).toBe(true);
+    expect(roles.has(FeatureRole.Infill)).toBe(true);
+    // Machine geometry comes from the CONTAINER config ('known') — outranks comment inference.
+    expect(result.metadata?.machine?.confidence).toBe('known');
+    expect(result.metadata?.machine?.source.adapterId).toBe('gcode-3mf');
+    session.dispose();
   });
 
   it('containers:false parses the raw bytes as G-code (honest failure, no sniffing)', async () => {
