@@ -17,6 +17,8 @@ export type {
   StopReason
 } from './parse';
 export { BudgetExceededError } from './growable';
+export { parseGcodeStreamToIR, isBlobLike, isReadableStreamLike } from './streaming';
+export type { StreamInput, BlobLike, ReadableStreamLike } from './streaming';
 export { PROTOCOL_VERSION, irTransferList } from './protocol';
 export type { WireParseOptions, WorkerRequest, WorkerResponse } from './protocol';
 export { createWorkerHandler } from './worker-core';

@@ -1,0 +1,35 @@
+{
+  "segmentCount": 4,
+  "layerCount": 1,
+  "toolCount": 1,
+  "points": 4,
+  "extrusionDistance": 3,
+  "capabilities": {
+    "geometry": "known",
+    "moveKind": "known",
+    "tools": "known",
+    "layers": "inferred",
+    "extrusionDelta": "known",
+    "feedrate": "known",
+    "sourcePositions": "known",
+    "featureRoles": "unavailable",
+    "objects": "unavailable"
+  },
+  "warningCodes": [
+    "layers-partially-inferred"
+  ],
+  "bufferDigests": {
+    "x0": "43247655",
+    "y0": "e81a2f12",
+    "z0": "ac9cf356",
+    "x1": "b4a8dd55",
+    "y1": "43247655",
+    "z1": "7c0a57fd",
+    "e": "dc187708",
+    "feedrate": "de492465",
+    "kind": "d10a372f",
+    "tool": "9be17165",
+    "layer": "69691905",
+    "srcByte": "08b0af89"
+  }
+}

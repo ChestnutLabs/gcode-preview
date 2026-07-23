@@ -23,8 +23,17 @@ const nativeGoldenDir = join(repoRoot, 'test-data', 'golden-native');
 const UPDATE = process.env.UPDATE_GOLDEN === '1';
 
 const manifest = JSON.parse(readFileSync(join(repoRoot, 'test-data', 'manifest.json'), 'utf8')) as {
-  fixtures: { id: string; path: string }[];
+  fixtures: { id: string; path: string; sizeTier: string }[];
 };
+
+/**
+ * The DD-003 §9 equivalence gate is defined over the inherited demo corpus.
+ * Adversarial-tier fixtures exercise NEW protective behavior the inherited engine
+ * lacks (e.g. maxLineLength skips a hostile 80 KB line that the inherited parser
+ * would happily execute), so strict adapter-equivalence deliberately excludes
+ * them; their behavior is pinned by the adversarial suite and the native goldens.
+ */
+const equivalenceFixtures = manifest.fixtures.filter((f) => f.sizeTier !== 'adversarial');
 
 function fnv1a(view: ArrayBufferView): string {
   const bytes = new Uint8Array(view.buffer, view.byteOffset, view.byteLength);
@@ -37,7 +46,7 @@ function fnv1a(view: ArrayBufferView): string {
 }
 
 describe('native parser vs adapter goldens (#28 gate)', () => {
-  for (const fixture of manifest.fixtures) {
+  for (const fixture of equivalenceFixtures) {
     it(`geometry-equivalent for ${fixture.id}`, () => {
       const golden = JSON.parse(readFileSync(join(goldenDir, `${fixture.id}.json`), 'utf8'));
       const text = readFileSync(join(repoRoot, fixture.path), 'utf8');
