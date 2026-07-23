@@ -100,6 +100,12 @@ export const MAX_PROGRESS_NOTES = 8;
 const PERCENT_BYTES_BAND_FRACTION = 0.005;
 /** Minimum half-width for ordinal percent interpolation (§4.3 tier 5). */
 const PERCENT_ORDINAL_BAND_FRACTION = 0.02;
+/** Relative file-size disagreement that demotes the byte domain (§4.4.1). */
+const FILE_SIZE_MISMATCH_TOLERANCE = 0.001;
+/** Reported-vs-IR layer-count disagreement beyond which the reported layer is a fraction (§4.3). */
+const LAYER_COUNT_MISMATCH_TOLERANCE = 2;
+/** Backward layer movement at or below this re-syncs silently (§4.4.2). */
+const REGRESSION_LAYER_TOLERANCE = 2;
 
 const UNAVAILABLE: MappedProgress = Object.freeze({
   segIndex: null,
@@ -119,10 +125,17 @@ function finiteNonNegative(value: unknown): number | undefined {
 function sanitizePosition(
   position: ProgressPosition | undefined,
   notes: ProgressNote[]
-): { byte?: number; line?: number; layer?: number; percent?: number; percentBasis: ProgressPercentBasis } {
+): {
+  byte?: number;
+  line?: number;
+  layer?: number;
+  totalLayers?: number;
+  percent?: number;
+  percentBasis: ProgressPercentBasis;
+} {
   const out: ReturnType<typeof sanitizePosition> = { percentBasis: 'unknown' };
   if (position === undefined || position === null || typeof position !== 'object') return out;
-  for (const field of ['byte', 'line', 'layer', 'percent'] as const) {
+  for (const field of ['byte', 'line', 'layer', 'totalLayers', 'percent'] as const) {
     const raw = (position as Record<string, unknown>)[field];
     if (raw === undefined || raw === null) continue;
     const value = finiteNonNegative(raw);
@@ -225,6 +238,55 @@ export function createProgressMapper(ir: ToolpathIR, opts?: ProgressMapperOption
     };
   }
 
+  /**
+   * File-identity check (§4.4.1). A hash disagreement kills the mapping outright; a size
+   * disagreement demotes the byte domain (byte + percent-bytes promotion) to fraction mapping.
+   */
+  function checkIdentity(
+    file: ProgressFileIdentity | undefined,
+    notes: ProgressNote[]
+  ): 'ok' | 'demote' | 'unavailable' {
+    if (file === undefined || file === null || typeof file !== 'object') return 'ok';
+    const expectedSha = ir.header.source.sha256;
+    if (typeof file.sha256 === 'string' && expectedSha !== undefined && file.sha256 !== expectedSha) {
+      pushNote(notes, { code: 'file-mismatch', message: 'sha256 disagrees with the parsed source' });
+      return 'unavailable';
+    }
+    const obsSize = finiteNonNegative(file.sizeBytes);
+    const expectedSize = fileSizeBytes ?? finiteNonNegative(ir.header.source.byteLength);
+    if (obsSize !== undefined && expectedSize !== undefined && expectedSize > 0) {
+      if (Math.abs(obsSize - expectedSize) / expectedSize > FILE_SIZE_MISMATCH_TOLERANCE) {
+        pushNote(notes, {
+          code: 'file-mismatch',
+          message: `sizeBytes ${obsSize} vs parsed ${expectedSize}`
+        });
+        return 'demote';
+      }
+    }
+    return 'ok';
+  }
+
+  /**
+   * Cross-check the winning tier against a reported layer (§4.3): disagreement beyond one layer
+   * widens the band to cover both — precision claims stay evidence-backed, tiers never switch silently.
+   */
+  function applyLayerCrossCheck(result: MappedProgress, reportedLayerRaw: number): MappedProgress {
+    if (result.layerIndex === null || result.band === null || ir.layers.length === 0) return result;
+    const reported = Math.min(Math.max(Math.floor(reportedLayerRaw), 0), ir.layers.length - 1);
+    if (Math.abs(result.layerIndex - reported) <= 1) return result;
+    const entry = ir.layers[reported];
+    const notes = [...result.notes];
+    pushNote(notes, {
+      code: 'cross-check-disagrees',
+      message: `mapped layer ${result.layerIndex}, reported ${reported}`
+    });
+    return {
+      ...result,
+      band: [Math.min(result.band[0], entry.segStart), Math.max(result.band[1], entry.segEnd)],
+      notes
+    };
+  }
+
   function map(obs: ProgressObservation): MappedProgress {
     if (ir.segments.count === 0) return { ...UNAVAILABLE, notes: [{ code: 'empty-ir' }] };
     if ((obs as { v?: unknown }).v !== PROGRESS_OBSERVATION_VERSION) {
@@ -232,6 +294,11 @@ export function createProgressMapper(ir: ToolpathIR, opts?: ProgressMapperOption
     }
     const notes: ProgressNote[] = [];
     const p = sanitizePosition(obs.position, notes);
+    const identity = checkIdentity(obs.file, notes);
+    if (identity === 'unavailable') {
+      // A marker on the wrong file is worse than no marker (§4.4.1).
+      return { ...UNAVAILABLE, notes };
+    }
 
     // `complete` maps to the final segment regardless of position facts (§4.4.3).
     if (obs.state === 'complete') {
@@ -248,19 +315,70 @@ export function createProgressMapper(ir: ToolpathIR, opts?: ProgressMapperOption
     }
 
     // Fallback hierarchy (§4.3): highest-precision usable fact wins.
-    if (p.byte !== undefined) return mapByte(p.byte, 'known', 0, notes);
+    if (p.byte !== undefined) {
+      if (identity === 'demote') {
+        // The printer's byte domain is not our parsed stream: map its byte as a fraction of
+        // ITS file (tier 5), keeping the basis honest about which fact was used.
+        const theirSize = finiteNonNegative(obs.file?.sizeBytes);
+        if (theirSize !== undefined && theirSize > 0) {
+          const demoted = mapPercentOrdinal(Math.min(1, p.byte / theirSize), notes);
+          const withBasis: MappedProgress = { ...demoted, basis: 'byte' };
+          return p.layer !== undefined ? applyLayerCrossCheck(withBasis, p.layer) : withBasis;
+        }
+        return { ...UNAVAILABLE, notes };
+      }
+      const mapped = mapByte(p.byte, 'known', 0, notes);
+      return p.layer !== undefined ? applyLayerCrossCheck(mapped, p.layer) : mapped;
+    }
     if (p.line !== undefined) {
       // Reserved tier (D3): carried but unmapped in v1 — fall through, visibly.
       pushNote(notes, { code: 'line-unmapped', message: 'no line index in v1; falling through' });
     }
-    if (p.layer !== undefined && ir.layers.length > 0) return mapLayer(p.layer, notes);
+    // Size usable for percent(bytes) promotion — untrusted after an identity demotion.
+    const promoSize =
+      identity === 'demote'
+        ? undefined // their fraction is of a different byte stream — no promotion
+        : (fileSizeBytes ?? finiteNonNegative(obs.file?.sizeBytes) ?? finiteNonNegative(ir.header.source.byteLength));
+
+    /** Segment the percent fact points at on its own (for cross-checking a winning layer tier). */
+    function percentImpliedSegment(percent: number): number {
+      if (p.percentBasis === 'bytes' && promoSize !== undefined && promoSize > 0) {
+        const seg = segmentAtByte(ir.sourceIndex, Math.round(percent * promoSize));
+        return seg === -1 ? 0 : seg;
+      }
+      return clampSeg(ir, Math.round(percent * (ir.segments.count - 1)));
+    }
+
+    if (p.layer !== undefined && ir.layers.length > 0) {
+      if (
+        p.totalLayers !== undefined &&
+        p.totalLayers > 0 &&
+        Math.abs(p.totalLayers - ir.layers.length) > LAYER_COUNT_MISMATCH_TOLERANCE
+      ) {
+        // The reporter counts layers differently than the IR: its index is untrustworthy as an
+        // index, but still meaningful as a fraction (§4.3 layer caveats).
+        pushNote(notes, {
+          code: 'layer-count-mismatch',
+          message: `reported total ${p.totalLayers}, IR has ${ir.layers.length}`
+        });
+        const fraction = Math.min(1, p.layer / p.totalLayers);
+        return { ...mapPercentOrdinal(fraction, notes), basis: 'layer' };
+      }
+      const mapped = mapLayer(p.layer, notes);
+      // Winning layer tier is validated against the percent fact when both are present (§4.3).
+      return p.percent !== undefined
+        ? applyLayerCrossCheck(mapped, ir.segments.layer[percentImpliedSegment(p.percent)])
+        : mapped;
+    }
     if (p.percent !== undefined) {
-      const size = fileSizeBytes ?? finiteNonNegative(obs.file?.sizeBytes);
-      if (p.percentBasis === 'bytes' && size !== undefined) {
+      if (p.percentBasis === 'bytes' && promoSize !== undefined && promoSize > 0) {
         // Promotion (D4): arithmetic is exact, the source is still a fraction → approximated + band.
         const halfWidth = Math.ceil(ir.segments.count * PERCENT_BYTES_BAND_FRACTION);
-        const mapped = mapByte(Math.round(p.percent * size), 'approximated', halfWidth, notes);
-        return { ...mapped, basis: 'percent' };
+        const mapped: MappedProgress = {
+          ...mapByte(Math.round(p.percent * promoSize), 'approximated', halfWidth, notes),
+          basis: 'percent'
+        };
+        return p.layer !== undefined ? applyLayerCrossCheck(mapped, p.layer) : mapped;
       }
       return mapPercentOrdinal(p.percent, notes);
     }
@@ -268,12 +386,39 @@ export function createProgressMapper(ir: ToolpathIR, opts?: ProgressMapperOption
     return { ...UNAVAILABLE, notes };
   }
 
+  /** Append a note to a finished result (copy-on-write; respects the cap). */
+  function withNote(result: MappedProgress, code: string, message?: string): MappedProgress {
+    const notes = [...result.notes];
+    pushNote(notes, message === undefined ? { code } : { code, message });
+    return { ...result, notes };
+  }
+
   return {
     observe(obs: ProgressObservation): MappedProgress {
+      const prev = lastResult;
+      let result = map(obs);
+
+      // `cancelled`/`unknown` with no usable facts keep the last mapped position, flagged (§4.4.3).
+      const state = obs?.state;
+      if ((state === 'cancelled' || state === 'unknown') && result.basis === 'none' && prev.segIndex !== null) {
+        result = withNote({ ...prev, stale: false }, state === 'cancelled' ? 'job-cancelled' : 'state-unknown');
+      } else if (state === 'cancelled') {
+        result = withNote(result, 'job-cancelled');
+      }
+
+      // Regression (§4.4.2): re-sync always; a jump back beyond tolerance is visible, not dropped.
+      if (
+        prev.layerIndex !== null &&
+        result.layerIndex !== null &&
+        prev.layerIndex - result.layerIndex > REGRESSION_LAYER_TOLERANCE
+      ) {
+        result = withNote(result, 'position-regressed', `layer ${prev.layerIndex} -> ${result.layerIndex}`);
+      }
+
       lastTimestampMs =
         typeof obs?.timestampMs === 'number' && Number.isFinite(obs.timestampMs) ? obs.timestampMs : null;
-      lastResult = map(obs);
-      return lastResult;
+      lastResult = result;
+      return result;
     },
     tick(nowMs: number): MappedProgress {
       if (lastTimestampMs === null) return lastResult;

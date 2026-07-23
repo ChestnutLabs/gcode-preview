@@ -195,6 +195,157 @@ describe('progress mapper — malformed content never throws (DD-006 §6)', () =
   });
 });
 
+describe('progress mapper — cross-checks widen, never switch (phase 2)', () => {
+  it('byte-mapped layer far from the reported layer widens the band and notes it', () => {
+    const mapper = createProgressMapper(makeIR());
+    // byte 110 → segment 1 (layer 0); reported layer 2 → widen band to cover layer 2 [8, 11].
+    const m = mapper.observe(obs({ byte: 110, layer: 2 }));
+    expect(m.basis).toBe('byte');
+    expect(m.segIndex).toBe(1);
+    expect(m.confidence).toBe('known'); // tier never silently switches
+    expect(m.band).toEqual([1, 11]);
+    expect(m.notes.map((n) => n.code)).toContain('cross-check-disagrees');
+  });
+
+  it('agreement within one layer leaves the point band untouched', () => {
+    const mapper = createProgressMapper(makeIR());
+    const m = mapper.observe(obs({ byte: 510, layer: 1 }));
+    expect(m.band).toEqual([5, 5]);
+    expect(m.notes.map((n) => n.code)).not.toContain('cross-check-disagrees');
+  });
+});
+
+describe('progress mapper — layer-count mismatch (phase 2)', () => {
+  const mapper = createProgressMapper(makeIR());
+
+  it('a wildly different totalLayers turns the reported layer into a fraction', () => {
+    const m = mapper.observe(obs({ layer: 25, totalLayers: 50 }));
+    expect(m.basis).toBe('layer');
+    expect(m.confidence).toBe('approximated');
+    expect(m.segIndex).toBe(Math.round(0.5 * 11));
+    expect(m.notes.map((n) => n.code)).toContain('layer-count-mismatch');
+  });
+
+  it('a matching totalLayers keeps the trusted layer tier', () => {
+    const m = mapper.observe(obs({ layer: 1, totalLayers: 3 }));
+    expect(m.confidence).toBe('inferred');
+    expect(m.band).toEqual([4, 7]);
+  });
+});
+
+describe('progress mapper — file identity (phase 2, §4.4.1)', () => {
+  function irWithSource(): ToolpathIR {
+    const b = new ToolpathIRBuilder({
+      parserVersion: 'test',
+      units: 'mm',
+      unitsSource: 'known',
+      source: { byteLength: 1_210, sha256: 'a'.repeat(64) }
+    });
+    for (let i = 0; i < 12; i++) {
+      b.addSegment({
+        x0: i,
+        y0: 0,
+        z0: 0.2,
+        x1: i + 1,
+        y1: 0,
+        z1: 0.2,
+        e: 1,
+        kind: MoveKind.Extrude,
+        layer: Math.floor(i / 4),
+        srcByte: i * 100 + 10
+      });
+    }
+    return b.finalize();
+  }
+
+  it('a matching identity keeps the byte tier exact', () => {
+    const mapper = createProgressMapper(irWithSource());
+    const m = mapper.observe(obs({ byte: 510 }, { file: { sizeBytes: 1_210, sha256: 'a'.repeat(64) } }));
+    expect(m.confidence).toBe('known');
+    expect(m.segIndex).toBe(5);
+  });
+
+  it('a size disagreement demotes byte to fraction mapping of THEIR file, flagged', () => {
+    const mapper = createProgressMapper(irWithSource());
+    const m = mapper.observe(obs({ byte: 600 }, { file: { sizeBytes: 2_000 } }));
+    expect(m.basis).toBe('byte');
+    expect(m.confidence).toBe('approximated');
+    expect(m.segIndex).toBe(Math.round((600 / 2_000) * 11));
+    expect(m.notes.map((n) => n.code)).toContain('file-mismatch');
+  });
+
+  it('a hash disagreement kills the mapping — wrong-file markers are worse than none', () => {
+    const mapper = createProgressMapper(irWithSource());
+    const m = mapper.observe(obs({ byte: 510 }, { file: { sha256: 'b'.repeat(64) } }));
+    expect(m.confidence).toBe('unavailable');
+    expect(m.segIndex).toBeNull();
+    expect(m.notes.map((n) => n.code)).toContain('file-mismatch');
+  });
+
+  it('percent(bytes) promotion falls back to ordinal when the size is untrusted', () => {
+    const mapper = createProgressMapper(irWithSource());
+    const m = mapper.observe(obs({ percent: 0.5, percentBasis: 'bytes' }, { file: { sizeBytes: 2_000 } }));
+    expect(m.basis).toBe('percent');
+    expect(m.confidence).toBe('approximated');
+    expect(m.notes.map((n) => n.code)).toContain('file-mismatch');
+  });
+
+  it('the parsed byte length from the IR header enables promotion with no explicit option', () => {
+    const mapper = createProgressMapper(irWithSource());
+    const m = mapper.observe(obs({ percent: 0.5, percentBasis: 'bytes' }));
+    expect(m.segIndex).toBe(5); // 605 → segment 5 via header byteLength 1210
+  });
+});
+
+describe('progress mapper — regression (phase 2, §4.4.2)', () => {
+  function tallIR(): ToolpathIR {
+    const b = new ToolpathIRBuilder({ parserVersion: 'test', units: 'mm', unitsSource: 'known' });
+    for (let i = 0; i < 12; i++) {
+      b.addSegment({
+        x0: i,
+        y0: 0,
+        z0: 0.2,
+        x1: i + 1,
+        y1: 0,
+        z1: 0.2,
+        e: 1,
+        kind: MoveKind.Extrude,
+        layer: Math.floor(i / 2), // 6 layers
+        srcByte: i * 100 + 10
+      });
+    }
+    return b.finalize();
+  }
+
+  it('a small backward move re-syncs silently; a big one re-syncs with a note', () => {
+    const mapper = createProgressMapper(tallIR());
+    mapper.observe(obs({ byte: 1_110 })); // segment 11, layer 5
+    const small = mapper.observe(obs({ byte: 710 })); // segment 7, layer 3 — drop of 2
+    expect(small.notes.map((n) => n.code)).not.toContain('position-regressed');
+    mapper.observe(obs({ byte: 1_110 }));
+    const big = mapper.observe(obs({ byte: 110 })); // segment 1, layer 0 — drop of 5
+    expect(big.segIndex).toBe(1); // still re-synced, never dropped
+    expect(big.notes.map((n) => n.code)).toContain('position-regressed');
+  });
+});
+
+describe('progress mapper — cancelled/unknown keep the last position (phase 2, §4.4.3)', () => {
+  it('cancelled without facts keeps the last mapped position with a note', () => {
+    const mapper = createProgressMapper(makeIR());
+    mapper.observe(obs({ byte: 510 }));
+    const m = mapper.observe({ v: 1, timestampMs: 2_000, state: 'cancelled' });
+    expect(m.segIndex).toBe(5);
+    expect(m.notes.map((n) => n.code)).toContain('job-cancelled');
+  });
+
+  it('cancelled with facts still maps them, flagged', () => {
+    const mapper = createProgressMapper(makeIR());
+    const m = mapper.observe(obs({ byte: 510 }, { state: 'cancelled' }));
+    expect(m.segIndex).toBe(5);
+    expect(m.notes.map((n) => n.code)).toContain('job-cancelled');
+  });
+});
+
 describe('progress mapper — state, staleness, reset', () => {
   it('state "complete" maps to the final segment with known confidence regardless of facts', () => {
     const mapper = createProgressMapper(makeIR());

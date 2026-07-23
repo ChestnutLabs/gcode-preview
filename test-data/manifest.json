@@ -555,6 +555,78 @@
       },
       "sizeTier": "tiny",
       "limitations": "Synthetic marker structure, not copied slicer output; real-world samples welcome per governance §11."
+    },
+    {
+      "id": "progress-anycubic-percent",
+      "path": "test-data/fixtures/progress/anycubic-percent.json",
+      "sha256": "2a830fc70d65557867a90f2a2031ec698e960d659828116cc7ce1c5fcbd5fed0",
+      "bytes": 1270,
+      "origin": "Chestnut-authored progress contract fixture shaped after real AnyBridge telemetry (DD-006 §1.1 survey 2026-07-23)",
+      "contributor": "chestnutlabs",
+      "redistribution": "chestnut-original-mit",
+      "slicer": "n/a (telemetry observation stream: Anycubic print report (percent + curr_layer))",
+      "targetFamily": "FDM (live progress)",
+      "features": [
+        "progress-contract",
+        "dd-006"
+      ],
+      "expectedCapabilities": {},
+      "sizeTier": "tiny",
+      "limitations": "Observation sequence + expected MappedProgress outputs, not G-code; exercises percent-only early, layer joins, cancelled keep-last."
+    },
+    {
+      "id": "progress-bambu-percent-layer",
+      "path": "test-data/fixtures/progress/bambu-percent-layer.json",
+      "sha256": "8012ae5f7e7e9834ded40cf862b0a902a11276906970ca2120460c9c9e38f00a",
+      "bytes": 2169,
+      "origin": "Chestnut-authored progress contract fixture shaped after real AnyBridge telemetry (DD-006 §1.1 survey 2026-07-23)",
+      "contributor": "chestnutlabs",
+      "redistribution": "chestnut-original-mit",
+      "slicer": "n/a (telemetry observation stream: Bambu MQTT push_status (mc_percent job basis + layer_num))",
+      "targetFamily": "FDM (live progress)",
+      "features": [
+        "progress-contract",
+        "dd-006"
+      ],
+      "expectedCapabilities": {},
+      "sizeTier": "tiny",
+      "limitations": "Observation sequence + expected MappedProgress outputs, not G-code; exercises layer tier wins, complete, layer-count-mismatch fraction, staleness."
+    },
+    {
+      "id": "progress-byte-exact",
+      "path": "test-data/fixtures/progress/byte-exact.json",
+      "sha256": "96f75a472356e8928ac560f5b80b2c3e1c3025701d3a7f0d55ec8069ece41959",
+      "bytes": 2725,
+      "origin": "Chestnut-authored progress contract fixture shaped after real AnyBridge telemetry (DD-006 §1.1 survey 2026-07-23)",
+      "contributor": "chestnutlabs",
+      "redistribution": "chestnut-original-mit",
+      "slicer": "n/a (telemetry observation stream: Moonraker virtual_sdcard.file_position (future byte-exact tier))",
+      "targetFamily": "FDM (live progress)",
+      "features": [
+        "progress-contract",
+        "dd-006"
+      ],
+      "expectedCapabilities": {},
+      "sizeTier": "tiny",
+      "limitations": "Observation sequence + expected MappedProgress outputs, not G-code; exercises byte tier, before-first-segment, identity demote/kill, regression, staleness."
+    },
+    {
+      "id": "progress-klipper-byte-fraction",
+      "path": "test-data/fixtures/progress/klipper-byte-fraction.json",
+      "sha256": "d3418eb30312be90e5460284792730ddec8d9c6736d61d867b1498ebd63bb9db",
+      "bytes": 2042,
+      "origin": "Chestnut-authored progress contract fixture shaped after real AnyBridge telemetry (DD-006 §1.1 survey 2026-07-23)",
+      "contributor": "chestnutlabs",
+      "redistribution": "chestnut-original-mit",
+      "slicer": "n/a (telemetry observation stream: Klipper virtual_sdcard.progress (byte fraction) +/- SET_PRINT_STATS_INFO)",
+      "targetFamily": "FDM (live progress)",
+      "features": [
+        "progress-contract",
+        "dd-006"
+      ],
+      "expectedCapabilities": {},
+      "sizeTier": "tiny",
+      "limitations": "Observation sequence + expected MappedProgress outputs, not G-code; exercises percent(bytes) promotion, layer-vs-percent cross-checks with band widening."
     }
   ]
 }
