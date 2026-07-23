@@ -1,21 +1,23 @@
 {
-  "name": "gcode-preview",
-  "version": "3.0.0-alpha.4",
-  "description": "Preview a 3d print from a gcode file",
+  "name": "@chestnutlabs/gcode-preview-workspace",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Workspace root for the Chestnut Labs G-code Preview toolpath stack: worker parser, dialect/container adapters, ToolpathIR, Three.js renderer, and Vue/React/Svelte viewer packages.",
   "workspaces": [
     "packages/*"
   ],
-  "author": "remcoder@gmail.com",
+  "author": "Chestnut Labs",
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git@github.com:remcoder/gcode-preview.git"
+    "url": "git+https://github.com/ChestnutLabs/gcode-preview.git"
   },
-  "homepage": "https://gcode-preview.web.app/",
+  "homepage": "https://github.com/ChestnutLabs/gcode-preview#readme",
+  "bugs": "https://github.com/ChestnutLabs/gcode-preview/issues",
+  "engines": {
+    "node": ">=22"
+  },
   "main": "dist/gcode-preview.es.js",
-  "files": [
-    "dist"
-  ],
   "types": "dist/gcode-preview.d.ts",
   "devDependencies": {
     "@rollup/plugin-node-resolve": "^16.0.1",

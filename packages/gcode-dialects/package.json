@@ -2,8 +2,33 @@
   "name": "@chestnutlabs/gcode-dialects",
   "version": "0.0.0",
   "private": true,
-  "description": "Slicer/firmware dialect adapters for ToolpathIR annotation (DD-005). Adapters annotate metadata and optional channels — they can never alter geometry.",
+  "description": "Slicer/firmware dialect adapters for ToolpathIR annotation (DD-005). Adapters annotate metadata and optional channels \u2014 they can never alter geometry.",
+  "keywords": [
+    "gcode",
+    "3d-printing",
+    "toolpath",
+    "cnc",
+    "chestnutlabs",
+    "slicer",
+    "prusaslicer",
+    "cura",
+    "bambu",
+    "klipper",
+    "marlin",
+    "reprap"
+  ],
+  "author": "Chestnut Labs",
+  "homepage": "https://github.com/ChestnutLabs/gcode-preview#readme",
+  "bugs": "https://github.com/ChestnutLabs/gcode-preview/issues",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ChestnutLabs/gcode-preview.git",
+    "directory": "packages/gcode-dialects"
+  },
   "license": "MIT",
+  "engines": {
+    "node": ">=22"
+  },
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",

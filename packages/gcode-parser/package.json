@@ -3,7 +3,30 @@
   "version": "0.0.0",
   "private": true,
   "description": "Worker-safe G-code parse core producing ToolpathIR (DD-003).",
+  "keywords": [
+    "gcode",
+    "3d-printing",
+    "toolpath",
+    "cnc",
+    "chestnutlabs",
+    "parser",
+    "web-worker",
+    "streaming",
+    "marlin",
+    "klipper"
+  ],
+  "author": "Chestnut Labs",
+  "homepage": "https://github.com/ChestnutLabs/gcode-preview#readme",
+  "bugs": "https://github.com/ChestnutLabs/gcode-preview/issues",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ChestnutLabs/gcode-preview.git",
+    "directory": "packages/gcode-parser"
+  },
   "license": "MIT",
+  "engines": {
+    "node": ">=22"
+  },
   "type": "module",
   "sideEffects": false,
   "main": "./dist/index.js",
