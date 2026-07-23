@@ -21,11 +21,13 @@ const here = dirname(fileURLToPath(import.meta.url));
 const root = join(here, '..', '..');
 const tarballDir = join(here, 'tarballs');
 
+// Dependency order (build relies on it): core first; dialects/containers before the
+// parser (its batteries worker imports them); the Vue adapter last.
 const PACKAGES = [
   'toolpath-core',
-  'gcode-parser',
   'gcode-dialects',
   'gcode-containers',
+  'gcode-parser',
   'gcode-renderer-three',
   'gcode-preview-vue'
 ];
@@ -35,8 +37,13 @@ const run = (cmd, cwd) => {
   execSync(cmd, { cwd, stdio: 'inherit' });
 };
 
-console.log('== consumer-vue fixture: build workspaces ==');
-run('npm run build --workspaces --if-present', root);
+console.log('== consumer-vue fixture: build workspaces (dependency order) ==');
+// NOT `--workspaces`: npm runs those alphabetically, so gcode-preview-vue would
+// compile before gcode-renderer-three has a dist on a clean runner. PACKAGES is
+// dependency-ordered — build one at a time.
+for (const pkg of PACKAGES) {
+  run(`npm run build --workspace=@chestnutlabs/${pkg}`, root);
+}
 
 console.log('\n== pack tarballs (stable names) ==');
 rmSync(tarballDir, { recursive: true, force: true });
