@@ -82,7 +82,8 @@ not a Chestnut regression.
 | `ToolpathIR` (`packages/toolpath-core/`) | Chestnut (new) | **original** | DD-001 Accepted; scaffolded in #32 (PR #33). |
 | IR adapter (`src/ir-adapter.ts`) | Chestnut (new) | **original** | DD-001 §9 transitional seam: inherited `Job` → `ToolpathIR` with honest `unavailable` capabilities (#29). |
 | Parse core (`packages/gcode-parser/`) | **inherited semantics, re-implemented** | adapted | DD-003 §9 port of the interpreter/lexer/layer-indexer machine-state semantics (from `src/interpreter.ts`, `src/gcode-parser.ts`, `src/indexers.ts` @ `15375e56`) writing SoA `ToolpathIR` directly; **byte-exact golden equivalence** proven vs the #28 goldens (#44). |
-| Worker protocol | Chestnut (new) | not yet created | Owned by DD-003 (E2); phase 2 (#45). |
+| Worker protocol (`packages/gcode-parser/src/{protocol,worker-core,worker,session,streaming}.ts`) | Chestnut (new) | **original** | DD-003 protocol v1 + GcodeParseSession + streaming (#45/#46). |
+| Renderer geometry + scene (`packages/gcode-renderer-three/`) | Chestnut (new) | **original** | DD-004 phases 1–2 (#56/#57): pure chunk/color/range builders + ToolpathRenderer scene layer. Tube-profile port from inherited `ExtrusionGeometry` is planned for phase 4 (#59) and will be recorded here. |
 | Founding docs, governance, templates, `.gitattributes`, README banner | Chestnut (new) | original | This bootstrap. |
 | `.gitignore` `docs` → `/demo/docs/` anchoring | Chestnut (edit) | modified | Frees a tracked `docs/`; keeps generated typedoc output (at `demo/docs`) ignored. |
 
