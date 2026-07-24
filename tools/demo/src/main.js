@@ -49,6 +49,7 @@ const els = {
   endLayerVal: $('endLayerVal'),
   scrubVal: $('scrubVal'),
   travel: $('travel'),
+  retractions: $('retractions'),
   colorMode: $('colorMode'),
   quality: $('quality'),
   qualityNote: $('qualityNote'),
@@ -144,6 +145,9 @@ renderer.onEvent((e) => {
     travelAvailable = !e.travelHidden;
     els.travel.disabled = !travelAvailable;
     els.travel.checked = travelAvailable ? els.travel.checked : false;
+    // Retraction markers: enable only when the IR actually carries events (#148).
+    els.retractions.disabled = !renderer.hasRetractions;
+    if (!renderer.hasRetractions) els.retractions.checked = false;
     els.disclosure.textContent =
       e.decimationApplied > 1
         ? `Decimation active: showing every ${e.decimationApplied}th extrusion segment ` +
@@ -343,6 +347,7 @@ els.startLayer.addEventListener('input', applyLayerRange);
 els.endLayer.addEventListener('input', applyLayerRange);
 els.scrub.addEventListener('input', applyScrub);
 els.travel.addEventListener('change', () => renderer.setKindVisible('travel', els.travel.checked));
+els.retractions.addEventListener('change', () => renderer.setShowRetractions(els.retractions.checked));
 els.colorMode.addEventListener('change', () => {
   if (!renderer.setColorMode(colorModeFor(els.colorMode.value))) {
     els.colorMode.value = 'single';

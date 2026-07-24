@@ -27,6 +27,8 @@
   /** Scrub cut (IR segment index); null shows everything up to the layer range. */
   export let scrub = null;
   export let showTravel = true;
+  /** DD-009 D1 (#148): opt-in retraction/deretraction markers. */
+  export let showRetractions = false;
   /** DD-006 live progress observation; null hides the overlay. */
   export let progress = null;
   /** Worker factory escape hatch (DD-005 slim/custom entries; D2). */
@@ -98,6 +100,7 @@
   else preview.controls.setLayerRange(layerRange[0], layerRange[1]);
   $: preview.controls.setScrubPosition(scrub ?? null);
   $: preview.controls.setKindVisible('travel', showTravel);
+  $: preview.controls.setShowRetractions(showRetractions);
   $: if (colorMode !== undefined) preview.controls.setColorMode(colorMode);
   $: preview.controls.setQuality(quality);
   $: if (progress === null || progress === undefined) preview.clearProgress();

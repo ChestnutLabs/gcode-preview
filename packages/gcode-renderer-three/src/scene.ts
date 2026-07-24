@@ -31,6 +31,8 @@ import {
   MeshBasicMaterial,
   MeshLambertMaterial,
   PerspectiveCamera,
+  Points,
+  PointsMaterial,
   Scene,
   SphereGeometry,
   Vector3,
@@ -213,6 +215,18 @@ export class ToolpathRenderer {
     opacity: 0.7,
     depthTest: false
   });
+  // Retraction markers (DD-009 D1, #148): opt-in points at retract/unretract events.
+  // Always-on-top like the progress marker; retract vs unretract by vertex color.
+  private showRetractions = false;
+  private retractionPoints: Points | null = null;
+  private retractionSegIndices: Uint32Array = new Uint32Array(0);
+  private readonly retractionMaterial = new PointsMaterial({
+    size: 6,
+    sizeAttenuation: false,
+    vertexColors: true,
+    transparent: true,
+    depthTest: false
+  });
   private listeners = new Set<(e: RendererEvent) => void>();
   private disposed = false;
   private contextLost = false;
@@ -381,6 +395,8 @@ export class ToolpathRenderer {
       this.presentationMode = 'hidden';
       this.emit({ type: 'progress-presentation-changed', mode: 'hidden', reason: 'new-ir' });
     }
+    this.buildRetractionMarkers();
+    this.updateRetractionMarkers();
     this.startBuild(ir);
     this.positionToolpath(ir);
     this.frame();
@@ -569,6 +585,92 @@ export class ToolpathRenderer {
     this.render();
   }
 
+  /**
+   * Opt-in retraction/deretraction markers (DD-009 D1, #148). Points at each
+   * retract (warm) / unretract (cool) event; clipped by the same layer/scrub
+   * window as the toolpath. Capability-honest: no markers when the IR carries no
+   * retraction events (`capabilities.retractions !== 'known'`).
+   */
+  setShowRetractions(visible: boolean): void {
+    if (this.disposed) return;
+    this.showRetractions = visible;
+    this.updateRetractionMarkers();
+    this.render();
+  }
+
+  /** True when the current IR actually carries positioned retraction events. */
+  get hasRetractions(): boolean {
+    return this.ir?.header.capabilities['retractions'] === 'known';
+  }
+
+  private buildRetractionMarkers(): void {
+    if (this.retractionPoints !== null) {
+      this.toolpathGroup.remove(this.retractionPoints);
+      (this.retractionPoints.geometry as BufferGeometry).dispose();
+      this.retractionPoints = null;
+    }
+    this.retractionSegIndices = new Uint32Array(0);
+    const events = this.ir?.retractions ?? [];
+    if (events.length === 0) return;
+    const positions = new Float32Array(events.length * 3);
+    const colors = new Float32Array(events.length * 3);
+    const segIdx = new Uint32Array(events.length);
+    for (let i = 0; i < events.length; i++) {
+      const e = events[i];
+      // Raw printer coords — the scene root's rotation handles Z-up→Y-up, like all
+      // other geometry under toolpathGroup (cf. updateMarker).
+      positions[i * 3] = e.x;
+      positions[i * 3 + 1] = e.y;
+      positions[i * 3 + 2] = e.z;
+      // retract = warm (0xff6d00), unretract = cool (0x00b8d4)
+      const warm = e.kind === 'retract';
+      colors[i * 3] = warm ? 1.0 : 0.0;
+      colors[i * 3 + 1] = warm ? 0.43 : 0.72;
+      colors[i * 3 + 2] = warm ? 0.0 : 0.83;
+      segIdx[i] = e.segIndex;
+    }
+    const geometry = new BufferGeometry();
+    geometry.setAttribute('position', new BufferAttribute(positions, 3));
+    geometry.setAttribute('color', new BufferAttribute(colors, 3));
+    const points = new Points(geometry, this.retractionMaterial);
+    points.renderOrder = 11; // above the progress marker (10) and ghost
+    points.frustumCulled = false;
+    this.retractionSegIndices = segIdx;
+    this.retractionPoints = points;
+    this.toolpathGroup.add(points);
+  }
+
+  private updateRetractionMarkers(): void {
+    const points = this.retractionPoints;
+    if (points === null) return;
+    if (!this.showRetractions || !this.hasRetractions) {
+      points.visible = false;
+      return;
+    }
+    points.visible = true;
+    // Clip to the current visible segment window (events are recorded in segIndex order).
+    const win = this.visibleSegWindow();
+    const idx = this.retractionSegIndices;
+    let start = 0;
+    while (start < idx.length && idx[start] < win.lo) start++;
+    let end = start;
+    while (end < idx.length && idx[end] <= win.hi) end++;
+    (points.geometry as BufferGeometry).setDrawRange(start, Math.max(0, end - start));
+  }
+
+  /** The [lo, hi] segment-index window currently drawn, from layer range + scrub. */
+  private visibleSegWindow(): { lo: number; hi: number } {
+    const ir = this.ir;
+    if (ir === null || ir.layers.length === 0) return { lo: 0, hi: Infinity };
+    const last = ir.layers.length - 1;
+    const start = Math.min(Math.max(0, this.startLayer), last);
+    const end = Math.min(Math.max(start, this.endLayer === Infinity ? last : this.endLayer), last);
+    const lo = ir.layers[start].segStart;
+    let hi = ir.layers[end].segEnd;
+    if (this.scrubSegIndex !== null) hi = Math.min(hi, this.scrubSegIndex);
+    return { lo, hi };
+  }
+
   /** Toggle a move kind (extrusion/travel) on or off (whole-chunk visibility, §4.3). */
   setKindVisible(kind: GeometryChunk['kind'], visible: boolean): void {
     if (this.disposed) return;
@@ -596,6 +698,7 @@ export class ToolpathRenderer {
       if (chunk) this.applyDrawStateToMesh(mesh, chunk);
     }
     this.updateMarker();
+    this.updateRetractionMarkers();
   }
 
   /**
@@ -900,6 +1003,9 @@ export class ToolpathRenderer {
 
   private clearToolpathGeometry(): void {
     for (const child of [...this.toolpathGroup.children]) {
+      // The retraction marker layer (#148) owns its own lifecycle (rebuilt per IR);
+      // it is not chunk geometry, so leave it alone here.
+      if (child === this.retractionPoints) continue;
       const mesh = child as LineSegments;
       (mesh.geometry as BufferGeometry | undefined)?.dispose();
       const material = mesh.material as LineBasicMaterial | LineBasicMaterial[] | undefined;
@@ -932,6 +1038,8 @@ export class ToolpathRenderer {
     this.staleBandMaterial.dispose();
     this.markerMaterial.dispose();
     this.staleMarkerMaterial.dispose();
+    (this.retractionPoints?.geometry as BufferGeometry | undefined)?.dispose();
+    this.retractionMaterial.dispose();
     this.controls?.dispose();
     this.gl.dispose();
     this.listeners.clear();

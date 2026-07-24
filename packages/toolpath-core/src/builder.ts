@@ -2,6 +2,7 @@ import {
   IR_SCHEMA_VERSION,
   type Confidence,
   type ObjectInfo,
+  type RetractionEvent,
   type ToolInfo,
   type ToolpathIR,
   type ToolpathIRHeader,
@@ -74,6 +75,7 @@ export class ToolpathIRBuilder {
 
   private readonly toolsMap = new Map<number, ToolInfo>();
   private readonly objectsList: ObjectInfo[] = [];
+  private readonly retractionsList: RetractionEvent[] = [];
   private readonly warnings: Warning[] = [];
   private readonly capabilities: Record<string, Confidence> = {};
 
@@ -104,6 +106,26 @@ export class ToolpathIRBuilder {
     if (s.tool !== undefined && !this.toolsMap.has(s.tool)) {
       this.toolsMap.set(s.tool, { id: s.tool });
     }
+  }
+
+  /** Record a retraction/unretraction event (DD-009 D1, #148). Position is absolute; stored origin-relative. */
+  addRetraction(r: {
+    x: number;
+    y: number;
+    z: number;
+    kind: 'retract' | 'unretract';
+    srcByte: number;
+    segIndex: number;
+  }): void {
+    const o = this.originOffset ?? { x: 0, y: 0, z: 0 };
+    this.retractionsList.push({
+      x: r.x - o.x,
+      y: r.y - o.y,
+      z: r.z - o.z,
+      kind: r.kind,
+      srcByte: r.srcByte,
+      segIndex: r.segIndex
+    });
   }
 
   addWarning(w: Warning): void {
@@ -166,7 +188,17 @@ export class ToolpathIRBuilder {
     };
 
     const tools = [...this.toolsMap.values()].sort((a, b) => a.id - b.id);
-    return { header, segments, layers, tools, objects: this.objectsList, bounds, boundsWithTravel, sourceIndex };
+    return {
+      header,
+      segments,
+      layers,
+      tools,
+      objects: this.objectsList,
+      retractions: this.retractionsList,
+      bounds,
+      boundsWithTravel,
+      sourceIndex
+    };
   }
 }
 

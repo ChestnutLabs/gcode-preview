@@ -44,6 +44,8 @@ export interface GcodePreviewProps {
   /** Scrub cut (IR segment index); null shows everything up to the layer range. */
   scrub?: number | null;
   showTravel?: boolean;
+  /** DD-009 D1 (#148): opt-in retraction/deretraction markers. */
+  showRetractions?: boolean;
   /** DD-006 live progress observation; null hides the overlay. */
   progress?: ProgressObservation | null;
   /** Worker factory escape hatch (DD-005 slim/custom entries; D2). */
@@ -126,7 +128,7 @@ function GcodePreviewImpl(props: GcodePreviewProps, ref: ForwardedRef<GcodePrevi
   }, []);
 
   // ---- prop wiring: each prop is a thin call into the hook (D1 shell rule) ----
-  const { source, layerRange, scrub, showTravel, colorMode, quality, buildVolume, progress } = props;
+  const { source, layerRange, scrub, showTravel, showRetractions, colorMode, quality, buildVolume, progress } = props;
   useEffect(() => {
     if (source !== null && source !== undefined) void preview.parse(source, cbRef.current.parseOptions);
   }, [source]);
@@ -140,6 +142,9 @@ function GcodePreviewImpl(props: GcodePreviewProps, ref: ForwardedRef<GcodePrevi
   useEffect(() => {
     preview.controls.setKindVisible('travel', showTravel ?? true);
   }, [showTravel]);
+  useEffect(() => {
+    preview.controls.setShowRetractions(showRetractions ?? false);
+  }, [showRetractions]);
   useEffect(() => {
     if (colorMode !== undefined) preview.controls.setColorMode(colorMode);
   }, [colorMode]);

@@ -13,7 +13,8 @@
     "feedrate": "known",
     "sourcePositions": "known",
     "featureRoles": "unavailable",
-    "objects": "unavailable"
+    "objects": "unavailable",
+    "retractions": "unavailable"
   },
   "warningCodes": [
     "layers-partially-inferred"

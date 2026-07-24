@@ -13,7 +13,8 @@
     "feedrate": "known",
     "sourcePositions": "known",
     "featureRoles": "unavailable",
-    "objects": "unavailable"
+    "objects": "unavailable",
+    "retractions": "known"
   },
   "warningCodes": [
     "layers-cleared-non-planar",
