@@ -15,7 +15,9 @@
     "featureRoles": "unavailable",
     "objects": "unavailable",
     "retractions": "unavailable",
-    "colorChanges": "unavailable"
+    "colorChanges": "unavailable",
+    "extrusionMode": "inferred",
+    "positioningMode": "inferred"
   },
   "warningCodes": [
     "layers-unavailable",

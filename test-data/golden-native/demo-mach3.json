@@ -15,9 +15,12 @@
     "featureRoles": "unavailable",
     "objects": "unavailable",
     "retractions": "unavailable",
-    "colorChanges": "unavailable"
+    "colorChanges": "unavailable",
+    "extrusionMode": "inferred",
+    "positioningMode": "inferred"
   },
   "warningCodes": [
+    "g92-xyz-unhandled",
     "layers-unavailable",
     "unsupported-command"
   ],

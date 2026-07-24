@@ -15,7 +15,9 @@
     "featureRoles": "unavailable",
     "objects": "unavailable",
     "retractions": "known",
-    "colorChanges": "unavailable"
+    "colorChanges": "unavailable",
+    "extrusionMode": "known",
+    "positioningMode": "known"
   },
   "warningCodes": [
     "layers-cleared-non-planar",

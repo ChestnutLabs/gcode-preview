@@ -3,7 +3,7 @@
   "layerCount": 1,
   "toolCount": 1,
   "points": 12,
-  "extrusionDistance": 75,
+  "extrusionDistance": 14,
   "capabilities": {
     "geometry": "known",
     "moveKind": "known",
@@ -15,7 +15,9 @@
     "featureRoles": "unavailable",
     "objects": "unavailable",
     "retractions": "unavailable",
-    "colorChanges": "unavailable"
+    "colorChanges": "unavailable",
+    "extrusionMode": "inferred",
+    "positioningMode": "inferred"
   },
   "warningCodes": [
     "layers-partially-inferred",
@@ -28,7 +30,7 @@
     "x1": "de45504f",
     "y1": "b9b1c64f",
     "z1": "9ab0054d",
-    "e": "d3beaadb",
+    "e": "4b5c55a8",
     "feedrate": "55588de7",
     "kind": "0bfa8441",
     "tool": "e2ba14a5",
