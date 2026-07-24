@@ -1,8 +1,7 @@
 {
   "name": "@chestnutlabs/gcode-preview-core",
   "version": "0.1.0",
-  "private": true,
-  "description": "Framework-neutral preview controller for the Chestnut Labs G-code viewer (DD-007 §4.6): the shared engine glue, state model, and TypeScript contracts beneath the Vue/React/Svelte adapters.",
+  "description": "Framework-neutral preview controller for the Chestnut Labs G-code viewer (DD-007 \u00a74.6): the shared engine glue, state model, and TypeScript contracts beneath the Vue/React/Svelte adapters.",
   "keywords": [
     "gcode",
     "3d-printing",

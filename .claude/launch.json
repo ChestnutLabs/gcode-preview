@@ -1,0 +1,38 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "viewer-demo",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "run",
+        "dev",
+        "--prefix",
+        "tools/demo"
+      ],
+      "port": 5199
+    },
+    {
+      "name": "example-react",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "run",
+        "dev",
+        "--prefix",
+        "tools/example-react"
+      ],
+      "port": 5201
+    },
+    {
+      "name": "example-svelte",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "run",
+        "dev",
+        "--prefix",
+        "tools/example-svelte"
+      ],
+      "port": 5202
+    }
+  ]
+}

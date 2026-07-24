@@ -1,7 +1,6 @@
 {
   "name": "@chestnutlabs/gcode-preview-react",
   "version": "0.1.0",
-  "private": true,
   "description": "Thin React integration for the Chestnut Labs G-code viewer (DD-007 D1 amendment): useGcodePreview hook + GcodePreview component as a reactivity bridge over @chestnutlabs/gcode-preview-core.",
   "keywords": [
     "gcode",

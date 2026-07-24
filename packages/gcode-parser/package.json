@@ -1,7 +1,6 @@
 {
   "name": "@chestnutlabs/gcode-parser",
   "version": "0.1.0",
-  "private": true,
   "description": "Worker-safe G-code parse core producing ToolpathIR (DD-003).",
   "keywords": [
     "gcode",
