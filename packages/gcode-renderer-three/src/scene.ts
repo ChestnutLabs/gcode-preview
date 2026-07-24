@@ -729,9 +729,20 @@ export class ToolpathRenderer {
    * not render fabricated colors. Single/tool modes are always available.
    */
   isColorModeAvailable(mode: ColorMode['mode']): boolean {
-    if (mode !== 'feature') return true;
-    const conf = this.ir?.header.capabilities['featureRoles'];
-    return conf !== undefined && conf !== 'unavailable';
+    if (mode === 'feature') {
+      const conf = this.ir?.header.capabilities['featureRoles'];
+      return conf !== undefined && conf !== 'unavailable';
+    }
+    if (mode === 'colorChange') {
+      const conf = this.ir?.header.capabilities['colorChanges'];
+      return conf !== undefined && conf !== 'unavailable';
+    }
+    return true;
+  }
+
+  /** True when the current IR carries M600 color-change boundaries (#147, DD-009 D2). */
+  get hasColorChanges(): boolean {
+    return this.ir?.header.capabilities['colorChanges'] === 'known';
   }
 
   private applyDrawState(): void {

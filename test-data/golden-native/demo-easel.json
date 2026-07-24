@@ -14,7 +14,8 @@
     "sourcePositions": "known",
     "featureRoles": "unavailable",
     "objects": "unavailable",
-    "retractions": "unavailable"
+    "retractions": "unavailable",
+    "colorChanges": "unavailable"
   },
   "warningCodes": [
     "layers-unavailable",
