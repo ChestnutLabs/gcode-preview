@@ -141,6 +141,9 @@ thin path; the full viewer is reachable without switching APIs.
   `parseOptions.plate`).
 - **Dialects:** PrusaSlicer, OrcaSlicer/Bambu, Cura, Klipper, Marlin, RepRap-flavor — see the
   evidence-dated [compatibility matrix](docs/compatibility/dialects-and-containers.md).
+- **Motion commands:** which position-affecting G/M-codes are honored (and the known
+  inherited gaps, e.g. `M82` absolute extrusion) — see
+  [G-code motion coverage](docs/compatibility/gcode-motion-coverage.md).
 - **Build volume:** per-file discovered bed geometry with consumer-wins precedence (your
   configured plate is never silently overridden; discovery is emitted instead).
 - **Live progress:** the normalized [progress signal contract](docs/reference/progress-signal-contract.md)
