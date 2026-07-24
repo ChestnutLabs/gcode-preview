@@ -7,6 +7,7 @@
  * at — a wireframe box of the volume, and an origin marker at printer (0,0,0).
  */
 import { BufferGeometry, Float32BufferAttribute, Group, LineBasicMaterial, LineSegments } from 'three';
+import type { ThemeColor } from './theme.js';
 
 export interface BuildVolumeDef {
   x: number;
@@ -18,7 +19,16 @@ export interface BuildVolumeDef {
   min?: { x: number; y: number };
 }
 
-function lines(positions: number[], color: number, opacity = 1): LineSegments {
+/** Themed styling (DD-009 D4, #153). Omitted fields keep the original constants; the
+ *  origin tripod (semantic RGB axes) is never themed. */
+export interface BuildVolumeStyle {
+  gridColor?: ThemeColor;
+  gridOpacity?: number;
+  boxColor?: ThemeColor;
+  boxOpacity?: number;
+}
+
+function lines(positions: number[], color: ThemeColor, opacity = 1): LineSegments {
   const geometry = new BufferGeometry();
   geometry.setAttribute('position', new Float32BufferAttribute(positions, 3));
   const material = new LineBasicMaterial({ color, transparent: opacity < 1, opacity });
@@ -26,9 +36,13 @@ function lines(positions: number[], color: number, opacity = 1): LineSegments {
 }
 
 /** Build the volume group. Caller owns disposal (traverse geometries/materials). */
-export function createBuildVolume(def: BuildVolumeDef): Group {
+export function createBuildVolume(def: BuildVolumeDef, style?: BuildVolumeStyle): Group {
   const group = new Group();
   group.name = 'buildVolume';
+  const gridColor = style?.gridColor ?? 0x448844;
+  const gridOpacity = style?.gridOpacity ?? 0.35;
+  const boxColor = style?.boxColor ?? 0x888888;
+  const boxOpacity = style?.boxOpacity ?? 0.5;
   const pitch = def.grid ?? 10;
   const x0 = def.min?.x ?? 0;
   const y0 = def.min?.y ?? 0;
@@ -44,7 +58,7 @@ export function createBuildVolume(def: BuildVolumeDef): Group {
   for (let gy = y0; gy <= y1 + 1e-6; gy += pitch) {
     grid.push(x0, gy, 0, x1, gy, 0);
   }
-  group.add(lines(grid, 0x448844, 0.35));
+  group.add(lines(grid, gridColor, gridOpacity));
 
   // Volume wireframe box.
   const z = def.z;
@@ -62,7 +76,7 @@ export function createBuildVolume(def: BuildVolumeDef): Group {
     box.push(x1, y1, z, x2, y2, z); // top edges
     box.push(x1, y1, 0, x1, y1, z); // verticals
   }
-  group.add(lines(box, 0x888888, 0.5));
+  group.add(lines(box, boxColor, boxOpacity));
 
   // Origin marker at printer (0,0,0): a small tripod.
   const m = Math.max(2, pitch / 2);

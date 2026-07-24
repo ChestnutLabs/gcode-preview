@@ -20,7 +20,10 @@ export type {
   RendererEvent,
   GLRendererLike,
   ProgressPresentationMode,
-  QualityMode
+  QualityMode,
+  CameraMode
 } from './scene.js';
 export { createBuildVolume } from './build-volume.js';
-export type { BuildVolumeDef } from './build-volume.js';
+export type { BuildVolumeDef, BuildVolumeStyle } from './build-volume.js';
+export { DEFAULT_THEME, resolveTheme } from './theme.js';
+export type { Theme, MaterialPreset, ThemeColor, ResolvedTheme } from './theme.js';

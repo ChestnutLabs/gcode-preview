@@ -21,12 +21,14 @@ import {
 import {
   ToolpathRenderer,
   type BuildVolumeDef,
+  type CameraMode,
   type ColorMode,
   type GLRendererLike,
   type ProgressPresentationMode,
   type QualityMode,
   type RenderTargetCanvas,
   type RendererEvent,
+  type Theme,
   type TubeOptions
 } from '@chestnutlabs/gcode-renderer-three';
 import {
@@ -61,8 +63,12 @@ export interface PreviewControllerOptions {
   renderer?: {
     buildVolume?: BuildVolumeDef;
     quality?: QualityMode | 'auto';
+    /** Camera projection (#150, DD-009 D3); default 'perspective'. */
+    cameraMode?: CameraMode;
     colorMode?: ColorMode;
     tube?: TubeOptions;
+    /** Bounded declarative theme (#153, DD-009 D4). */
+    theme?: Theme;
     /** Advanced/test injectables — pass-throughs of the renderer's own contract. */
     createRenderer?: (canvas: RenderTargetCanvas) => GLRendererLike;
     scheduleFrame?: (cb: () => void) => void;
@@ -104,8 +110,14 @@ export interface GcodePreviewControls {
   setLayerRange(startLayer: number, endLayer: number): void;
   setScrubPosition(segIndex: number | null): void;
   setKindVisible(kind: 'extrude' | 'travel', visible: boolean): void;
+  /** Opt-in retraction/deretraction markers (DD-009 D1, #148). Off by default. */
+  setShowRetractions(visible: boolean): void;
   setColorMode(mode: ColorMode): boolean;
   setQuality(quality: QualityMode | 'auto'): void;
+  /** Switch camera projection (#150, DD-009 D3). */
+  setCameraMode(mode: CameraMode): void;
+  /** Apply a bounded declarative theme (#153, DD-009 D4). */
+  setTheme(theme: Theme): void;
   /** Marks the volume consumer-configured: file-discovered geometry stops auto-applying. */
   setBuildVolume(def: BuildVolumeDef | MachineGeometry): void;
   frame(): void;
@@ -226,8 +238,10 @@ export function createPreviewController(options: PreviewControllerOptions = {}):
       canvas,
       buildVolume: r.buildVolume,
       quality: r.quality ?? 'auto',
+      cameraMode: r.cameraMode,
       colorMode: r.colorMode,
       tube: r.tube,
+      theme: r.theme,
       createRenderer: r.createRenderer,
       scheduleFrame: r.scheduleFrame,
       chunksPerTick: r.chunksPerTick
@@ -330,8 +344,11 @@ export function createPreviewController(options: PreviewControllerOptions = {}):
     setLayerRange: (a, b) => renderer?.setLayerRange(a, b),
     setScrubPosition: (s) => renderer?.setScrubPosition(s),
     setKindVisible: (k, v) => renderer?.setKindVisible(k, v),
+    setShowRetractions: (v) => renderer?.setShowRetractions(v),
     setColorMode: (m) => renderer?.setColorMode(m) ?? false,
     setQuality: (q) => renderer?.setQuality(q),
+    setCameraMode: (m) => renderer?.setCameraMode(m),
+    setTheme: (t) => renderer?.setTheme(t),
     setBuildVolume: (def) => {
       consumerVolumeSet = true;
       renderer?.setBuildVolume(def);

@@ -10,7 +10,14 @@
  * and staying pure TypeScript keeps the package on the plain tsc build with typed props/emits.
  */
 import { defineComponent, h, onMounted, ref, watch, type PropType } from 'vue';
-import type { BuildVolumeDef, ColorMode, QualityMode, TubeOptions } from '@chestnutlabs/gcode-renderer-three';
+import type {
+  BuildVolumeDef,
+  CameraMode,
+  ColorMode,
+  QualityMode,
+  Theme,
+  TubeOptions
+} from '@chestnutlabs/gcode-renderer-three';
 import type { MachineGeometry, ProgressObservation } from '@chestnutlabs/toolpath-core';
 import type { WireParseOptions, WorkerLike } from '@chestnutlabs/gcode-parser';
 import { useGcodePreview, type PreviewEvent, type UseGcodePreviewOptions } from './use-gcode-preview.js';
@@ -26,6 +33,10 @@ export const GcodePreview = defineComponent({
     /** Consumer-configured volume — wins over file-discovered geometry (DD-005 precedence). */
     buildVolume: { type: Object as PropType<BuildVolumeDef | MachineGeometry>, default: undefined },
     quality: { type: String as PropType<QualityMode | 'auto'>, default: 'auto' },
+    /** #150 (DD-009 D3): camera projection. */
+    cameraMode: { type: String as PropType<CameraMode>, default: 'perspective' },
+    /** #153 (DD-009 D4): bounded declarative theme. */
+    theme: { type: Object as PropType<Theme>, default: undefined },
     colorMode: { type: Object as PropType<ColorMode>, default: undefined },
     tube: { type: Object as PropType<TubeOptions>, default: undefined },
     /** Inclusive [start, end]; null shows every layer. */
@@ -33,6 +44,8 @@ export const GcodePreview = defineComponent({
     /** Scrub cut (IR segment index); null shows everything up to the layer range. */
     scrub: { type: Number as PropType<number | null>, default: null },
     showTravel: { type: Boolean, default: true },
+    /** DD-009 D1 (#148): opt-in retraction/deretraction markers. */
+    showRetractions: { type: Boolean, default: false },
     /** DD-006 live progress observation; null hides the overlay. */
     progress: { type: Object as PropType<ProgressObservation | null>, default: null },
     /** Worker factory escape hatch (DD-005 slim/custom entries; D2). Factory form only —
@@ -44,7 +57,10 @@ export const GcodePreview = defineComponent({
     /** Advanced/test renderer injectables (pass-throughs of the renderer contract). */
     rendererOptions: {
       type: Object as PropType<
-        Omit<NonNullable<UseGcodePreviewOptions['renderer']>, 'buildVolume' | 'quality' | 'colorMode' | 'tube'>
+        Omit<
+          NonNullable<UseGcodePreviewOptions['renderer']>,
+          'buildVolume' | 'quality' | 'cameraMode' | 'theme' | 'colorMode' | 'tube'
+        >
       >,
       default: undefined
     }
@@ -70,6 +86,8 @@ export const GcodePreview = defineComponent({
       renderer: {
         buildVolume: 'bed' in (props.buildVolume ?? {}) ? undefined : (props.buildVolume as BuildVolumeDef | undefined),
         quality: props.quality,
+        cameraMode: props.cameraMode,
+        theme: props.theme,
         colorMode: props.colorMode,
         tube: props.tube,
         ...props.rendererOptions
@@ -147,6 +165,10 @@ export const GcodePreview = defineComponent({
       (visible) => preview.controls.setKindVisible('travel', visible)
     );
     watch(
+      () => props.showRetractions,
+      (visible) => preview.controls.setShowRetractions(visible)
+    );
+    watch(
       () => props.colorMode,
       (mode) => {
         if (mode !== undefined) preview.controls.setColorMode(mode);
@@ -155,6 +177,17 @@ export const GcodePreview = defineComponent({
     watch(
       () => props.quality,
       (quality) => preview.controls.setQuality(quality)
+    );
+    watch(
+      () => props.cameraMode,
+      (mode) => preview.controls.setCameraMode(mode)
+    );
+    watch(
+      () => props.theme,
+      (theme) => {
+        if (theme !== undefined) preview.controls.setTheme(theme);
+      },
+      { deep: true }
     );
     watch(
       () => props.buildVolume,

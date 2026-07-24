@@ -20,6 +20,10 @@
   /** Consumer-configured volume — wins over file-discovered geometry (DD-005). */
   export let buildVolume = undefined;
   export let quality = 'auto';
+  /** #150 (DD-009 D3): camera projection ('perspective' | 'orthographic'). */
+  export let cameraMode = 'perspective';
+  /** #153 (DD-009 D4): bounded declarative theme. */
+  export let theme = undefined;
   export let colorMode = undefined;
   export let tube = undefined;
   /** Inclusive [start, end]; null shows every layer. */
@@ -27,6 +31,8 @@
   /** Scrub cut (IR segment index); null shows everything up to the layer range. */
   export let scrub = null;
   export let showTravel = true;
+  /** DD-009 D1 (#148): opt-in retraction/deretraction markers. */
+  export let showRetractions = false;
   /** DD-006 live progress observation; null hides the overlay. */
   export let progress = null;
   /** Worker factory escape hatch (DD-005 slim/custom entries; D2). */
@@ -43,6 +49,8 @@
     renderer: {
       buildVolume: isMachine ? undefined : buildVolume,
       quality,
+      cameraMode,
+      theme,
       colorMode,
       tube,
       ...rendererOptions
@@ -98,8 +106,11 @@
   else preview.controls.setLayerRange(layerRange[0], layerRange[1]);
   $: preview.controls.setScrubPosition(scrub ?? null);
   $: preview.controls.setKindVisible('travel', showTravel);
+  $: preview.controls.setShowRetractions(showRetractions);
   $: if (colorMode !== undefined) preview.controls.setColorMode(colorMode);
   $: preview.controls.setQuality(quality);
+  $: preview.controls.setCameraMode(cameraMode);
+  $: if (theme !== undefined) preview.controls.setTheme(theme);
   $: if (progress === null || progress === undefined) preview.clearProgress();
   else preview.observeProgress(progress);
 

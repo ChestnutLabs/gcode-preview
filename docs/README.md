@@ -39,7 +39,7 @@ See also [`../PROJECT_SETUP.md`](../PROJECT_SETUP.md) for the local environment 
 Provenance of inherited vs. Chestnut code, the exact founding baseline, and the branch mapping are
 tracked in [`UPSTREAM_PROVENANCE.md`](UPSTREAM_PROVENANCE.md).
 
-## Current state (updated 2026-07-23 — E5 gate open)
+## Current state (updated 2026-07-24 — E9 build complete)
 
 | Epic | Status | Gate |
 |---|---|---|
@@ -50,12 +50,16 @@ tracked in [`UPSTREAM_PROVENANCE.md`](UPSTREAM_PROVENANCE.md).
 | **E4** Dialect & Container Compatibility (#5) | **Closed/Accepted** (2026-07-23) | [DD-005](design/DD-005-dialect-plugin-and-container-adapter-contracts.md) **Accepted + benchmark-ratified** incl. the container-threshold ratification; [§7.3 security review signed off](design/SECURITY-REVIEW-DD-005-containers.md); [matrix published](compatibility/dialects-and-containers.md) ([report](../tools/benchmark/results/e4-dialect-container-benchmark-2026-07-23.md)) |
 | **E5** Live Progress Mapping (#6) | **Closed/Accepted** (2026-07-23) | [DD-006](design/DD-006-normalized-live-progress-and-source-position-mapping.md) **Accepted** (D1–D5 as proposed, D3 clarified) with real AnyBridge telemetry evidence; all 5 phases merged (#90–#94); [contract reference](reference/progress-signal-contract.md) + [consumer notes](reference/progress-consumer-notes.md) published; §8 budgets **all PASS** ([report](../tools/benchmark/results/e5-progress-benchmark-2026-07-23.md)); GPU ghost-overdraw on the reference-machine list |
 | **E6** Vue Package & AnyBridge Consumer Integration (#7) | **Closed/Accepted** (2026-07-23) | [DD-007](design/DD-007-vue-integration-and-anybridge-consumer-boundary.md) **Accepted** (D1 amended: first-class Vue/React/Svelte adapters over shared `gcode-preview-core`); all 8 phases merged; shared behavioral suite green ×3; consumer tarball fixture in CI; [evidence + parity table](../tools/benchmark/results/e6-multiframework-evidence-2026-07-23.md); AnyBridge #783 cross-linked with the consumption recipe |
-| **E7** Release, Documentation & Ecosystem (#8) | **In progress** | [DD-008](design/DD-008-release-publication-versioning-and-support-policy.md) **Accepted** 2026-07-23 with amendments (D1–D7 + the §4.8 headless still-render addition for AnyBridge #791). Seven phases to `v0.1.0`: repo identity → README/docs + showcase → Changesets/release automation → container fuzzing → headless `renderStill` → release rehearsal → protected publish. Explicit release gates: framework-integration parity ×3 + registry-mode consumer verification |
-| E8 | Open, gated | Future/deferred. Roadmap note (DD-008 §4.8): pure-Node GPU-less still rendering is the deferred E8-class capability if ever demanded (the `v0.1.0` `renderStill` covers Chromium-class/Electron/`OffscreenCanvas` environments) |
+| **E7** Release, Documentation & Ecosystem (#8) | **Closed/Accepted** (2026-07-24) | [DD-008](design/DD-008-release-publication-versioning-and-support-policy.md) **Accepted** with amendments; all seven phases merged. **`v0.1.0` published to npm** — all nine `@chestnutlabs/*` packages (lockstep, provenance) from the `v0.1.0` tag on `main`; both §15 gates met (framework parity ×3 + registry-mode verification); [exit report](../tools/benchmark/results/e7-exit-v0.1.0-release-2026-07-24.md). `main` promoted off the founding baseline |
+| **E9** Toolpath Annotations & Renderer Options (#162) | **Build complete — awaiting epic closure** (2026-07-24) | [DD-009](design/DD-009-toolpath-annotations-and-renderer-options.md) **Accepted** (D1–D7; D1 + D2 amended at implementation). **All build items shipped:** retraction markers (#148, D1), orthographic camera (#150, D3), M600 color-change (#147, D2 — parser-detected sparse `colorChanges` channel), bounded theming API (#153, D4), Custom Element `@chestnutlabs/gcode-preview-element` (#149, D5 — 5th lockstep package, passes the shared suite). Multi-gcode = [documented mount-multiple workaround](reference/multi-gcode-previews.md) (#151, D6). Accumulating changeset → next release `0.2.0` |
+| **E10** Motion-Model Correctness (proposed) | **DD Proposed — awaiting acceptance** | [DD-010](design/DD-010-motion-model-correctness.md) **Proposed** (D1–D6): M82/M83 (#156), G90/G91+G92 (#155), arc planes (#157), coordinate systems (#158) — these *alter existing IR output*, so DD-010 carries an explicit golden-regen + capability-honesty strategy. No implementation until Accepted |
+| E8 Low-Resource Layer Mode (#9) | Open, gated | Needs its own DD + device-need evidence. Roadmap note (DD-008 §4.8): pure-Node GPU-less still rendering is the deferred E8-class capability if ever demanded (the `v0.1.0` `renderStill` covers Chromium-class/Electron/`OffscreenCanvas` environments) |
+| #152 STL export | Open, gated | Follows the **#118** chrome/showcase product decision, not an architecture DD (DD-009 §3) |
 
 Shipped so far: `packages/toolpath-core` (SoA `ToolpathIR`, capability model), `packages/gcode-parser`
 (byte-exact port of the inherited engine, worker protocol v1, streaming, limits, adversarial corpus),
 `packages/gcode-renderer-three` (geometry builders + scene/lifecycle), the IR adapter (`src/ir-adapter.ts`),
 golden/native fixtures + manifest with CI validation, boundary lint, license CI gate, and Vite/Electron
 consumer smoke harnesses. CI (`build`) is a required check on `main`/`dev`; suite ≈275 tests.
-`main` remains at the founding baseline — the first release-to-`main` flow belongs to E7/DD-008.
+`main` was promoted off the founding baseline at the `v0.1.0` release (E7/DD-008); it is now the
+release branch, publishing the `@chestnutlabs/*` line from tagged Releases.

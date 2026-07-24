@@ -282,6 +282,32 @@ export function createEngine(input: string | Uint8Array, opts: ParseOptions): En
   let truncatedAtByte: number | undefined;
   let currentSrcByte = 0;
 
+  // Retraction/unretraction events (DD-009 D1, #148): E-only moves emit no segment,
+  // so their position is captured here in ABSOLUTE coords and rebased to the origin
+  // at IR assembly (mirroring segment positions). Physical convention: E<0 pulls
+  // filament back = 'retract'; E>0 (no XYZ) pushes it out = 'unretract'.
+  const retractionEvents: {
+    x: number;
+    y: number;
+    z: number;
+    kind: 'retract' | 'unretract';
+    srcByte: number;
+    segIndex: number;
+  }[] = [];
+
+  // M600 filament-swap color-change boundaries (DD-009 D2 amendment, #147): a marker
+  // with a position but no motion segment, captured here in ABSOLUTE coords and rebased
+  // to the origin at IR assembly (like retractions). Detected in the parser — M600 is
+  // firmware-universal — so a bare M600 is honored even with no dialect detected.
+  const colorChangeEvents: {
+    x: number;
+    y: number;
+    z: number;
+    segIndex: number;
+    srcByte: number;
+    tool: number;
+  }[] = [];
+
   const emitSegment = (x: number, y: number, z: number, eDelta: number, kind: number): boolean => {
     if (writer.count >= limits.maxSegments) {
       stopReason = {
@@ -407,7 +433,16 @@ export function createEngine(input: string | Uint8Array, opts: ParseOptions): En
       if (e > 0) stats.retractions++;
       else if (e < 0) stats.deretractions++;
       else if (f !== undefined) stats.feedrateChanges++;
-      else stats.others++;
+      if (e !== undefined && e !== 0) {
+        retractionEvents.push({
+          x: sx,
+          y: sy,
+          z: sz,
+          kind: e < 0 ? 'retract' : 'unretract',
+          srcByte: currentSrcByte,
+          segIndex: writer.count
+        });
+      } else stats.others++;
       if (f !== undefined) modalFeed = f;
       return true;
     }
@@ -547,6 +582,12 @@ export function createEngine(input: string | Uint8Array, opts: ParseOptions): En
       case 't7':
         tool = Number(cmd.gcode.slice(1));
         break;
+      case 'm600':
+        // Manual filament swap = color boundary (#147). A marker, not motion — do
+        // NOT break/finish the current path; record position (current head), the
+        // next segment index (slot boundary), and the active tool for provenance.
+        colorChangeEvents.push({ x: sx, y: sy, z: sz, segIndex: writer.count, srcByte: offset, tool });
+        break;
       default:
         warn('unsupported-command', `unsupported command '${cmd.gcode}' preserved as metadata`, offset);
     }
@@ -596,7 +637,9 @@ export function createEngine(input: string | Uint8Array, opts: ParseOptions): En
       feedrate: 'known',
       sourcePositions: 'known',
       featureRoles: 'unavailable',
-      objects: 'unavailable'
+      objects: 'unavailable',
+      retractions: retractionEvents.length > 0 ? 'known' : 'unavailable',
+      colorChanges: colorChangeEvents.length > 0 ? 'known' : 'unavailable'
     };
 
     if (layersCapability === 'unavailable') {
@@ -626,6 +669,22 @@ export function createEngine(input: string | Uint8Array, opts: ParseOptions): En
       layers: irLayers,
       tools,
       objects: [],
+      retractions: retractionEvents.map((r) => ({
+        x: r.x - ox,
+        y: r.y - oy,
+        z: r.z - oz,
+        kind: r.kind,
+        srcByte: r.srcByte,
+        segIndex: r.segIndex
+      })),
+      colorChanges: colorChangeEvents.map((c) => ({
+        x: c.x - ox,
+        y: c.y - oy,
+        z: c.z - oz,
+        segIndex: c.segIndex,
+        srcByte: c.srcByte,
+        tool: c.tool
+      })),
       bounds,
       boundsWithTravel,
       sourceIndex
@@ -681,13 +740,17 @@ export function createEngine(input: string | Uint8Array, opts: ParseOptions): En
           feedrate: 'known',
           sourcePositions: 'unavailable', // no per-slice source index is built
           featureRoles: 'unavailable',
-          objects: 'unavailable'
+          objects: 'unavailable',
+          retractions: 'unavailable', // markers resolve on the final IR, not on preview slices
+          colorChanges: 'unavailable' // color-change boundaries resolve on the final IR
         }
       },
       segments: channels,
       layers: channels.count > 0 ? [{ z: lastZ, segStart: 0, segEnd: channels.count - 1 }] : [],
       tools: [...toolsSeen].sort((a, b) => a - b).map((id) => ({ id })),
       objects: [],
+      retractions: [],
+      colorChanges: [],
       bounds,
       boundsWithTravel,
       sourceIndex: { byteOffsets: new Uint32Array(0), segmentIndices: new Uint32Array(0) }

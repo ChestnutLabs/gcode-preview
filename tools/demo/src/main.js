@@ -34,6 +34,24 @@ const FEATURE_PALETTE = [
   [0.8, 0.5, 0.95]
 ];
 
+// Named scene themes (#153, DD-009 D4): each is a bounded declarative Theme.
+// Unspecified fields fall back to the default look (replace semantics).
+const THEMES = {
+  default: {},
+  blueprint: { background: '#0d1b2a', gridColor: '#1b9aaa', bedColor: '#415a77', hemisphereIntensity: 2.2 },
+  light: {
+    background: '#eef1f5',
+    gridColor: '#9fb3c8',
+    bedColor: '#bcccdc',
+    hemisphereIntensity: 2.4,
+    directionalIntensity: 1.4
+  }
+};
+
+function themeFor(name, material) {
+  return { ...(THEMES[name] ?? THEMES.default), materialPreset: material };
+}
+
 const $ = (id) => document.getElementById(id);
 const els = {
   fixture: $('fixture'),
@@ -49,8 +67,12 @@ const els = {
   endLayerVal: $('endLayerVal'),
   scrubVal: $('scrubVal'),
   travel: $('travel'),
+  retractions: $('retractions'),
   colorMode: $('colorMode'),
   quality: $('quality'),
+  cameraMode: $('cameraMode'),
+  theme: $('theme'),
+  material: $('material'),
   qualityNote: $('qualityNote'),
   frame: $('frame'),
   disclosure: $('disclosure'),
@@ -87,6 +109,7 @@ function setStatus(text, isError = false) {
 function colorModeFor(kind) {
   if (kind === 'tool') return { mode: 'tool', palette: TOOL_PALETTE, fallback: [0.7, 0.7, 0.7] };
   if (kind === 'feature') return { mode: 'feature', palette: FEATURE_PALETTE, fallback: [0.55, 0.55, 0.55] };
+  if (kind === 'colorChange') return { mode: 'colorChange', palette: TOOL_PALETTE, fallback: [0.55, 0.55, 0.55] };
   return { mode: 'single', color: [0.9, 0.4, 0.7] };
 }
 
@@ -136,6 +159,16 @@ function enableControls(ir) {
   if (!featureOk && els.colorMode.value === 'feature') {
     els.colorMode.value = 'single';
   }
+  // M600 color-change coloring (#147): only offered when the IR actually saw an M600.
+  const ccOpt = els.colorMode.querySelector('option[value="colorChange"]');
+  const ccOk = renderer.isColorModeAvailable('colorChange');
+  ccOpt.disabled = !ccOk;
+  ccOpt.textContent = ccOk
+    ? 'By color change (M600)'
+    : `By color change (unavailable: colorChanges = ${ir.header.capabilities.colorChanges ?? 'unknown'})`;
+  if (!ccOk && els.colorMode.value === 'colorChange') {
+    els.colorMode.value = 'single';
+  }
   renderer.setColorMode(colorModeFor(els.colorMode.value));
 }
 
@@ -144,6 +177,9 @@ renderer.onEvent((e) => {
     travelAvailable = !e.travelHidden;
     els.travel.disabled = !travelAvailable;
     els.travel.checked = travelAvailable ? els.travel.checked : false;
+    // Retraction markers: enable only when the IR actually carries events (#148).
+    els.retractions.disabled = !renderer.hasRetractions;
+    if (!renderer.hasRetractions) els.retractions.checked = false;
     els.disclosure.textContent =
       e.decimationApplied > 1
         ? `Decimation active: showing every ${e.decimationApplied}th extrusion segment ` +
@@ -343,6 +379,7 @@ els.startLayer.addEventListener('input', applyLayerRange);
 els.endLayer.addEventListener('input', applyLayerRange);
 els.scrub.addEventListener('input', applyScrub);
 els.travel.addEventListener('change', () => renderer.setKindVisible('travel', els.travel.checked));
+els.retractions.addEventListener('change', () => renderer.setShowRetractions(els.retractions.checked));
 els.colorMode.addEventListener('change', () => {
   if (!renderer.setColorMode(colorModeFor(els.colorMode.value))) {
     els.colorMode.value = 'single';
@@ -350,6 +387,10 @@ els.colorMode.addEventListener('change', () => {
   }
 });
 els.quality.addEventListener('change', () => renderer.setQuality(els.quality.value));
+els.cameraMode.addEventListener('change', () => renderer.setCameraMode(els.cameraMode.value));
+const applyTheme = () => renderer.setTheme(themeFor(els.theme.value, els.material.value));
+els.theme.addEventListener('change', applyTheme);
+els.material.addEventListener('change', applyTheme);
 els.frame.addEventListener('click', () => renderer.frame());
 
 // App-level keyboard shortcuts (master plan §9.5); every control is also plain
@@ -371,7 +412,10 @@ window.addEventListener('keydown', (ev) => {
     els.travel.checked = !els.travel.checked;
     els.travel.dispatchEvent(new Event('change'));
   } else if (ev.key === 'f' && !els.frame.disabled) renderer.frame();
-  else return;
+  else if (ev.key === 'o') {
+    els.cameraMode.value = els.cameraMode.value === 'orthographic' ? 'perspective' : 'orthographic';
+    els.cameraMode.dispatchEvent(new Event('change'));
+  } else return;
   ev.preventDefault();
 });
 

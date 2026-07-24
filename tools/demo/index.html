@@ -192,12 +192,17 @@
           <input id="travel" type="checkbox" checked disabled />
           Show travel moves
         </label>
+        <label class="inline">
+          <input id="retractions" type="checkbox" disabled />
+          Show retractions
+        </label>
         <label>
           Color mode
           <select id="colorMode" disabled>
             <option value="single">Single color</option>
             <option value="tool">By tool</option>
             <option value="feature">By feature role</option>
+            <option value="colorChange">By color change (M600)</option>
           </select>
         </label>
         <label>
@@ -208,9 +213,35 @@
             <option value="lines">Lines (fast)</option>
           </select>
         </label>
+        <label>
+          Camera
+          <select id="cameraMode">
+            <option value="perspective">Perspective</option>
+            <option value="orthographic">Orthographic</option>
+          </select>
+        </label>
         <p id="qualityNote" role="note"></p>
         <button id="frame" disabled>Frame model</button>
         <p id="disclosure" role="note"></p>
+      </fieldset>
+
+      <fieldset>
+        <legend>Theme</legend>
+        <label>
+          Scene theme
+          <select id="theme">
+            <option value="default">Default</option>
+            <option value="blueprint">Blueprint (dark)</option>
+            <option value="light">Light</option>
+          </select>
+        </label>
+        <label>
+          Extrusion material
+          <select id="material">
+            <option value="matte">Matte</option>
+            <option value="glossy">Glossy</option>
+          </select>
+        </label>
       </fieldset>
 
       <fieldset>
@@ -240,7 +271,7 @@
           <kbd>Tab</kbd> reach every control · sliders take <kbd>←</kbd><kbd>→</kbd> and
           <kbd>PgUp</kbd><kbd>PgDn</kbd><br />
           Anywhere: <kbd>[</kbd>/<kbd>]</kbd> last layer −/+ · <kbd>,</kbd>/<kbd>.</kbd> scrub −/+ ·
-          <kbd>t</kbd> travel · <kbd>f</kbd> frame
+          <kbd>t</kbd> travel · <kbd>f</kbd> frame · <kbd>o</kbd> projection
         </div>
       </fieldset>
     </aside>

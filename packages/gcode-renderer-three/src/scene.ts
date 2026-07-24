@@ -22,6 +22,8 @@
 import {
   BufferAttribute,
   BufferGeometry,
+  type Camera,
+  Color,
   DirectionalLight,
   Group,
   HemisphereLight,
@@ -30,7 +32,11 @@ import {
   Mesh,
   MeshBasicMaterial,
   MeshLambertMaterial,
+  MeshStandardMaterial,
+  OrthographicCamera,
   PerspectiveCamera,
+  Points,
+  PointsMaterial,
   Scene,
   SphereGeometry,
   Vector3,
@@ -41,11 +47,19 @@ import type { MachineGeometry, MappedProgress, ToolpathIR } from '@chestnutlabs/
 import { autoDecimation, buildChunks, type ChunkBuildResult, type GeometryChunk } from './chunks.js';
 import { buildChunkColors, type ColorMode } from './colors.js';
 import { computeDrawState, computeOverlayDrawStates } from './ranges.js';
-import { createBuildVolume, type BuildVolumeDef } from './build-volume.js';
+import { createBuildVolume, type BuildVolumeDef, type BuildVolumeStyle } from './build-volume.js';
 import { buildTubeChunk, TUBES_AUTO_MAX_SEGMENTS, type TubeOptions } from './tubes.js';
+import { resolveTheme, type Theme, type ResolvedTheme } from './theme.js';
 
 /** §4.3 quality tiers. `auto` picks by segment count (chooseQuality). */
 export type QualityMode = 'lines' | 'tubes';
+
+/**
+ * Camera projection (#150, DD-009 D3). `perspective` is the default interactive
+ * view; `orthographic` gives parallel-projection technical/dimensional views.
+ * Switching preserves the view direction, target, and apparent framing.
+ */
+export type CameraMode = 'perspective' | 'orthographic';
 
 /** §4.3 `auto` decision, exported for tests and consumers. */
 export function chooseQuality(requested: QualityMode | 'auto', totalSegments: number): QualityMode {
@@ -81,7 +95,9 @@ export type RenderTargetCanvas = HTMLCanvasElement | OffscreenCanvas;
 
 /** Minimal surface of WebGLRenderer the scene layer uses — injectable for tests. */
 export interface GLRendererLike {
-  render(scene: Scene, camera: PerspectiveCamera): void;
+  // Base `Camera`, not `PerspectiveCamera`: the active camera may be either
+  // projection (#150). Every stub GL ignores the arg, so this only widens types.
+  render(scene: Scene, camera: Camera): void;
   setSize(width: number, height: number, updateStyle?: boolean): void;
   setPixelRatio?(ratio: number): void;
   dispose(): void;
@@ -100,8 +116,12 @@ export interface ToolpathRendererOptions {
   colorMode?: ColorMode;
   /** §4.3 quality tier; 'auto' (default) picks tubes ≤ 1 M segments, else lines. */
   quality?: QualityMode | 'auto';
+  /** Camera projection (#150, DD-009 D3); default 'perspective'. */
+  cameraMode?: CameraMode;
   /** Tube profile parameters (tubes mode only). */
   tube?: TubeOptions;
+  /** Bounded declarative theme (#153, DD-009 D4); omitted fields keep the default look. */
+  theme?: Theme;
   /**
    * Preserve the WebGL drawing buffer so the canvas can be read back after a
    * render returns (`toDataURL` / `convertToBlob` / `readPixels`). Off by
@@ -165,7 +185,22 @@ export class ToolpathRenderer {
   private readonly toolpathGroup = new Group();
   private volumeGroup: Group | null = null;
   private volumeDef: BuildVolumeDef | null = null;
-  readonly camera: PerspectiveCamera;
+  // Themeable scene objects (#153): lights + resolved theme, retained so setTheme
+  // can restyle them live. Materials for tube geometry are made per-chunk.
+  private readonly hemiLight: HemisphereLight;
+  private readonly dirLight: DirectionalLight;
+  private resolvedTheme: ResolvedTheme;
+  // Two persistent cameras sharing one pose (#150); only the projection differs.
+  // `activeCamera` is the one currently rendered/orbited; the public `camera`
+  // getter returns it as the union (external readers must not assume a `.fov`).
+  private readonly perspectiveCamera: PerspectiveCamera;
+  private readonly orthographicCamera: OrthographicCamera;
+  private activeCamera: PerspectiveCamera | OrthographicCamera;
+  private cameraModeState: CameraMode;
+  /** Viewport aspect (w/h), tracked so both projections resize consistently. */
+  private aspect = 1;
+  /** Vertical half-height the camera frames, set by frame(); sizes the ortho frustum. */
+  private viewHalfHeight = 100;
   private controls: OrbitControls | null = null;
 
   private ir: ToolpathIR | null = null;
@@ -211,6 +246,18 @@ export class ToolpathRenderer {
     color: 0x9e9e9e,
     transparent: true,
     opacity: 0.7,
+    depthTest: false
+  });
+  // Retraction markers (DD-009 D1, #148): opt-in points at retract/unretract events.
+  // Always-on-top like the progress marker; retract vs unretract by vertex color.
+  private showRetractions = false;
+  private retractionPoints: Points | null = null;
+  private retractionSegIndices: Uint32Array = new Uint32Array(0);
+  private readonly retractionMaterial = new PointsMaterial({
+    size: 6,
+    sizeAttenuation: false,
+    vertexColors: true,
+    transparent: true,
     depthTest: false
   });
   private listeners = new Set<(e: RendererEvent) => void>();
@@ -268,25 +315,37 @@ export class ToolpathRenderer {
     this.root.rotation.x = -Math.PI / 2;
     this.scene.add(this.root);
     this.root.add(this.toolpathGroup);
+    // Theme (#153) resolved once; lights + background + volume derive from it.
+    this.resolvedTheme = resolveTheme(opts.theme);
+    const t = this.resolvedTheme;
     // Lights for tubes mode (lit MeshLambert); LineBasicMaterial ignores them.
-    this.scene.add(new HemisphereLight(0xffffff, 0x35404d, 1.6));
-    const sun = new DirectionalLight(0xffffff, 1.1);
-    sun.position.set(1, 2, 1.5);
-    this.scene.add(sun);
+    this.hemiLight = new HemisphereLight(t.hemisphereSky, t.hemisphereGround, t.hemisphereIntensity);
+    this.scene.add(this.hemiLight);
+    this.dirLight = new DirectionalLight(t.directionalColor, t.directionalIntensity);
+    this.dirLight.position.set(1, 2, 1.5); // fixed scene-space key light; not themed
+    this.scene.add(this.dirLight);
+    this.applyBackground();
     if (opts.buildVolume) {
       this.volumeDef = opts.buildVolume;
-      this.volumeGroup = createBuildVolume(opts.buildVolume);
+      this.volumeGroup = createBuildVolume(opts.buildVolume, this.volumeStyle());
       this.root.add(this.volumeGroup);
     }
 
-    this.camera = new PerspectiveCamera(50, 1, 0.1, 10000);
-    this.camera.position.set(-100, 200, 250);
+    // Both cameras exist for the renderer's lifetime; frame()/setCameraMode keep
+    // their pose in sync so toggling projection never jumps the view (#150). The
+    // ortho frustum is a placeholder until frame()/resize size it from bounds+aspect.
+    this.perspectiveCamera = new PerspectiveCamera(50, 1, 0.1, 10000);
+    this.perspectiveCamera.position.set(-100, 200, 250);
+    this.orthographicCamera = new OrthographicCamera(-1, 1, 1, -1, 0.1, 10000);
+    this.orthographicCamera.position.set(-100, 200, 250);
+    this.cameraModeState = opts.cameraMode ?? 'perspective';
+    this.activeCamera = this.cameraModeState === 'orthographic' ? this.orthographicCamera : this.perspectiveCamera;
     const domEl = this.gl.domElement;
     // OrbitControls needs a real DOM element; an OffscreenCanvas (headless
     // still-render, #132) has no pointer events, so there is nothing to orbit.
     if (isHtmlCanvas(domEl)) {
       try {
-        this.controls = new OrbitControls(this.camera, domEl);
+        this.controls = new OrbitControls(this.activeCamera, domEl);
         this.controls.addEventListener('change', () => this.render());
       } catch {
         this.controls = null; // headless hosts without full DOM events
@@ -298,6 +357,20 @@ export class ToolpathRenderer {
     this.canvas.addEventListener('webglcontextlost', this.onContextLost);
     this.canvas.addEventListener('webglcontextrestored', this.onContextRestored);
     this.frame(); // sensible initial view (bed-centered until an IR arrives)
+  }
+
+  /**
+   * The camera currently rendered/orbited (#150). Its concrete type follows
+   * `cameraMode`, so external readers must treat it as the union — only
+   * perspective cameras carry `.fov` (guard writes on `cameraMode`).
+   */
+  get camera(): PerspectiveCamera | OrthographicCamera {
+    return this.activeCamera;
+  }
+
+  /** The active camera projection (#150). */
+  get cameraMode(): CameraMode {
+    return this.cameraModeState;
   }
 
   onEvent(cb: (e: RendererEvent) => void): () => void {
@@ -381,6 +454,8 @@ export class ToolpathRenderer {
       this.presentationMode = 'hidden';
       this.emit({ type: 'progress-presentation-changed', mode: 'hidden', reason: 'new-ir' });
     }
+    this.buildRetractionMarkers();
+    this.updateRetractionMarkers();
     this.startBuild(ir);
     this.positionToolpath(ir);
     this.frame();
@@ -461,7 +536,7 @@ export class ToolpathRenderer {
       geometry.setAttribute('normal', new BufferAttribute(tube.normals, 3));
       geometry.setAttribute('color', new BufferAttribute(this.tubeVertexColors(chunk, tube.vertexSegment), 3));
       geometry.setIndex(new BufferAttribute(tube.indices, 1));
-      const mesh = new Mesh(geometry, new MeshLambertMaterial({ vertexColors: true }));
+      const mesh = new Mesh(geometry, this.makeExtrudeMaterial());
       mesh.userData.drawUnitsPerSegment = tube.indicesPerSegment;
       mesh.userData.vertexSegment = tube.vertexSegment;
       return mesh;
@@ -569,6 +644,92 @@ export class ToolpathRenderer {
     this.render();
   }
 
+  /**
+   * Opt-in retraction/deretraction markers (DD-009 D1, #148). Points at each
+   * retract (warm) / unretract (cool) event; clipped by the same layer/scrub
+   * window as the toolpath. Capability-honest: no markers when the IR carries no
+   * retraction events (`capabilities.retractions !== 'known'`).
+   */
+  setShowRetractions(visible: boolean): void {
+    if (this.disposed) return;
+    this.showRetractions = visible;
+    this.updateRetractionMarkers();
+    this.render();
+  }
+
+  /** True when the current IR actually carries positioned retraction events. */
+  get hasRetractions(): boolean {
+    return this.ir?.header.capabilities['retractions'] === 'known';
+  }
+
+  private buildRetractionMarkers(): void {
+    if (this.retractionPoints !== null) {
+      this.toolpathGroup.remove(this.retractionPoints);
+      (this.retractionPoints.geometry as BufferGeometry).dispose();
+      this.retractionPoints = null;
+    }
+    this.retractionSegIndices = new Uint32Array(0);
+    const events = this.ir?.retractions ?? [];
+    if (events.length === 0) return;
+    const positions = new Float32Array(events.length * 3);
+    const colors = new Float32Array(events.length * 3);
+    const segIdx = new Uint32Array(events.length);
+    for (let i = 0; i < events.length; i++) {
+      const e = events[i];
+      // Raw printer coords — the scene root's rotation handles Z-up→Y-up, like all
+      // other geometry under toolpathGroup (cf. updateMarker).
+      positions[i * 3] = e.x;
+      positions[i * 3 + 1] = e.y;
+      positions[i * 3 + 2] = e.z;
+      // retract = warm (0xff6d00), unretract = cool (0x00b8d4)
+      const warm = e.kind === 'retract';
+      colors[i * 3] = warm ? 1.0 : 0.0;
+      colors[i * 3 + 1] = warm ? 0.43 : 0.72;
+      colors[i * 3 + 2] = warm ? 0.0 : 0.83;
+      segIdx[i] = e.segIndex;
+    }
+    const geometry = new BufferGeometry();
+    geometry.setAttribute('position', new BufferAttribute(positions, 3));
+    geometry.setAttribute('color', new BufferAttribute(colors, 3));
+    const points = new Points(geometry, this.retractionMaterial);
+    points.renderOrder = 11; // above the progress marker (10) and ghost
+    points.frustumCulled = false;
+    this.retractionSegIndices = segIdx;
+    this.retractionPoints = points;
+    this.toolpathGroup.add(points);
+  }
+
+  private updateRetractionMarkers(): void {
+    const points = this.retractionPoints;
+    if (points === null) return;
+    if (!this.showRetractions || !this.hasRetractions) {
+      points.visible = false;
+      return;
+    }
+    points.visible = true;
+    // Clip to the current visible segment window (events are recorded in segIndex order).
+    const win = this.visibleSegWindow();
+    const idx = this.retractionSegIndices;
+    let start = 0;
+    while (start < idx.length && idx[start] < win.lo) start++;
+    let end = start;
+    while (end < idx.length && idx[end] <= win.hi) end++;
+    (points.geometry as BufferGeometry).setDrawRange(start, Math.max(0, end - start));
+  }
+
+  /** The [lo, hi] segment-index window currently drawn, from layer range + scrub. */
+  private visibleSegWindow(): { lo: number; hi: number } {
+    const ir = this.ir;
+    if (ir === null || ir.layers.length === 0) return { lo: 0, hi: Infinity };
+    const last = ir.layers.length - 1;
+    const start = Math.min(Math.max(0, this.startLayer), last);
+    const end = Math.min(Math.max(start, this.endLayer === Infinity ? last : this.endLayer), last);
+    const lo = ir.layers[start].segStart;
+    let hi = ir.layers[end].segEnd;
+    if (this.scrubSegIndex !== null) hi = Math.min(hi, this.scrubSegIndex);
+    return { lo, hi };
+  }
+
   /** Toggle a move kind (extrusion/travel) on or off (whole-chunk visibility, §4.3). */
   setKindVisible(kind: GeometryChunk['kind'], visible: boolean): void {
     if (this.disposed) return;
@@ -583,9 +744,20 @@ export class ToolpathRenderer {
    * not render fabricated colors. Single/tool modes are always available.
    */
   isColorModeAvailable(mode: ColorMode['mode']): boolean {
-    if (mode !== 'feature') return true;
-    const conf = this.ir?.header.capabilities['featureRoles'];
-    return conf !== undefined && conf !== 'unavailable';
+    if (mode === 'feature') {
+      const conf = this.ir?.header.capabilities['featureRoles'];
+      return conf !== undefined && conf !== 'unavailable';
+    }
+    if (mode === 'colorChange') {
+      const conf = this.ir?.header.capabilities['colorChanges'];
+      return conf !== undefined && conf !== 'unavailable';
+    }
+    return true;
+  }
+
+  /** True when the current IR carries M600 color-change boundaries (#147, DD-009 D2). */
+  get hasColorChanges(): boolean {
+    return this.ir?.header.capabilities['colorChanges'] === 'known';
   }
 
   private applyDrawState(): void {
@@ -596,6 +768,7 @@ export class ToolpathRenderer {
       if (chunk) this.applyDrawStateToMesh(mesh, chunk);
     }
     this.updateMarker();
+    this.updateRetractionMarkers();
   }
 
   /**
@@ -767,6 +940,46 @@ export class ToolpathRenderer {
     return this.presentationMode;
   }
 
+  /**
+   * Size both projections from the tracked aspect + framed half-height (#150).
+   * Perspective keeps a fixed vertical fov and only consumes the aspect; ortho
+   * keeps the vertical extent fixed and widens horizontally by aspect — so neither
+   * a resize nor a projection toggle stretches or rescales the model.
+   */
+  private updateCameraProjection(): void {
+    this.perspectiveCamera.aspect = this.aspect;
+    this.perspectiveCamera.updateProjectionMatrix();
+    const h = this.viewHalfHeight;
+    const w = h * this.aspect;
+    this.orthographicCamera.left = -w;
+    this.orthographicCamera.right = w;
+    this.orthographicCamera.top = h;
+    this.orthographicCamera.bottom = -h;
+    this.orthographicCamera.updateProjectionMatrix();
+  }
+
+  /**
+   * Switch the camera projection (#150, DD-009 D3). The pose (position/orientation)
+   * is copied to the incoming camera so the view never jumps, OrbitControls is
+   * reattached to it, and its frustum is re-sized before the next render.
+   */
+  setCameraMode(mode: CameraMode): void {
+    if (this.disposed || mode === this.cameraModeState) return;
+    const prev = this.activeCamera;
+    const next = mode === 'orthographic' ? this.orthographicCamera : this.perspectiveCamera;
+    next.position.copy(prev.position);
+    next.quaternion.copy(prev.quaternion);
+    next.up.copy(prev.up);
+    this.cameraModeState = mode;
+    this.activeCamera = next;
+    this.updateCameraProjection();
+    if (this.controls) {
+      this.controls.object = next;
+      this.controls.update();
+    }
+    this.render();
+  }
+
   /** Fit the camera to the toolpath bounds (falls back to the build volume). */
   frame(): void {
     if (this.disposed) return;
@@ -788,8 +1001,14 @@ export class ToolpathRenderer {
     }
     // Printer coords → scene coords through the root rotation (x, z, -y).
     const target = new Vector3(center.x, center.z, -center.y);
-    this.camera.position.set(target.x - radius * 1.2, target.y + radius * 1.6, target.z + radius * 1.8);
-    this.camera.lookAt(target);
+    // The perspective offset magnitude is ≈2.69·radius at fov 50°, so the visible
+    // half-height at the target plane is ≈2.69·radius·tan(25°) ≈ 1.25·radius; the
+    // ortho frustum uses the same half-height so toggling projection keeps the
+    // model the same apparent size (#150).
+    this.viewHalfHeight = radius * 1.25;
+    this.activeCamera.position.set(target.x - radius * 1.2, target.y + radius * 1.6, target.z + radius * 1.8);
+    this.activeCamera.lookAt(target);
+    this.updateCameraProjection();
     if (this.controls) {
       this.controls.target.copy(target);
       this.controls.update();
@@ -826,17 +1045,77 @@ export class ToolpathRenderer {
     return true;
   }
 
+  /** Extrude (tube) material for the current theme preset (#153). Lines geometry is unlit. */
+  private makeExtrudeMaterial(): MeshLambertMaterial | MeshStandardMaterial {
+    return this.resolvedTheme.materialPreset === 'glossy'
+      ? new MeshStandardMaterial({ vertexColors: true, roughness: 0.35, metalness: 0.1 })
+      : new MeshLambertMaterial({ vertexColors: true });
+  }
+
+  /** Grid/box styling for the build volume from the current theme (#153). */
+  private volumeStyle(): BuildVolumeStyle {
+    const t = this.resolvedTheme;
+    return { gridColor: t.gridColor, gridOpacity: t.gridOpacity, boxColor: t.bedColor, boxOpacity: t.bedOpacity };
+  }
+
+  /** Set (or clear) the scene background from the theme. Null leaves three's default. */
+  private applyBackground(): void {
+    const bg = this.resolvedTheme.background;
+    this.scene.background = bg === null ? null : new Color(bg as string | number);
+  }
+
+  /**
+   * Apply a bounded declarative theme (#153, DD-009 D4), replacing the current one:
+   * unspecified fields reset to {@link DEFAULT_THEME}. Restyles lights, background,
+   * the build-volume grid/box, and swaps the extrude (tube) material preset live —
+   * disposing replaced materials/geometry. Lines geometry and the semantic marker/
+   * overlay/origin colors are unaffected.
+   */
+  setTheme(theme: Theme): void {
+    if (this.disposed) return;
+    const prevPreset = this.resolvedTheme.materialPreset;
+    this.resolvedTheme = resolveTheme(theme);
+    const t = this.resolvedTheme;
+    this.hemiLight.color.set(t.hemisphereSky as string | number);
+    this.hemiLight.groundColor.set(t.hemisphereGround as string | number);
+    this.hemiLight.intensity = t.hemisphereIntensity;
+    this.dirLight.color.set(t.directionalColor as string | number);
+    this.dirLight.intensity = t.directionalIntensity;
+    this.applyBackground();
+    // Rebuild the build volume with the new grid/box styling (reuses the dispose walk).
+    if (this.volumeDef !== null && this.volumeGroup !== null) {
+      this.volumeGroup.traverse((obj) => {
+        const mesh = obj as LineSegments;
+        (mesh.geometry as BufferGeometry | undefined)?.dispose?.();
+        (mesh.material as LineBasicMaterial | undefined)?.dispose?.();
+      });
+      this.root.remove(this.volumeGroup);
+      this.volumeGroup = createBuildVolume(this.volumeDef, this.volumeStyle());
+      this.root.add(this.volumeGroup);
+    }
+    // Swap the tube material preset only when it actually changed (avoids churn/leaks).
+    if (t.materialPreset !== prevPreset) {
+      for (const mesh of this.chunkMeshes) {
+        if (mesh.userData.vertexSegment === undefined) continue; // lines mesh: unaffected
+        const old = (mesh as Mesh).material as MeshLambertMaterial | MeshStandardMaterial | undefined;
+        (mesh as Mesh).material = this.makeExtrudeMaterial();
+        old?.dispose();
+      }
+    }
+    this.render();
+  }
+
   resize(width: number, height: number): void {
     if (this.disposed) return;
-    this.camera.aspect = width / Math.max(1, height);
-    this.camera.updateProjectionMatrix();
+    this.aspect = width / Math.max(1, height);
+    this.updateCameraProjection();
     this.gl.setSize(width, height, false);
     this.render();
   }
 
   render(): void {
     if (this.disposed || this.contextLost) return;
-    this.gl.render(this.scene, this.camera);
+    this.gl.render(this.scene, this.activeCamera);
   }
 
   /**
@@ -871,7 +1150,7 @@ export class ToolpathRenderer {
       this.root.remove(this.volumeGroup);
     }
     this.volumeDef = next;
-    this.volumeGroup = createBuildVolume(next);
+    this.volumeGroup = createBuildVolume(next, this.volumeStyle());
     this.root.add(this.volumeGroup);
     this.render();
   }
@@ -900,6 +1179,9 @@ export class ToolpathRenderer {
 
   private clearToolpathGeometry(): void {
     for (const child of [...this.toolpathGroup.children]) {
+      // The retraction marker layer (#148) owns its own lifecycle (rebuilt per IR);
+      // it is not chunk geometry, so leave it alone here.
+      if (child === this.retractionPoints) continue;
       const mesh = child as LineSegments;
       (mesh.geometry as BufferGeometry | undefined)?.dispose();
       const material = mesh.material as LineBasicMaterial | LineBasicMaterial[] | undefined;
@@ -932,6 +1214,8 @@ export class ToolpathRenderer {
     this.staleBandMaterial.dispose();
     this.markerMaterial.dispose();
     this.staleMarkerMaterial.dispose();
+    (this.retractionPoints?.geometry as BufferGeometry | undefined)?.dispose();
+    this.retractionMaterial.dispose();
     this.controls?.dispose();
     this.gl.dispose();
     this.listeners.clear();
