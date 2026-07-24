@@ -15,6 +15,7 @@ import type {
   CameraMode,
   ColorMode,
   QualityMode,
+  Theme,
   TubeOptions
 } from '@chestnutlabs/gcode-renderer-three';
 import type { MachineGeometry, ProgressObservation } from '@chestnutlabs/toolpath-core';
@@ -34,6 +35,8 @@ export const GcodePreview = defineComponent({
     quality: { type: String as PropType<QualityMode | 'auto'>, default: 'auto' },
     /** #150 (DD-009 D3): camera projection. */
     cameraMode: { type: String as PropType<CameraMode>, default: 'perspective' },
+    /** #153 (DD-009 D4): bounded declarative theme. */
+    theme: { type: Object as PropType<Theme>, default: undefined },
     colorMode: { type: Object as PropType<ColorMode>, default: undefined },
     tube: { type: Object as PropType<TubeOptions>, default: undefined },
     /** Inclusive [start, end]; null shows every layer. */
@@ -56,7 +59,7 @@ export const GcodePreview = defineComponent({
       type: Object as PropType<
         Omit<
           NonNullable<UseGcodePreviewOptions['renderer']>,
-          'buildVolume' | 'quality' | 'cameraMode' | 'colorMode' | 'tube'
+          'buildVolume' | 'quality' | 'cameraMode' | 'theme' | 'colorMode' | 'tube'
         >
       >,
       default: undefined
@@ -84,6 +87,7 @@ export const GcodePreview = defineComponent({
         buildVolume: 'bed' in (props.buildVolume ?? {}) ? undefined : (props.buildVolume as BuildVolumeDef | undefined),
         quality: props.quality,
         cameraMode: props.cameraMode,
+        theme: props.theme,
         colorMode: props.colorMode,
         tube: props.tube,
         ...props.rendererOptions
@@ -177,6 +181,13 @@ export const GcodePreview = defineComponent({
     watch(
       () => props.cameraMode,
       (mode) => preview.controls.setCameraMode(mode)
+    );
+    watch(
+      () => props.theme,
+      (theme) => {
+        if (theme !== undefined) preview.controls.setTheme(theme);
+      },
+      { deep: true }
     );
     watch(
       () => props.buildVolume,

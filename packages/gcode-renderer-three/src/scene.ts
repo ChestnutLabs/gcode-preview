@@ -23,6 +23,7 @@ import {
   BufferAttribute,
   BufferGeometry,
   type Camera,
+  Color,
   DirectionalLight,
   Group,
   HemisphereLight,
@@ -31,6 +32,7 @@ import {
   Mesh,
   MeshBasicMaterial,
   MeshLambertMaterial,
+  MeshStandardMaterial,
   OrthographicCamera,
   PerspectiveCamera,
   Points,
@@ -45,8 +47,9 @@ import type { MachineGeometry, MappedProgress, ToolpathIR } from '@chestnutlabs/
 import { autoDecimation, buildChunks, type ChunkBuildResult, type GeometryChunk } from './chunks.js';
 import { buildChunkColors, type ColorMode } from './colors.js';
 import { computeDrawState, computeOverlayDrawStates } from './ranges.js';
-import { createBuildVolume, type BuildVolumeDef } from './build-volume.js';
+import { createBuildVolume, type BuildVolumeDef, type BuildVolumeStyle } from './build-volume.js';
 import { buildTubeChunk, TUBES_AUTO_MAX_SEGMENTS, type TubeOptions } from './tubes.js';
+import { resolveTheme, type Theme, type ResolvedTheme } from './theme.js';
 
 /** §4.3 quality tiers. `auto` picks by segment count (chooseQuality). */
 export type QualityMode = 'lines' | 'tubes';
@@ -117,6 +120,8 @@ export interface ToolpathRendererOptions {
   cameraMode?: CameraMode;
   /** Tube profile parameters (tubes mode only). */
   tube?: TubeOptions;
+  /** Bounded declarative theme (#153, DD-009 D4); omitted fields keep the default look. */
+  theme?: Theme;
   /**
    * Preserve the WebGL drawing buffer so the canvas can be read back after a
    * render returns (`toDataURL` / `convertToBlob` / `readPixels`). Off by
@@ -180,6 +185,11 @@ export class ToolpathRenderer {
   private readonly toolpathGroup = new Group();
   private volumeGroup: Group | null = null;
   private volumeDef: BuildVolumeDef | null = null;
+  // Themeable scene objects (#153): lights + resolved theme, retained so setTheme
+  // can restyle them live. Materials for tube geometry are made per-chunk.
+  private readonly hemiLight: HemisphereLight;
+  private readonly dirLight: DirectionalLight;
+  private resolvedTheme: ResolvedTheme;
   // Two persistent cameras sharing one pose (#150); only the projection differs.
   // `activeCamera` is the one currently rendered/orbited; the public `camera`
   // getter returns it as the union (external readers must not assume a `.fov`).
@@ -305,14 +315,19 @@ export class ToolpathRenderer {
     this.root.rotation.x = -Math.PI / 2;
     this.scene.add(this.root);
     this.root.add(this.toolpathGroup);
+    // Theme (#153) resolved once; lights + background + volume derive from it.
+    this.resolvedTheme = resolveTheme(opts.theme);
+    const t = this.resolvedTheme;
     // Lights for tubes mode (lit MeshLambert); LineBasicMaterial ignores them.
-    this.scene.add(new HemisphereLight(0xffffff, 0x35404d, 1.6));
-    const sun = new DirectionalLight(0xffffff, 1.1);
-    sun.position.set(1, 2, 1.5);
-    this.scene.add(sun);
+    this.hemiLight = new HemisphereLight(t.hemisphereSky, t.hemisphereGround, t.hemisphereIntensity);
+    this.scene.add(this.hemiLight);
+    this.dirLight = new DirectionalLight(t.directionalColor, t.directionalIntensity);
+    this.dirLight.position.set(1, 2, 1.5); // fixed scene-space key light; not themed
+    this.scene.add(this.dirLight);
+    this.applyBackground();
     if (opts.buildVolume) {
       this.volumeDef = opts.buildVolume;
-      this.volumeGroup = createBuildVolume(opts.buildVolume);
+      this.volumeGroup = createBuildVolume(opts.buildVolume, this.volumeStyle());
       this.root.add(this.volumeGroup);
     }
 
@@ -521,7 +536,7 @@ export class ToolpathRenderer {
       geometry.setAttribute('normal', new BufferAttribute(tube.normals, 3));
       geometry.setAttribute('color', new BufferAttribute(this.tubeVertexColors(chunk, tube.vertexSegment), 3));
       geometry.setIndex(new BufferAttribute(tube.indices, 1));
-      const mesh = new Mesh(geometry, new MeshLambertMaterial({ vertexColors: true }));
+      const mesh = new Mesh(geometry, this.makeExtrudeMaterial());
       mesh.userData.drawUnitsPerSegment = tube.indicesPerSegment;
       mesh.userData.vertexSegment = tube.vertexSegment;
       return mesh;
@@ -1030,6 +1045,66 @@ export class ToolpathRenderer {
     return true;
   }
 
+  /** Extrude (tube) material for the current theme preset (#153). Lines geometry is unlit. */
+  private makeExtrudeMaterial(): MeshLambertMaterial | MeshStandardMaterial {
+    return this.resolvedTheme.materialPreset === 'glossy'
+      ? new MeshStandardMaterial({ vertexColors: true, roughness: 0.35, metalness: 0.1 })
+      : new MeshLambertMaterial({ vertexColors: true });
+  }
+
+  /** Grid/box styling for the build volume from the current theme (#153). */
+  private volumeStyle(): BuildVolumeStyle {
+    const t = this.resolvedTheme;
+    return { gridColor: t.gridColor, gridOpacity: t.gridOpacity, boxColor: t.bedColor, boxOpacity: t.bedOpacity };
+  }
+
+  /** Set (or clear) the scene background from the theme. Null leaves three's default. */
+  private applyBackground(): void {
+    const bg = this.resolvedTheme.background;
+    this.scene.background = bg === null ? null : new Color(bg as string | number);
+  }
+
+  /**
+   * Apply a bounded declarative theme (#153, DD-009 D4), replacing the current one:
+   * unspecified fields reset to {@link DEFAULT_THEME}. Restyles lights, background,
+   * the build-volume grid/box, and swaps the extrude (tube) material preset live —
+   * disposing replaced materials/geometry. Lines geometry and the semantic marker/
+   * overlay/origin colors are unaffected.
+   */
+  setTheme(theme: Theme): void {
+    if (this.disposed) return;
+    const prevPreset = this.resolvedTheme.materialPreset;
+    this.resolvedTheme = resolveTheme(theme);
+    const t = this.resolvedTheme;
+    this.hemiLight.color.set(t.hemisphereSky as string | number);
+    this.hemiLight.groundColor.set(t.hemisphereGround as string | number);
+    this.hemiLight.intensity = t.hemisphereIntensity;
+    this.dirLight.color.set(t.directionalColor as string | number);
+    this.dirLight.intensity = t.directionalIntensity;
+    this.applyBackground();
+    // Rebuild the build volume with the new grid/box styling (reuses the dispose walk).
+    if (this.volumeDef !== null && this.volumeGroup !== null) {
+      this.volumeGroup.traverse((obj) => {
+        const mesh = obj as LineSegments;
+        (mesh.geometry as BufferGeometry | undefined)?.dispose?.();
+        (mesh.material as LineBasicMaterial | undefined)?.dispose?.();
+      });
+      this.root.remove(this.volumeGroup);
+      this.volumeGroup = createBuildVolume(this.volumeDef, this.volumeStyle());
+      this.root.add(this.volumeGroup);
+    }
+    // Swap the tube material preset only when it actually changed (avoids churn/leaks).
+    if (t.materialPreset !== prevPreset) {
+      for (const mesh of this.chunkMeshes) {
+        if (mesh.userData.vertexSegment === undefined) continue; // lines mesh: unaffected
+        const old = (mesh as Mesh).material as MeshLambertMaterial | MeshStandardMaterial | undefined;
+        (mesh as Mesh).material = this.makeExtrudeMaterial();
+        old?.dispose();
+      }
+    }
+    this.render();
+  }
+
   resize(width: number, height: number): void {
     if (this.disposed) return;
     this.aspect = width / Math.max(1, height);
@@ -1075,7 +1150,7 @@ export class ToolpathRenderer {
       this.root.remove(this.volumeGroup);
     }
     this.volumeDef = next;
-    this.volumeGroup = createBuildVolume(next);
+    this.volumeGroup = createBuildVolume(next, this.volumeStyle());
     this.root.add(this.volumeGroup);
     this.render();
   }

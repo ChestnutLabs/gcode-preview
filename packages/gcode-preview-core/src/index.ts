@@ -6,3 +6,5 @@
  */
 export * from './controller.js';
 export { renderStill, type RenderStillOptions, type RenderStillResult, type StillCameraPose } from './render-still.js';
+// Re-export the theme contract so core consumers get it three-free (#153, DD-009 D4).
+export type { Theme, MaterialPreset, ThemeColor } from '@chestnutlabs/gcode-renderer-three';
