@@ -21,4 +21,4 @@ boundary. Architecture-sensitive work is **blocked until its DD is Accepted** (g
 | [DD-006](DD-006-normalized-live-progress-and-source-position-mapping.md) | Normalized Live Progress and Source-Position Mapping | E5 | M4 | **Accepted** 2026-07-23 (#87) |
 | [DD-007](DD-007-vue-integration-and-anybridge-consumer-boundary.md) | Vue Integration and AnyBridge Consumer Boundary | E6 | M4 | **Accepted** 2026-07-23 with amendments (#101) |
 | [DD-008](DD-008-release-publication-versioning-and-support-policy.md) | Release, Publication Readiness, Versioning & Support Policy | E7 | M5 | **Accepted** 2026-07-23 with amendments (#125) |
-| [DD-009](DD-009-toolpath-annotations-and-renderer-options.md) | Toolpath Annotations & Renderer Options | E9 (proposed) | Future | **Proposed** 2026-07-23 (#160) |
+| [DD-009](DD-009-toolpath-annotations-and-renderer-options.md) | Toolpath Annotations & Renderer Options | E9 | Future | **Accepted** 2026-07-23 (D1–D7 as recommended) (#160) |
