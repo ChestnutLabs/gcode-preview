@@ -22,6 +22,7 @@ is worded as *expected to work*.
 | `@chestnutlabs/gcode-preview-vue` | `vue ^3.4` | Reference adapter |
 | `@chestnutlabs/gcode-preview-react` | `react ^18 \|\| ^19` | StrictMode-safe (dispose/recreate + canvas rebind are test-locked) |
 | `@chestnutlabs/gcode-preview-svelte` | `svelte ^4 \|\| ^5` | The component ships as **raw `.svelte`** under the `"svelte"` export condition — the consumer's Svelte compiler is authoritative |
+| `@chestnutlabs/gcode-preview-element` | none (framework-free custom element) | Registers `<gcode-preview>` via `defineGcodePreview()` / the `./define` entry; passes the same shared behavioral suite |
 
 All three adapters are thin reactivity bridges over `@chestnutlabs/gcode-preview-core` and expose
 equivalent capabilities (DD-007 D1 amendment); the shared behavioral suite runs against all three

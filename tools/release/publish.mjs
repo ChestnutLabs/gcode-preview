@@ -29,7 +29,8 @@ const ORDER = [
   'gcode-preview-core',
   'gcode-preview-vue',
   'gcode-preview-react',
-  'gcode-preview-svelte'
+  'gcode-preview-svelte',
+  'gcode-preview-element'
 ];
 
 if (!DRY) {

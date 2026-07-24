@@ -53,6 +53,7 @@ Svelte** integrations that are thin adapters over one shared, framework-neutral 
 | [`@chestnutlabs/gcode-preview-vue`](packages/gcode-preview-vue) | Vue 3 component + `useGcodePreview()` composable |
 | [`@chestnutlabs/gcode-preview-react`](packages/gcode-preview-react) | React component + `useGcodePreview()` hook |
 | [`@chestnutlabs/gcode-preview-svelte`](packages/gcode-preview-svelte) | Svelte component + `createGcodePreview()` store/action |
+| [`@chestnutlabs/gcode-preview-element`](packages/gcode-preview-element) | Framework-free `<gcode-preview>` Web Component (no peer framework) |
 
 ## Quick start
 

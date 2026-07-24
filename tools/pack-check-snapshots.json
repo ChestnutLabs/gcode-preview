@@ -179,5 +179,18 @@
     "dist/index.d.ts.map",
     "dist/index.js",
     "package.json"
+  ],
+  "gcode-preview-element": [
+    "README.md",
+    "dist/define.d.ts",
+    "dist/define.d.ts.map",
+    "dist/define.js",
+    "dist/gcode-preview-element.d.ts",
+    "dist/gcode-preview-element.d.ts.map",
+    "dist/gcode-preview-element.js",
+    "dist/index.d.ts",
+    "dist/index.d.ts.map",
+    "dist/index.js",
+    "package.json"
   ]
 }

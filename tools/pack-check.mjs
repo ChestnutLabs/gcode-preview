@@ -31,7 +31,8 @@ const PACKAGES = [
   'gcode-preview-core',
   'gcode-preview-vue',
   'gcode-preview-react',
-  'gcode-preview-svelte'
+  'gcode-preview-svelte',
+  'gcode-preview-element'
 ];
 
 const npmCmd = process.platform === 'win32' ? 'npm.cmd' : 'npm';
