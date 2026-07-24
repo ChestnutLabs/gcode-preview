@@ -1,6 +1,6 @@
 # DD-009 — Toolpath Annotations & Renderer Options
 
-**Status:** **Proposed** <!-- Draft | Proposed | Accepted | Superseded | Rejected -->
+**Status:** **Accepted (2026-07-23, D1–D7 all as recommended)** <!-- Draft | Proposed | Accepted | Superseded | Rejected -->
 **Authors/Owners:** Chestnut Labs
 **Date:** 2026-07-23 · **Last revised:** 2026-07-23
 **Owning Epic:** proposes **E9 — Toolpath Annotations & Renderer Options** (post-`v0.1.0`) · **Milestone:** Future
@@ -17,6 +17,30 @@ amendment (the framework-neutral engine + parity rule that makes #149 a fourth b
 > **DD path** for them rather than ad-hoc implementation. This DD takes the six design decisions
 > **once, coherently**, so implementation can proceed phased with the same discipline as E1–E7.
 > **None of these block `v0.1.0`** — this is post-release feature work.
+
+---
+
+> **Accepted 2026-07-23 — D1–D7 all adopted as recommended (maintainer: "approve with
+> recommendations, D1–D7").**
+> **(D1)** #148 retraction/deretraction — opt-in renderer marker layer (`showRetractions`, default
+> off); no IR change (kinds already exist).
+> **(D2)** #147 M600 filament-swap — annotate in the dialect layer via a **dedicated color-change
+> channel** (not the `tool` channel); renderer reuses by-tool coloring; DD-006 already owns M600
+> position.
+> **(D3)** #150 orthographic camera — `cameraMode: 'perspective' | 'orthographic'` renderer/adapter
+> option, honored by `renderStill`.
+> **(D4)** #153 theming — a **bounded declarative theme object** (background/grid/bed/lights/named
+> material presets), not raw three; escape hatches remain for deep customization.
+> **(D5)** #149 Custom Element — a fifth thin package `@chestnutlabs/gcode-preview-element` over
+> `gcode-preview-core`, **passing the shared behavioral suite** (DD-007 D1 parity); joins the
+> lockstep line + pack/publint gates; built **after** the theming/camera options so it inherits the
+> full surface.
+> **(D6)** #151 multi-gcode — **document the mount-multiple-components workaround** as the supported
+> answer for E9's first pass; the single-scene multi-model renderer (Option A) stays **deferred**
+> pending real demand.
+> **(D7)** open **E9 — Toolpath Annotations & Renderer Options** (milestone Future), owning
+> #147/#148/#149/#150/#153 sequenced cheapest-first (§14); #151 stays deferred under E9 as the
+> documented workaround.
 
 ---
 
@@ -47,7 +71,7 @@ impact.
 Marked **D1–D7**; each lists options with a recommendation. §14's phased plan assumes the
 recommendations.
 
-### 4.1 D1 — Retraction / deretraction visualization (#148, upstream #223)
+### 4.1 D1 — Retraction / deretraction visualization (#148, upstream #223) — ACCEPTED (Option A: opt-in renderer marker)
 
 Cheapest of the set: the IR **already records** `Retract`/`Unretract` move kinds (E2); only a
 renderer presentation is missing.
@@ -60,7 +84,7 @@ renderer presentation is missing.
   confused with feature coloring. Rejected as the default.
 - **Contract impact:** additive renderer option + one adapter prop across the four adapters.
 
-### 4.2 D2 — M600 filament-swap color-change annotation (#147, upstream #152)
+### 4.2 D2 — M600 filament-swap color-change annotation (#147, upstream #152) — ACCEPTED (Option A + dedicated color-change channel)
 
 A manual filament swap (`M600`) is a **color boundary** for a multi-material preview.
 
@@ -75,7 +99,7 @@ A manual filament swap (`M600`) is a **color boundary** for a multi-material pre
   changes) vs. a dedicated color-change channel (cleaner, small IR addition) — **recommend the
   dedicated channel.**
 
-### 4.3 D3 — Orthographic camera option (#150, upstream #177)
+### 4.3 D3 — Orthographic camera option (#150, upstream #177) — ACCEPTED (Option A: cameraMode option)
 
 - **Option A (recommended):** add an orthographic camera mode to `gcode-renderer-three` (switchable
   with the existing perspective camera), surfaced as a `cameraMode: 'perspective' | 'orthographic'`
@@ -83,7 +107,7 @@ A manual filament swap (`M600`) is a **color boundary** for a multi-material pre
   the projection changes.
 - **Contract impact:** additive renderer option + adapter prop ×4 + a `renderStill` option.
 
-### 4.4 D4 — three.js environment / theming API (#153, upstream #235)
+### 4.4 D4 — three.js environment / theming API (#153, upstream #235) — ACCEPTED (Option A: bounded declarative theme)
 
 The most API-heavy: a **supported** surface for background, lighting, grid/bed styling, materials.
 
@@ -98,7 +122,7 @@ The most API-heavy: a **supported** surface for background, lighting, grid/bed s
 - **Contract impact:** a real new public API (declarative theme type) across the renderer + four
   adapters; the largest maintenance commitment here.
 
-### 4.5 D5 — Custom Element (`<gcode-preview>`) adapter (#149, upstream #178)
+### 4.5 D5 — Custom Element (`<gcode-preview>`) adapter (#149, upstream #178) — ACCEPTED (Option A: 5th thin package, after camera/theming)
 
 - **Option A (recommended):** a fourth thin adapter package
   (`@chestnutlabs/gcode-preview-element`) — a Web Component bridging `gcode-preview-core`, attributes
@@ -112,7 +136,7 @@ The most API-heavy: a **supported** surface for background, lighting, grid/bed s
   the controller) but **only after the theming/camera options land**, so it inherits the full option
   surface.
 
-### 4.6 D6 — Multi-gcode single-scene preview (#151, upstream #186)
+### 4.6 D6 — Multi-gcode single-scene preview (#151, upstream #186) — ACCEPTED (Option B: document the workaround; multi-model deferred)
 
 The heaviest change: render **multiple IRs in one scene** (compare/overlay, multi-job plate).
 
@@ -126,7 +150,7 @@ The heaviest change: render **multiple IRs in one scene** (compare/overlay, mult
 - **Recommendation:** **Option B for E9's first pass** (document the workaround), promote to Option A
   only on real demand — it is the one item here with a genuinely large blast radius on DD-004.
 
-### 4.7 D7 — Epic scope & sequencing
+### 4.7 D7 — Epic scope & sequencing — ACCEPTED (Option A: open E9, cheapest-first)
 
 - **Option A (recommended):** open **E9 — Toolpath Annotations & Renderer Options** owning
   #147/#148/#150/#153/#149, milestone Future, sequenced cheapest-first (§14). #151 stays deferred
@@ -198,7 +222,7 @@ DD exists: these touch public contracts and the parity/boundary rules).
 
 ## 15. Acceptance criteria
 
-- [ ] D1–D7 decided by the maintainer and recorded verbatim; DD marked Accepted
+- [x] D1–D7 decided by the maintainer and recorded verbatim; DD marked Accepted (2026-07-23, all as recommended)
 - [ ] **E9** opened with phased issues per §14 (adjusted to decisions)
 - [ ] Each shipped feature: additive/opt-in, capability-honest, tested; #149 passes the shared
       behavioral suite and joins the lockstep version line + pack/publint gates
@@ -209,3 +233,4 @@ DD exists: these touch public contracts and the parity/boundary rules).
 | Date | Decision | By |
 |---|---|---|
 | 2026-07-23 | DD-009 drafted as Proposed; D1–D7 open. Grouped from the epic-#8 upstream triage after the maintainer chose the DD path for #147–#151/#153 | Chestnut Labs |
+| 2026-07-23 | **Accepted — D1–D7 all adopted as recommended** ("approve with recommendations, D1–D7"). E9 opened; #147/#148/#149/#150/#153 sequenced cheapest-first; #151 = documented workaround (deferred); #152 remains gated on #118; motion fixes #155–#158 remain a separate DD | Maintainer |
