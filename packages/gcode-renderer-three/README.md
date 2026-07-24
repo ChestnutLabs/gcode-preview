@@ -13,6 +13,10 @@ G-code Preview stack (design: DD-004, live-progress overlay: DD-006).
 - Per-file build plates (`setBuildVolume`, mismatch events, consumer-wins precedence)
 - DD-006 live-progress overlay: completed cut + translucent remaining-path ghost + always-on-top
   marker (byte-exact) or uncertainty band (approximate); user scrub always wins
+- Opt-in retraction/deretraction markers (`setShowRetractions`) — warm = retract, cool = unretract,
+  clipped by the same layer/scrub window; capability-honest (shown only when the IR carries events)
+
+![Retraction (orange) and unretraction (cyan) markers on object boundaries](https://raw.githubusercontent.com/ChestnutLabs/gcode-preview/dev/docs/media/retraction-markers.png)
 - Time-budgeted build ticks (rAF with a timeout backstop — works when rAF is suspended or absent),
   WebGL context-loss rebuild, injectable GL backend and frame scheduler (testable & headless-shaped)
 

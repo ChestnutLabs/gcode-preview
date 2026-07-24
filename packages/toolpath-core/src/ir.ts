@@ -137,6 +137,25 @@ export interface ObjectInfo {
   name?: string;
 }
 
+/**
+ * A filament retraction (`retract`) or its reversal (`unretract`) — an E-only move
+ * with no XYZ travel, so it has a *position* but no segment in the main stream
+ * (DD-009 D1 amendment, #148). Kept in a sparse side channel so segment indices,
+ * scrub, and layer ranges are untouched. `segIndex` is the index of the next
+ * segment emitted after the event, for layer/scrub-aligned marker clipping.
+ */
+export interface RetractionEvent {
+  /** Position (same frame as segments: origin-relative). */
+  x: number;
+  y: number;
+  z: number;
+  kind: 'retract' | 'unretract';
+  /** Byte offset in the source for scrub/telemetry alignment. */
+  srcByte: number;
+  /** Segment index at the moment of the event (draw-range clip alignment). */
+  segIndex: number;
+}
+
 export interface ToolpathBounds {
   min: Vec3;
   max: Vec3;
@@ -154,6 +173,8 @@ export interface ToolpathIR {
   layers: ToolpathLayer[];
   tools: ToolInfo[];
   objects: ObjectInfo[];
+  /** Sparse retraction/unretraction events (DD-009 D1, #148); empty when none seen. */
+  retractions: RetractionEvent[];
   /** Bounds over extruding moves only. */
   bounds: ToolpathBounds;
   /** Bounds including travel moves. */

@@ -33,6 +33,8 @@ export const GcodePreview = defineComponent({
     /** Scrub cut (IR segment index); null shows everything up to the layer range. */
     scrub: { type: Number as PropType<number | null>, default: null },
     showTravel: { type: Boolean, default: true },
+    /** DD-009 D1 (#148): opt-in retraction/deretraction markers. */
+    showRetractions: { type: Boolean, default: false },
     /** DD-006 live progress observation; null hides the overlay. */
     progress: { type: Object as PropType<ProgressObservation | null>, default: null },
     /** Worker factory escape hatch (DD-005 slim/custom entries; D2). Factory form only —
@@ -145,6 +147,10 @@ export const GcodePreview = defineComponent({
     watch(
       () => props.showTravel,
       (visible) => preview.controls.setKindVisible('travel', visible)
+    );
+    watch(
+      () => props.showRetractions,
+      (visible) => preview.controls.setShowRetractions(visible)
     );
     watch(
       () => props.colorMode,

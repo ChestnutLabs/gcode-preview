@@ -282,6 +282,19 @@ export function createEngine(input: string | Uint8Array, opts: ParseOptions): En
   let truncatedAtByte: number | undefined;
   let currentSrcByte = 0;
 
+  // Retraction/unretraction events (DD-009 D1, #148): E-only moves emit no segment,
+  // so their position is captured here in ABSOLUTE coords and rebased to the origin
+  // at IR assembly (mirroring segment positions). Physical convention: E<0 pulls
+  // filament back = 'retract'; E>0 (no XYZ) pushes it out = 'unretract'.
+  const retractionEvents: {
+    x: number;
+    y: number;
+    z: number;
+    kind: 'retract' | 'unretract';
+    srcByte: number;
+    segIndex: number;
+  }[] = [];
+
   const emitSegment = (x: number, y: number, z: number, eDelta: number, kind: number): boolean => {
     if (writer.count >= limits.maxSegments) {
       stopReason = {
@@ -407,7 +420,16 @@ export function createEngine(input: string | Uint8Array, opts: ParseOptions): En
       if (e > 0) stats.retractions++;
       else if (e < 0) stats.deretractions++;
       else if (f !== undefined) stats.feedrateChanges++;
-      else stats.others++;
+      if (e !== undefined && e !== 0) {
+        retractionEvents.push({
+          x: sx,
+          y: sy,
+          z: sz,
+          kind: e < 0 ? 'retract' : 'unretract',
+          srcByte: currentSrcByte,
+          segIndex: writer.count
+        });
+      } else stats.others++;
       if (f !== undefined) modalFeed = f;
       return true;
     }
@@ -596,7 +618,8 @@ export function createEngine(input: string | Uint8Array, opts: ParseOptions): En
       feedrate: 'known',
       sourcePositions: 'known',
       featureRoles: 'unavailable',
-      objects: 'unavailable'
+      objects: 'unavailable',
+      retractions: retractionEvents.length > 0 ? 'known' : 'unavailable'
     };
 
     if (layersCapability === 'unavailable') {
@@ -626,6 +649,14 @@ export function createEngine(input: string | Uint8Array, opts: ParseOptions): En
       layers: irLayers,
       tools,
       objects: [],
+      retractions: retractionEvents.map((r) => ({
+        x: r.x - ox,
+        y: r.y - oy,
+        z: r.z - oz,
+        kind: r.kind,
+        srcByte: r.srcByte,
+        segIndex: r.segIndex
+      })),
       bounds,
       boundsWithTravel,
       sourceIndex
@@ -681,13 +712,15 @@ export function createEngine(input: string | Uint8Array, opts: ParseOptions): En
           feedrate: 'known',
           sourcePositions: 'unavailable', // no per-slice source index is built
           featureRoles: 'unavailable',
-          objects: 'unavailable'
+          objects: 'unavailable',
+          retractions: 'unavailable' // markers resolve on the final IR, not on preview slices
         }
       },
       segments: channels,
       layers: channels.count > 0 ? [{ z: lastZ, segStart: 0, segEnd: channels.count - 1 }] : [],
       tools: [...toolsSeen].sort((a, b) => a - b).map((id) => ({ id })),
       objects: [],
+      retractions: [],
       bounds,
       boundsWithTravel,
       sourceIndex: { byteOffsets: new Uint32Array(0), segmentIndices: new Uint32Array(0) }

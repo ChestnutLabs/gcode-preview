@@ -71,10 +71,20 @@ impact.
 Marked **D1–D7**; each lists options with a recommendation. §14's phased plan assumes the
 recommendations.
 
-### 4.1 D1 — Retraction / deretraction visualization (#148, upstream #223) — ACCEPTED (Option A: opt-in renderer marker)
+### 4.1 D1 — Retraction / deretraction visualization (#148, upstream #223) — ACCEPTED (Option A: opt-in renderer marker) · AMENDED at implementation
 
-Cheapest of the set: the IR **already records** `Retract`/`Unretract` move kinds (E2); only a
-renderer presentation is missing.
+> **Amendment (2026-07-24, maintainer-approved).** D1 was accepted on the premise that "the IR
+> already records `Retract`/`Unretract` move kinds; only a renderer presentation is missing." That
+> premise was **wrong**: the parser emits **no segment** for an E-only retraction (verified) — the
+> `MoveKind.Retract`/`Unretract` flags are never set; retractions existed only as `stats` counters,
+> with no position. Delivering #148 therefore required a small, additive **IR change**: a sparse
+> **`retractions` events channel** (`{ x, y, z, kind, srcByte, segIndex }`, origin-relative, kept
+> **out** of the main segment stream so segment indices, scrub, and layer ranges are untouched).
+> Schema stays v1 (additive, always-populated); capability `retractions: 'known' | 'unavailable'`.
+> The renderer reads that channel for the opt-in marker layer. Everything else in Option A stands.
+
+Original premise (corrected above): "the IR already records `Retract`/`Unretract` move kinds (E2);
+only a renderer presentation is missing."
 
 - **Option A (recommended):** an opt-in renderer marker layer in `gcode-renderer-three` — small
   always-on-top glyphs at retract/deretract transitions (reuse the DD-006 marker material pattern),

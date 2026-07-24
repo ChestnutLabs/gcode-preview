@@ -104,6 +104,8 @@ export interface GcodePreviewControls {
   setLayerRange(startLayer: number, endLayer: number): void;
   setScrubPosition(segIndex: number | null): void;
   setKindVisible(kind: 'extrude' | 'travel', visible: boolean): void;
+  /** Opt-in retraction/deretraction markers (DD-009 D1, #148). Off by default. */
+  setShowRetractions(visible: boolean): void;
   setColorMode(mode: ColorMode): boolean;
   setQuality(quality: QualityMode | 'auto'): void;
   /** Marks the volume consumer-configured: file-discovered geometry stops auto-applying. */
@@ -330,6 +332,7 @@ export function createPreviewController(options: PreviewControllerOptions = {}):
     setLayerRange: (a, b) => renderer?.setLayerRange(a, b),
     setScrubPosition: (s) => renderer?.setScrubPosition(s),
     setKindVisible: (k, v) => renderer?.setKindVisible(k, v),
+    setShowRetractions: (v) => renderer?.setShowRetractions(v),
     setColorMode: (m) => renderer?.setColorMode(m) ?? false,
     setQuality: (q) => renderer?.setQuality(q),
     setBuildVolume: (def) => {
