@@ -1,7 +1,6 @@
 {
   "name": "@chestnutlabs/gcode-renderer-three",
   "version": "0.1.0",
-  "private": true,
   "description": "Three.js toolpath renderer consuming ToolpathIR (DD-004). Phases 1-2: geometry builders + scene/lifecycle.",
   "keywords": [
     "gcode",
