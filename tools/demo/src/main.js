@@ -89,6 +89,7 @@ function setStatus(text, isError = false) {
 function colorModeFor(kind) {
   if (kind === 'tool') return { mode: 'tool', palette: TOOL_PALETTE, fallback: [0.7, 0.7, 0.7] };
   if (kind === 'feature') return { mode: 'feature', palette: FEATURE_PALETTE, fallback: [0.55, 0.55, 0.55] };
+  if (kind === 'colorChange') return { mode: 'colorChange', palette: TOOL_PALETTE, fallback: [0.55, 0.55, 0.55] };
   return { mode: 'single', color: [0.9, 0.4, 0.7] };
 }
 
@@ -136,6 +137,16 @@ function enableControls(ir) {
     ? 'By feature role'
     : `By feature role (unavailable: featureRoles = ${ir.header.capabilities.featureRoles ?? 'unknown'})`;
   if (!featureOk && els.colorMode.value === 'feature') {
+    els.colorMode.value = 'single';
+  }
+  // M600 color-change coloring (#147): only offered when the IR actually saw an M600.
+  const ccOpt = els.colorMode.querySelector('option[value="colorChange"]');
+  const ccOk = renderer.isColorModeAvailable('colorChange');
+  ccOpt.disabled = !ccOk;
+  ccOpt.textContent = ccOk
+    ? 'By color change (M600)'
+    : `By color change (unavailable: colorChanges = ${ir.header.capabilities.colorChanges ?? 'unknown'})`;
+  if (!ccOk && els.colorMode.value === 'colorChange') {
     els.colorMode.value = 'single';
   }
   renderer.setColorMode(colorModeFor(els.colorMode.value));

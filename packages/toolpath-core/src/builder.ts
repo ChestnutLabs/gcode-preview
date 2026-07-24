@@ -1,5 +1,6 @@
 import {
   IR_SCHEMA_VERSION,
+  type ColorChangeEvent,
   type Confidence,
   type ObjectInfo,
   type RetractionEvent,
@@ -76,6 +77,7 @@ export class ToolpathIRBuilder {
   private readonly toolsMap = new Map<number, ToolInfo>();
   private readonly objectsList: ObjectInfo[] = [];
   private readonly retractionsList: RetractionEvent[] = [];
+  private readonly colorChangesList: ColorChangeEvent[] = [];
   private readonly warnings: Warning[] = [];
   private readonly capabilities: Record<string, Confidence> = {};
 
@@ -125,6 +127,19 @@ export class ToolpathIRBuilder {
       kind: r.kind,
       srcByte: r.srcByte,
       segIndex: r.segIndex
+    });
+  }
+
+  /** Record an M600 color-change boundary (DD-009 D2, #147). Position is absolute; stored origin-relative. */
+  addColorChange(c: { x: number; y: number; z: number; segIndex: number; srcByte: number; tool: number }): void {
+    const o = this.originOffset ?? { x: 0, y: 0, z: 0 };
+    this.colorChangesList.push({
+      x: c.x - o.x,
+      y: c.y - o.y,
+      z: c.z - o.z,
+      segIndex: c.segIndex,
+      srcByte: c.srcByte,
+      tool: c.tool
     });
   }
 
@@ -195,6 +210,7 @@ export class ToolpathIRBuilder {
       tools,
       objects: this.objectsList,
       retractions: this.retractionsList,
+      colorChanges: this.colorChangesList,
       bounds,
       boundsWithTravel,
       sourceIndex

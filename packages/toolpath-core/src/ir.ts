@@ -156,6 +156,26 @@ export interface RetractionEvent {
   segIndex: number;
 }
 
+/**
+ * A manual filament-swap color boundary (`M600`) — a marker with a *position* but
+ * no motion segment (DD-009 D2 amendment, #147). Like {@link RetractionEvent} it is
+ * kept in a sparse side channel so segment indices, scrub, and layer ranges are
+ * untouched. The renderer's `colorChange` color mode shades segments by *swap slot*
+ * (the count of color changes at or before a segment), NOT by the `tool` channel.
+ */
+export interface ColorChangeEvent {
+  /** Position (same frame as segments: origin-relative). */
+  x: number;
+  y: number;
+  z: number;
+  /** Index of the first segment emitted after the swap (slot boundary + marker clip). */
+  segIndex: number;
+  /** Byte offset in the source for scrub/telemetry alignment. */
+  srcByte: number;
+  /** Tool active at the swap — provenance only; not used to pick the swap color. */
+  tool: number;
+}
+
 export interface ToolpathBounds {
   min: Vec3;
   max: Vec3;
@@ -175,6 +195,8 @@ export interface ToolpathIR {
   objects: ObjectInfo[];
   /** Sparse retraction/unretraction events (DD-009 D1, #148); empty when none seen. */
   retractions: RetractionEvent[];
+  /** Sparse M600 filament-swap color-change boundaries (DD-009 D2, #147); empty when none seen. */
+  colorChanges: ColorChangeEvent[];
   /** Bounds over extruding moves only. */
   bounds: ToolpathBounds;
   /** Bounds including travel moves. */

@@ -14,7 +14,8 @@
     "sourcePositions": "known",
     "featureRoles": "unavailable",
     "objects": "unavailable",
-    "retractions": "known"
+    "retractions": "known",
+    "colorChanges": "unavailable"
   },
   "warningCodes": [
     "layers-partially-inferred",

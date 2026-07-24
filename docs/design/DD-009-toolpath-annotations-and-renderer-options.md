@@ -94,7 +94,24 @@ only a renderer presentation is missing."
   confused with feature coloring. Rejected as the default.
 - **Contract impact:** additive renderer option + one adapter prop across the four adapters.
 
-### 4.2 D2 — M600 filament-swap color-change annotation (#147, upstream #152) — ACCEPTED (Option A + dedicated color-change channel)
+### 4.2 D2 — M600 filament-swap color-change annotation (#147, upstream #152) — ACCEPTED (Option A + dedicated color-change channel) · AMENDED at implementation
+
+> **Amendment (2026-07-24, maintainer-approved).** D2 was accepted as "annotate in the **dialect
+> layer** via a dedicated color-change channel." At implementation the *dialect-layer* location was
+> found to undercut D2's own capability-honesty goal ("`known` when `M600` is seen"): the dialect
+> layer only runs when a dialect is **detected**, so a bare `M600` in a file with no `;FLAVOR`/slicer
+> header would be silently dropped. `M600` is firmware-universal — the parser already lexes it and
+> today discards it as `unsupported-command`. **Detection is therefore moved to the parser**
+> (`gcode-parser`, one `case 'm600':`), and the "dedicated color-change channel" is realized as a
+> sparse **`colorChanges` events channel** on `ToolpathIR` (`{ x, y, z, segIndex, srcByte, tool }`,
+> origin-relative, kept **out** of the segment stream so segment indices, scrub, and layer ranges are
+> untouched) — the exact pattern established by the **D1 amendment** for retractions. Schema stays v1
+> (additive); capability `colorChanges: 'known' | 'unavailable'` (`known` whenever any `M600` is seen,
+> dialect or not). The renderer reuses its integer-index-into-palette coloring, keyed on the **swap
+> slot** (count of prior `M600`s), *not* the `tool` channel — so the "not the tool channel" and
+> "renderer reuses by-tool coloring" substance of D2 stands. Filament-color enrichment from a detected
+> dialect (PrusaSlicer `filament_colour`, AMS colors) remains a natural additive follow-up in the
+> dialect layer.
 
 A manual filament swap (`M600`) is a **color boundary** for a multi-material preview.
 
@@ -244,3 +261,5 @@ DD exists: these touch public contracts and the parity/boundary rules).
 |---|---|---|
 | 2026-07-23 | DD-009 drafted as Proposed; D1–D7 open. Grouped from the epic-#8 upstream triage after the maintainer chose the DD path for #147–#151/#153 | Chestnut Labs |
 | 2026-07-23 | **Accepted — D1–D7 all adopted as recommended** ("approve with recommendations, D1–D7"). E9 opened; #147/#148/#149/#150/#153 sequenced cheapest-first; #151 = documented workaround (deferred); #152 remains gated on #118; motion fixes #155–#158 remain a separate DD | Maintainer |
+| 2026-07-24 | **D1 amended at implementation** (see §4.1): the accepted "no IR change" premise was wrong (E-only retractions emit no segment); added an additive sparse `retractions` events channel + `retractions` capability. Everything else in D1 Option A stands | Maintainer |
+| 2026-07-24 | **D2 amended at implementation** (see §4.2): detection moved from the dialect layer to the **parser** (dialect-layer detection only fires when a dialect is detected, silently dropping bare `M600`s and undercutting D2's "`known` when M600 is seen" goal); the dedicated channel is realized as a sparse `colorChanges` events channel + `colorChanges` capability (mirrors the D1 pattern). "Not the tool channel" + renderer palette reuse (keyed on swap slot) stand | Maintainer |
