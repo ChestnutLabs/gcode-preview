@@ -21,6 +21,7 @@ import {
 import {
   ToolpathRenderer,
   type BuildVolumeDef,
+  type CameraMode,
   type ColorMode,
   type GLRendererLike,
   type ProgressPresentationMode,
@@ -61,6 +62,8 @@ export interface PreviewControllerOptions {
   renderer?: {
     buildVolume?: BuildVolumeDef;
     quality?: QualityMode | 'auto';
+    /** Camera projection (#150, DD-009 D3); default 'perspective'. */
+    cameraMode?: CameraMode;
     colorMode?: ColorMode;
     tube?: TubeOptions;
     /** Advanced/test injectables — pass-throughs of the renderer's own contract. */
@@ -108,6 +111,8 @@ export interface GcodePreviewControls {
   setShowRetractions(visible: boolean): void;
   setColorMode(mode: ColorMode): boolean;
   setQuality(quality: QualityMode | 'auto'): void;
+  /** Switch camera projection (#150, DD-009 D3). */
+  setCameraMode(mode: CameraMode): void;
   /** Marks the volume consumer-configured: file-discovered geometry stops auto-applying. */
   setBuildVolume(def: BuildVolumeDef | MachineGeometry): void;
   frame(): void;
@@ -228,6 +233,7 @@ export function createPreviewController(options: PreviewControllerOptions = {}):
       canvas,
       buildVolume: r.buildVolume,
       quality: r.quality ?? 'auto',
+      cameraMode: r.cameraMode,
       colorMode: r.colorMode,
       tube: r.tube,
       createRenderer: r.createRenderer,
@@ -335,6 +341,7 @@ export function createPreviewController(options: PreviewControllerOptions = {}):
     setShowRetractions: (v) => renderer?.setShowRetractions(v),
     setColorMode: (m) => renderer?.setColorMode(m) ?? false,
     setQuality: (q) => renderer?.setQuality(q),
+    setCameraMode: (m) => renderer?.setCameraMode(m),
     setBuildVolume: (def) => {
       consumerVolumeSet = true;
       renderer?.setBuildVolume(def);

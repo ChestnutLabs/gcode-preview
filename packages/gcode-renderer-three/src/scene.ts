@@ -22,6 +22,7 @@
 import {
   BufferAttribute,
   BufferGeometry,
+  type Camera,
   DirectionalLight,
   Group,
   HemisphereLight,
@@ -30,6 +31,7 @@ import {
   Mesh,
   MeshBasicMaterial,
   MeshLambertMaterial,
+  OrthographicCamera,
   PerspectiveCamera,
   Points,
   PointsMaterial,
@@ -48,6 +50,13 @@ import { buildTubeChunk, TUBES_AUTO_MAX_SEGMENTS, type TubeOptions } from './tub
 
 /** §4.3 quality tiers. `auto` picks by segment count (chooseQuality). */
 export type QualityMode = 'lines' | 'tubes';
+
+/**
+ * Camera projection (#150, DD-009 D3). `perspective` is the default interactive
+ * view; `orthographic` gives parallel-projection technical/dimensional views.
+ * Switching preserves the view direction, target, and apparent framing.
+ */
+export type CameraMode = 'perspective' | 'orthographic';
 
 /** §4.3 `auto` decision, exported for tests and consumers. */
 export function chooseQuality(requested: QualityMode | 'auto', totalSegments: number): QualityMode {
@@ -83,7 +92,9 @@ export type RenderTargetCanvas = HTMLCanvasElement | OffscreenCanvas;
 
 /** Minimal surface of WebGLRenderer the scene layer uses — injectable for tests. */
 export interface GLRendererLike {
-  render(scene: Scene, camera: PerspectiveCamera): void;
+  // Base `Camera`, not `PerspectiveCamera`: the active camera may be either
+  // projection (#150). Every stub GL ignores the arg, so this only widens types.
+  render(scene: Scene, camera: Camera): void;
   setSize(width: number, height: number, updateStyle?: boolean): void;
   setPixelRatio?(ratio: number): void;
   dispose(): void;
@@ -102,6 +113,8 @@ export interface ToolpathRendererOptions {
   colorMode?: ColorMode;
   /** §4.3 quality tier; 'auto' (default) picks tubes ≤ 1 M segments, else lines. */
   quality?: QualityMode | 'auto';
+  /** Camera projection (#150, DD-009 D3); default 'perspective'. */
+  cameraMode?: CameraMode;
   /** Tube profile parameters (tubes mode only). */
   tube?: TubeOptions;
   /**
@@ -167,7 +180,17 @@ export class ToolpathRenderer {
   private readonly toolpathGroup = new Group();
   private volumeGroup: Group | null = null;
   private volumeDef: BuildVolumeDef | null = null;
-  readonly camera: PerspectiveCamera;
+  // Two persistent cameras sharing one pose (#150); only the projection differs.
+  // `activeCamera` is the one currently rendered/orbited; the public `camera`
+  // getter returns it as the union (external readers must not assume a `.fov`).
+  private readonly perspectiveCamera: PerspectiveCamera;
+  private readonly orthographicCamera: OrthographicCamera;
+  private activeCamera: PerspectiveCamera | OrthographicCamera;
+  private cameraModeState: CameraMode;
+  /** Viewport aspect (w/h), tracked so both projections resize consistently. */
+  private aspect = 1;
+  /** Vertical half-height the camera frames, set by frame(); sizes the ortho frustum. */
+  private viewHalfHeight = 100;
   private controls: OrbitControls | null = null;
 
   private ir: ToolpathIR | null = null;
@@ -293,14 +316,21 @@ export class ToolpathRenderer {
       this.root.add(this.volumeGroup);
     }
 
-    this.camera = new PerspectiveCamera(50, 1, 0.1, 10000);
-    this.camera.position.set(-100, 200, 250);
+    // Both cameras exist for the renderer's lifetime; frame()/setCameraMode keep
+    // their pose in sync so toggling projection never jumps the view (#150). The
+    // ortho frustum is a placeholder until frame()/resize size it from bounds+aspect.
+    this.perspectiveCamera = new PerspectiveCamera(50, 1, 0.1, 10000);
+    this.perspectiveCamera.position.set(-100, 200, 250);
+    this.orthographicCamera = new OrthographicCamera(-1, 1, 1, -1, 0.1, 10000);
+    this.orthographicCamera.position.set(-100, 200, 250);
+    this.cameraModeState = opts.cameraMode ?? 'perspective';
+    this.activeCamera = this.cameraModeState === 'orthographic' ? this.orthographicCamera : this.perspectiveCamera;
     const domEl = this.gl.domElement;
     // OrbitControls needs a real DOM element; an OffscreenCanvas (headless
     // still-render, #132) has no pointer events, so there is nothing to orbit.
     if (isHtmlCanvas(domEl)) {
       try {
-        this.controls = new OrbitControls(this.camera, domEl);
+        this.controls = new OrbitControls(this.activeCamera, domEl);
         this.controls.addEventListener('change', () => this.render());
       } catch {
         this.controls = null; // headless hosts without full DOM events
@@ -312,6 +342,20 @@ export class ToolpathRenderer {
     this.canvas.addEventListener('webglcontextlost', this.onContextLost);
     this.canvas.addEventListener('webglcontextrestored', this.onContextRestored);
     this.frame(); // sensible initial view (bed-centered until an IR arrives)
+  }
+
+  /**
+   * The camera currently rendered/orbited (#150). Its concrete type follows
+   * `cameraMode`, so external readers must treat it as the union — only
+   * perspective cameras carry `.fov` (guard writes on `cameraMode`).
+   */
+  get camera(): PerspectiveCamera | OrthographicCamera {
+    return this.activeCamera;
+  }
+
+  /** The active camera projection (#150). */
+  get cameraMode(): CameraMode {
+    return this.cameraModeState;
   }
 
   onEvent(cb: (e: RendererEvent) => void): () => void {
@@ -870,6 +914,46 @@ export class ToolpathRenderer {
     return this.presentationMode;
   }
 
+  /**
+   * Size both projections from the tracked aspect + framed half-height (#150).
+   * Perspective keeps a fixed vertical fov and only consumes the aspect; ortho
+   * keeps the vertical extent fixed and widens horizontally by aspect — so neither
+   * a resize nor a projection toggle stretches or rescales the model.
+   */
+  private updateCameraProjection(): void {
+    this.perspectiveCamera.aspect = this.aspect;
+    this.perspectiveCamera.updateProjectionMatrix();
+    const h = this.viewHalfHeight;
+    const w = h * this.aspect;
+    this.orthographicCamera.left = -w;
+    this.orthographicCamera.right = w;
+    this.orthographicCamera.top = h;
+    this.orthographicCamera.bottom = -h;
+    this.orthographicCamera.updateProjectionMatrix();
+  }
+
+  /**
+   * Switch the camera projection (#150, DD-009 D3). The pose (position/orientation)
+   * is copied to the incoming camera so the view never jumps, OrbitControls is
+   * reattached to it, and its frustum is re-sized before the next render.
+   */
+  setCameraMode(mode: CameraMode): void {
+    if (this.disposed || mode === this.cameraModeState) return;
+    const prev = this.activeCamera;
+    const next = mode === 'orthographic' ? this.orthographicCamera : this.perspectiveCamera;
+    next.position.copy(prev.position);
+    next.quaternion.copy(prev.quaternion);
+    next.up.copy(prev.up);
+    this.cameraModeState = mode;
+    this.activeCamera = next;
+    this.updateCameraProjection();
+    if (this.controls) {
+      this.controls.object = next;
+      this.controls.update();
+    }
+    this.render();
+  }
+
   /** Fit the camera to the toolpath bounds (falls back to the build volume). */
   frame(): void {
     if (this.disposed) return;
@@ -891,8 +975,14 @@ export class ToolpathRenderer {
     }
     // Printer coords → scene coords through the root rotation (x, z, -y).
     const target = new Vector3(center.x, center.z, -center.y);
-    this.camera.position.set(target.x - radius * 1.2, target.y + radius * 1.6, target.z + radius * 1.8);
-    this.camera.lookAt(target);
+    // The perspective offset magnitude is ≈2.69·radius at fov 50°, so the visible
+    // half-height at the target plane is ≈2.69·radius·tan(25°) ≈ 1.25·radius; the
+    // ortho frustum uses the same half-height so toggling projection keeps the
+    // model the same apparent size (#150).
+    this.viewHalfHeight = radius * 1.25;
+    this.activeCamera.position.set(target.x - radius * 1.2, target.y + radius * 1.6, target.z + radius * 1.8);
+    this.activeCamera.lookAt(target);
+    this.updateCameraProjection();
     if (this.controls) {
       this.controls.target.copy(target);
       this.controls.update();
@@ -931,15 +1021,15 @@ export class ToolpathRenderer {
 
   resize(width: number, height: number): void {
     if (this.disposed) return;
-    this.camera.aspect = width / Math.max(1, height);
-    this.camera.updateProjectionMatrix();
+    this.aspect = width / Math.max(1, height);
+    this.updateCameraProjection();
     this.gl.setSize(width, height, false);
     this.render();
   }
 
   render(): void {
     if (this.disposed || this.contextLost) return;
-    this.gl.render(this.scene, this.camera);
+    this.gl.render(this.scene, this.activeCamera);
   }
 
   /**

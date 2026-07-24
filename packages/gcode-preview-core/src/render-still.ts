@@ -23,6 +23,7 @@ import {
   ToolpathRenderer,
   machineToVolume,
   type BuildVolumeDef,
+  type CameraMode,
   type ColorMode,
   type GLRendererLike,
   type QualityMode,
@@ -47,6 +48,8 @@ export interface RenderStillOptions {
   height?: number;
   /** Quality tier (default 'auto': tubes ≤ 1 M segments, else lines). */
   quality?: QualityMode | 'auto';
+  /** Camera projection (#150, DD-009 D3); default 'perspective'. */
+  cameraMode?: CameraMode;
   colorMode?: ColorMode;
   tube?: TubeOptions;
   /** Bed geometry — a renderer volume or discovered MachineGeometry. */
@@ -128,6 +131,7 @@ export async function renderStill(
   const renderer = new ToolpathRenderer({
     canvas,
     quality: options.quality ?? 'auto',
+    ...(options.cameraMode ? { cameraMode: options.cameraMode } : {}),
     ...(options.colorMode ? { colorMode: options.colorMode } : {}),
     ...(options.tube ? { tube: options.tube } : {}),
     ...(options.buildVolume ? { buildVolume: toVolume(options.buildVolume) } : {}),
@@ -163,9 +167,14 @@ export async function renderStill(
 
     const pose = options.camera;
     if (pose) {
-      if (pose.fov !== undefined) {
-        renderer.camera.fov = pose.fov;
-        renderer.camera.updateProjectionMatrix();
+      // `fov` only applies to the perspective projection; on an orthographic camera
+      // it is meaningless and absent from the union type. Ortho frustum sizing already
+      // happened in setIR()→frame() from the model bounds. Structural cast keeps this
+      // module free of a direct `three` import (three is the renderer's peer dep).
+      if (pose.fov !== undefined && (options.cameraMode ?? 'perspective') === 'perspective') {
+        const cam = renderer.camera as { fov: number; updateProjectionMatrix(): void };
+        cam.fov = pose.fov;
+        cam.updateProjectionMatrix();
       }
       renderer.camera.position.set(pose.position[0], pose.position[1], pose.position[2]);
       renderer.camera.lookAt(pose.target[0], pose.target[1], pose.target[2]);

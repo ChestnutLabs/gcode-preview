@@ -20,6 +20,8 @@
   /** Consumer-configured volume — wins over file-discovered geometry (DD-005). */
   export let buildVolume = undefined;
   export let quality = 'auto';
+  /** #150 (DD-009 D3): camera projection ('perspective' | 'orthographic'). */
+  export let cameraMode = 'perspective';
   export let colorMode = undefined;
   export let tube = undefined;
   /** Inclusive [start, end]; null shows every layer. */
@@ -45,6 +47,7 @@
     renderer: {
       buildVolume: isMachine ? undefined : buildVolume,
       quality,
+      cameraMode,
       colorMode,
       tube,
       ...rendererOptions
@@ -103,6 +106,7 @@
   $: preview.controls.setShowRetractions(showRetractions);
   $: if (colorMode !== undefined) preview.controls.setColorMode(colorMode);
   $: preview.controls.setQuality(quality);
+  $: preview.controls.setCameraMode(cameraMode);
   $: if (progress === null || progress === undefined) preview.clearProgress();
   else preview.observeProgress(progress);
 

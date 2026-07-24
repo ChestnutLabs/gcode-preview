@@ -97,6 +97,29 @@ describe('renderStill (#132)', () => {
     expect(counting.renders()).toBeGreaterThan(0);
   });
 
+  it('renders with an orthographic camera (#150)', async () => {
+    const counting = makeCountingGL();
+    const result = await renderStill(makeTestIR(), {
+      canvas: makeStubCanvas(),
+      cameraMode: 'orthographic',
+      createRenderer: counting.gl
+    });
+    expect(result.segmentCount).toBe(12);
+    expect(counting.renders()).toBeGreaterThan(0);
+  });
+
+  it('ignores a pose fov on an orthographic camera without throwing (#150 fov guard)', async () => {
+    const counting = makeCountingGL();
+    const result = await renderStill(makeTestIR(), {
+      canvas: makeStubCanvas(),
+      cameraMode: 'orthographic',
+      camera: { position: [10, 20, 30], target: [0, 0, 0], fov: 35 },
+      createRenderer: counting.gl
+    });
+    expect(result.segmentCount).toBe(12);
+    expect(counting.renders()).toBeGreaterThan(0);
+  });
+
   it('applies layer-range and scrub clips', async () => {
     const counting = makeCountingGL();
     // Should complete without error; the clip calls exercise the renderer paths.
