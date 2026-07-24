@@ -1,7 +1,6 @@
 {
   "name": "@chestnutlabs/gcode-preview-svelte",
   "version": "0.1.0",
-  "private": true,
   "description": "Thin Svelte integration for the Chestnut Labs G-code viewer (DD-007 D1 amendment): createGcodePreview store/action API + GcodePreview component as a reactivity bridge over @chestnutlabs/gcode-preview-core.",
   "keywords": [
     "gcode",
