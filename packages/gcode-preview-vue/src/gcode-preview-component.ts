@@ -10,7 +10,13 @@
  * and staying pure TypeScript keeps the package on the plain tsc build with typed props/emits.
  */
 import { defineComponent, h, onMounted, ref, watch, type PropType } from 'vue';
-import type { BuildVolumeDef, ColorMode, QualityMode, TubeOptions } from '@chestnutlabs/gcode-renderer-three';
+import type {
+  BuildVolumeDef,
+  CameraMode,
+  ColorMode,
+  QualityMode,
+  TubeOptions
+} from '@chestnutlabs/gcode-renderer-three';
 import type { MachineGeometry, ProgressObservation } from '@chestnutlabs/toolpath-core';
 import type { WireParseOptions, WorkerLike } from '@chestnutlabs/gcode-parser';
 import { useGcodePreview, type PreviewEvent, type UseGcodePreviewOptions } from './use-gcode-preview.js';
@@ -26,6 +32,8 @@ export const GcodePreview = defineComponent({
     /** Consumer-configured volume — wins over file-discovered geometry (DD-005 precedence). */
     buildVolume: { type: Object as PropType<BuildVolumeDef | MachineGeometry>, default: undefined },
     quality: { type: String as PropType<QualityMode | 'auto'>, default: 'auto' },
+    /** #150 (DD-009 D3): camera projection. */
+    cameraMode: { type: String as PropType<CameraMode>, default: 'perspective' },
     colorMode: { type: Object as PropType<ColorMode>, default: undefined },
     tube: { type: Object as PropType<TubeOptions>, default: undefined },
     /** Inclusive [start, end]; null shows every layer. */
@@ -46,7 +54,10 @@ export const GcodePreview = defineComponent({
     /** Advanced/test renderer injectables (pass-throughs of the renderer contract). */
     rendererOptions: {
       type: Object as PropType<
-        Omit<NonNullable<UseGcodePreviewOptions['renderer']>, 'buildVolume' | 'quality' | 'colorMode' | 'tube'>
+        Omit<
+          NonNullable<UseGcodePreviewOptions['renderer']>,
+          'buildVolume' | 'quality' | 'cameraMode' | 'colorMode' | 'tube'
+        >
       >,
       default: undefined
     }
@@ -72,6 +83,7 @@ export const GcodePreview = defineComponent({
       renderer: {
         buildVolume: 'bed' in (props.buildVolume ?? {}) ? undefined : (props.buildVolume as BuildVolumeDef | undefined),
         quality: props.quality,
+        cameraMode: props.cameraMode,
         colorMode: props.colorMode,
         tube: props.tube,
         ...props.rendererOptions
@@ -161,6 +173,10 @@ export const GcodePreview = defineComponent({
     watch(
       () => props.quality,
       (quality) => preview.controls.setQuality(quality)
+    );
+    watch(
+      () => props.cameraMode,
+      (mode) => preview.controls.setCameraMode(mode)
     );
     watch(
       () => props.buildVolume,

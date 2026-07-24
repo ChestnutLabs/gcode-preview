@@ -52,6 +52,7 @@ const els = {
   retractions: $('retractions'),
   colorMode: $('colorMode'),
   quality: $('quality'),
+  cameraMode: $('cameraMode'),
   qualityNote: $('qualityNote'),
   frame: $('frame'),
   disclosure: $('disclosure'),
@@ -355,6 +356,7 @@ els.colorMode.addEventListener('change', () => {
   }
 });
 els.quality.addEventListener('change', () => renderer.setQuality(els.quality.value));
+els.cameraMode.addEventListener('change', () => renderer.setCameraMode(els.cameraMode.value));
 els.frame.addEventListener('click', () => renderer.frame());
 
 // App-level keyboard shortcuts (master plan §9.5); every control is also plain
@@ -376,7 +378,10 @@ window.addEventListener('keydown', (ev) => {
     els.travel.checked = !els.travel.checked;
     els.travel.dispatchEvent(new Event('change'));
   } else if (ev.key === 'f' && !els.frame.disabled) renderer.frame();
-  else return;
+  else if (ev.key === 'o') {
+    els.cameraMode.value = els.cameraMode.value === 'orthographic' ? 'perspective' : 'orthographic';
+    els.cameraMode.dispatchEvent(new Event('change'));
+  } else return;
   ev.preventDefault();
 });
 

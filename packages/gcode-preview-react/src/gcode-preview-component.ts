@@ -18,7 +18,13 @@ import {
   type ForwardedRef,
   type ReactElement
 } from 'react';
-import type { BuildVolumeDef, ColorMode, QualityMode, TubeOptions } from '@chestnutlabs/gcode-renderer-three';
+import type {
+  BuildVolumeDef,
+  CameraMode,
+  ColorMode,
+  QualityMode,
+  TubeOptions
+} from '@chestnutlabs/gcode-renderer-three';
 import type { MachineGeometry, ProgressObservation } from '@chestnutlabs/toolpath-core';
 import type { WireParseOptions, WorkerLike } from '@chestnutlabs/gcode-parser';
 import {
@@ -37,6 +43,8 @@ export interface GcodePreviewProps {
   /** Consumer-configured volume — wins over file-discovered geometry (DD-005 precedence). */
   buildVolume?: BuildVolumeDef | MachineGeometry;
   quality?: QualityMode | 'auto';
+  /** #150 (DD-009 D3): camera projection. */
+  cameraMode?: CameraMode;
   colorMode?: ColorMode;
   tube?: TubeOptions;
   /** Inclusive [start, end]; null/undefined shows every layer. */
@@ -53,7 +61,7 @@ export interface GcodePreviewProps {
   /** Advanced/test renderer injectables (pass-throughs of the renderer contract). */
   rendererOptions?: Omit<
     NonNullable<UseGcodePreviewOptions['renderer']>,
-    'buildVolume' | 'quality' | 'colorMode' | 'tube'
+    'buildVolume' | 'quality' | 'cameraMode' | 'colorMode' | 'tube'
   >;
   onReady?: (summary: { segments: number; layers: number; complete: boolean }) => void;
   onParseError?: (e: { code: string; message: string }) => void;
@@ -75,6 +83,7 @@ function GcodePreviewImpl(props: GcodePreviewProps, ref: ForwardedRef<GcodePrevi
     renderer: {
       buildVolume: isMachine ? undefined : (props.buildVolume as BuildVolumeDef | undefined),
       quality: props.quality ?? 'auto',
+      cameraMode: props.cameraMode ?? 'perspective',
       colorMode: props.colorMode,
       tube: props.tube,
       ...props.rendererOptions
@@ -128,7 +137,18 @@ function GcodePreviewImpl(props: GcodePreviewProps, ref: ForwardedRef<GcodePrevi
   }, []);
 
   // ---- prop wiring: each prop is a thin call into the hook (D1 shell rule) ----
-  const { source, layerRange, scrub, showTravel, showRetractions, colorMode, quality, buildVolume, progress } = props;
+  const {
+    source,
+    layerRange,
+    scrub,
+    showTravel,
+    showRetractions,
+    colorMode,
+    quality,
+    cameraMode,
+    buildVolume,
+    progress
+  } = props;
   useEffect(() => {
     if (source !== null && source !== undefined) void preview.parse(source, cbRef.current.parseOptions);
   }, [source]);
@@ -151,6 +171,9 @@ function GcodePreviewImpl(props: GcodePreviewProps, ref: ForwardedRef<GcodePrevi
   useEffect(() => {
     if (quality !== undefined) preview.controls.setQuality(quality);
   }, [quality]);
+  useEffect(() => {
+    if (cameraMode !== undefined) preview.controls.setCameraMode(cameraMode);
+  }, [cameraMode]);
   useEffect(() => {
     if (buildVolume !== undefined && 'bed' in buildVolume) preview.controls.setBuildVolume(buildVolume);
   }, [buildVolume]);
