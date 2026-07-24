@@ -23,6 +23,7 @@ import type {
   CameraMode,
   ColorMode,
   QualityMode,
+  Theme,
   TubeOptions
 } from '@chestnutlabs/gcode-renderer-three';
 import type { MachineGeometry, ProgressObservation } from '@chestnutlabs/toolpath-core';
@@ -45,6 +46,8 @@ export interface GcodePreviewProps {
   quality?: QualityMode | 'auto';
   /** #150 (DD-009 D3): camera projection. */
   cameraMode?: CameraMode;
+  /** #153 (DD-009 D4): bounded declarative theme. */
+  theme?: Theme;
   colorMode?: ColorMode;
   tube?: TubeOptions;
   /** Inclusive [start, end]; null/undefined shows every layer. */
@@ -61,7 +64,7 @@ export interface GcodePreviewProps {
   /** Advanced/test renderer injectables (pass-throughs of the renderer contract). */
   rendererOptions?: Omit<
     NonNullable<UseGcodePreviewOptions['renderer']>,
-    'buildVolume' | 'quality' | 'cameraMode' | 'colorMode' | 'tube'
+    'buildVolume' | 'quality' | 'cameraMode' | 'theme' | 'colorMode' | 'tube'
   >;
   onReady?: (summary: { segments: number; layers: number; complete: boolean }) => void;
   onParseError?: (e: { code: string; message: string }) => void;
@@ -84,6 +87,7 @@ function GcodePreviewImpl(props: GcodePreviewProps, ref: ForwardedRef<GcodePrevi
       buildVolume: isMachine ? undefined : (props.buildVolume as BuildVolumeDef | undefined),
       quality: props.quality ?? 'auto',
       cameraMode: props.cameraMode ?? 'perspective',
+      theme: props.theme,
       colorMode: props.colorMode,
       tube: props.tube,
       ...props.rendererOptions
@@ -146,6 +150,7 @@ function GcodePreviewImpl(props: GcodePreviewProps, ref: ForwardedRef<GcodePrevi
     colorMode,
     quality,
     cameraMode,
+    theme,
     buildVolume,
     progress
   } = props;
@@ -174,6 +179,9 @@ function GcodePreviewImpl(props: GcodePreviewProps, ref: ForwardedRef<GcodePrevi
   useEffect(() => {
     if (cameraMode !== undefined) preview.controls.setCameraMode(cameraMode);
   }, [cameraMode]);
+  useEffect(() => {
+    if (theme !== undefined) preview.controls.setTheme(theme);
+  }, [theme]);
   useEffect(() => {
     if (buildVolume !== undefined && 'bed' in buildVolume) preview.controls.setBuildVolume(buildVolume);
   }, [buildVolume]);

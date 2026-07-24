@@ -34,6 +34,24 @@ const FEATURE_PALETTE = [
   [0.8, 0.5, 0.95]
 ];
 
+// Named scene themes (#153, DD-009 D4): each is a bounded declarative Theme.
+// Unspecified fields fall back to the default look (replace semantics).
+const THEMES = {
+  default: {},
+  blueprint: { background: '#0d1b2a', gridColor: '#1b9aaa', bedColor: '#415a77', hemisphereIntensity: 2.2 },
+  light: {
+    background: '#eef1f5',
+    gridColor: '#9fb3c8',
+    bedColor: '#bcccdc',
+    hemisphereIntensity: 2.4,
+    directionalIntensity: 1.4
+  }
+};
+
+function themeFor(name, material) {
+  return { ...(THEMES[name] ?? THEMES.default), materialPreset: material };
+}
+
 const $ = (id) => document.getElementById(id);
 const els = {
   fixture: $('fixture'),
@@ -53,6 +71,8 @@ const els = {
   colorMode: $('colorMode'),
   quality: $('quality'),
   cameraMode: $('cameraMode'),
+  theme: $('theme'),
+  material: $('material'),
   qualityNote: $('qualityNote'),
   frame: $('frame'),
   disclosure: $('disclosure'),
@@ -368,6 +388,9 @@ els.colorMode.addEventListener('change', () => {
 });
 els.quality.addEventListener('change', () => renderer.setQuality(els.quality.value));
 els.cameraMode.addEventListener('change', () => renderer.setCameraMode(els.cameraMode.value));
+const applyTheme = () => renderer.setTheme(themeFor(els.theme.value, els.material.value));
+els.theme.addEventListener('change', applyTheme);
+els.material.addEventListener('change', applyTheme);
 els.frame.addEventListener('click', () => renderer.frame());
 
 // App-level keyboard shortcuts (master plan §9.5); every control is also plain

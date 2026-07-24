@@ -28,6 +28,7 @@ import {
   type GLRendererLike,
   type QualityMode,
   type RenderTargetCanvas,
+  type Theme,
   type TubeOptions
 } from '@chestnutlabs/gcode-renderer-three';
 import { type MachineGeometry, type ToolpathIR } from '@chestnutlabs/toolpath-core';
@@ -52,6 +53,8 @@ export interface RenderStillOptions {
   cameraMode?: CameraMode;
   colorMode?: ColorMode;
   tube?: TubeOptions;
+  /** Bounded declarative theme (#153, DD-009 D4); headless stills theme identically. */
+  theme?: Theme;
   /** Bed geometry — a renderer volume or discovered MachineGeometry. */
   buildVolume?: BuildVolumeDef | MachineGeometry;
   /** Inclusive layer clip [start, end]. Omitted → whole model. */
@@ -132,6 +135,7 @@ export async function renderStill(
     canvas,
     quality: options.quality ?? 'auto',
     ...(options.cameraMode ? { cameraMode: options.cameraMode } : {}),
+    ...(options.theme ? { theme: options.theme } : {}),
     ...(options.colorMode ? { colorMode: options.colorMode } : {}),
     ...(options.tube ? { tube: options.tube } : {}),
     ...(options.buildVolume ? { buildVolume: toVolume(options.buildVolume) } : {}),

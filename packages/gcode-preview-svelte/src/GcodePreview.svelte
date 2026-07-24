@@ -22,6 +22,8 @@
   export let quality = 'auto';
   /** #150 (DD-009 D3): camera projection ('perspective' | 'orthographic'). */
   export let cameraMode = 'perspective';
+  /** #153 (DD-009 D4): bounded declarative theme. */
+  export let theme = undefined;
   export let colorMode = undefined;
   export let tube = undefined;
   /** Inclusive [start, end]; null shows every layer. */
@@ -48,6 +50,7 @@
       buildVolume: isMachine ? undefined : buildVolume,
       quality,
       cameraMode,
+      theme,
       colorMode,
       tube,
       ...rendererOptions
@@ -107,6 +110,7 @@
   $: if (colorMode !== undefined) preview.controls.setColorMode(colorMode);
   $: preview.controls.setQuality(quality);
   $: preview.controls.setCameraMode(cameraMode);
+  $: if (theme !== undefined) preview.controls.setTheme(theme);
   $: if (progress === null || progress === undefined) preview.clearProgress();
   else preview.observeProgress(progress);
 
