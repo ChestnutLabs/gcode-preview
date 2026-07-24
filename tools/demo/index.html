@@ -1,0 +1,254 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Chestnut Labs G-code Preview — pipeline demo</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --bg: #16181d;
+        --panel: #1f232b;
+        --border: #333a46;
+        --text: #e6e9ef;
+        --muted: #9aa3b2;
+        --accent: #e566b3;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        font: 14px/1.45 system-ui, sans-serif;
+        background: var(--bg);
+        color: var(--text);
+        display: grid;
+        grid-template-columns: 300px 1fr;
+        grid-template-rows: 100vh;
+      }
+      aside {
+        background: var(--panel);
+        border-right: 1px solid var(--border);
+        padding: 14px;
+        overflow-y: auto;
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+      }
+      h1 {
+        font-size: 15px;
+        margin: 0;
+      }
+      h1 small {
+        display: block;
+        color: var(--muted);
+        font-weight: normal;
+        font-size: 11px;
+      }
+      fieldset {
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        padding: 8px 10px 10px;
+        margin: 0;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+      }
+      legend {
+        font-size: 11px;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        color: var(--muted);
+        padding: 0 4px;
+      }
+      label {
+        display: flex;
+        flex-direction: column;
+        gap: 3px;
+        font-size: 12px;
+        color: var(--muted);
+      }
+      label.inline {
+        flex-direction: row;
+        align-items: center;
+        gap: 6px;
+        color: var(--text);
+      }
+      select,
+      input[type='file'],
+      button {
+        font: inherit;
+        background: var(--bg);
+        color: var(--text);
+        border: 1px solid var(--border);
+        border-radius: 4px;
+        padding: 5px 8px;
+      }
+      button {
+        cursor: pointer;
+      }
+      button:disabled {
+        opacity: 0.45;
+        cursor: default;
+      }
+      button.primary {
+        background: var(--accent);
+        border-color: var(--accent);
+        color: #fff;
+        font-weight: 600;
+      }
+      input[type='range'] {
+        width: 100%;
+        accent-color: var(--accent);
+      }
+      progress {
+        width: 100%;
+        height: 8px;
+        accent-color: var(--accent);
+      }
+      #stats,
+      #disclosure,
+      #status,
+      #qualityNote {
+        font-size: 12px;
+        color: var(--muted);
+        white-space: pre-wrap;
+        margin: 0;
+      }
+      #disclosure:not(:empty) {
+        color: #f0b429;
+      }
+      #status.error {
+        color: #ef6a6a;
+      }
+      main {
+        position: relative;
+        min-width: 0;
+      }
+      canvas {
+        display: block;
+        width: 100%;
+        height: 100%;
+        outline: none;
+      }
+      kbd {
+        background: var(--bg);
+        border: 1px solid var(--border);
+        border-radius: 3px;
+        padding: 0 4px;
+        font-size: 11px;
+      }
+      .keys {
+        font-size: 11px;
+        color: var(--muted);
+        line-height: 1.9;
+      }
+    </style>
+  </head>
+  <body>
+    <aside aria-label="Viewer controls">
+      <h1>
+        Chestnut Labs G-code Preview
+        <small>GcodeParseSession (worker) → ToolpathRenderer — DD-004 phase 3 demo</small>
+      </h1>
+
+      <fieldset>
+        <legend>Input</legend>
+        <label>
+          MIT demo corpus
+          <select id="fixture" aria-label="Choose a corpus file"></select>
+        </label>
+        <label>
+          …or your own G-code
+          <input id="file" type="file" accept=".gcode,.gco,.g,.nc,.3mf,text/plain" />
+        </label>
+        <div style="display: flex; gap: 8px">
+          <button id="parse" class="primary">Parse &amp; render</button>
+          <button id="cancel" disabled>Cancel</button>
+        </div>
+        <progress id="progress" max="1" value="0" aria-label="Parse progress" hidden></progress>
+        <p id="status" role="status">Pick a file and press Parse.</p>
+      </fieldset>
+
+      <fieldset>
+        <legend>Layers &amp; scrub</legend>
+        <label>
+          First layer: <span id="startLayerVal">0</span>
+          <input id="startLayer" type="range" min="0" max="0" value="0" step="1" disabled />
+        </label>
+        <label>
+          Last layer: <span id="endLayerVal">0</span>
+          <input id="endLayer" type="range" min="0" max="0" value="0" step="1" disabled />
+        </label>
+        <label>
+          Scrub (segments): <span id="scrubVal">all</span>
+          <input id="scrub" type="range" min="0" max="0" value="0" step="1" disabled />
+        </label>
+      </fieldset>
+
+      <fieldset>
+        <legend>Display</legend>
+        <label class="inline">
+          <input id="travel" type="checkbox" checked disabled />
+          Show travel moves
+        </label>
+        <label>
+          Color mode
+          <select id="colorMode" disabled>
+            <option value="single">Single color</option>
+            <option value="tool">By tool</option>
+            <option value="feature">By feature role</option>
+          </select>
+        </label>
+        <label>
+          Quality
+          <select id="quality">
+            <option value="auto">Auto (tubes ≤ 1M segments)</option>
+            <option value="tubes">Tubes (print-like)</option>
+            <option value="lines">Lines (fast)</option>
+          </select>
+        </label>
+        <p id="qualityNote" role="note"></p>
+        <button id="frame" disabled>Frame model</button>
+        <p id="disclosure" role="note"></p>
+      </fieldset>
+
+      <fieldset>
+        <legend>Live progress (simulated)</legend>
+        <label>
+          Telemetry tier
+          <select id="progressTier" disabled>
+            <option value="byte">Byte-exact (Moonraker file_position)</option>
+            <option value="percent-bytes">Percent of bytes (Klipper virtual_sdcard)</option>
+            <option value="layer">Layer (Bambu/Anycubic)</option>
+            <option value="percent-job">Job percent (Bambu mc_percent)</option>
+            <option value="mismatch">Wrong file (identity mismatch)</option>
+          </select>
+        </label>
+        <button id="progressPlay" disabled>Play</button>
+        <p id="progressNote" role="note">Parse a file to enable simulated telemetry.</p>
+      </fieldset>
+
+      <fieldset>
+        <legend>Result</legend>
+        <p id="stats">—</p>
+      </fieldset>
+
+      <fieldset>
+        <legend>Keyboard</legend>
+        <div class="keys">
+          <kbd>Tab</kbd> reach every control · sliders take <kbd>←</kbd><kbd>→</kbd> and
+          <kbd>PgUp</kbd><kbd>PgDn</kbd><br />
+          Anywhere: <kbd>[</kbd>/<kbd>]</kbd> last layer −/+ · <kbd>,</kbd>/<kbd>.</kbd> scrub −/+ ·
+          <kbd>t</kbd> travel · <kbd>f</kbd> frame
+        </div>
+      </fieldset>
+    </aside>
+
+    <main>
+      <canvas id="view" tabindex="0" aria-label="3D toolpath view"></canvas>
+    </main>
+
+    <script type="module" src="./src/main.js"></script>
+  </body>
+</html>

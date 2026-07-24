@@ -6,16 +6,25 @@ name: Runs All Unit tests
 on:
   push:
     branches:
+      # Chestnut Labs long-lived branches (docs/UPSTREAM_PROVENANCE.md §3)
+      - main
+      - dev
+      # Inherited upstream branch names, kept for upstream-adoption branches
       - develop
       - releases
       - v3.x
   pull_request:
     branches:
+      - main
+      - dev
       - develop
       - releases
       - v3.x
 
 jobs:
+  # `build` is the required branch-protection check — keep its name stable.
+  # DD-008 D6: supported Node lines are the 22 and 24 LTS releases; `build`
+  # runs the full gate on 22, `node-24` repeats it on 24.
   build:
 
     runs-on: ubuntu-latest
@@ -29,5 +38,31 @@ jobs:
       - run: npm ci
       - run: npm run build
       - run: npm run test
+      - run: npm run test:packages
       - run: npm run typeCheck
       - run: npm run lint
+      - run: npm run license:check
+      # DD-008 §9 public-docs link check (issue #129).
+      - run: npm run docs:links
+      # DD-007 §4.5 consumer contract fixture: pack tarballs, install into the
+      # separate consumer app, run its contract tests (issue #107).
+      - run: npm run test:consumer-vue
+      # DD-008 §8/§9 packaged-artifact gate: pack-content snapshots ×9 +
+      # publint + arethetypeswrong (issue #128).
+      - run: npm run pack:check
+
+  node-24:
+
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.x'
+          cache: "npm"
+      - run: npm ci
+      - run: npm run build
+      - run: npm run test
+      - run: npm run test:packages
+      - run: npm run test:consumer-vue

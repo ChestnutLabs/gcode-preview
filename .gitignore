@@ -1,17 +1,25 @@
-demo/js/gcode-preview.js
-demo/js/three.min.js
 src/.rpt2_cache
 node_modules
 dist/__tests__
 .rpt2_cache
 yarn-error.log
-.firebase/hosting.*
 TODO.md
 .DS_Store
-examples/files
-react-typescript-demo/.env
 dist/*
-demo/build/*
-docs
-demo/dist
-demo/lib
+# Generated typedoc API output.
+/docs-api/
+# --- Chestnut Labs additions ---
+# Workspace package build output
+/packages/*/dist/
+# Consumer-smoke build output and local caches (tools/consumer-smoke)
+/tools/consumer-smoke/*/dist/
+/tools/consumer-smoke/*/.electron-cache/
+# Viewer demo build output (tools/demo)
+/tools/demo/dist/
+
+# Private project data and local environment — never published. See PROJECT_SETUP.md.
+/ProjectSource/
+.env
+.env.local
+.env.*.local
+# Do NOT ignore .env.example (documented variable names with blank/safe values).

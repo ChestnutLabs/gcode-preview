@@ -3,8 +3,5 @@
 *.yml
 *.json
 dist
-vue.esm-browser.js
 *.min.css
-examples/react-typescript-demo/build
-demo/lib
-demo/js/vue.esm-browser.prod.js
+*.svelte

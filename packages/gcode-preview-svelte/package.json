@@ -1,0 +1,70 @@
+{
+  "name": "@chestnutlabs/gcode-preview-svelte",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Thin Svelte integration for the Chestnut Labs G-code viewer (DD-007 D1 amendment): createGcodePreview store/action API + GcodePreview component as a reactivity bridge over @chestnutlabs/gcode-preview-core.",
+  "keywords": [
+    "gcode",
+    "3d-printing",
+    "toolpath",
+    "cnc",
+    "chestnutlabs",
+    "svelte",
+    "store",
+    "component",
+    "viewer",
+    "preview"
+  ],
+  "author": "Chestnut Labs",
+  "homepage": "https://github.com/ChestnutLabs/gcode-preview#readme",
+  "bugs": "https://github.com/ChestnutLabs/gcode-preview/issues",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ChestnutLabs/gcode-preview.git",
+    "directory": "packages/gcode-preview-svelte"
+  },
+  "license": "MIT",
+  "engines": {
+    "node": ">=22"
+  },
+  "type": "module",
+  "sideEffects": false,
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "svelte": "./dist/index.js",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "svelte": "./dist/index.js",
+      "import": "./dist/index.js"
+    },
+    "./GcodePreview.svelte": {
+      "svelte": "./dist/GcodePreview.svelte",
+      "import": "./dist/GcodePreview.svelte"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json && node copy-svelte.mjs",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@chestnutlabs/gcode-parser": "0.1.0",
+    "@chestnutlabs/gcode-preview-core": "0.1.0",
+    "@chestnutlabs/gcode-renderer-three": "0.1.0",
+    "@chestnutlabs/toolpath-core": "0.1.0"
+  },
+  "peerDependencies": {
+    "svelte": "^4.0.0 || ^5.0.0"
+  },
+  "devDependencies": {
+    "svelte": "^4.2.0"
+  }
+}

@@ -1,0 +1,39 @@
+# DD-008 D2 (#130): behavior-changing PRs must carry a human-written changeset.
+# "Behavior-changing" proxy: changes under packages/*/src/** excluding tests.
+# Docs/test/tooling-only PRs are exempt; generated release PRs and PRs labeled
+# `no-changeset-needed` bypass the check explicitly.
+name: Changeset presence
+
+on:
+  pull_request:
+    branches:
+      - dev
+
+jobs:
+  changeset-check:
+    runs-on: ubuntu-latest
+    if: >
+      github.head_ref != 'changeset-release/dev' &&
+      !contains(github.event.pull_request.labels.*.name, 'no-changeset-needed')
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Require a changeset for package-source changes
+        run: |
+          BASE="origin/${{ github.base_ref }}"
+          CHANGED=$(git diff --name-only "$BASE"...HEAD)
+          SRC=$(echo "$CHANGED" | grep -E '^packages/[^/]+/src/' | grep -vE '(__tests__/|\.test\.|\.spec\.)' || true)
+          if [ -z "$SRC" ]; then
+            echo "No package-source changes — changeset not required."
+            exit 0
+          fi
+          CS=$(echo "$CHANGED" | grep -E '^\.changeset/.*\.md$' | grep -v 'README\.md' || true)
+          if [ -z "$CS" ]; then
+            echo "::error::This PR changes package source but adds no changeset."
+            echo "Package-source changes:"; echo "$SRC"
+            echo "Run 'npx changeset', commit the generated file, or apply the"
+            echo "'no-changeset-needed' label with a justification in the PR body."
+            exit 1
+          fi
+          echo "Changeset present:"; echo "$CS"

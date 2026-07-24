@@ -1,0 +1,62 @@
+# DD-008 D7 (#131): scheduled deep fuzzing of the container entry points. The
+# per-PR path only REPLAYS the committed regression corpus (fast, in the unit
+# suite); this workflow does the actual coverage-guided search on a cadence, and
+# uploads any newly discovered crash for triage. Long fuzz runs never belong in
+# the PR path.
+name: Fuzz / containers (scheduled)
+
+on:
+  schedule:
+    - cron: '17 4 * * 1' # Mondays 04:17 UTC
+  workflow_dispatch:
+    inputs:
+      seconds:
+        description: 'Fuzz seconds per target'
+        required: false
+        default: '900'
+
+permissions:
+  contents: read
+
+jobs:
+  fuzz:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        target:
+          - { name: read-directory, file: fuzz-read-directory.mjs, sync: '--sync=true' }
+          - { name: stream-entry, file: fuzz-stream-entry.mjs, sync: '--sync=false' }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.x'
+          cache: 'npm'
+      - run: npm ci
+      - name: Install Jazzer.js
+        run: npm install --no-save @jazzer.js/core
+      - name: Build dependencies
+        run: |
+          npm run build --workspace=@chestnutlabs/toolpath-core
+          npm run build --workspace=@chestnutlabs/gcode-containers
+      - name: Seed corpus
+        run: |
+          mkdir -p /tmp/corpus
+          cp test-data/fixtures/containers/*.gcode.3mf /tmp/corpus/ || true
+          cp test-data/fixtures/fuzz-regressions/* /tmp/corpus/ 2>/dev/null || true
+      - name: Fuzz ${{ matrix.target.name }}
+        run: |
+          SECS="${{ github.event.inputs.seconds || '900' }}"
+          npx jazzer packages/gcode-containers/fuzz/${{ matrix.target.file }} /tmp/corpus \
+            ${{ matrix.target.sync }} -- -max_total_time="$SECS" -print_final_stats=1
+      - name: Upload any crash artifacts for triage
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fuzz-crash-${{ matrix.target.name }}
+          path: |
+            crash-*
+            oom-*
+            timeout-*
+          if-no-files-found: ignore

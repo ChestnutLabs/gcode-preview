@@ -1,0 +1,34 @@
+# DD-008 D2 (#130): accumulated changesets on `dev` are turned into a generated
+# "Version Packages" PR (lockstep bumps + per-package CHANGELOGs + synced internal
+# ranges + lockfile). Merging that PR versions `dev`; promotion to `main` and the
+# actual publish are separate, deliberate steps — nothing publishes from here.
+# See docs/reference/release-process.md.
+name: Release / version PR
+
+on:
+  push:
+    branches:
+      - dev
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  version-pr:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.x'
+          cache: 'npm'
+      - run: npm ci
+      - name: Create or update the Version Packages PR
+        uses: changesets/action@v1
+        with:
+          version: npm run version
+          title: 'release: version packages (lockstep)'
+          commit: 'release: version packages (lockstep)'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

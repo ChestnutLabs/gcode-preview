@@ -1,0 +1,13 @@
+{
+  "name": "gcode-parser-electron-smoke",
+  "private": true,
+  "version": "0.0.0",
+  "description": "DD-003 §4.4/§11 consumer smoke: the Vite-built consumer running in an Electron renderer.",
+  "main": "main.js",
+  "scripts": {
+    "smoke": "electron ."
+  },
+  "devDependencies": {
+    "electron": "^33.4.11"
+  }
+}

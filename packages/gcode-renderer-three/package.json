@@ -1,0 +1,61 @@
+{
+  "name": "@chestnutlabs/gcode-renderer-three",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Three.js toolpath renderer consuming ToolpathIR (DD-004). Phases 1-2: geometry builders + scene/lifecycle.",
+  "keywords": [
+    "gcode",
+    "3d-printing",
+    "toolpath",
+    "cnc",
+    "chestnutlabs",
+    "three",
+    "threejs",
+    "webgl",
+    "renderer",
+    "visualization"
+  ],
+  "author": "Chestnut Labs",
+  "homepage": "https://github.com/ChestnutLabs/gcode-preview#readme",
+  "bugs": "https://github.com/ChestnutLabs/gcode-preview/issues",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ChestnutLabs/gcode-preview.git",
+    "directory": "packages/gcode-renderer-three"
+  },
+  "license": "MIT",
+  "engines": {
+    "node": ">=22"
+  },
+  "type": "module",
+  "sideEffects": false,
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@chestnutlabs/toolpath-core": "0.1.0"
+  },
+  "devDependencies": {
+    "@types/three": "0.178.0"
+  },
+  "peerDependencies": {
+    "three": "^0.178.0"
+  }
+}

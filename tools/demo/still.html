@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>renderStill headless harness (#132)</title>
+    <style>
+      body {
+        margin: 0;
+        font: 13px/1.5 system-ui, sans-serif;
+        background: #16181d;
+        color: #e6e9ef;
+        padding: 12px;
+      }
+      canvas {
+        border: 1px solid #333a46;
+        display: block;
+        margin: 10px 0;
+      }
+      pre {
+        white-space: pre-wrap;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>renderStill headless harness</h1>
+    <p>
+      Drives <code>renderStill</code> from <code>@chestnutlabs/gcode-preview-core</code> into an
+      <code>OffscreenCanvas</code>, then blits the result to a visible canvas. Call
+      <code>window.stillRun()</code> from the console; the returned pixel signature is the basis for a
+      future headless-Chromium determinism gate.
+    </p>
+    <canvas id="out" width="640" height="480"></canvas>
+    <pre id="log">loading…</pre>
+    <script type="module" src="./src/still.js"></script>
+  </body>
+</html>

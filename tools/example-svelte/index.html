@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>GcodePreview Svelte — example app (DD-007 phase 7)</title>
+    <style>
+      body {
+        margin: 0;
+        font-family: system-ui, sans-serif;
+        background: #10151b;
+        color: #dfe7ef;
+        display: grid;
+        grid-template-columns: 300px 1fr;
+        height: 100vh;
+      }
+      aside {
+        padding: 1rem;
+        overflow-y: auto;
+        border-right: 1px solid #2a3542;
+      }
+      main {
+        min-width: 0;
+      }
+      label {
+        display: block;
+        margin: 0.6rem 0;
+        font-size: 0.85rem;
+      }
+      select,
+      input[type='range'],
+      button {
+        width: 100%;
+      }
+      #log {
+        font-size: 0.75rem;
+        white-space: pre-wrap;
+        color: #9fb0c0;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="app" style="display: contents"></div>
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>

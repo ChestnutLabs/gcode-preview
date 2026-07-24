@@ -1,0 +1,44 @@
+; BambuStudio 01.09.00.60
+; HEADER_BLOCK_START
+; printer_model: Bambu Lab A1 mini
+; HEADER_BLOCK_END
+G21
+G0 X40 Y40 Z0.2
+; start printing object, unique id: 0 name: cube_left
+; FEATURE: Outer wall
+G1 X45 Y75 E1 F1500
+G1 X75 Y75 E2
+G1 X75 Y105 E3
+G1 X45 Y105 E4
+G1 X45 Y75 E5
+; FEATURE: Inner wall
+G1 X47 Y77 E10 F1500
+G1 X73 Y77 E11
+G1 X73 Y103 E12
+G1 X47 Y103 E13
+G1 X47 Y77 E14
+; FEATURE: Sparse infill
+G1 X50 Y80 E20 F2400
+G1 X70 Y80 E21
+G1 X70 Y100 E22
+G1 X50 Y100 E23
+G1 X50 Y80 E24
+; stop printing object
+; start printing object, unique id: 1 name: cube_right
+; FEATURE: Outer wall
+G1 X105 Y75 E30 F1500
+G1 X135 Y75 E31
+G1 X135 Y105 E32
+G1 X105 Y105 E33
+G1 X105 Y75 E34
+; FEATURE: Top surface
+G1 X108 Y78 E40 F1800
+G1 X132 Y78 E41
+G1 X132 Y102 E42
+G1 X108 Y102 E43
+G1 X108 Y78 E44
+; stop printing object
+; CONFIG_BLOCK_START
+; printable_area = 0x0,180x0,180x180,0x180
+; printable_height = 180
+; CONFIG_BLOCK_END

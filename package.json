@@ -1,66 +1,73 @@
 {
-  "name": "gcode-preview",
-  "version": "3.0.0-alpha.4",
-  "description": "Preview a 3d print from a gcode file",
-  "author": "remcoder@gmail.com",
+  "name": "@chestnutlabs/gcode-preview-workspace",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Workspace root for the Chestnut Labs G-code Preview toolpath stack: worker parser, dialect/container adapters, ToolpathIR, Three.js renderer, and Vue/React/Svelte viewer packages.",
+  "workspaces": [
+    "packages/*"
+  ],
+  "author": "Chestnut Labs",
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git@github.com:remcoder/gcode-preview.git"
+    "url": "git+https://github.com/ChestnutLabs/gcode-preview.git"
   },
-  "homepage": "https://gcode-preview.web.app/",
+  "homepage": "https://github.com/ChestnutLabs/gcode-preview#readme",
+  "bugs": "https://github.com/ChestnutLabs/gcode-preview/issues",
+  "engines": {
+    "node": ">=22"
+  },
   "main": "dist/gcode-preview.es.js",
-  "files": [
-    "dist"
-  ],
   "types": "dist/gcode-preview.d.ts",
   "devDependencies": {
+    "@arethetypeswrong/cli": "^0.18.5",
+    "@changesets/changelog-github": "^0.7.0",
+    "@changesets/cli": "^2.31.1",
     "@rollup/plugin-node-resolve": "^16.0.1",
     "@types/node": "^24.0.10",
     "@types/three": "0.178.0",
     "@typescript-eslint/eslint-plugin": "^8.36.0",
     "@typescript-eslint/parser": "^8.36.0",
-    "concurrently": "^9.2.0",
-    "copyfiles": "^2.4.1",
     "eslint": "^8.57.1",
     "happy-dom": "^20.0.0",
-    "live-server": "^1.2.1 <1.2.2",
     "prettier": "^3.6.2",
+    "publint": "^0.3.22",
     "rollup": "^4.44.2",
     "rollup-plugin-dts": "^6.2.1",
     "rollup-plugin-esbuild": "^6.2.1",
     "rollup-plugin-typescript2": "^0.36.0",
+    "three": "0.178.0",
     "typedoc": "^0.28.7",
     "vitest": "^4.1.0"
   },
   "scripts": {
-    "dev": "concurrently -n BUILD,SERVER -c bold.white.bgGreen,bold.white.bgBlue 'npm run dev:watch' 'npm run live-server'",
     "dev:build": "export NODE_ENV=development; rollup -c",
     "dev:watch": "export NODE_ENV=development; rollup -c -w",
     "build": "rollup -c",
     "build:watch": "rollup -c -w",
-    "demo": "npm run build && npm run live-server",
-    "live-server": "live-server demo --watch=.,js,../dist --mount=/lib:node_modules --mount=/dist:dist",
     "typeCheck": "tsc --noEmit",
     "lint": "prettier --check . && eslint -c .eslintrc.js .",
     "lint:fix": "npm run prettier:fix && npm run eslint:fix",
     "eslint:fix": "eslint -c .eslintrc.js . --fix",
     "prettier:fix": "prettier --plugin-search-dir . --write .",
     "test": "vitest run",
+    "test:packages": "npm test --workspaces --if-present",
+    "license:check": "node tools/license-report.mjs --check",
     "test:watch": "vitest --watch",
-    "preversion": "npm run typeCheck && npm run test && npm run lint",
-    "version:patch": "npm version patch",
-    "version:minor": "npm version minor",
-    "predeploy": "npm run build && npm run copy-deps && npm run copy-dist",
-    "copy-deps": "copyfiles -f node_modules/three/build/three.module.min.js demo/lib/three/build && copyfiles -f node_modules/three/build/three.core.min.js demo/lib/three/build && copyfiles -f node_modules/lil-gui/dist/lil-gui.esm.min.js demo/lib/lil-gui/dist",
-    "copy-dist": "copyfiles -f dist/gcode-preview.es.js demo/dist",
-    "deploy:preview": "live-server demo",
     "typedoc": "typedoc",
     "typedoc:watch": "typedoc --watch",
-    "check": "npm run test && npm run typeCheck && npm run lint && echo '😅 All checks passed!'"
+    "check": "npm run test && npm run typeCheck && npm run lint && echo '😅 All checks passed!'",
+    "test:consumer-vue": "node tools/consumer-vue/run.mjs",
+    "verify:registry": "node tools/consumer-vue/run-registry.mjs",
+    "pack:check": "node tools/pack-check.mjs",
+    "docs:links": "node tools/link-check.mjs",
+    "changeset": "changeset",
+    "version": "changeset version && node tools/release/sync-internal-ranges.mjs && npm install --package-lock-only --no-audit --no-fund",
+    "release:sync-check": "node tools/release/sync-internal-ranges.mjs --check",
+    "release:dry-run": "node tools/release/publish.mjs --dry-run",
+    "release:publish": "node tools/release/publish.mjs"
   },
   "dependencies": {
-    "lil-gui": "^0.20.0",
-    "three": "0.178.0"
+    "lil-gui": "^0.20.0"
   }
 }

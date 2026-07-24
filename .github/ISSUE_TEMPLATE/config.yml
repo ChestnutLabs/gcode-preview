@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Governance & development process
+    url: https://github.com/ChestnutLabs/gcode-preview/blob/dev/docs/01_GITHUB_WORKFLOW_PROJECT_GOVERNANCE_AND_DEVELOPMENT_PROCESS.md
+    about: Read the authoritative process before filing — every issue needs one Epic and one milestone.
+  - name: Report a security vulnerability (private)
+    url: https://github.com/ChestnutLabs/gcode-preview/security/advisories/new
+    about: Do not open a public issue for vulnerabilities. Use private reporting.
+  - name: Discord (inherited upstream community)
+    url: https://discord.gg/w2bsGRE6S4
+    about: General 3D-printing / gcode-preview chat.
