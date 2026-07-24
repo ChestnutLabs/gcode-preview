@@ -281,6 +281,49 @@ module.exports = {
       }
     },
     {
+      // The custom-element adapter is framework-FREE — no framework is allowed here (DD-009 §4.5).
+      files: ['packages/gcode-preview-element/src/**/*.ts'],
+      rules: {
+        'no-restricted-imports': [
+          'error',
+          {
+            patterns: [
+              {
+                group: ['react', 'react/*', 'react-dom', 'react-dom/*', 'vue', 'vue/*', 'svelte', 'svelte/*'],
+                message:
+                  'gcode-preview-element is framework-free (DD-009 §4.5) — it wraps the neutral controller, never a framework.'
+              },
+              {
+                group: ['redux', 'redux/*', 'react-redux*', 'zustand*', 'react-router*'],
+                message: 'gcode-preview-element must stay store/router-free (DD-007 §4.4) — hosts own app state.'
+              },
+              { group: ['lil-gui'], message: 'gcode-preview-element ships no UI chrome (DD-007 §3).' },
+              {
+                group: ['three', 'three/*'],
+                message: 'gcode-preview-element consumes the renderer package, never three directly (DD-002 §4).'
+              },
+              {
+                group: ['@chestnutlabs/gcode-dialects*', '@chestnutlabs/gcode-containers*'],
+                message: 'Dialects/containers run inside the worker (DD-005 §4.5) — the element never imports them.'
+              },
+              {
+                group: ['*anybridge*', '*AnyBridge*'],
+                message: 'No reusable package may import AnyBridge (DD-002 §4 core rule).'
+              },
+              {
+                group: ['node:*', 'fs', 'child_process', 'net', 'http', 'https'],
+                message: 'gcode-preview-element is browser-side only (DD-007 §7).'
+              },
+              {
+                group: ['../../../*'],
+                message: 'gcode-preview-element must not reach outside its package (DD-002 §4).'
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
       files: ['packages/gcode-preview-vue/**/*.ts', 'packages/gcode-preview-vue/**/*.vue'],
       rules: {
         'no-restricted-imports': [

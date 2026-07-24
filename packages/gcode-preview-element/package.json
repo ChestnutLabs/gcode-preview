@@ -1,0 +1,60 @@
+{
+  "name": "@chestnutlabs/gcode-preview-element",
+  "version": "0.1.0",
+  "description": "Framework-free <gcode-preview> Web Component for the Chestnut Labs G-code viewer (DD-007 D1 / DD-009 D5): a custom element bridging @chestnutlabs/gcode-preview-core, no framework peer dependency.",
+  "keywords": [
+    "gcode",
+    "3d-printing",
+    "toolpath",
+    "cnc",
+    "chestnutlabs",
+    "web-component",
+    "custom-element",
+    "viewer",
+    "preview"
+  ],
+  "author": "Chestnut Labs",
+  "homepage": "https://github.com/ChestnutLabs/gcode-preview#readme",
+  "bugs": "https://github.com/ChestnutLabs/gcode-preview/issues",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ChestnutLabs/gcode-preview.git",
+    "directory": "packages/gcode-preview-element"
+  },
+  "license": "MIT",
+  "engines": {
+    "node": ">=22"
+  },
+  "type": "module",
+  "sideEffects": false,
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./define": {
+      "types": "./dist/define.d.ts",
+      "import": "./dist/define.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@chestnutlabs/gcode-parser": "0.1.0",
+    "@chestnutlabs/gcode-preview-core": "0.1.0",
+    "@chestnutlabs/gcode-renderer-three": "0.1.0",
+    "@chestnutlabs/toolpath-core": "0.1.0"
+  }
+}
