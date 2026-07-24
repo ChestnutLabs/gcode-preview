@@ -40,6 +40,10 @@ from the protected `Release / publish` workflow on a tag from `main` — never f
 - **Recorded fallback:** a granular automation token scoped to the nine packages, stored as the
   `NPM_TOKEN` secret (the workflow already wires it). If the registry cannot create *new* packages
   via OIDC at first publish, `v0.1.0` uses the token and later releases switch to OIDC.
+- **Token must bypass 2FA** (learned cutting `v0.1.0`): with 2FA-on-publish set, a plain token gets
+  `E403 "Two-factor authentication or granular access token with bypass 2fa enabled is required"`.
+  Use a **classic _Automation_ token** (bypasses 2FA by design) or a **Granular** token with
+  **"Bypass 2FA" enabled** + read/write on the packages.
 - 2FA-on-publish set on the owning account. These are **maintainer prerequisites** for phase 7,
   confirmed during the phase-6 rehearsal.
 - **GitHub Actions PR creation** (discovered at the first #130 run): the org-level setting
