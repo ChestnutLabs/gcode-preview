@@ -1,9 +1,9 @@
 # DD-010 — Motion-Model Correctness (Extruder Mode, Positioning Mode, Arc Planes, Coordinate Systems)
 
-**Status:** **Proposed** <!-- Draft | Proposed | Accepted | Superseded | Rejected -->
+**Status:** **Accepted (2026-07-24 — revised D1–D6 all adopted)** <!-- Draft | Proposed | Accepted | Superseded | Rejected -->
 **Authors/Owners:** Chestnut Labs
 **Date:** 2026-07-24 · **Last revised:** 2026-07-24
-**Owning Epic:** proposes **E10 — Motion-Model Correctness** (post-`v0.1.0`) · **Milestone:** Future
+**Owning Epic:** **E10 — Motion-Model Correctness** (#191, post-`v0.1.0`) · **Milestone:** Future
 **Supersedes / Superseded by:** none
 **Related:** DD-001 (IR + capability model — `capabilities` map, floating origin §4.6, the position/extrusion channels these changes alter), DD-003 (§14 the byte-exact parse core in `packages/gcode-parser/src/parse.ts` and its golden-equivalence gate — the gate these changes deliberately touch), DD-005 (dialect adapter contract — where firmware-default hints for the unspecified-mode fallback would live), DD-006 (progress mapper — consumes segment positions + extrusion distance, must be re-validated), DD-009 **§3 Non-goals** (which explicitly carved these out: "*a separate DD: those change the interpreter's position semantics … they alter existing IR output, not add optional surfaces*"); the **#154 audit** (`docs/compatibility/gcode-motion-coverage.md`); tracking issues **#155** (G90/G91 + G92 motion state), **#156** (M82/M83 extruder mode), **#157** (G17/G18/G19 arc planes), **#158** (G53/G54–G59 coordinate systems).
 
@@ -13,7 +13,10 @@
 >
 > **None of these were `v0.1.0` blockers** — the audit shipped them as documented known limitations. This is post-release correctness work.
 
-> **Awaiting maintainer acceptance — D1–D6 open.** §14's phased plan assumes the recommendations.
+> **Accepted 2026-07-24 — revised D1–D6 all adopted** (maintainer: "Accept revised D1–D6"). Epic
+> **E10** (#191) opened owning #155/#156/#157/#158; phase 1 = the firmware-conditioned modal machinery.
+> The earlier "Proposed" draft was revised for firmware correctness (D1 absolute default; D2 firmware-
+> conditioned `G90`/`G91`↔E) before acceptance — see the §4.1/§4.2 revision blocks and the decision log.
 >
 > *Note: the `parse.ts` line numbers cited below are as of this DD's authoring analysis and are
 > illustrative pointers to the relevant functions/logic; they drift as the file changes (e.g. the
@@ -228,8 +231,8 @@ Covered per decision (§4). Cross-cutting alternative — **leave the gaps docum
 
 ## 15. Acceptance criteria
 
-- [ ] D1–D6 decided by the maintainer and recorded verbatim; DD marked Accepted
-- [ ] **E10 — Motion-Model Correctness** opened (milestone Future) owning #155/#156/#157/#158, with phased issues per §14
+- [x] D1–D6 decided by the maintainer and recorded verbatim (revised for firmware correctness); DD marked **Accepted** (2026-07-24)
+- [x] **E10 — Motion-Model Correctness** opened (#191, milestone Future) owning #155/#156/#157/#158; phased issues per §14
 - [ ] Phase 1: M82 file classifies E-unchanged moves as **Travel** and reports delta-summed extrusion (audit repro line 32 resolved); `G91` repro (audit line 30) resolved; the firmware-conditioned `G90`/`G91`↔E interaction covered (Marlin `G90`+`M83` and a RepRapFirmware `G90` file); unspecified E-mode defaults to **absolute** disclosed `inferred`; frozen corpus byte-identical; renderer + DD-006 + behavioral suite re-validated
 - [ ] Phase 2: G18/G19 arcs interpolate in the correct plane with `K` honored (audit line 33 resolved); XY-arc corpus byte-identical
 - [ ] Phase 3: `G92`/G54–G59 offsets honored (audit repro line 31 resolved); identity-WCS corpus byte-identical; floating-origin consistency verified
@@ -242,4 +245,5 @@ Covered per decision (§4). Cross-cutting alternative — **leave the gaps docum
 |---|---|---|
 | 2026-07-24 | DD-010 drafted as **Proposed**; D1–D6 open. Split from DD-009 §3 (motion-model correctness carved out as a separate DD). Grounded in the #154 audit (`docs/compatibility/gcode-motion-coverage.md`) and the byte-exact interpreter in `packages/gcode-parser/src/parse.ts`. Proposes **E10 — Motion-Model Correctness** owning #155/#156/#157/#158 | Chestnut Labs |
 | 2026-07-24 | **D1 + D2 revised (maintainer feedback)** — unspecified E-mode now defaults to **absolute** (the Marlin/RRF/Klipper power-on convention), not relative; the `G90`/`G91`→E interaction is **firmware-conditioned** (Marlin/Klipper vs RepRapFirmware-independent) via an explicit DD-005 hint, resolved by a stated precedence that removes the D1/D2 tension. Added a §3 non-goal + design note scoping **CNC/laser (#189) as a sibling DD (proposed DD-012) sequenced after DD-010** (reconcile by scoping, not merging), noting `.bgcode` (#188 → DD-011), and the shared modal-channel pattern (#180/#189). Still **Proposed** — awaiting acceptance of revised D1–D6 | Maintainer feedback + Chestnut Labs |
+| 2026-07-24 | **Accepted — revised D1–D6 all adopted** ("Accept revised D1–D6"). Epic **E10** (#191) opened owning #155/#156/#157/#158; phase 1 = firmware-conditioned modal machinery (M82/M83 + G90/G91 + G92 E-datum). `.bgcode` #188 and CNC/laser #189 remain sibling DDs sequenced after DD-010 | Maintainer |
 | _pending_ | Awaiting maintainer decision on D1–D6 and on opening E10 | Maintainer |
