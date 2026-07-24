@@ -79,6 +79,13 @@ export interface ParseOptions {
   /** Layer-detection tolerance (inherited default 0.05). */
   minLayerThreshold?: number;
   /**
+   * Firmware hint (DD-010 D2): does `G90`/`G91` also set the *extruder* mode? Marlin/Klipper —
+   * `true`; RepRapFirmware treats E independently — `false`. Default `false` (RRF/unknown-conservative).
+   * Only consulted while no `M82`/`M83` has latched the E-mode; supplied by the dialect layer / caller
+   * that has confidently classified the firmware. The byte-exact engine never sniffs firmware itself.
+   */
+  extruderFollowsPositioning?: boolean;
+  /**
    * DD-005 §4.3 read-only hooks: observe comments/commands during the parse.
    * Inert when unset (one branch per line); they cannot alter lexing, dispatch,
    * or machine state — the golden-gated semantics are untouched.
@@ -260,6 +267,34 @@ export function createEngine(input: string | Uint8Array, opts: ParseOptions): En
   let unitsSeen = false;
   let modalFeed = NaN;
 
+  // Motion-model modal state (DD-010 E10 phase 1). `xyzAbsolute` (G90/G91) and the extruder mode
+  // resolve the effective per-move E delta and the extrude/travel classification. Defaults are the
+  // firmware power-on convention: absolute XYZ, absolute E. `eModeExplicit` is set only by M82/M83;
+  // `lastE` is the running absolute-E datum (also reset by `G92 E`).
+  let xyzAbsolute = true;
+  let positioningSeen = false; // any G90/G91 observed → positioningMode 'known'
+  let eModeExplicit: 'absolute' | 'relative' | null = null; // M82/M83; null = infer
+  let lastE = 0;
+  const extruderFollowsPositioning = opts.extruderFollowsPositioning === true;
+
+  /**
+   * Effective per-move E delta from the modal extruder mode (DD-010 D1/D2 precedence:
+   * explicit M82/M83 → firmware-conditioned G90/G91 → absolute default). Updates `lastE`.
+   * For relative E the delta is the raw word (byte-identical to the pre-E10 engine for the
+   * M83 corpus); for absolute E it is `eParam − lastE`.
+   */
+  const resolveEDelta = (eParam: number | undefined): number => {
+    if (eParam === undefined) return 0;
+    const absolute =
+      eModeExplicit !== null ? eModeExplicit === 'absolute' : extruderFollowsPositioning ? xyzAbsolute : true; // firmware-neutral default: absolute, disclosed 'inferred'
+    const delta = absolute ? eParam - lastE : eParam;
+    lastE = absolute ? eParam : lastE + eParam;
+    return delta;
+  };
+
+  /** Absolute target for one axis given the modal positioning mode (G90/G91). */
+  const nextAxis = (cur: number, word: number | undefined): number => (xyzAbsolute ? (word ?? cur) : cur + (word ?? 0));
+
   // Floating origin (DD-001 §4.6): fixed at the first emitted segment's start.
   let originSet = false;
   let ox = 0;
@@ -429,16 +464,19 @@ export function createEngine(input: string | Uint8Array, opts: ParseOptions): En
 
   const g0 = (p: Record<string, number>): boolean => {
     const { x, y, z, e, f } = p;
+    // Classify on the true per-move delta, not the raw E word (DD-010 D1). For the M83/relative
+    // corpus the delta equals the word, so output is byte-identical to the pre-E10 engine.
+    const eDelta = resolveEDelta(e);
     if (x === undefined && y === undefined && z === undefined) {
-      if (e > 0) stats.retractions++;
-      else if (e < 0) stats.deretractions++;
+      if (eDelta > 0) stats.retractions++;
+      else if (eDelta < 0) stats.deretractions++;
       else if (f !== undefined) stats.feedrateChanges++;
-      if (e !== undefined && e !== 0) {
+      if (e !== undefined && eDelta !== 0) {
         retractionEvents.push({
           x: sx,
           y: sy,
           z: sz,
-          kind: e < 0 ? 'retract' : 'unretract',
+          kind: eDelta < 0 ? 'retract' : 'unretract',
           srcByte: currentSrcByte,
           segIndex: writer.count
         });
@@ -448,26 +486,30 @@ export function createEngine(input: string | Uint8Array, opts: ParseOptions): En
     }
     stats.points++;
     if (f !== undefined) modalFeed = f;
-    const pathType = e > 0 ? 'extrusion' : 'travel';
+    const pathType = eDelta > 0 ? 'extrusion' : 'travel';
     if (path === null || path.type !== pathType) {
       breakPath(pathType);
     }
-    if (e > 0) stats.extrusionDistance += e;
-    sx = x ?? sx;
-    sy = y ?? sy;
-    sz = z ?? sz;
-    return emitSegment(sx, sy, sz, e ?? 0, pathType === 'extrusion' ? MoveKind.Extrude : MoveKind.Travel);
+    if (eDelta > 0) stats.extrusionDistance += eDelta;
+    sx = nextAxis(sx, x);
+    sy = nextAxis(sy, y);
+    sz = nextAxis(sz, z);
+    return emitSegment(sx, sy, sz, eDelta, pathType === 'extrusion' ? MoveKind.Extrude : MoveKind.Travel);
   };
 
   const g2 = (p: Record<string, number>, cw: boolean): boolean => {
     const { x, y, z, e, f } = p;
     let { i, j, r } = p;
     if (f !== undefined) modalFeed = f;
-    const pathType = e ? 'extrusion' : 'travel';
+    // E is delta-based (DD-010 D1) so M82 arcs classify correctly and `lastE` stays consistent with
+    // g0; the arc XYZ geometry stays absolute here (G91-arc handling lands with the arc-plane rewrite,
+    // phase 2). Relative-E → delta === word → the XY-arc corpus is byte-identical.
+    const eDelta = resolveEDelta(e);
+    const pathType = eDelta ? 'extrusion' : 'travel';
     if (path === null || path.type !== pathType) {
       breakPath(pathType);
     }
-    if (e > 0) stats.extrusionDistance += e;
+    if (eDelta > 0) stats.extrusionDistance += eDelta;
 
     if (r) {
       const deltaX = x - sx; // assume abs mode (inherited)
@@ -506,7 +548,7 @@ export function createEngine(input: string | Uint8Array, opts: ParseOptions): En
     const zStep = zDist / totalSegments;
 
     const kind = (pathType === 'extrusion' ? MoveKind.Extrude : MoveKind.Travel) | MoveKind.ArcSegment;
-    const eachE = e !== undefined ? e / Math.max(1, Math.ceil(totalSegments)) : 0;
+    const eachE = e !== undefined ? eDelta / Math.max(1, Math.ceil(totalSegments)) : 0;
 
     let px;
     let py;
@@ -588,6 +630,31 @@ export function createEngine(input: string | Uint8Array, opts: ParseOptions): En
         // next segment index (slot boundary), and the active tool for provenance.
         colorChangeEvents.push({ x: sx, y: sy, z: sz, segIndex: writer.count, srcByte: offset, tool });
         break;
+      // Motion-model modal commands (DD-010 E10 phase 1).
+      case 'g90':
+        xyzAbsolute = true;
+        positioningSeen = true;
+        break;
+      case 'g91':
+        xyzAbsolute = false;
+        positioningSeen = true;
+        break;
+      case 'm82':
+        eModeExplicit = 'absolute';
+        break;
+      case 'm83':
+        eModeExplicit = 'relative';
+        break;
+      case 'g92':
+        // Datum reset: `G92 E<v>` rebases the absolute-E origin so the next delta is sane (this is
+        // the E-half of D4, needed in phase 1 because slicer M82 files pair it with `G92 E0`). The XYZ
+        // work-offset (full G92 / G53–G59) is phase 3 — a `G92 X/Y/Z` is disclosed as unhandled, never
+        // silently applied as a datum shift.
+        if (cmd.params.e !== undefined) lastE = cmd.params.e;
+        if (cmd.params.x !== undefined || cmd.params.y !== undefined || cmd.params.z !== undefined) {
+          warn('g92-xyz-unhandled', 'G92 X/Y/Z work-offset not yet honored (E10 phase 3)', offset);
+        }
+        break;
       default:
         warn('unsupported-command', `unsupported command '${cmd.gcode}' preserved as metadata`, offset);
     }
@@ -639,7 +706,11 @@ export function createEngine(input: string | Uint8Array, opts: ParseOptions): En
       featureRoles: 'unavailable',
       objects: 'unavailable',
       retractions: retractionEvents.length > 0 ? 'known' : 'unavailable',
-      colorChanges: colorChangeEvents.length > 0 ? 'known' : 'unavailable'
+      colorChanges: colorChangeEvents.length > 0 ? 'known' : 'unavailable',
+      // Motion-model modes (DD-010 E10 phase 1). 'known' when the governing command was seen
+      // (M82/M83, or a firmware-known G90/G91 for E); 'inferred' when defaulted (absolute).
+      extrusionMode: eModeExplicit !== null || (extruderFollowsPositioning && positioningSeen) ? 'known' : 'inferred',
+      positioningMode: positioningSeen ? 'known' : 'inferred'
     };
 
     if (layersCapability === 'unavailable') {
@@ -742,7 +813,9 @@ export function createEngine(input: string | Uint8Array, opts: ParseOptions): En
           featureRoles: 'unavailable',
           objects: 'unavailable',
           retractions: 'unavailable', // markers resolve on the final IR, not on preview slices
-          colorChanges: 'unavailable' // color-change boundaries resolve on the final IR
+          colorChanges: 'unavailable', // color-change boundaries resolve on the final IR
+          extrusionMode: 'inferred', // motion modes resolve fully on the final IR (E10)
+          positioningMode: 'inferred'
         }
       },
       segments: channels,

@@ -4,7 +4,8 @@ import { parseGcodeToIR } from '../index';
 
 describe('parse core (DD-003 phase 1)', () => {
   it('parses linear moves with real e, feedrate and srcByte', () => {
-    const gcode = ['G0 X0 Y0 Z0.2', 'G1 X10 Y0 E1.5 F1200', 'G1 X10 Y10 E2.5'].join('\n');
+    // Explicit relative E (M83) — the common slicer mode; E words are per-move deltas (E10/DD-010).
+    const gcode = ['M83', 'G0 X0 Y0 Z0.2', 'G1 X10 Y0 E1.5 F1200', 'G1 X10 Y10 E2.5'].join('\n');
     const { ir, stats } = parseGcodeToIR(gcode);
 
     expect(ir.header.complete).toBe(true);
@@ -35,7 +36,7 @@ describe('parse core (DD-003 phase 1)', () => {
   });
 
   it('handles units (G20/G21), homing (G28) and tool changes (T0..T7)', () => {
-    const gcode = ['G20', 'G0 X1 Y1 Z0.1', 'T3', 'G1 X2 Y2 E1', 'G28', 'G1 X1 Y0 E1'].join('\n');
+    const gcode = ['M83', 'G20', 'G0 X1 Y1 Z0.1', 'T3', 'G1 X2 Y2 E1', 'G28', 'G1 X1 Y0 E1'].join('\n');
     const { ir } = parseGcodeToIR(gcode);
     expect(ir.header.units).toBe('in');
     expect(ir.header.unitsSource).toBe('known');
