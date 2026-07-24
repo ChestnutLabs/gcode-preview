@@ -60,15 +60,34 @@ Four position-affecting behaviors, one decision each for the mechanics (D1–D4)
 ## 3. Non-goals
 
 - **Adding motion codes that do not affect emitted geometry** — e.g. `G4` dwell (audit line 25: "*n/a (not position-affecting)*"). Out of scope; no IR consequence.
-- **Firmware auto-detection** as a correctness crutch. Sniffing whether a file "looks Marlin" to guess the unspecified-mode default is explicitly rejected (D1 Option C, D5); any firmware-default hint belongs in the DD-005 dialect layer as an explicit, capability-tagged input, not a heuristic in the byte-exact engine.
+- **Firmware auto-detection** as a correctness crutch. Sniffing whether a file "looks Marlin" to guess the unspecified-mode default is explicitly rejected (D1 Option C, D5); any firmware-default hint belongs in the DD-005 dialect layer as an explicit, capability-tagged input, not a heuristic in the byte-exact engine. (This is the *same* `extrusionMode`/`positioningMode` hint D2's precedence consumes.)
+- **CNC / laser / plotter non-extrusion move-modelling (#189).** DD-010's extrude-vs-travel classification stays **E-based** (`eDelta > 0 ? Extrude : Travel`), so a zero-E laser/mill/plotter file remains 100 % `Travel` even *after* DD-010. Cut-vs-rapid classification without an E axis, plus a spindle/laser tool-state channel, is a **sibling DD** (proposed **DD-012**, owning epic **#189**) that **depends on and extends** the classifier DD-010 rewrites — sequenced *after* DD-010, never merged into it (reconcile by scoping, not duplication). DD-010 deliberately lays groundwork the sibling reuses: the WCS table `G53`/`G54`–`G59` (D4), arc planes `G17`/`G18`/`G19` (D3), and the modal-state-in-interpreter pattern. (`.bgcode` container decode, epic **#188** → proposed DD-011, is likewise its own DD and unrelated to motion.)
 - **Renderer/adapter surface changes.** These fixes change what the IR *contains*, not the renderer's public API. The renderer consumes the corrected positions/kinds through the existing channels; no new renderer option is proposed here (contrast DD-009, which was all renderer/adapter surface).
 - **Anything that ships before the corpus is re-validated.** A phase does not merge until its golden strategy (D5) is executed.
+
+> **Design note — shared modal-channel layer.** The "*modal state tracked in the interpreter → emitted
+> as a per-segment or sparse side channel*" mechanism DD-010 introduces (extrusion mode, positioning
+> mode, arc plane, WCS) is the **same** pattern that #180 (advanced color modes — fan/temp/accel/PA/flow)
+> and #189 (spindle/laser tool-state) will reuse. DD-010's implementation should keep that mode-tracking
+> + channel-emission seam **generic** rather than hard-wired to M82/M83, so the later DDs extend it
+> instead of re-inventing it. Design the modal-channel layer once.
 
 ## 4. Decisions
 
 Marked **D1–D6**; each lists options with a recommendation. D1 and D2 share one piece of modal machinery and are recommended to land in the same phase (see D6).
 
-### 4.1 D1 — M82/M83 extruder absolute/relative mode, and extrude/travel reclassification (#156)
+### 4.1 D1 — M82/M83 extruder absolute/relative mode, and extrude/travel reclassification (#156) · REVISED (firmware-correctness)
+
+> **Revision (2026-07-24, maintainer feedback).** The first draft recommended defaulting the
+> unspecified extruder mode to **relative** and letting D2's "E follows G90/G91" apply universally.
+> Both were wrong: (a) they are internally in tension, and (b) they are not firmware-universal —
+> **Marlin/Klipper** power on in *absolute* and let `G90`/`G91` steer E **until** `M82`/`M83` latch it,
+> whereas **RepRapFirmware** treats XYZ and E **independently** (`G90`/`G91` never touch E). The draft's
+> "relative keeps the corpus byte-identical" justification was also mis-attributed — the corpus is
+> byte-identical because every fixture emits `M83` *explicitly*, not because of the default. D1 below
+> now (a) defaults the unspecified mode to **absolute** (the firmware-neutral power-on convention,
+> disclosed `inferred`), and (b) hands the firmware-conditioned `G90`/`G91`↔E interaction to D2. The
+> corpus stays byte-identical for the right reason.
 
 **Today.** No extruder-mode state exists (state block lines 254–267). Classification, the stored per-segment extrusion, `stats.extrusionDistance`, and the E-only retraction events (lines 419–435, where `kind: e < 0 ? 'retract' : 'unretract'`, line 428) all read the **raw** `E` word as if it were a per-move delta. Under **M82** that word is an absolute cumulative position, so the classification inverts (travel→extrude) and extrusion distance inflates — the audit's highest-impact finding (`gcode-motion-coverage.md` lines 38–41): "*M82 (absolute extrusion) is the highest-impact gap … Modern slicers that emit M83 (relative E) are unaffected — including the fixtures in our corpus, which is why the demo renders correctly.*"
 
@@ -82,25 +101,34 @@ lastE  = eAbsolute ? eParam : lastE + eParam
 
 and route `eDelta` (not raw `E`) into `emitSegment` (line 446), `stats.extrusionDistance` (line 442), and the E-only retraction sign (lines 420–431). This requires maintaining `lastE` and honoring `G92 E<v>` datum resets (D4) so the first extruding move after a `G92 E0` computes a sane delta.
 
-- **Option A (recommended): track `M82`/`M83` as a modal flag; default to relative when neither is seen.** Add `eAbsolute: boolean` (default `false`) + `lastE: number` to the state block. `M82`→`true`, `M83`→`false`, dispatched in the switch. This **preserves the current output byte-for-byte for the M83/relative-E corpus** (the entire existing fixture set — audit line 41), so those goldens are unchanged and serve as a regression guard; only files that actually emit `M82` change, and they change *toward* correctness. Disclose `capabilities.extrusionMode: 'known'` when a mode command was seen, `'inferred'` when defaulted.
-- **Option B: default to absolute (Marlin firmware default) when neither is seen.** More "physically correct" for hand-written Marlin files that omit the mode word, but it **changes existing goldens for every file that never states a mode**, including much of the corpus, for a case that is rare in slicer output. Rejected as the default; the honest signal for "we don't know" is `'inferred'`, not a silent flip.
-- **Option C: heuristic detection** (sniff monotonic vs. resetting E). Fragile, un-golden-able, violates the byte-exact engine's no-heuristics posture. Rejected.
+- **Option A (recommended): track `M82`/`M83` as explicit modal state; default the *unspecified* mode to `absolute` (the firmware power-on convention), disclosed `inferred`.** Add `eMode: 'unset' | 'absolute' | 'relative'` + `lastE: number` to the state block; `M82`→`absolute`, `M83`→`relative`. The **effective** mode resolves by the precedence pinned in D2: (1) explicit `M82`/`M83`; (2) a firmware-conditioned `G90`/`G91` interaction (D2); (3) the firmware default = **absolute**. All three firmware families (Marlin, RepRapFirmware, Klipper) power on in absolute extrusion, so absolute is the honest firmware-neutral fallback when nothing is stated — disclosed `capabilities.extrusionMode: 'inferred'`, never silently asserted `'known'`. **Corpus stays byte-identical:** every existing fixture emits `M83` *explicitly* → resolves to `'known'` relative → the current output; the default (step 3) only ever fires for files that state *neither* a mode command *nor* a firmware-known `G90`/`G91`, none of which are in the corpus.
+- **Option B: default to relative when unspecified** (the original draft). Rejected on the firmware correction above — it contradicts the Marlin/RRF/Klipper power-on convention, and its "keeps the M83 corpus byte-identical" rationale was mis-attributed (the corpus is explicit-`M83`, so the default never touches it). Relative-as-default would mis-read a hand-written absolute-E Marlin file that omits the mode word.
+- **Option C: heuristic detection** (sniff monotonic vs. resetting E). Fragile, un-golden-able, violates the byte-exact engine's no-heuristics posture. The firmware default is instead **disclosed** as inferred, and refined by an *explicit* dialect-layer firmware hint (D2), not sniffed. Rejected.
 
-**Recommendation: Option A.** Model the mode, keep relative as the *inferred* default, reclassify extrude/travel and recompute extrusion distance from the delta, and re-derive retraction-event kinds from the delta. Note the blast radius: `capabilities.moveKind` (line 615) stays `'known'` but its **values change** for M82 files — the renderer's travel/extrude coloring and DD-006 progress must be re-validated (D5).
+**Recommendation: Option A.** Model `M82`/`M83` explicitly, default the unspecified mode to **absolute** (disclosed `inferred`), and reclassify extrude/travel + recompute `stats.extrusionDistance` and the retraction-event kinds from the resolved `eDelta`. Blast radius: `capabilities.moveKind` stays `'known'` but its **values change** for M82 files — the renderer's travel/extrude coloring and DD-006 progress are re-validated (D5). The `G90`/`G91`↔E interaction and the full resolution precedence are pinned in D2.
 
-### 4.2 D2 — G90/G91 positioning mode for XYZ, independent of E-mode (#155)
+### 4.2 D2 — G90/G91 positioning mode for XYZ, and the firmware-conditioned E-mode interaction (#155) · REVISED
 
 **Today.** XYZ is unconditionally absolute (`sx = x ?? sx …`, lines 443–445; arc R-mode comment line 460 "*assume abs mode*"). `G90`/`G91` are dropped by the `default` warn.
 
-The subtle requirement the task flags: in RepRap/Marlin, `G90`/`G91` set the positioning mode for **both** XYZ **and** E — **unless** `M82`/`M83` have independently pinned the E axis, after which E is latched and no longer follows `G90`/`G91`. So the correct model is **two** modal flags, not one:
+**The requirement, corrected for firmware divergence (maintainer feedback, 2026-07-24).** `G90`/`G91`
+**always** set the XYZ positioning mode; whether they **also** set the extruder mode is **firmware-
+specific**: **Marlin/Klipper** let `G90`/`G91` steer E **until** `M82`/`M83` latch it, whereas
+**RepRapFirmware** treats E **independently** — `G90`/`G91` never touch E in RRF. So the model is one
+universal `xyzAbsolute` flag plus a **firmware-conditioned** resolution of the effective E-mode (the
+precedence that also removes the D1/D2 tension):
 
-- `xyzAbsolute` — set by `G90`(true)/`G91`(false); consumed when updating `sx/sy/sz` and when computing arc target deltas.
-- `eAbsolute` — set by `M82`/`M83` (D1); but if **no** `M82`/`M83` has ever been seen, E **follows** `G90`/`G91`.
+- `xyzAbsolute` — set by `G90`(true)/`G91`(false); consumed when updating `sx/sy/sz` and when computing arc target deltas. **Universal** across firmware.
+- **Effective E-mode** (used by D1's `eDelta`) resolves by precedence:
+  1. explicit `M82`/`M83` seen → latched; `extrusionMode: 'known'`.
+  2. else, **only when the DD-005 dialect layer reports a Marlin-family firmware** *and* a `G90`/`G91` has been seen → E follows `xyzAbsolute` (`'known'` when the firmware hint is `'known'`, else `'inferred'`).
+  3. else → firmware default = **absolute**; `extrusionMode: 'inferred'`.
 
-- **Option A (recommended): two latched modal flags with the M82/M83-overrides-G90/G91 rule.** Represent E-mode as a tri-state internally (`unset` → follow XYZ; `absolute`/`relative` → latched by M82/M83). `G90`/`G91` write `xyzAbsolute` and, only while E-mode is `unset`, also steer the E delta computation. Relative XYZ becomes `sx += x ?? 0` (and arcs compute the target from `sx + (x ?? 0)`). This is the standard firmware semantics and correctly handles mixed files (absolute XYZ + relative E via `M83`, the common slicer shape).
-- **Option B: single positioning flag for all axes.** Simpler, but wrong for the very common "`G90` + `M83`" combination — it would force E back to absolute. Rejected.
+- **Option A (recommended): universal `xyzAbsolute` + the firmware-conditioned E-mode precedence above.** `G90`/`G91` write `xyzAbsolute` (relative XYZ becomes `sx += x ?? 0`, arcs compute the target from `sx + (x ?? 0)`). The `G90`/`G91`→E step (2) fires **only** under a Marlin-family DD-005 hint; under RepRapFirmware — or when the firmware is unknown — `G90`/`G91` are **XYZ-only** and E falls to step 3 (absolute, inferred). This handles the common slicer shape (`G90` + explicit `M83`) *and* the divergent firmware conventions, and the byte-exact engine never sniffs firmware itself — the hint is an explicit DD-005 input (DD-005 already classifies Marlin/RepRap/Klipper).
+- **Option B: a single positioning flag for all axes.** Rejected — wrong for `G90` + `M83` (would force E absolute) and wrong for RRF (would make `G90`/`G91` touch E).
+- **Option C: apply the Marlin `G90`/`G91`→E rule universally** (the original D2 draft). Rejected on the firmware correction — wrong for RepRapFirmware's independent E.
 
-**Recommendation: Option A.** **D1 and D2 are the same modal machine and must land together** — D1's delta math is only correct once `eAbsolute` resolves against `xyzAbsolute`, and D2's relative-XYZ math is what makes the arc/target updates coherent. Disclose `capabilities.positioningMode: 'known'|'inferred'`. **Relationship to #155:** the audit groups G90/G91 with G92 under #155; this DD splits #155's *mode* half here (D2) and its *offset* half into D4, with E10 owning the whole issue.
+**Recommendation: Option A.** **D1 and D2 are one modal machine and land together.** When no firmware is detected, the conservative resolution is XYZ-only + absolute-E-`inferred`. Disclose `capabilities.positioningMode: 'known'|'inferred'` and `extrusionMode` per the precedence. **#155** (reopened as the E10 child) owns the G90/G91 *mode* half here and its G92 *offset* half in D4.
 
 ### 4.3 D3 — G17/G18/G19 arc-plane selection (#157)
 
@@ -186,15 +214,15 @@ Covered per decision (§4). Cross-cutting alternative — **leave the gaps docum
 | Risk | Mitigation |
 |---|---|
 | Golden regen hides an unintended change beyond the targeted code | D5 "prove-unchanged" freeze of the existing corpus as a regression guard; every new golden hand-verified against audit repros |
-| Wrong default for unspecified E-mode flips corpus output | D1 Option A defaults to relative (matches M83 corpus, byte-identical) and discloses `'inferred'`; absolute is never silently assumed |
-| M82/M83 vs G90/G91 independence modeled wrong (mixed files) | D2 Option A: two latched flags with the M82/M83-overrides-G90/G91 rule; explicit `G90`+`M83` mixed fixture |
+| Wrong default for unspecified E-mode | D1 Option A defaults to **absolute** (the Marlin/RRF/Klipper power-on convention), disclosed `'inferred'`, never asserted `'known'`; the corpus is byte-identical because it is explicit-`M83`, not because of the default |
+| Firmware-specific `G90`/`G91`↔E interaction modeled wrong (Marlin vs RepRapFirmware) | D2 Option A gates the `G90`/`G91`→E step on an explicit DD-005 Marlin-family hint; RRF/unknown ⇒ XYZ-only; fixtures for `G90`+`M83` (Marlin) and a RRF `G90` file |
 | Downstream renderer/progress silently mis-render changed positions | D5 gates each phase on renderer snapshot + DD-006 + behavioral-suite re-validation |
 | G92/WCS frame choice makes previews jump to machine origin | D4 Option A keeps the IR in the logical/work frame (identity → unchanged); machine-frame Option B rejected |
 | Scope creep from CNC-only features into the common FDM path | D6 phases common-case M82/G91 first; CNC coordinate systems last, independently shippable |
 
 ## 14. Phased delivery (proposed, impact-first)
 
-1. **Modal machinery — M82/M83 + G90/G91 + G92 E-datum** (D1, D2, D4-E half; #156, #155): two latched mode flags, `lastE`, delta-based extrude/travel reclassification, extrusion-distance and retraction-event recompute, relative-XYZ updates. New capabilities `extrusionMode`, `positioningMode`. Golden regen + downstream re-validation.
+1. **Modal machinery — M82/M83 + G90/G91 + G92 E-datum** (D1, D2, D4-E half; #156, #155): `xyzAbsolute` + tri-state `eMode` resolved by the D2 precedence (explicit `M82`/`M83` → firmware-conditioned `G90`/`G91` → absolute default), `lastE`, delta-based extrude/travel reclassification, extrusion-distance + retraction-event recompute, relative-XYZ updates — built on a **generic mode→channel seam** (§3 design note) rather than M82/M83-specific plumbing, so DD-011/DD-012 extend it. New capabilities `extrusionMode`, `positioningMode`. Golden regen + downstream re-validation.
 2. **Arc planes — G17/G18/G19** (D3; #157): plane-parameterized `g2`, `K` consumption, per-plane R-mode. New capability `arcPlanes`.
 3. **Coordinate systems — G53/G54–G59 + G92 XYZ** (D4; #158, #155 G92 half): active WCS table, G92 offset vector, G53 one-shot bypass, floating-origin interaction. New capability `coordinateSystem`.
 
@@ -202,7 +230,7 @@ Covered per decision (§4). Cross-cutting alternative — **leave the gaps docum
 
 - [ ] D1–D6 decided by the maintainer and recorded verbatim; DD marked Accepted
 - [ ] **E10 — Motion-Model Correctness** opened (milestone Future) owning #155/#156/#157/#158, with phased issues per §14
-- [ ] Phase 1: M82 file classifies E-unchanged moves as **Travel** and reports delta-summed extrusion (audit repro line 32 resolved); `G91` repro (audit line 30) resolved; `M82`/`M83` vs `G90`/`G91` independence covered; frozen corpus byte-identical; renderer + DD-006 + behavioral suite re-validated
+- [ ] Phase 1: M82 file classifies E-unchanged moves as **Travel** and reports delta-summed extrusion (audit repro line 32 resolved); `G91` repro (audit line 30) resolved; the firmware-conditioned `G90`/`G91`↔E interaction covered (Marlin `G90`+`M83` and a RepRapFirmware `G90` file); unspecified E-mode defaults to **absolute** disclosed `inferred`; frozen corpus byte-identical; renderer + DD-006 + behavioral suite re-validated
 - [ ] Phase 2: G18/G19 arcs interpolate in the correct plane with `K` honored (audit line 33 resolved); XY-arc corpus byte-identical
 - [ ] Phase 3: `G92`/G54–G59 offsets honored (audit repro line 31 resolved); identity-WCS corpus byte-identical; floating-origin consistency verified
 - [ ] Every altered dimension disclosed via a `Confidence`-typed capability (`known`/`inferred`/`unavailable`); no fabricated `known`
@@ -213,4 +241,5 @@ Covered per decision (§4). Cross-cutting alternative — **leave the gaps docum
 | Date | Decision | By |
 |---|---|---|
 | 2026-07-24 | DD-010 drafted as **Proposed**; D1–D6 open. Split from DD-009 §3 (motion-model correctness carved out as a separate DD). Grounded in the #154 audit (`docs/compatibility/gcode-motion-coverage.md`) and the byte-exact interpreter in `packages/gcode-parser/src/parse.ts`. Proposes **E10 — Motion-Model Correctness** owning #155/#156/#157/#158 | Chestnut Labs |
+| 2026-07-24 | **D1 + D2 revised (maintainer feedback)** — unspecified E-mode now defaults to **absolute** (the Marlin/RRF/Klipper power-on convention), not relative; the `G90`/`G91`→E interaction is **firmware-conditioned** (Marlin/Klipper vs RepRapFirmware-independent) via an explicit DD-005 hint, resolved by a stated precedence that removes the D1/D2 tension. Added a §3 non-goal + design note scoping **CNC/laser (#189) as a sibling DD (proposed DD-012) sequenced after DD-010** (reconcile by scoping, not merging), noting `.bgcode` (#188 → DD-011), and the shared modal-channel pattern (#180/#189). Still **Proposed** — awaiting acceptance of revised D1–D6 | Maintainer feedback + Chestnut Labs |
 | _pending_ | Awaiting maintainer decision on D1–D6 and on opening E10 | Maintainer |
