@@ -1,17 +1,24 @@
 #!/usr/bin/env node
 /**
- * Build the generated API reference (E11 phase 1, DD-013 D1/D6).
+ * Build the documentation site (E11 phases 1–3, DD-013).
  *
- * typedoc runs in packages mode over the ten public `@chestnutlabs/*` packages, so each package's
- * `dist/*.d.ts` must exist first for cross-package type resolution. npm `--workspaces` builds
- * ALPHABETICALLY, which would compile an adapter before its dependency has a dist on a clean runner
- * (the same trap tools/consumer-vue/run.mjs documents), so we build in dependency order here.
+ * Two typedoc projects, one output tree:
+ *   - the SDK MANUAL (getting-started + guides + concepts, authored under docs/manual/) →
+ *     docs-site/           (the site home);
+ *   - the API REFERENCE (packages mode over the ten @chestnutlabs/* packages) →
+ *     docs-site/api/.
+ * They are separate projects because typedoc's `readme`/`projectDocuments`/`customCss` are
+ * ignored in packages mode, and packages mode gives the API its nice per-package names — so the
+ * manual gets its own normal-mode project (an empty entry point + the documents) and the API keeps
+ * packages mode. Both are themed by appending typedoc-theme.css to their generated style.css, with
+ * IBM Plex loaded via a NON-BLOCKING <link> injected into every page's <head>.
  *
- * Output: docs-site/api (git-ignored). Warnings are baselined to warn (typedoc exits 0); the D5
- * accuracy gate flips them to errors in E11 phase 4.
+ * typedoc needs each package's dist/*.d.ts for cross-package type resolution, and npm --workspaces
+ * builds ALPHABETICALLY (which would compile an adapter before its dependency has a dist), so we
+ * build in dependency order first.
  */
 import { execSync } from 'node:child_process';
-import { readFileSync, writeFileSync, readdirSync } from 'node:fs';
+import { readFileSync, writeFileSync, readdirSync, rmSync } from 'node:fs';
 import { sep } from 'node:path';
 
 // Dependency order: core first; dialects/containers/renderer + parser before preview-core;
@@ -39,39 +46,47 @@ for (const pkg of PACKAGES) {
   run(`npm run build --workspace=@chestnutlabs/${pkg}`);
 }
 
+const outDir = new URL('../../docs-site/', import.meta.url);
+rmSync(outDir, { recursive: true, force: true });
+
+// Manual first (out = docs-site root), then the API reference into the api/ subdir.
+console.log('\n== docs:build — generating SDK manual ==');
+run('npx typedoc --options tools/docs/typedoc.manual.json');
+
 console.log('\n== docs:build — generating API reference (typedoc, packages mode) ==');
 run('npx typedoc');
 
-// Inject the Chestnut Labs theme. typedoc's `customCss` is ignored in packages mode, so:
-//  (1) append the theme's override rules to the generated style.css — loaded by every page
-//      at the right relative path and, appended last, winning by source order;
-//  (2) inject a NON-BLOCKING web-font <link> into each page's <head> (an @import inside
-//      style.css would block the whole sheet until the font CDN responds; a <link> with an
-//      absolute URL loads independently and works from any page depth).
+// Theme both sub-sites. typedoc's `customCss` is ignored in packages mode, so we append the theme
+// to every generated style.css (appended last → wins by source order) and inject a non-blocking
+// web-font <link> into every page's <head> (an @import inside style.css would block the whole sheet
+// until the font CDN responds; a <link> with an absolute URL loads independently, at any depth).
 console.log('\n== docs:build — injecting Chestnut Labs theme ==');
-const outDir = new URL('../../docs-site/api/', import.meta.url);
-const themePath = new URL('./typedoc-theme.css', import.meta.url);
-const stylePath = new URL('assets/style.css', outDir);
-const theme = readFileSync(themePath, 'utf8').trim();
-const style = readFileSync(stylePath, 'utf8');
-writeFileSync(stylePath, `${style}\n\n/* --- Chestnut Labs theme (E11 phase 2, DD-013) --- */\n${theme}\n`);
-
+const theme = readFileSync(new URL('./typedoc-theme.css', import.meta.url), 'utf8').trim();
 const FONT_LINKS =
   '<link rel="preconnect" href="https://fonts.googleapis.com">' +
   '<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>' +
   '<link rel="stylesheet" href="https://fonts.googleapis.com/css2?' +
   'family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap">';
 
+let styled = 0;
 let patched = 0;
-for (const rel of readdirSync(outDir, { recursive: true })) {
-  if (!String(rel).endsWith('.html')) continue;
-  const p = new URL(String(rel).split(sep).join('/'), outDir);
-  const html = readFileSync(p, 'utf8');
-  if (html.includes('</head>') && !html.includes('IBM+Plex+Sans')) {
-    writeFileSync(p, html.replace('</head>', `${FONT_LINKS}</head>`));
-    patched++;
+for (const entry of readdirSync(outDir, { recursive: true })) {
+  const rel = String(entry).split(sep).join('/');
+  const p = new URL(rel, outDir);
+  if (rel.endsWith('assets/style.css')) {
+    const css = readFileSync(p, 'utf8');
+    if (!css.includes('Chestnut Labs theme')) {
+      writeFileSync(p, `${css}\n\n/* --- Chestnut Labs theme (E11, DD-013) --- */\n${theme}\n`);
+      styled++;
+    }
+  } else if (rel.endsWith('.html')) {
+    const html = readFileSync(p, 'utf8');
+    if (html.includes('</head>') && !html.includes('IBM+Plex+Sans')) {
+      writeFileSync(p, html.replace('</head>', `${FONT_LINKS}</head>`));
+      patched++;
+    }
   }
 }
-console.log(`   theme merged into style.css; web-font links injected into ${patched} pages`);
+console.log(`   themed ${styled} stylesheets; web-font links injected into ${patched} pages`);
 
-console.log('\n✅ API reference generated at docs-site/api');
+console.log('\n✅ Docs site generated at docs-site (manual at /, API reference at /api)');

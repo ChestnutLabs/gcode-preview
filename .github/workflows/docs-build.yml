@@ -24,6 +24,6 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: api-reference
-          path: docs-site/api
+          path: docs-site
           if-no-files-found: error
           retention-days: 14
