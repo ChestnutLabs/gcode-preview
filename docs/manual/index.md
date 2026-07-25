@@ -1,11 +1,3 @@
----
-title: Getting started
-group: Guide
-category: Guide
----
-
-# Chestnut Labs G-code Preview
-
 A worker-based, cross-vendor **G-code toolpath stack** for the browser: parse `.gcode` and
 `.gcode.3mf` off the main thread, normalize them into a versioned intermediate representation
 (**ToolpathIR**), and render an interactive Three.js preview — with first-class **Vue, React,
