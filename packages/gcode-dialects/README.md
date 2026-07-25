@@ -7,7 +7,7 @@ enforces it).
 
 Supported dialects: **PrusaSlicer, OrcaSlicer/Bambu Studio, Cura, Klipper, Marlin,
 RepRap-flavor** — see the evidence-dated
-[compatibility matrix](../../docs/compatibility/dialects-and-containers.md).
+[compatibility matrix](https://github.com/ChestnutLabs/gcode-preview/blob/dev/docs/compatibility/dialects-and-containers.md).
 
 Every annotation is capability-tagged (`known | inferred | approximated | unavailable`); consumers
 render what is known and disclose what is not.

@@ -14,6 +14,14 @@ module.exports = {
     browser: true
   },
   overrides: [
+    // TSDoc syntax on the public package surface (E11 phase 4, DD-013 D5). WARN-only for now —
+    // it baselines the current gaps; the docs accuracy gate (typedoc warning budget in
+    // tools/docs/build-api.mjs) is the enforcing check. Flip to 'error' once the gaps are closed.
+    {
+      files: ['packages/*/src/**/*.ts', 'packages/*/src/**/*.tsx'],
+      plugins: ['eslint-plugin-tsdoc'],
+      rules: { 'tsdoc/syntax': 'warn' }
+    },
     // Electron consumer-smoke main process is intentionally CommonJS (Electron default).
     {
       files: ['tools/consumer-smoke/electron-app/**/*.js'],
