@@ -1,0 +1,53 @@
+# E11 phase 2 (DD-013 D3): publish the generated API reference to GitHub Pages.
+# Deploys on release (the canonical "latest"), on push to main/dev (the rolling
+# "next" preview while pre-1.0 — DD-013 D4), and on manual dispatch. PR builds are
+# verified by docs-build.yml and do NOT deploy.
+name: Docs — deploy API reference to Pages
+
+on:
+  release:
+    types: [published]
+  push:
+    branches: [main, dev]
+    paths:
+      - 'packages/**'
+      - 'typedoc.json'
+      - 'tools/docs/**'
+      - '.github/workflows/docs-pages.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# One deploy at a time; let a newer run supersede an in-flight one.
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.x'
+          cache: 'npm'
+      - run: npm ci
+      - run: npm run docs:build
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: docs-site/api
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
