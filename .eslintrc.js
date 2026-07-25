@@ -9,7 +9,7 @@ module.exports = {
     '@typescript-eslint/no-unused-vars': ['error'],
     '@typescript-eslint/no-unsafe-declaration-merging': 'off'
   },
-  ignorePatterns: ['dist'],
+  ignorePatterns: ['dist', 'docs-site', 'docs-api'],
   env: {
     browser: true
   },
