@@ -2,11 +2,15 @@
 
 **Status:** **Audit published** (issue #154, credits upstream
 [xyz-tools/gcode-preview#179](https://github.com/xyz-tools/gcode-preview/issues/179), 2026-07-23).
+**Updated 2026-07-25** for **E10 phase 1** (DD-010): `M82`/`M83`, `G90`/`G91`, and the `G92`
+E-datum are now modeled.
 
-This audit records which **position-affecting** G/M-codes the parser/interpreter
-(`@chestnutlabs/gcode-parser`) currently honors. The interpreter is a **byte-exact port of the
-inherited xyz-tools engine** (E1 golden-gated), so it inherits the upstream engine's coverage —
-**and its gaps**. Capability honesty (DD-001) means naming those gaps plainly.
+This page records which **position-affecting** G/M-codes the parser/interpreter
+(`@chestnutlabs/gcode-parser`) honors. The interpreter began as a **byte-exact port of the
+inherited xyz-tools engine** (E1 golden-gated); E10 (motion-model correctness) layers a
+firmware-conditioned modal model on top of it. Capability honesty (DD-001) means naming the
+remaining gaps plainly — and disclosing them at runtime via the `extrusionMode` /
+`positioningMode` capabilities and the `g92-xyz-unhandled` warning.
 
 ## Coverage
 
@@ -17,40 +21,42 @@ inherited xyz-tools engine** (E1 golden-gated), so it inherits the upstream engi
 | `G20` / `G21` | units inch / mm | **honored** | `units` channel |
 | `G28` | homing (position reset to origin) | **honored** | interpreter |
 | `T0`–`T7` | tool select | **honored** | `tool` channel |
-| **`G90` / `G91`** | **absolute / relative positioning** | **NOT honored — always absolute** | repro below |
-| **`G92`** | **set-position / coordinate offset** | **NOT honored** | repro below |
-| **`M82` / `M83`** | **extruder absolute / relative** | **NOT honored — raw E treated as delta** | repro below |
-| **`G17` / `G18` / `G19`** | **arc plane select (XY / XZ / YZ)** | **NOT honored — arcs assume XY** | code (`i`/`j` only) |
-| **`G53` / `G54`–`G59`** | **machine / work coordinate systems** | **NOT honored** | interpreter switch |
+| **`G90` / `G91`** | **absolute / relative positioning** | **honored** (E10 phase 1, #155) — `positioningMode` capability | `motion-model.test.ts` |
+| **`M82` / `M83`** | **extruder absolute / relative** | **honored** (E10 phase 1, #156) — delta-based classification, `extrusionMode` capability | `motion-model.test.ts` |
+| **`G92`** | **set-position / coordinate offset** | **partial** — **E-datum honored** (E10 phase 1); **X/Y/Z work-offset NOT honored** (warns `g92-xyz-unhandled`, phase 3 #158) | `motion-model.test.ts` |
+| **`G17` / `G18` / `G19`** | **arc plane select (XY / XZ / YZ)** | **NOT honored — arcs assume XY** (phase 2 #157) | code (`i`/`j` only) |
+| **`G53` / `G54`–`G59`** | **machine / work coordinate systems** | **NOT honored** (phase 3 #158) | interpreter switch |
 | `G4` | dwell | n/a (not position-affecting) | — |
 
-## Reproductions (2026-07-23, against `dist`)
+## Firmware conditioning (DD-010)
+
+Absolute is the power-on default (Marlin/RepRapFirmware convention). Whether `G90`/`G91` also
+switch the **extruder** mode is firmware-specific, so it is gated on
+`parseOptions.extruderFollowsPositioning`: Marlin/Klipper set it `true` (E follows `G90`/`G91`
+unless `M82`/`M83` override); RepRapFirmware leaves it `false` (XYZ and E independent). Explicit
+`M82`/`M83` always win. When neither the mode nor a firmware hint is known, the capability is
+disclosed as `inferred`, never `known` — the stack does not fabricate a mode it cannot prove.
+
+## Resolved reproductions (originally captured 2026-07-23)
 
 ```
-[G91] relative: `G1 X10` then `G1 X10` after `G91` → ends X=10 (should be 20; second move read as absolute)
-[G92] offset:   `G92 X0` at physical X50, then `G1 X10` → ends X=10 (should be physical X=60)
-[M82] abs-E:    an E-unchanged move is classified EXTRUDE (should be TRAVEL); extrusion distance inflated
-[G18] XZ arc:   flattened with XY (I/J) interpretation; K ignored
+[G91] relative: `G1 X10` then `G1 X10` after `G91` → now ends X=20 ✓ (was 10)
+[M82] abs-E:    an E-unchanged move is now classified TRAVEL ✓; extrusion distance no longer inflated
+[G92 E] datum:  `G92 E0` now resets the extruder datum so the next per-move delta is correct ✓
 ```
 
-## Impact & priority
+This is why the 7 absolute-E dialect fixtures' `extrusionDistance` **dropped** at E10 phase 1: the
+old engine summed raw (cumulative) E words; the delta-based model sums true per-move deltas. All
+other geometry (positions, kinds, layers, source bytes) stayed byte-identical.
 
-- **`M82` (absolute extrusion)** is the highest-impact gap: it is common (Marlin default, many
-  slicer configs), and mis-classifying travel moves as extrusion distorts the preview and the
-  extrusion-distance/live-progress signals. **Modern slicers that emit `M83` (relative E) are
-  unaffected** — including the fixtures in our corpus, which is why the demo renders correctly.
-- **`G91` / `G92`** affect files that use relative positioning or coordinate resets (some CNC
-  post-processors, hand-written G-code, certain firmware start sequences).
-- **`G17`/`G18`/`G19`** matter mainly for CNC (non-XY arcs); most FDM is XY-plane.
-- **`G53`/`G54`–`G59`** are CNC work-offset systems; rare in FDM.
+## Remaining gaps
 
-These are **inherited limitations, not regressions**. Fixes change interpreter motion state and
-therefore IR positions, so each is **contract-sensitive and DD-gated** (DD-001/DD-003). Tracking
-issues: **#155** (G90/G91 + G92 motion state), **#156** (M82/M83 extruder mode), **#157**
-(G17/G18/G19 arc planes), **#158** (G53/G54–G59 coordinate systems).
+- **`G92` X/Y/Z work-offset** — surfaced as the `g92-xyz-unhandled` warning rather than a silent
+  datum shift; lands with coordinate systems in phase 3 (#158).
+- **`G17` / `G18` / `G19`** — non-XY arcs (mainly CNC); arcs still assume the XY plane. Phase 2 (#157).
+- **`G53` / `G54`–`G59`** — CNC work-coordinate systems; rare in FDM. Phase 3 (#158).
 
-## `v0.1.0` note
-
-Whether any of these blocks the first release is a maintainer call. The recommendation is to
-**document them as known limitations for `v0.1.0`** (this page) and prioritize **#156 (M82)** and
-**#155 (G91/G92)** early in the post-release motion-model work, given real-world prevalence.
+Motion-model changes alter interpreter state and therefore IR positions, so each remains
+**contract-sensitive and DD-gated** (DD-010: explicit golden-regen + capability honesty). Tracking
+issues: **#155** (G90/G91 + G92 E — **shipped**), **#156** (M82/M83 — **shipped**), **#157** (arc
+planes), **#158** (coordinate systems + G92 XYZ).
