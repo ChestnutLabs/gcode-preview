@@ -20,7 +20,6 @@
   },
   "out": "docs-site/api",
   "name": "Chestnut Labs G-code Preview — API Reference",
-  "includeVersion": true,
   "hideGenerator": true,
   "highlightLanguages": ["typescript", "javascript", "tsx", "jsx", "json", "bash", "sh", "html", "css", "vue", "svelte"],
   "navigationLinks": {
