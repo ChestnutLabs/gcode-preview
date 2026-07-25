@@ -16,11 +16,18 @@
   "packageOptions": {
     "entryPoints": ["src/index.ts"],
     "excludeInternal": true,
-    "excludeExternals": true
+    "excludeExternals": true,
+    "suppressCommentWarningsInDeclarationFiles": true,
+    "validation": {
+      "notExported": false,
+      "invalidLink": true,
+      "rewrittenLink": true
+    }
   },
   "out": "docs-site/api",
   "name": "G-code Preview — API Reference",
   "hideGenerator": true,
+  "suppressCommentWarningsInDeclarationFiles": true,
   "highlightLanguages": ["typescript", "javascript", "tsx", "jsx", "json", "bash", "sh", "html", "css", "vue", "svelte"],
   "navigationLinks": {
     "Guide": "https://chestnutlabs.github.io/gcode-preview/",

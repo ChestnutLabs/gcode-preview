@@ -41,6 +41,31 @@ const run = (cmd) => {
   execSync(cmd, { stdio: 'inherit' });
 };
 
+// Accuracy gate (E11 phase 4, DD-013 D5). typedoc exits 0 on warnings; we run it, echo the
+// output, and FAIL the build if the warning count exceeds a known-benign baseline. This catches
+// every NEW warning — a broken `@link`, a rewritten reference, an undocumented export once that
+// check is enabled — while tolerating unavoidable external noise (@types/three .d.ts comment
+// quirks, and one media-copy note for an absolute doc link that packages mode still probes).
+// A warning budget is used instead of `treatWarningsAsErrors` precisely because those external
+// warnings cannot be config-suppressed in packages mode; lower the baseline as they are removed.
+const typedocChecked = (cmd, label, allowedWarnings) => {
+  console.log(`\n$ ${cmd}`);
+  const output = execSync(`${cmd} 2>&1`, { encoding: 'utf8' });
+  process.stdout.write(output);
+  // Read the authoritative count from typedoc's "Found N errors and M warnings" summary (that
+  // summary line itself carries a [warning] prefix, so counting [warning] occurrences over-counts).
+  const summary = output.match(/Found \d+ errors and (\d+) warnings/);
+  const warnings = summary ? Number(summary[1]) : 0;
+  if (warnings > allowedWarnings) {
+    throw new Error(
+      `${label}: ${warnings} typedoc warnings exceed the allowed ${allowedWarnings}. ` +
+        `A new warning was introduced (broken @link, rewritten reference, undocumented export, …). ` +
+        `Fix it, or if it is genuinely benign raise the baseline in tools/docs/build-api.mjs.`
+    );
+  }
+  console.log(`   ✓ ${label}: ${warnings}/${allowedWarnings} typedoc warnings (within budget)`);
+};
+
 console.log('== docs:build — building @chestnutlabs/* in dependency order ==');
 for (const pkg of PACKAGES) {
   run(`npm run build --workspace=@chestnutlabs/${pkg}`);
@@ -51,10 +76,10 @@ rmSync(outDir, { recursive: true, force: true });
 
 // Manual first (out = docs-site root), then the API reference into the api/ subdir.
 console.log('\n== docs:build — generating SDK manual ==');
-run('npx typedoc --options tools/docs/typedoc.manual.json');
+typedocChecked('npx typedoc --options tools/docs/typedoc.manual.json', 'manual', 0);
 
 console.log('\n== docs:build — generating API reference (typedoc, packages mode) ==');
-run('npx typedoc');
+typedocChecked('npx typedoc', 'API reference', 3);
 
 // Theme both sub-sites. typedoc's `customCss` is ignored in packages mode, so we append the theme
 // to every generated style.css (appended last → wins by source order) and inject a non-blocking
@@ -68,6 +93,15 @@ const FONT_LINKS =
   '<link rel="stylesheet" href="https://fonts.googleapis.com/css2?' +
   'family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap">';
 
+// Version stamp (DD-013 D4): read the lockstep version from any package and footer every page.
+const REPO = 'https://github.com/ChestnutLabs/gcode-preview';
+const version = JSON.parse(
+  readFileSync(new URL('../../packages/toolpath-core/package.json', import.meta.url), 'utf8')
+).version;
+const FOOTER =
+  `<footer class="gp-docs-footer">Chestnut Labs G-code Preview · v${version} · ` +
+  `<a href="${REPO}/releases">changelog</a> · <a href="${REPO}/blob/dev/LICENSE">MIT</a></footer>`;
+
 let styled = 0;
 let patched = 0;
 for (const entry of readdirSync(outDir, { recursive: true })) {
@@ -80,13 +114,22 @@ for (const entry of readdirSync(outDir, { recursive: true })) {
       styled++;
     }
   } else if (rel.endsWith('.html')) {
-    const html = readFileSync(p, 'utf8');
+    let html = readFileSync(p, 'utf8');
+    let touched = false;
     if (html.includes('</head>') && !html.includes('IBM+Plex+Sans')) {
-      writeFileSync(p, html.replace('</head>', `${FONT_LINKS}</head>`));
+      html = html.replace('</head>', `${FONT_LINKS}</head>`);
+      touched = true;
+    }
+    if (html.includes('</body>') && !html.includes('gp-docs-footer')) {
+      html = html.replace('</body>', `${FOOTER}</body>`);
+      touched = true;
+    }
+    if (touched) {
+      writeFileSync(p, html);
       patched++;
     }
   }
 }
-console.log(`   themed ${styled} stylesheets; web-font links injected into ${patched} pages`);
+console.log(`   themed ${styled} stylesheets; font + v${version} footer injected into ${patched} pages`);
 
 console.log('\n✅ Docs site generated at docs-site (manual at /, API reference at /api)');

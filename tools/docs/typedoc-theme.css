@@ -137,3 +137,16 @@ a.tsd-index-link {
 .tsd-page-title a {
   color: var(--gp-primary-strong);
 }
+
+/* ---------- Version footer (DD-013 D4) ---------- */
+.gp-docs-footer {
+  margin: 3rem 0 1.5rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--gp-border);
+  font-size: 0.8rem;
+  color: var(--color-text-aside);
+  text-align: center;
+}
+.gp-docs-footer a {
+  color: var(--color-link);
+}

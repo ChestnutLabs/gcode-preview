@@ -12,7 +12,7 @@ npm install @chestnutlabs/gcode-preview-vue three
 
 (`three` is a peerDependency of the renderer, supported range `^0.178.0` — npm ≥ 7 installs it
 automatically; pnpm/yarn users add it explicitly. See the
-[support policy](../../docs/reference/support-policy.md).)
+[support policy](https://github.com/ChestnutLabs/gcode-preview/blob/dev/docs/reference/support-policy.md).)
 
 Two adoption levels, one implementation (the component is a shell over the composable):
 
