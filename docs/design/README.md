@@ -23,7 +23,7 @@ boundary. Architecture-sensitive work is **blocked until its DD is Accepted** (g
 | [DD-008](DD-008-release-publication-versioning-and-support-policy.md) | Release, Publication Readiness, Versioning & Support Policy | E7 | M5 | **Accepted** 2026-07-23 with amendments (#125) |
 | [DD-009](DD-009-toolpath-annotations-and-renderer-options.md) | Toolpath Annotations & Renderer Options | E9 | Future | **Accepted** 2026-07-23 (D1–D7 as recommended) (#160) |
 | [DD-010](DD-010-motion-model-correctness.md) | Motion-Model Correctness (extruder/positioning mode, arc planes, coordinate systems) | E10 | Future | **Accepted** 2026-07-24 (revised D1–D6) (#191) |
-| [DD-013](DD-013-documentation-sdk-reference-and-published-manual.md) | Documentation, SDK Reference & Published Manual | E11 (proposed) | Future | **Proposed** 2026-07-25 — awaiting acceptance |
+| [DD-013](DD-013-documentation-sdk-reference-and-published-manual.md) | Documentation, SDK Reference & Published Manual | E11 | Future | **Accepted** 2026-07-25 (D1–D7 as recommended) (#197) |
 
 > **Reserved:** DD-011 (Binary G-code `.bgcode` decode, epic #188) and DD-012 (CNC/laser/plotter
 > non-extrusion toolpaths, epic #189) are reserved by the DD-010 sibling triage and not yet drafted —

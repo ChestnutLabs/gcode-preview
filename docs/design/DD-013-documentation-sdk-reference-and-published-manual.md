@@ -1,9 +1,9 @@
 # DD-013 — Documentation, SDK Reference & Published Manual
 
-**Status:** **Proposed** <!-- Draft | Proposed | Accepted | Superseded | Rejected -->
+**Status:** **Accepted (2026-07-25 — D1–D7 as recommended)** <!-- Draft | Proposed | Accepted | Superseded | Rejected -->
 **Authors/Owners:** Chestnut Labs
 **Date:** 2026-07-25 · **Last revised:** 2026-07-25
-**Owning Epic:** **E11 — Documentation, SDK Reference & Published Manual** (proposed; post-`v0.2.0`) · **Milestone:** Future *(assignment is a maintainer decision — see D-open)*
+**Owning Epic:** **E11 — Documentation, SDK Reference & Published Manual** (#197, post-`v0.2.0`) · **Milestone:** Future
 **Supersedes / Superseded by:** none
 **Related:** DD-002 (package boundaries & **public API versioning** — the API reference documents exactly the public export surface DD-002 governs, and docs versioning tracks the lockstep SemVer), DD-007 (Vue/consumer boundary — the AnyBridge-specific integration guide stays out of scope, §3), DD-008 (release/publication/versioning/support — E7 shipped the README/public-docs rewrite #129 but **not** a generated API-reference site; this DD completes that epic's "Documentation & Ecosystem" ambit and hooks the docs build into the release flow), DD-001 (capability model — a first-class *concept* page the manual must present honestly), DD-005/DD-006/DD-009/DD-010 (their reference docs — dialect matrix, progress contract, still-render, motion coverage — become manual sections). Sibling reserved DDs: `.bgcode` (#188 → DD-011), CNC/laser (#189 → DD-012). Depends on the repo-hygiene refresh (PR #195) that corrected the public README + motion-coverage matrix and removed the dead `PUBLISHING.md`.
 
@@ -22,10 +22,12 @@
 > no CI job, and carries an upstream `navigationLinks: { "Demo": "/" }`. It is dormant, not published —
 > so nothing wrong is *live* — but it documents the wrong surface and produces nothing consumers can use.
 
-> **This is a proposal awaiting maintainer acceptance.** No implementation, no config changes, and no
-> new epic/issues are created until D1–D7 are decided. Per the docs-first rule, the deliberately-kept
-> `typedoc`/`rollup` tooling (repo-hygiene decision, PR #195 — kept as harmless vestiges) is **not**
-> touched until this DD is accepted.
+> **Accepted 2026-07-25 — D1–D7 all adopted as recommended** (maintainer: "Accept all as recommended";
+> milestone **Future**). Epic **E11** (#197) opened owning the four phased issues **#198** (phase 1 —
+> typedoc repoint + `docs:build` CI), **#199** (phase 2 — publish to GitHub Pages), **#200** (phase 3 —
+> SDK manual/site), **#201** (phase 4 — accuracy gate + versioning). Implementation begins with phase 1
+> (the safe typedoc repoint). The deliberately-kept `rollup` inherited-engine tooling (PR #195) is
+> orthogonal and untouched; only the stale `typedoc` config is repointed (D6).
 
 ---
 
@@ -355,8 +357,8 @@ untouched.
 
 ## 15. Acceptance criteria
 
-- [ ] D1–D7 decided by the maintainer and recorded verbatim; DD marked **Accepted**; milestone assigned (D-open)
-- [ ] **E11 — Documentation, SDK Reference & Published Manual** opened owning the §14 phased issues + a typedoc-repoint tracking issue
+- [x] D1–D7 decided by the maintainer and recorded ("Accept all as recommended"); DD marked **Accepted** (2026-07-25); milestone **Future**
+- [x] **E11 — Documentation, SDK Reference & Published Manual** opened (#197) owning the §14 phased issues (#198–#201)
 - [ ] Phase 1: `typedoc` generates a unified API reference for all **ten** public packages (not the `src/` oracle); `docs:build` runs in CI; the upstream Demo/`src/` config is gone
 - [ ] Phase 2: the API reference is live on GitHub Pages, release-gated; the About homepage points at it
 - [ ] Phase 3: a published SDK manual (getting-started + concepts + per-framework guides + recipes) with `docs/reference/*` folded in under the single-source rule
@@ -369,4 +371,4 @@ untouched.
 | Date | Decision | By |
 |---|---|---|
 | 2026-07-25 | DD-013 drafted as **Proposed**; D1–D7 open. Motivated by the `v0.2.0` publish + the repo-hygiene audit (PR #195) that found `typedoc` aimed at the private `src/` oracle, output git-ignored and unpublished, and good-but-unsurfaced TSDoc across the packages. Proposes **E11 — Documentation, SDK Reference & Published Manual** completing E7/DD-008's "Documentation & Ecosystem" ambit. Numbered DD-013 because **DD-011** (`.bgcode`, #188) and **DD-012** (CNC/laser, #189) are reserved (DD-010 sibling triage) | Chestnut Labs |
-| _pending_ | Awaiting maintainer decision on D1–D7, on the milestone, and on opening E11 | Maintainer |
+| 2026-07-25 | **Accepted — D1–D7 all adopted as recommended** ("Accept all as recommended"); milestone **Future**. Epic **E11** (#197) opened owning phased issues **#198** (phase 1 — typedoc repoint + `docs:build` CI), **#199** (phase 2 — GitHub Pages publish), **#200** (phase 3 — SDK manual/site), **#201** (phase 4 — accuracy gate + versioning). Implementation begins with phase 1 | Maintainer |
