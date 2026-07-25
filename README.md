@@ -5,10 +5,10 @@ A worker-based, cross-vendor **G-code toolpath stack** for the browser: parse `.
 (`ToolpathIR`), and render an interactive Three.js preview — with first-class **Vue, React, and
 Svelte** integrations that are thin adapters over one shared, framework-neutral engine.
 
-> **Status: pre-release.** The stack is complete and consumable (E0–E6 of the
-> [master plan](docs/00_PROJECT_MASTER_PLAN.md) are closed); the first published line, `v0.1.0`,
-> ships at the end of the current release epic. Until then, consume via `npm pack` tarballs — see
-> *Consuming before the first release* below.
+> **Status: published.** All ten `@chestnutlabs/*` packages are on npm (latest **`v0.2.0`**,
+> lockstep-versioned with npm provenance). E0–E9 of the
+> [master plan](docs/00_PROJECT_MASTER_PLAN.md) are closed; E10 (motion-model correctness) is in
+> progress. Install from npm — see *Quick start* below.
 
 ![3DBenchy rendered as tubes with feature coloring in the showcase viewer](docs/media/viewer-benchy-tubes.png)
 
@@ -142,8 +142,9 @@ thin path; the full viewer is reachable without switching APIs.
   `parseOptions.plate`).
 - **Dialects:** PrusaSlicer, OrcaSlicer/Bambu, Cura, Klipper, Marlin, RepRap-flavor — see the
   evidence-dated [compatibility matrix](docs/compatibility/dialects-and-containers.md).
-- **Motion commands:** which position-affecting G/M-codes are honored (and the known
-  inherited gaps, e.g. `M82` absolute extrusion) — see
+- **Motion commands:** which position-affecting G/M-codes are honored — absolute/relative
+  positioning (`G90`/`G91`), extruder mode (`M82`/`M83`), and the `G92` E-datum are modeled
+  (E10 phase 1); arc planes (`G17`–`G19`) and work-coordinate systems are still in progress — see
   [G-code motion coverage](docs/compatibility/gcode-motion-coverage.md).
 - **Build volume:** per-file discovered bed geometry with consumer-wins precedence (your
   configured plate is never silently overridden; discovery is emitted instead).
@@ -165,20 +166,16 @@ thin path; the full viewer is reachable without switching APIs.
 - `tools/example-react`, `tools/example-svelte` — complete Vite apps per framework, run the same
   way. All three apps consume the packages exactly as an external consumer would.
 
-## Consuming before the first release
-
-Until `v0.1.0` is on npm, consume via tarballs: build dependency-ordered, `npm pack` each package,
-and install with `file:` references — `tools/consumer-vue/run.mjs` is a working, CI-exercised
-implementation of exactly that recipe.
-
 ## Project status & governance
 
 Docs-first: every architecture-sensitive epic passes a Design Document gate before
 implementation. The [master plan](docs/00_PROJECT_MASTER_PLAN.md) controls direction; the
 [docs index](docs/README.md) tracks epic status; accepted designs live in
-[`docs/design/`](docs/design). Current state: E0–E6 closed and accepted (parser, dialects,
-containers, renderer, live progress, multi-framework integration); E7 (release) is in progress —
-versioning, publication, container fuzzing, and a headless still-render entry point land there.
+[`docs/design/`](docs/design). Current state: E0–E9 closed and accepted (parser, dialects,
+containers, renderer, live progress, multi-framework integration, the `v0.1.0` release, and
+`v0.2.0`'s toolpath annotations + renderer options); E10 (motion-model correctness) is in
+progress — its phase 1 (`M82`/`M83`, `G90`/`G91`, the `G92` E-datum) has shipped, with arc
+planes and coordinate systems to follow.
 
 Contributions: see [CONTRIBUTING.md](CONTRIBUTING.md) ·
 security policy: [SECURITY.md](SECURITY.md).
