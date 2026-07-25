@@ -8,6 +8,8 @@ TODO.md
 dist/*
 # Generated typedoc API output.
 /docs-api/
+# Generated API reference / docs site build (E11 / DD-013).
+/docs-site/
 # --- Chestnut Labs additions ---
 # Workspace package build output
 /packages/*/dist/

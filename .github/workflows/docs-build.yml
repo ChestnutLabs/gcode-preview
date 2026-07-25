@@ -1,0 +1,31 @@
+# E11 phase 1 (DD-013 D6): verify the generated API reference builds.
+# NON-REQUIRED — intentionally not a branch-protection check. It builds the ten
+# @chestnutlabs/* packages in dependency order, then runs typedoc (packages mode)
+# over their public src/index.ts surfaces. typedoc warnings are baselined to warn
+# here; the D5 accuracy gate (phase 4) flips them to errors.
+name: Docs — API reference build
+
+on:
+  push:
+    branches: [main, dev]
+  pull_request:
+    branches: [main, dev]
+
+jobs:
+  docs-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.x'
+          cache: 'npm'
+      - run: npm ci
+      # Ordered package build + typedoc (packages mode) → docs-site/api.
+      - run: npm run docs:build
+      - uses: actions/upload-artifact@v4
+        with:
+          name: api-reference
+          path: docs-site/api
+          if-no-files-found: error
+          retention-days: 14
