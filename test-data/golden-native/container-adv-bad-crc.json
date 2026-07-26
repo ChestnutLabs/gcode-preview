@@ -17,7 +17,9 @@
     "retractions": "unavailable",
     "colorChanges": "unavailable",
     "extrusionMode": "inferred",
-    "positioningMode": "inferred"
+    "positioningMode": "inferred",
+    "arcPlanes": "inferred",
+    "coordinateSystem": "inferred"
   },
   "warningCodes": [
     "layers-unavailable",
