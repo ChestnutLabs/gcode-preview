@@ -17,7 +17,8 @@
     "retractions": "known",
     "colorChanges": "unavailable",
     "extrusionMode": "known",
-    "positioningMode": "known"
+    "positioningMode": "known",
+    "arcPlanes": "inferred"
   },
   "warningCodes": [
     "layers-cleared-non-planar",

@@ -17,14 +17,14 @@ remaining gaps plainly — and disclosing them at runtime via the `extrusionMode
 | Code(s) | Effect on position | Status | Evidence |
 |---|---|---|---|
 | `G0` / `G1` | linear move | **honored** | core motion |
-| `G2` / `G3` | arc move (I/J center or R) incl. full circles | **honored (XY plane only)** | E2/E3 |
+| `G2` / `G3` | arc move (I/J/K center or R) incl. full circles, all planes | **honored** | E2/E3, #157 |
 | `G20` / `G21` | units inch / mm | **honored** | `units` channel |
 | `G28` | homing (position reset to origin) | **honored** | interpreter |
 | `T0`–`T7` | tool select | **honored** | `tool` channel |
 | **`G90` / `G91`** | **absolute / relative positioning** | **honored** (E10 phase 1, #155) — `positioningMode` capability | `motion-model.test.ts` |
 | **`M82` / `M83`** | **extruder absolute / relative** | **honored** (E10 phase 1, #156) — delta-based classification, `extrusionMode` capability | `motion-model.test.ts` |
 | **`G92`** | **set-position / coordinate offset** | **partial** — **E-datum honored** (E10 phase 1); **X/Y/Z work-offset NOT honored** (warns `g92-xyz-unhandled`, phase 3 #158) | `motion-model.test.ts` |
-| **`G17` / `G18` / `G19`** | **arc plane select (XY / XZ / YZ)** | **NOT honored — arcs assume XY** (phase 2 #157) | code (`i`/`j` only) |
+| **`G17` / `G18` / `G19`** | **arc plane select (XY / XZ / YZ)** | **honored** (E10 phase 2, #157) — plane-parameterized flattening, `arcPlanes` capability | `motion-model.test.ts` |
 | **`G53` / `G54`–`G59`** | **machine / work coordinate systems** | **NOT honored** (phase 3 #158) | interpreter switch |
 | `G4` | dwell | n/a (not position-affecting) | — |
 
@@ -53,10 +53,9 @@ other geometry (positions, kinds, layers, source bytes) stayed byte-identical.
 
 - **`G92` X/Y/Z work-offset** — surfaced as the `g92-xyz-unhandled` warning rather than a silent
   datum shift; lands with coordinate systems in phase 3 (#158).
-- **`G17` / `G18` / `G19`** — non-XY arcs (mainly CNC); arcs still assume the XY plane. Phase 2 (#157).
 - **`G53` / `G54`–`G59`** — CNC work-coordinate systems; rare in FDM. Phase 3 (#158).
 
 Motion-model changes alter interpreter state and therefore IR positions, so each remains
 **contract-sensitive and DD-gated** (DD-010: explicit golden-regen + capability honesty). Tracking
 issues: **#155** (G90/G91 + G92 E — **shipped**), **#156** (M82/M83 — **shipped**), **#157** (arc
-planes), **#158** (coordinate systems + G92 XYZ).
+planes — **shipped**), **#158** (coordinate systems + G92 XYZ).

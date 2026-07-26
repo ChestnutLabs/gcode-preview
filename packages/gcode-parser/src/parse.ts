@@ -277,6 +277,11 @@ export function createEngine(input: string | Uint8Array, opts: ParseOptions): En
   let lastE = 0;
   const extruderFollowsPositioning = opts.extruderFollowsPositioning === true;
 
+  // Arc-plane modal state (DD-010 D3, #157, E10 phase 2). G17=XY (default, power-on),
+  // G18=XZ, G19=YZ. Arc flattening runs in the active plane; the through axis ramps linearly.
+  let arcPlane: 'xy' | 'xz' | 'yz' = 'xy';
+  let arcPlaneSeen = false; // any G17/G18/G19 observed → arcPlanes 'known'
+
   /**
    * Effective per-move E delta from the modal extruder mode (DD-010 D1/D2 precedence:
    * explicit M82/M83 → firmware-conditioned G90/G91 → absolute default). Updates `lastE`.
@@ -498,12 +503,10 @@ export function createEngine(input: string | Uint8Array, opts: ParseOptions): En
   };
 
   const g2 = (p: Record<string, number>, cw: boolean): boolean => {
-    const { x, y, z, e, f } = p;
-    let { i, j, r } = p;
+    const { e, f } = p;
+    let { r } = p;
     if (f !== undefined) modalFeed = f;
-    // E is delta-based (DD-010 D1) so M82 arcs classify correctly and `lastE` stays consistent with
-    // g0; the arc XYZ geometry stays absolute here (G91-arc handling lands with the arc-plane rewrite,
-    // phase 2). Relative-E → delta === word → the XY-arc corpus is byte-identical.
+    // E is delta-based (DD-010 D1) so M82 arcs classify correctly and `lastE` stays consistent with g0.
     const eDelta = resolveEDelta(e);
     const pathType = eDelta ? 'extrusion' : 'travel';
     if (path === null || path.type !== pathType) {
@@ -511,25 +514,43 @@ export function createEngine(input: string | Uint8Array, opts: ParseOptions): En
     }
     if (eDelta > 0) stats.extrusionDistance += eDelta;
 
+    // Absolute targets, honoring G90/G91 (DD-010 D2 — the deferred G91-arc geometry lands here, #157).
+    // I/J/K are ALWAYS current-relative center offsets, independent of positioning mode.
+    const tx = nextAxis(sx, p.x);
+    const ty = nextAxis(sy, p.y);
+    const tz = nextAxis(sz, p.z);
+
+    // Select the active arc plane (DD-010 D3): (sa,sb)→(ta,tb) is the in-plane arc with center offsets
+    // (oa,ob); sc→tc is the through axis (linear ramp). XY reproduces the pre-#157 math exactly, so the
+    // XY-arc corpus stays byte-identical; only G18/G19 arcs newly flatten in the correct plane.
+    const [sa, sb, sc, ta, tb, tc, oa, ob] =
+      arcPlane === 'xz'
+        ? [sx, sz, sy, tx, tz, ty, p.i, p.k]
+        : arcPlane === 'yz'
+          ? [sy, sz, sx, ty, tz, tx, p.j, p.k]
+          : [sx, sy, sz, tx, ty, tz, p.i, p.j];
+
+    let ia = oa;
+    let ib = ob;
     if (r) {
-      const deltaX = x - sx; // assume abs mode (inherited)
-      const deltaY = y - sy;
-      const minR = Math.sqrt(Math.pow(deltaX / 2, 2) + Math.pow(deltaY / 2, 2));
+      const deltaA = ta - sa;
+      const deltaB = tb - sb;
+      const minR = Math.sqrt(Math.pow(deltaA / 2, 2) + Math.pow(deltaB / 2, 2));
       r = Math.max(r, minR);
-      const dSquared = Math.pow(deltaX, 2) + Math.pow(deltaY, 2);
+      const dSquared = Math.pow(deltaA, 2) + Math.pow(deltaB, 2);
       const hSquared = Math.pow(r, 2) - dSquared / 4;
       let hDivD = Math.sqrt(hSquared / dSquared);
       if ((cw && r < 0.0) || (!cw && r > 0.0)) hDivD = -hDivD;
-      i = deltaX / 2 + deltaY * hDivD;
-      j = deltaY / 2 - deltaX * hDivD;
+      ia = deltaA / 2 + deltaB * hDivD;
+      ib = deltaB / 2 - deltaA * hDivD;
     }
 
-    const wholeCircle = sx == x && sy == y;
-    const centerX = sx + i;
-    const centerY = sy + j;
-    const arcRadius = Math.sqrt(i * i + j * j);
-    const arcCurrentAngle = Math.atan2(-j, -i);
-    const finalTheta = Math.atan2(y - centerY, x - centerX);
+    const wholeCircle = sa == ta && sb == tb;
+    const centerA = sa + ia;
+    const centerB = sb + ib;
+    const arcRadius = Math.sqrt(ia * ia + ib * ib);
+    const arcCurrentAngle = Math.atan2(-ib, -ia);
+    const finalTheta = Math.atan2(tb - centerB, ta - centerA);
 
     let totalArc;
     if (wholeCircle) {
@@ -544,27 +565,32 @@ export function createEngine(input: string | Uint8Array, opts: ParseOptions): En
     let arcAngleIncrement = totalArc / totalSegments;
     arcAngleIncrement *= cw ? -1 : 1;
 
-    const zDist = sz - (z || sz);
-    const zStep = zDist / totalSegments;
+    // Through-axis linear ramp — preserves the inherited step (byte-identical for planar XY arcs,
+    // where the through axis is unchanged so the ramp is flat).
+    const cStep = (sc - tc) / totalSegments;
 
     const kind = (pathType === 'extrusion' ? MoveKind.Extrude : MoveKind.Travel) | MoveKind.ArcSegment;
     const eachE = e !== undefined ? eDelta / Math.max(1, Math.ceil(totalSegments)) : 0;
 
-    let px;
-    let py;
-    let pz = sz;
+    // Map an in-plane point (pa,pb) + through-axis pc back to (x,y,z) for the active plane.
+    const emitArc = (pa: number, pb: number, pcv: number): boolean => {
+      const [px, py, pz] = arcPlane === 'xz' ? [pa, pcv, pb] : arcPlane === 'yz' ? [pcv, pa, pb] : [pa, pb, pcv];
+      return emitSegment(px, py, pz, eachE, kind);
+    };
+
+    let pc = sc;
     let currentAngle = arcCurrentAngle;
     for (let moveIdx = 0; moveIdx < totalSegments - 1; moveIdx++) {
       currentAngle += arcAngleIncrement;
-      px = centerX + arcRadius * Math.cos(currentAngle);
-      py = centerY + arcRadius * Math.sin(currentAngle);
-      pz += zStep;
-      if (!emitSegment(px, py, pz, eachE, kind)) return false;
+      const pa = centerA + arcRadius * Math.cos(currentAngle);
+      const pb = centerB + arcRadius * Math.sin(currentAngle);
+      pc += cStep;
+      if (!emitArc(pa, pb, pc)) return false;
     }
-    sx = x || sx;
-    sy = y || sy;
-    sz = z || sz;
-    return emitSegment(sx, sy, sz, eachE, kind);
+    sx = tx;
+    sy = ty;
+    sz = tz;
+    return emitArc(ta, tb, tc);
   };
 
   const onComment = opts.onComment;
@@ -639,6 +665,19 @@ export function createEngine(input: string | Uint8Array, opts: ParseOptions): En
         xyzAbsolute = false;
         positioningSeen = true;
         break;
+      // Arc-plane selection (DD-010 D3, #157, E10 phase 2).
+      case 'g17':
+        arcPlane = 'xy';
+        arcPlaneSeen = true;
+        break;
+      case 'g18':
+        arcPlane = 'xz';
+        arcPlaneSeen = true;
+        break;
+      case 'g19':
+        arcPlane = 'yz';
+        arcPlaneSeen = true;
+        break;
       case 'm82':
         eModeExplicit = 'absolute';
         break;
@@ -710,7 +749,9 @@ export function createEngine(input: string | Uint8Array, opts: ParseOptions): En
       // Motion-model modes (DD-010 E10 phase 1). 'known' when the governing command was seen
       // (M82/M83, or a firmware-known G90/G91 for E); 'inferred' when defaulted (absolute).
       extrusionMode: eModeExplicit !== null || (extruderFollowsPositioning && positioningSeen) ? 'known' : 'inferred',
-      positioningMode: positioningSeen ? 'known' : 'inferred'
+      positioningMode: positioningSeen ? 'known' : 'inferred',
+      // Arc plane (DD-010 D3, #157): 'known' once a G17/G18/G19 was seen, else 'inferred' (XY assumed).
+      arcPlanes: arcPlaneSeen ? 'known' : 'inferred'
     };
 
     if (layersCapability === 'unavailable') {
@@ -815,7 +856,8 @@ export function createEngine(input: string | Uint8Array, opts: ParseOptions): En
           retractions: 'unavailable', // markers resolve on the final IR, not on preview slices
           colorChanges: 'unavailable', // color-change boundaries resolve on the final IR
           extrusionMode: 'inferred', // motion modes resolve fully on the final IR (E10)
-          positioningMode: 'inferred'
+          positioningMode: 'inferred',
+          arcPlanes: 'inferred'
         }
       },
       segments: channels,
