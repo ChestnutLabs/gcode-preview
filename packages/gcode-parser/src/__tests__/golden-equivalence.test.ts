@@ -35,6 +35,16 @@ const manifest = JSON.parse(readFileSync(join(repoRoot, 'test-data', 'manifest.j
  */
 const equivalenceFixtures = manifest.fixtures.filter((f) => f.sizeTier !== 'adversarial');
 
+/**
+ * E10 phase 3 (#158, DD-010 D4 + probe amendment): these fixtures use coordinate-system commands the
+ * inherited engine ignored, so the native core INTENTIONALLY diverges from the adapter goldens — a
+ * documented semantic correction, not a regression. demo-mach3 probes (`G31`) then `G92 Z0`-resyncs
+ * the logical frame; the native core honors that (position stays in the authored logical range and no
+ * fabricated move is drawn across the probe), where the inherited engine ignored both. These fixtures
+ * are excluded from strict adapter-position equivalence and pinned instead by their native goldens.
+ */
+const INTENTIONAL_MOTION_CORRECTION = new Set(['demo-mach3']);
+
 function fnv1a(view: ArrayBufferView): string {
   const bytes = new Uint8Array(view.buffer, view.byteOffset, view.byteLength);
   let h = 0x811c9dc5;
@@ -47,7 +57,7 @@ function fnv1a(view: ArrayBufferView): string {
 
 describe('native parser vs adapter goldens (#28 gate)', () => {
   for (const fixture of equivalenceFixtures) {
-    it(`geometry-equivalent for ${fixture.id}`, () => {
+    it.skipIf(INTENTIONAL_MOTION_CORRECTION.has(fixture.id))(`geometry-equivalent for ${fixture.id}`, () => {
       const golden = JSON.parse(readFileSync(join(goldenDir, `${fixture.id}.json`), 'utf8'));
       const text = readFileSync(join(repoRoot, fixture.path), 'utf8');
       const { ir } = parseGcodeToIR(text, { sourceId: fixture.id, parserVersion: 'golden' });

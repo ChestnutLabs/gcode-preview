@@ -18,7 +18,8 @@
     "colorChanges": "unavailable",
     "extrusionMode": "inferred",
     "positioningMode": "known",
-    "arcPlanes": "inferred"
+    "arcPlanes": "inferred",
+    "coordinateSystem": "inferred"
   },
   "warningCodes": [
     "layers-unavailable",

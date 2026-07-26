@@ -282,6 +282,30 @@ export function createEngine(input: string | Uint8Array, opts: ParseOptions): En
   let arcPlane: 'xy' | 'xz' | 'yz' = 'xy';
   let arcPlaneSeen = false; // any G17/G18/G19 observed → arcPlanes 'known'
 
+  // Coordinate systems (DD-010 D4, #158, E10 phase 3). The IR stays in the logical/work frame
+  // (Option A): the emitted position is `commanded + activeWcsOffset + g92off`. FDM slicer files use
+  // the identity WCS with no G92, so every offset is 0 → the corpus is byte-identical. G54–G59 select
+  // a per-system offset (settable via G10 L2/L20); G92 X/Y/Z shifts the datum without motion; G53 is a
+  // one-shot machine-coordinate bypass for the following move.
+  let activeWcs = 0; // 0..5 → G54..G59; G54 (identity) is the power-on default
+  const wcsOffsets = Array.from({ length: 6 }, () => ({ x: 0, y: 0, z: 0 }));
+  let g92x = 0;
+  let g92y = 0;
+  let g92z = 0;
+  let coordSystemSeen = false; // any G53/G54–G59/G92-XYZ/G10 → coordinateSystem 'known'
+  let g53OneShot = false; // next move ignores the work offset (machine coordinates)
+
+  // Per-axis position certainty (DD-010 D4 amendment, #158). A G31 probe endpoint is reached at
+  // RUNTIME (workpiece contact), not the commanded value, so it marks the probed axes uncertain. A
+  // following G92 then RESYNCS the logical frame at the datum (rather than datum-shifting a stale
+  // position); an absolute move re-establishes certainty. Independent of the work offsets above.
+  let certainX = true;
+  let certainY = true;
+  let certainZ = true;
+  const offX = (): number => (g53OneShot ? 0 : wcsOffsets[activeWcs].x + g92x);
+  const offY = (): number => (g53OneShot ? 0 : wcsOffsets[activeWcs].y + g92y);
+  const offZ = (): number => (g53OneShot ? 0 : wcsOffsets[activeWcs].z + g92z);
+
   /**
    * Effective per-move E delta from the modal extruder mode (DD-010 D1/D2 precedence:
    * explicit M82/M83 → firmware-conditioned G90/G91 → absolute default). Updates `lastE`.
@@ -297,8 +321,14 @@ export function createEngine(input: string | Uint8Array, opts: ParseOptions): En
     return delta;
   };
 
-  /** Absolute target for one axis given the modal positioning mode (G90/G91). */
-  const nextAxis = (cur: number, word: number | undefined): number => (xyzAbsolute ? (word ?? cur) : cur + (word ?? 0));
+  /**
+   * Logical (work-frame) target for one axis given the positioning mode (G90/G91) and the active
+   * work offset (DD-010 D4). Absolute: `word + off`; relative: `cur + word` (the offset is already
+   * baked into `cur`); an absent word holds the current logical position. With `off === 0` (the
+   * identity WCS + no G92) this reduces to the pre-#158 `word ?? cur`, so the corpus is byte-identical.
+   */
+  const nextAxis = (cur: number, word: number | undefined, off = 0): number =>
+    xyzAbsolute ? (word !== undefined ? word + off : cur) : cur + (word ?? 0);
 
   // Floating origin (DD-001 §4.6): fixed at the first emitted segment's start.
   let originSet = false;
@@ -496,9 +526,16 @@ export function createEngine(input: string | Uint8Array, opts: ParseOptions): En
       breakPath(pathType);
     }
     if (eDelta > 0) stats.extrusionDistance += eDelta;
-    sx = nextAxis(sx, x);
-    sy = nextAxis(sy, y);
-    sz = nextAxis(sz, z);
+    sx = nextAxis(sx, x, offX());
+    sy = nextAxis(sy, y, offY());
+    sz = nextAxis(sz, z, offZ());
+    // An absolute commanded move re-establishes certainty for the axes it names (#158).
+    if (xyzAbsolute) {
+      if (x !== undefined) certainX = true;
+      if (y !== undefined) certainY = true;
+      if (z !== undefined) certainZ = true;
+    }
+    g53OneShot = false; // one-shot machine-coordinate bypass consumed by this move
     return emitSegment(sx, sy, sz, eDelta, pathType === 'extrusion' ? MoveKind.Extrude : MoveKind.Travel);
   };
 
@@ -514,11 +551,12 @@ export function createEngine(input: string | Uint8Array, opts: ParseOptions): En
     }
     if (eDelta > 0) stats.extrusionDistance += eDelta;
 
-    // Absolute targets, honoring G90/G91 (DD-010 D2 — the deferred G91-arc geometry lands here, #157).
-    // I/J/K are ALWAYS current-relative center offsets, independent of positioning mode.
-    const tx = nextAxis(sx, p.x);
-    const ty = nextAxis(sy, p.y);
-    const tz = nextAxis(sz, p.z);
+    // Absolute targets, honoring G90/G91 (DD-010 D2 — the deferred G91-arc geometry lands here, #157)
+    // and the active work offset (DD-010 D4, #158). I/J/K are ALWAYS current-relative center offsets.
+    const tx = nextAxis(sx, p.x, offX());
+    const ty = nextAxis(sy, p.y, offY());
+    const tz = nextAxis(sz, p.z, offZ());
+    g53OneShot = false; // one-shot machine-coordinate bypass consumed by this move
 
     // Select the active arc plane (DD-010 D3): (sa,sb)→(ta,tb) is the in-plane arc with center offsets
     // (oa,ob); sc→tc is the through axis (linear ramp). XY reproduces the pre-#157 math exactly, so the
@@ -684,16 +722,108 @@ export function createEngine(input: string | Uint8Array, opts: ParseOptions): En
       case 'm83':
         eModeExplicit = 'relative';
         break;
-      case 'g92':
-        // Datum reset: `G92 E<v>` rebases the absolute-E origin so the next delta is sane (this is
-        // the E-half of D4, needed in phase 1 because slicer M82 files pair it with `G92 E0`). The XYZ
-        // work-offset (full G92 / G53–G59) is phase 3 — a `G92 X/Y/Z` is disclosed as unhandled, never
-        // silently applied as a datum shift.
-        if (cmd.params.e !== undefined) lastE = cmd.params.e;
-        if (cmd.params.x !== undefined || cmd.params.y !== undefined || cmd.params.z !== undefined) {
-          warn('g92-xyz-unhandled', 'G92 X/Y/Z work-offset not yet honored (E10 phase 3)', offset);
+      // Coordinate systems (DD-010 D4, #158, E10 phase 3).
+      case 'g53':
+        // One-shot: the following move is in machine coordinates (ignores the work offset).
+        g53OneShot = true;
+        coordSystemSeen = true;
+        break;
+      case 'g54':
+      case 'g55':
+      case 'g56':
+      case 'g57':
+      case 'g58':
+      case 'g59':
+        activeWcs = Number(cmd.gcode.slice(1)) - 54; // g54→0 … g59→5
+        coordSystemSeen = true;
+        break;
+      case 'g10': {
+        // Set a work-coordinate offset. L2 P<n>: set the offset directly. L20 P<n>: set it so the
+        // current position reads the given value in WCS n. P1→G54 … P6→G59 (default: active system).
+        const l = cmd.params.l;
+        const idx = cmd.params.p !== undefined ? Math.round(cmd.params.p) - 1 : activeWcs;
+        if (idx >= 0 && idx < 6 && (l === 2 || l === 20)) {
+          const w = wcsOffsets[idx];
+          const setAxis = (word: number | undefined, cur: number, axis: 'x' | 'y' | 'z') => {
+            if (word === undefined) return;
+            w[axis] = l === 2 ? word : cur - word; // L20: offset = current logical − desired reading
+          };
+          setAxis(cmd.params.x, sx, 'x');
+          setAxis(cmd.params.y, sy, 'y');
+          setAxis(cmd.params.z, sz, 'z');
+          coordSystemSeen = true;
         }
         break;
+      }
+      case 'g31': {
+        // Probe move (DD-010 D4 amendment, #158): the endpoint is reached at RUNTIME (workpiece
+        // contact), NOT the commanded value. Do not advance the position or draw a fabricated probe
+        // move; mark the probed axes runtime-dependent so a following G92 resyncs the logical frame.
+        let probed = false;
+        if (cmd.params.x !== undefined) {
+          certainX = false;
+          probed = true;
+        }
+        if (cmd.params.y !== undefined) {
+          certainY = false;
+          probed = true;
+        }
+        if (cmd.params.z !== undefined) {
+          certainZ = false;
+          probed = true;
+        }
+        if (probed) {
+          warn(
+            'probe-position-runtime-dependent',
+            'G31 probe endpoint is determined at runtime; the probed axis is runtime-dependent until re-established (G92 or an absolute move).',
+            offset
+          );
+        }
+        break;
+      }
+      case 'g92': {
+        // Datum WITHOUT motion (DD-010 D4 + probe amendment, #158). `G92 E<v>` rebases the absolute-E
+        // origin (also used in phase 1). For X/Y/Z, when the position is KNOWN it is a datum SHIFT (the
+        // work offset is set so the current logical position reads <v>, preserving continuity). When the
+        // axis is runtime-dependent (post-probe) it is a logical RESYNC: the current logical position is
+        // declared to be <v>, the offset is reset, certainty is restored, and the current path is
+        // finalized so the next move starts a NEW frame at the datum — no fabricated move is drawn
+        // across the unknown probe result.
+        if (cmd.params.e !== undefined) lastE = cmd.params.e;
+        let resync = false;
+        if (cmd.params.x !== undefined) {
+          if (certainX) g92x = sx - cmd.params.x - wcsOffsets[activeWcs].x;
+          else {
+            sx = cmd.params.x + wcsOffsets[activeWcs].x;
+            g92x = 0;
+            certainX = true;
+            resync = true;
+          }
+          coordSystemSeen = true;
+        }
+        if (cmd.params.y !== undefined) {
+          if (certainY) g92y = sy - cmd.params.y - wcsOffsets[activeWcs].y;
+          else {
+            sy = cmd.params.y + wcsOffsets[activeWcs].y;
+            g92y = 0;
+            certainY = true;
+            resync = true;
+          }
+          coordSystemSeen = true;
+        }
+        if (cmd.params.z !== undefined) {
+          if (certainZ) g92z = sz - cmd.params.z - wcsOffsets[activeWcs].z;
+          else {
+            sz = cmd.params.z + wcsOffsets[activeWcs].z;
+            g92z = 0;
+            certainZ = true;
+            resync = true;
+          }
+          coordSystemSeen = true;
+        }
+        if (resync) finishPath(); // start a new frame at the datum; no move connects across the probe
+        break;
+      }
       default:
         warn('unsupported-command', `unsupported command '${cmd.gcode}' preserved as metadata`, offset);
     }
@@ -751,7 +881,10 @@ export function createEngine(input: string | Uint8Array, opts: ParseOptions): En
       extrusionMode: eModeExplicit !== null || (extruderFollowsPositioning && positioningSeen) ? 'known' : 'inferred',
       positioningMode: positioningSeen ? 'known' : 'inferred',
       // Arc plane (DD-010 D3, #157): 'known' once a G17/G18/G19 was seen, else 'inferred' (XY assumed).
-      arcPlanes: arcPlaneSeen ? 'known' : 'inferred'
+      arcPlanes: arcPlaneSeen ? 'known' : 'inferred',
+      // Coordinate system (DD-010 D4, #158): 'known' once a G53/G54–G59/G92-XYZ/G10 was seen, else
+      // 'inferred' (identity WCS / no offset assumed — the FDM-slicer default).
+      coordinateSystem: coordSystemSeen ? 'known' : 'inferred'
     };
 
     if (layersCapability === 'unavailable') {
@@ -857,7 +990,8 @@ export function createEngine(input: string | Uint8Array, opts: ParseOptions): En
           colorChanges: 'unavailable', // color-change boundaries resolve on the final IR
           extrusionMode: 'inferred', // motion modes resolve fully on the final IR (E10)
           positioningMode: 'inferred',
-          arcPlanes: 'inferred'
+          arcPlanes: 'inferred',
+          coordinateSystem: 'inferred'
         }
       },
       segments: channels,
