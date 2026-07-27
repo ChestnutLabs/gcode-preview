@@ -84,6 +84,16 @@
     "dist/zip.js",
     "package.json"
   ],
+  "gcode-bgcode": [
+    "README.md",
+    "dist/bgcode.d.ts",
+    "dist/bgcode.d.ts.map",
+    "dist/bgcode.js",
+    "dist/index.d.ts",
+    "dist/index.d.ts.map",
+    "dist/index.js",
+    "package.json"
+  ],
   "gcode-parser": [
     "README.md",
     "dist/growable.d.ts",
