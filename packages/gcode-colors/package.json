@@ -1,17 +1,15 @@
 {
-  "name": "@chestnutlabs/gcode-renderer-three",
+  "name": "@chestnutlabs/gcode-colors",
   "version": "0.2.0",
-  "description": "Three.js toolpath renderer consuming ToolpathIR (DD-004). Phases 1-2: geometry builders + scene/lifecycle.",
+  "description": "Renderer-agnostic per-segment color model for the Chestnut Labs G-code toolpath stack (DD-014 D3): the ColorMode union and honest, capability-gated segment coloring over ToolpathIR channels, shared by the 3D and 2D renderers.",
   "keywords": [
     "gcode",
     "3d-printing",
     "toolpath",
     "cnc",
     "chestnutlabs",
-    "three",
-    "threejs",
-    "webgl",
-    "renderer",
+    "color",
+    "colormap",
     "visualization"
   ],
   "author": "Chestnut Labs",
@@ -20,7 +18,7 @@
   "repository": {
     "type": "git",
     "url": "git+https://github.com/ChestnutLabs/gcode-preview.git",
-    "directory": "packages/gcode-renderer-three"
+    "directory": "packages/gcode-colors"
   },
   "license": "MIT",
   "engines": {
@@ -49,13 +47,6 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@chestnutlabs/gcode-colors": "0.2.0",
     "@chestnutlabs/toolpath-core": "0.2.0"
-  },
-  "devDependencies": {
-    "@types/three": "0.178.0"
-  },
-  "peerDependencies": {
-    "three": "^0.178.0"
   }
 }

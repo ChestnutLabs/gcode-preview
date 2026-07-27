@@ -25,10 +25,12 @@ import { sep } from 'node:path';
 // the framework adapters (which depend on preview-core) last.
 const PACKAGES = [
   'toolpath-core',
+  'gcode-colors',
   'gcode-dialects',
   'gcode-containers',
   'gcode-parser',
   'gcode-renderer-three',
+  'gcode-renderer-2d',
   'gcode-preview-core',
   'gcode-preview-vue',
   'gcode-preview-react',

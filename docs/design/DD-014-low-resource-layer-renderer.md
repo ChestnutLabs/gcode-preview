@@ -112,12 +112,21 @@ views" outcome.
 **Recommendation: Option A** — the color/kind semantics are shared, the geometry consumption is a thin
 2D projection of the SoA.
 
+> **Resolution (2026-07-26, maintainer): the "shared module" is a new package `@chestnutlabs/gcode-colors`.**
+> D3-A left the home open ("in `gcode-renderer-three` or a shared module"). Because the color subsystem
+> is already six modes (`single`/`tool`/`feature`/`colorChange`/`feedrate` #177/`object` #178) and will
+> grow (layer-height #179, modal #180), and is now consumed by **two** renderers, it is extracted into a
+> dedicated dependency-light package (depends only on `toolpath-core`) rather than folded into the pure
+> IR contract package. Both renderers depend on it; `toolpath-core` stays a pure IR/capability contract.
+> This is a 12th lockstep package — see D4's note (the 2D renderer is then the 13th).
+
 ### 4.4 D4 — Package placement (DD-002)
 
 - **Option A (recommended): a new package `@chestnutlabs/gcode-renderer-2d`.** A sibling of
   `gcode-renderer-three`, depending only on `toolpath-core` (and a shared color module) — **no `three`,
   no framework**. Keeps the 3D renderer's `three` peer dependency off low-resource consumers entirely (a
-  2D-only bundle never ships Three.js). The 11th lockstep package.
+  2D-only bundle never ships Three.js). A new lockstep package (the 13th, after `gcode-colors` — see the
+  D3-A resolution above).
 - **Option B: a 2D entry inside `gcode-renderer-three`.** Avoids a new package but drags the `three` peer
   into a "low-resource" import — the opposite of the goal. Rejected.
 - **Option C: fold the 2D view into `gcode-preview-core`.** Muddies the controller's framework-neutral
@@ -275,3 +284,4 @@ misleading result. No new telemetry.
 |---|---|---|
 | 2026-07-25 | DD-014 drafted as **Proposed**; D1–D6 open. E8 (#9) proposes an opt-in 2D/adjacent-layer renderer over the existing `ToolpathIR` for low-resource/low-GPU/WebGL-blocked contexts. First gate condition (stable IR) now met through E10; the second (device-need evidence) is put to the maintainer as D6. Numbered DD-014 because **DD-011** (`.bgcode`, #188) and **DD-012** (CNC/laser, #189) are reserved and **DD-013** is the documentation epic (E11) | Chestnut Labs |
 | 2026-07-26 | **Accepted.** D1–D5 accepted as recommended. **D6 resolved to build now:** the D6-A evidence artifact (an AnyBridge/consumer request) is already present as a standing AnyBridge-team request for a low-resource 2D viewer, so the gate is satisfied at acceptance rather than deferred — E8 (#9) unblocked, §14 phased issues to open. The §8 budget stays evidence-derived on a real target device from the AnyBridge context | Maintainer |
+| 2026-07-26 | **D3-A resolved:** the shared color module is a **new package `@chestnutlabs/gcode-colors`** (not folded into `toolpath-core`), the single home for the whole color subsystem (6 shipped modes + #179/#180), consumed by both renderers. **Phase 1 (#212) shipped:** `gcode-colors` (12th lockstep pkg) + `gcode-renderer-2d` (13th; Canvas 2D `LayerView2D` + pure `drawLayer`/`computeLayerFit`) + `gcode-renderer-three` refactored onto the shared colorer (public API unchanged, parity test). No IR/parser change | Chestnut Labs |

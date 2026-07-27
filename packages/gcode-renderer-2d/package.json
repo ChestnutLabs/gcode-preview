@@ -1,18 +1,18 @@
 {
-  "name": "@chestnutlabs/gcode-renderer-three",
+  "name": "@chestnutlabs/gcode-renderer-2d",
   "version": "0.2.0",
-  "description": "Three.js toolpath renderer consuming ToolpathIR (DD-004). Phases 1-2: geometry builders + scene/lifecycle.",
+  "description": "Low-resource Canvas 2D layer renderer for the Chestnut Labs G-code viewer (DD-014 / E8): an opt-in current/adjacent-layer 2D view over the existing ToolpathIR for low-GPU/low-memory/WebGL-blocked devices. No three, no framework.",
   "keywords": [
     "gcode",
     "3d-printing",
     "toolpath",
     "cnc",
     "chestnutlabs",
-    "three",
-    "threejs",
-    "webgl",
-    "renderer",
-    "visualization"
+    "canvas",
+    "canvas2d",
+    "low-resource",
+    "layer-view",
+    "renderer"
   ],
   "author": "Chestnut Labs",
   "homepage": "https://github.com/ChestnutLabs/gcode-preview#readme",
@@ -20,7 +20,7 @@
   "repository": {
     "type": "git",
     "url": "git+https://github.com/ChestnutLabs/gcode-preview.git",
-    "directory": "packages/gcode-renderer-three"
+    "directory": "packages/gcode-renderer-2d"
   },
   "license": "MIT",
   "engines": {
@@ -51,11 +51,5 @@
   "dependencies": {
     "@chestnutlabs/gcode-colors": "0.2.0",
     "@chestnutlabs/toolpath-core": "0.2.0"
-  },
-  "devDependencies": {
-    "@types/three": "0.178.0"
-  },
-  "peerDependencies": {
-    "three": "^0.178.0"
   }
 }

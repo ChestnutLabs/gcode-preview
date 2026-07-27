@@ -3,10 +3,12 @@
   "entryPointStrategy": "packages",
   "entryPoints": [
     "packages/toolpath-core",
+    "packages/gcode-colors",
     "packages/gcode-parser",
     "packages/gcode-dialects",
     "packages/gcode-containers",
     "packages/gcode-renderer-three",
+    "packages/gcode-renderer-2d",
     "packages/gcode-preview-core",
     "packages/gcode-preview-vue",
     "packages/gcode-preview-react",
