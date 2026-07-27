@@ -52,6 +52,8 @@ export const GcodePreview = defineComponent({
     layerRange: { type: Array as unknown as PropType<[number, number] | null>, default: null },
     /** Scrub cut (IR segment index); null shows everything up to the layer range. */
     scrub: { type: Number as PropType<number | null>, default: null },
+    /** Time-based scrub cut in ms of print time (#181); null clears it. */
+    scrubTime: { type: Number as PropType<number | null>, default: null },
     showTravel: { type: Boolean, default: true },
     /** DD-009 D1 (#148): opt-in retraction/deretraction markers. */
     showRetractions: { type: Boolean, default: false },
@@ -170,6 +172,10 @@ export const GcodePreview = defineComponent({
     watch(
       () => props.scrub,
       (scrub) => preview.controls.setScrubPosition(scrub)
+    );
+    watch(
+      () => props.scrubTime,
+      (t) => preview.controls.setScrubTime(t)
     );
     watch(
       () => props.showTravel,

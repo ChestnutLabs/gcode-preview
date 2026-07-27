@@ -62,6 +62,8 @@ export interface GcodePreviewProps {
   layerRange?: [number, number] | null;
   /** Scrub cut (IR segment index); null shows everything up to the layer range. */
   scrub?: number | null;
+  /** Time-based scrub cut in ms of print time (#181); null clears it. */
+  scrubTime?: number | null;
   showTravel?: boolean;
   /** DD-009 D1 (#148): opt-in retraction/deretraction markers. */
   showRetractions?: boolean;
@@ -155,6 +157,7 @@ function GcodePreviewImpl(props: GcodePreviewProps, ref: ForwardedRef<GcodePrevi
     source,
     layerRange,
     scrub,
+    scrubTime,
     showTravel,
     showRetractions,
     colorMode,
@@ -174,6 +177,9 @@ function GcodePreviewImpl(props: GcodePreviewProps, ref: ForwardedRef<GcodePrevi
   useEffect(() => {
     preview.controls.setScrubPosition(scrub ?? null);
   }, [scrub]);
+  useEffect(() => {
+    preview.controls.setScrubTime(scrubTime ?? null);
+  }, [scrubTime]);
   useEffect(() => {
     preview.controls.setKindVisible('travel', showTravel ?? true);
   }, [showTravel]);

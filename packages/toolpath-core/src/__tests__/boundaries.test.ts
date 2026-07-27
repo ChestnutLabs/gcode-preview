@@ -65,9 +65,11 @@ describe('package boundaries (DD-002 §5)', () => {
       'ToolpathIRBuilder',
       'buildSourceIndex',
       'computeSegmentBounds',
+      'computeToolpathTime',
       'createProgressMapper',
       'emptyBounds',
-      'segmentAtByte'
+      'segmentAtByte',
+      'segmentsCompletedAtTime'
     ]);
   });
 });

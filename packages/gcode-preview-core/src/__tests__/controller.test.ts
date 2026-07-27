@@ -165,3 +165,23 @@ describe('LayerView2DRenderer honesty (DD-014 §6/§11)', () => {
     r.dispose();
   });
 });
+
+describe('time estimate + time scrub (#181)', () => {
+  it('surfaces a kinematic total (no slicer estimate) and resolves time scrub', async () => {
+    const canvas = document.createElement('canvas');
+    const controller = createPreviewController({
+      createWorker: () => new SuiteStubWorker(),
+      renderer: { quality: 'lines', createRenderer: () => makeSuiteStubGL(canvas), scheduleFrame: (cb) => cb() }
+    });
+    controller.bindCanvas(canvas);
+    await controller.parse(new Uint8Array(1_000));
+    await settle();
+    const st = controller.getState();
+    expect(typeof st.totalTimeMs).toBe('number');
+    expect(st.timeEstimateSource).toBe('kinematic'); // the stub IR carries no slicer printEstimate
+    // Time scrub resolves to a segment-index scrub without throwing (before/after clear).
+    expect(() => controller.controls.setScrubTime(500)).not.toThrow();
+    expect(() => controller.controls.setScrubTime(null)).not.toThrow();
+    controller.dispose();
+  });
+});

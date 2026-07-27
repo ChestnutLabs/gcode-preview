@@ -30,6 +30,8 @@
   export let layerRange = null;
   /** Scrub cut (IR segment index); null shows everything up to the layer range. */
   export let scrub = null;
+  /** Time-based scrub cut in ms of print time (#181); null clears it. */
+  export let scrubTime = null;
   export let showTravel = true;
   /** DD-009 D1 (#148): opt-in retraction/deretraction markers. */
   export let showRetractions = false;
@@ -111,6 +113,7 @@
   $: if (layerRange === null || layerRange === undefined) preview.controls.setLayerRange(0, Number.POSITIVE_INFINITY);
   else preview.controls.setLayerRange(layerRange[0], layerRange[1]);
   $: preview.controls.setScrubPosition(scrub ?? null);
+  $: preview.controls.setScrubTime(scrubTime ?? null);
   $: preview.controls.setKindVisible('travel', showTravel);
   $: preview.controls.setShowRetractions(showRetractions);
   $: if (colorMode !== undefined) preview.controls.setColorMode(colorMode);
