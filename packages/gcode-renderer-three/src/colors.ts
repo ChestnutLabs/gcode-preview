@@ -15,9 +15,44 @@ export type ColorMode =
   | { mode: 'single'; color: RGB }
   | { mode: 'tool'; palette: RGB[]; fallback?: RGB }
   | { mode: 'feature'; palette: RGB[]; fallback: RGB }
-  | { mode: 'colorChange'; palette: RGB[]; fallback: RGB };
+  | { mode: 'colorChange'; palette: RGB[]; fallback: RGB }
+  // Color-by-speed (#177): map each segment's feedrate onto a ramp. Auto-ranged from the IR when
+  // `range` is omitted (pass one to keep the scale stable across files). NaN feedrate → fallback.
+  // Capability-gated by the caller on `feedrate` (as feature mode is on `featureRoles`).
+  | { mode: 'feedrate'; ramp: RGB[]; range?: [number, number]; fallback: RGB }
+  // Color-by-object (#178): shade by `seg.object` (1-based; 0 = none → fallback). `only` isolates a
+  // single object (others render as fallback). Capability-gated by the caller on `objects`.
+  | { mode: 'object'; palette: RGB[]; fallback: RGB; only?: number };
 
 const DEFAULT_FALLBACK: RGB = [0.7, 0.7, 0.7];
+
+/** Min/max of the IR's defined (non-NaN) feedrates — the auto-range for color-by-speed (#177). */
+export function feedrateRange(ir: ToolpathIR): [number, number] {
+  const f = ir.segments.feedrate;
+  let min = Infinity;
+  let max = -Infinity;
+  for (let i = 0; i < f.length; i++) {
+    const v = f[i];
+    if (Number.isNaN(v)) continue;
+    if (v < min) min = v;
+    if (v > max) max = v;
+  }
+  return min <= max ? [min, max] : [0, 0];
+}
+
+/** Sample a color ramp at t∈[0,1] with linear interpolation between stops. */
+function rampColor(ramp: RGB[], t: number): RGB {
+  if (ramp.length === 0) return DEFAULT_FALLBACK;
+  if (ramp.length === 1) return ramp[0];
+  const clamped = t < 0 ? 0 : t > 1 ? 1 : t;
+  const p = clamped * (ramp.length - 1);
+  const lo = Math.floor(p);
+  const hi = Math.min(lo + 1, ramp.length - 1);
+  const frac = p - lo;
+  const a = ramp[lo];
+  const b = ramp[hi];
+  return [a[0] + (b[0] - a[0]) * frac, a[1] + (b[1] - a[1]) * frac, a[2] + (b[2] - a[2]) * frac];
+}
 
 /**
  * Swap slot at a segment index (DD-009 D2, #147): the count of M600 color changes at
@@ -39,6 +74,14 @@ function swapSlotAt(colorChanges: readonly { segIndex: number }[], segIndex: num
 export function buildChunkColors(ir: ToolpathIR, chunk: GeometryChunk, mode: ColorMode): Float32Array {
   const colors = new Float32Array(chunk.count * 6);
   const seg = ir.segments;
+  // Feedrate auto-range, computed once (pass `range` in the mode to avoid the rescan / stabilize it).
+  let fMin = 0;
+  let fSpan = 0;
+  if (mode.mode === 'feedrate') {
+    const [lo, hi] = mode.range ?? feedrateRange(ir);
+    fMin = lo;
+    fSpan = hi - lo;
+  }
   for (let k = 0; k < chunk.count; k++) {
     const i = chunk.segIndices[k];
     let rgb: RGB;
@@ -55,6 +98,17 @@ export function buildChunkColors(ir: ToolpathIR, chunk: GeometryChunk, mode: Col
         ir.colorChanges.length === 0 || mode.palette.length === 0
           ? mode.fallback
           : mode.palette[swapSlotAt(ir.colorChanges, i) % mode.palette.length];
+    } else if (mode.mode === 'feedrate') {
+      // NaN feedrate (before the first F) → fallback, never a fabricated speed color (#177).
+      const v = seg.feedrate[i];
+      rgb = Number.isNaN(v) ? mode.fallback : rampColor(mode.ramp, fSpan > 0 ? (v - fMin) / fSpan : 0);
+    } else if (mode.mode === 'object') {
+      // Object 0 = none/unknown → fallback; `only` isolates one object, dimming the rest (#178).
+      const obj = seg.object[i];
+      rgb =
+        obj === 0 || (mode.only !== undefined && obj !== mode.only) || mode.palette.length === 0
+          ? mode.fallback
+          : mode.palette[(obj - 1) % mode.palette.length];
     } else {
       const feature = seg.feature[i];
       // Feature 0 = unknown (DD-001): fallback color, never a fabricated role color.

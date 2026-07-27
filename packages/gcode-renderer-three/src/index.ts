@@ -7,7 +7,7 @@
  */
 export { buildChunks, autoDecimation } from './chunks.js';
 export type { ChunkBuildOptions, ChunkBuildResult, GeometryChunk } from './chunks.js';
-export { buildChunkColors } from './colors.js';
+export { buildChunkColors, feedrateRange } from './colors.js';
 export type { ColorMode, RGB } from './colors.js';
 export { computeDrawState, computeOverlayDrawStates } from './ranges.js';
 export type { ChunkDrawState, OverlayDrawStates } from './ranges.js';
