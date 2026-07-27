@@ -141,8 +141,15 @@ const DEFAULT_COLOR: ColorMode = { mode: 'single', color: [0.9, 0.4, 0.7] };
 /** Discovered machine geometry → renderable volume (bounding volume for circular/polygon beds, v1). */
 export function machineToVolume(m: MachineGeometry): BuildVolumeDef {
   const bed = m.bed;
+  const excludedRegions = m.excludedRegions;
   if (bed.kind === 'rect') {
-    return { x: bed.max.x - bed.min.x, y: bed.max.y - bed.min.y, z: m.heightMm ?? 250, min: { ...bed.min } };
+    return {
+      x: bed.max.x - bed.min.x,
+      y: bed.max.y - bed.min.y,
+      z: m.heightMm ?? 250,
+      min: { ...bed.min },
+      excludedRegions
+    };
   }
   if (bed.kind === 'circular') {
     const r = bed.diameter / 2;
@@ -150,7 +157,8 @@ export function machineToVolume(m: MachineGeometry): BuildVolumeDef {
       x: bed.diameter,
       y: bed.diameter,
       z: m.heightMm ?? 250,
-      min: { x: bed.center.x - r, y: bed.center.y - r }
+      min: { x: bed.center.x - r, y: bed.center.y - r },
+      excludedRegions
     };
   }
   let minX = Infinity;
@@ -163,7 +171,7 @@ export function machineToVolume(m: MachineGeometry): BuildVolumeDef {
     maxX = Math.max(maxX, p.x);
     maxY = Math.max(maxY, p.y);
   }
-  return { x: maxX - minX, y: maxY - minY, z: m.heightMm ?? 250, min: { x: minX, y: minY } };
+  return { x: maxX - minX, y: maxY - minY, z: m.heightMm ?? 250, min: { x: minX, y: minY }, excludedRegions };
 }
 
 /** True for a real DOM canvas (has DOM-only members OffscreenCanvas lacks). */
@@ -1112,7 +1120,13 @@ export class ToolpathRenderer {
   /** Grid/box styling for the build volume from the current theme (#153). */
   private volumeStyle(): BuildVolumeStyle {
     const t = this.resolvedTheme;
-    return { gridColor: t.gridColor, gridOpacity: t.gridOpacity, boxColor: t.bedColor, boxOpacity: t.bedOpacity };
+    return {
+      gridColor: t.gridColor,
+      gridOpacity: t.gridOpacity,
+      boxColor: t.bedColor,
+      boxOpacity: t.bedOpacity,
+      bedSurface: t.bedSurface
+    };
   }
 
   /** Set (or clear) the scene background from the theme. Null leaves three's default. */

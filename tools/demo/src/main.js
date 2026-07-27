@@ -45,6 +45,14 @@ const THEMES = {
     bedColor: '#bcccdc',
     hemisphereIntensity: 2.4,
     directionalIntensity: 1.4
+  },
+  // #185: a filled build-plate surface under the toolpath (off in every other theme).
+  bedplate: {
+    background: '#10141b',
+    gridColor: '#3a4658',
+    bedColor: '#556173',
+    hemisphereIntensity: 2.0,
+    bedSurface: { mode: 'solid', color: '#20242c', opacity: 1 }
   }
 };
 

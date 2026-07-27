@@ -21,6 +21,25 @@ export type ThemeColor = number | string;
 /** Extrusion (tube) material look. `matte` = unlit-ish Lambert; `glossy` = PBR Standard. */
 export type MaterialPreset = 'matte' | 'glossy';
 
+/** A consumer-supplied plate image (#185). NOT a URL — CSP-safe + synchronous for `renderStill`. */
+export type BedTextureSource = ImageBitmap | HTMLCanvasElement;
+
+/**
+ * Build-plate surface (#185): a filled shaded plate instead of only the bare wireframe grid. Generic
+ * and self-drawn — no bundled vendor plate textures (trademark/copyright + bloat). A consumer may
+ * drape their own image via `texture`.
+ */
+export interface BedSurface {
+  /** `'none'` = grid only (today's look); `'solid'` = a filled plate under the toolpath. */
+  mode: 'none' | 'solid';
+  /** Plate color (default a muted dark slate). */
+  color?: ThemeColor;
+  /** Plate opacity in [0,1] (default 1). */
+  opacity?: number;
+  /** Consumer image drawn on the plate (preloaded bitmap/canvas — never a URL). */
+  texture?: BedTextureSource;
+}
+
 /**
  * A partial, declarative theme. Every field is optional; unspecified fields fall
  * back to {@link DEFAULT_THEME} (replace semantics — the object fully describes the
@@ -40,6 +59,8 @@ export interface Theme {
   directionalIntensity?: number;
   /** Extrusion (tube) material preset. Lines-quality geometry is unlit and unaffected. */
   materialPreset?: MaterialPreset;
+  /** Build-plate surface (#185); omit for the bare grid (today's look). */
+  bedSurface?: BedSurface;
 }
 
 /** A theme with every value resolved (public overrides + fixed non-themeable constants). */
@@ -55,6 +76,7 @@ export interface ResolvedTheme {
   directionalColor: ThemeColor;
   directionalIntensity: number;
   materialPreset: MaterialPreset;
+  bedSurface: BedSurface;
 }
 
 /** The exact current look — the no-theme defaults (grid/box/lights from the original scene). */
@@ -69,7 +91,8 @@ export const DEFAULT_THEME: ResolvedTheme = {
   hemisphereIntensity: 1.6,
   directionalColor: 0xffffff,
   directionalIntensity: 1.1,
-  materialPreset: 'matte'
+  materialPreset: 'matte',
+  bedSurface: { mode: 'none' } // bare grid by default — no behavior change
 };
 
 /** Resolve a partial theme over {@link DEFAULT_THEME} (replace semantics). */
@@ -82,6 +105,7 @@ export function resolveTheme(theme?: Theme): ResolvedTheme {
     ...(t.bedColor !== undefined ? { bedColor: t.bedColor } : {}),
     ...(t.hemisphereIntensity !== undefined ? { hemisphereIntensity: t.hemisphereIntensity } : {}),
     ...(t.directionalIntensity !== undefined ? { directionalIntensity: t.directionalIntensity } : {}),
-    ...(t.materialPreset !== undefined ? { materialPreset: t.materialPreset } : {})
+    ...(t.materialPreset !== undefined ? { materialPreset: t.materialPreset } : {}),
+    ...(t.bedSurface !== undefined ? { bedSurface: t.bedSurface } : {})
   };
 }
