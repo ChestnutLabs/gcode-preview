@@ -247,6 +247,30 @@ export function modelBounds2D(ir: ToolpathIR): LayerBounds2D {
   return { minX, minY, maxX, maxY, hasContent: true };
 }
 
+/**
+ * Honest capability disclosures for rendering `ir` as a flat 2D layer view (DD-014 §6/§11). Returns
+ * human-readable notes a consumer UI can show; empty when the IR is faithfully representable (planar
+ * FDM). It never suppresses geometry — it explains what the flat top-down projection cannot convey.
+ *
+ * - `layers: 'unavailable'` (non-planar / CNC / unindexed): the parser put every move on layer 0, so
+ *   the 2D view shows them all in one flat frame — Z variation and non-XY (e.g. `G18`/`G19`) motion
+ *   are not represented.
+ * - `layers: 'inferred'`: layer boundaries are approximate.
+ */
+export function describe2DDisclosures(ir: ToolpathIR): string[] {
+  const notes: string[] = [];
+  const layers = ir.header.capabilities['layers'];
+  if (layers === 'unavailable') {
+    notes.push(
+      'No planar layer index (non-planar or CNC toolpath): showing all moves in one flat top-down ' +
+        'view. Z variation and non-XY (e.g. G18/G19 plane) motion are not represented in 2D.'
+    );
+  } else if (layers === 'inferred') {
+    notes.push('Layer index is inferred; layer boundaries may be approximate.');
+  }
+  return notes;
+}
+
 export interface DrawLayersOptions {
   /** Active (fully-drawn) layer index. */
   layer: number;
@@ -424,6 +448,14 @@ export class LayerView2D {
   /** Show/hide travel moves on the active layer (`false` hides). */
   setTravel(travel: TravelStyle | false): void {
     this.travel = travel;
+  }
+
+  /**
+   * Honest capability notes for the current IR (DD-014 §6/§11) — e.g. a non-planar/CNC toolpath the
+   * flat 2D view cannot fully represent. Empty for faithfully-representable (planar) input.
+   */
+  getDisclosures(): string[] {
+    return this.ir ? describe2DDisclosures(this.ir) : [];
   }
 
   /** Number of layers in the current IR (0 when none / no layer table). */

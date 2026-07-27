@@ -11,7 +11,13 @@
  * — never silently faked. Coarser-granularity requests (segment scrub, retraction point markers)
  * are documented no-ops. Nothing is ever drawn that the IR does not contain.
  */
-import { LayerView2D, type ColorMode, type LayerProgress, type TravelStyle } from '@chestnutlabs/gcode-renderer-2d';
+import {
+  LayerView2D,
+  describe2DDisclosures,
+  type ColorMode,
+  type LayerProgress,
+  type TravelStyle
+} from '@chestnutlabs/gcode-renderer-2d';
 import type { BuildVolumeDef, CameraMode, QualityMode, Theme } from '@chestnutlabs/gcode-renderer-three';
 import type { MachineGeometry, MappedProgress, ToolpathIR } from '@chestnutlabs/toolpath-core';
 import type { PreviewRenderer, PreviewRendererEvent } from './renderer-interface.js';
@@ -69,6 +75,9 @@ export class LayerView2DRenderer implements PreviewRenderer {
     this.ir = ir;
     this.view.setToolpath(ir);
     this.view.render();
+    // Disclose what a flat 2D view cannot faithfully represent (non-planar/CNC), never silently
+    // (DD-014 §6/§11) — an honest capability signal on the same channel as 3D-only-option notices.
+    for (const message of describe2DDisclosures(ir)) this.disclose('layers', message);
   }
 
   /** 3D-only progressive preview; the 2D view draws on the final IR (§3 non-goal). */

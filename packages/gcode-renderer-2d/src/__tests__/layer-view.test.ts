@@ -11,6 +11,7 @@ import { MoveKind, ToolpathIRBuilder, type ToolpathIR } from '@chestnutlabs/tool
 import { createSegmentColorer, type ColorMode } from '@chestnutlabs/gcode-colors';
 import {
   computeLayerFit,
+  describe2DDisclosures,
   drawLayer,
   drawLayers,
   layerBounds2D,
@@ -270,5 +271,28 @@ describe('drawLayers (adjacent ghosts, #213)', () => {
       progress: { segIndex: 0, layerIndex: 0 } // progress is on layer 0, we're viewing layer 1
     });
     expect(m.strokes.every((s) => s.alpha === 1)).toBe(true); // no cut applied
+  });
+});
+
+describe('describe2DDisclosures (capability honesty, DD-014 §6/§11)', () => {
+  const withLayers = (ir: ToolpathIR, conf: 'known' | 'inferred' | 'unavailable'): ToolpathIR => {
+    ir.header.capabilities['layers'] = conf;
+    return ir;
+  };
+
+  it('planar (layers: known) → no disclosures', () => {
+    expect(describe2DDisclosures(withLayers(makeIR(2, 2), 'known'))).toEqual([]);
+  });
+
+  it('non-planar/CNC (layers: unavailable) → discloses the flat-projection limit', () => {
+    const notes = describe2DDisclosures(withLayers(makeIR(1, 3), 'unavailable'));
+    expect(notes).toHaveLength(1);
+    expect(notes[0]).toMatch(/non-planar|flat|not represented/i);
+  });
+
+  it('inferred layers → a softer disclosure', () => {
+    const notes = describe2DDisclosures(withLayers(makeIR(2, 2), 'inferred'));
+    expect(notes).toHaveLength(1);
+    expect(notes[0]).toMatch(/inferred/i);
   });
 });
