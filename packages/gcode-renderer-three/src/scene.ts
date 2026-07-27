@@ -650,7 +650,7 @@ export class ToolpathRenderer {
 
   /**
    * Pick the IR segment under a pointer, or null (#184 — click a segment → its G-code source line via
-   * {@link sourceLineOfSegment}). `ndcX`/`ndcY` are normalized device coords (each in [-1, 1]); a
+   * `sourceLineOfSegment` in `@chestnutlabs/toolpath-core`). `ndcX`/`ndcY` are normalized device coords (each in [-1, 1]); a
    * consumer converts a canvas click with `(x/w)*2-1`, `-(y/h)*2+1`. `threshold` is the world-space
    * line hit radius — auto-derived from the model size when omitted. Lines mode; tube meshes resolve
    * when they carry a vertex→segment table.
