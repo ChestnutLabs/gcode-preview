@@ -14,6 +14,7 @@
  */
 import { ContainerError, crc32, crc32Final } from '@chestnutlabs/gcode-containers';
 import { meatpackDecode } from './meatpack.js';
+import { heatshrinkDecode } from './heatshrink.js';
 
 /** ASCII magic at the start of every `.bgcode` file: "GCDE". */
 export const BGCODE_MAGIC = 'GCDE';
@@ -157,10 +158,12 @@ async function decompress(
     return out;
   }
   if (compression === BgcodeCompression.Heatshrink11 || compression === BgcodeCompression.Heatshrink12) {
-    throw new ContainerError(
-      'E_BGCODE_UNSUPPORTED_COMPRESSION',
-      'heatshrink compression is not yet supported (DD-011 phase 3)'
-    );
+    const windowBits = compression === BgcodeCompression.Heatshrink11 ? 11 : 12;
+    const out = heatshrinkDecode(data, windowBits, 4, limit);
+    if (out.length !== uncompressed) {
+      throw new ContainerError('E_BGCODE_SIZE', `heatshrink size disagreement (${out.length} vs ${uncompressed})`);
+    }
+    return out;
   }
   throw new ContainerError('E_BGCODE_UNSUPPORTED_COMPRESSION', `unknown compression id ${compression}`);
 }

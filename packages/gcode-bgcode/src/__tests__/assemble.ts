@@ -16,6 +16,12 @@ export interface AssembleBlock {
   thumbnail?: { format: number; width: number; height: number };
   /** The uncompressed block payload. */
   data: Uint8Array;
+  /**
+   * Pre-compressed stored bytes + the declared uncompressed size, for codecs the assembler can't
+   * produce (heatshrink) — the test supplies a hand-computed stream and its decoded length. When set,
+   * `data` is ignored for the payload and `compression` is written as declared (not re-compressed).
+   */
+  preCompressed?: { stored: Uint8Array; uncompressedSize: number };
 }
 
 export interface AssembleOptions {
@@ -70,11 +76,16 @@ export async function assembleBgcode(blocks: AssembleBlock[], opts: AssembleOpti
   pushU16(out, checksum === 'crc32' ? 1 : 0);
 
   for (const b of blocks) {
-    const stored = b.compression === BgcodeCompression.Deflate ? await deflateRaw(b.data) : b.data;
+    const stored = b.preCompressed
+      ? b.preCompressed.stored
+      : b.compression === BgcodeCompression.Deflate
+        ? await deflateRaw(b.data)
+        : b.data;
+    const uncompressedSize = b.preCompressed ? b.preCompressed.uncompressedSize : b.data.length;
     const block: number[] = [];
     pushU16(block, b.type);
     pushU16(block, b.compression);
-    pushU32(block, b.data.length); // uncompressed size
+    pushU32(block, uncompressedSize); // uncompressed size
     if (b.compression !== BgcodeCompression.None) pushU32(block, stored.length); // compressed size
     // Parameters.
     if (b.type === BgcodeBlockType.Thumbnail) {

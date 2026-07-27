@@ -14,8 +14,9 @@ network), zero runtime dependencies beyond `@chestnutlabs/toolpath-core` and
 The reference `libbgcode` and OctoPrint-MeatPack are **AGPL-3.0**; none of their code is used here — the
 block walker is written clean-room from the published format spec ([RR-003](https://github.com/ChestnutLabs/gcode-preview/blob/dev/docs/research/RR-003-bgcode-licensing-and-format-audit.md)).
 The **MeatPack** decoder is a faithful port of the **MIT** [`jamesgopsill/meatpack`](https://github.com/jamesgopsill/meatpack)
-(© 2025 James Gopsill), attribution preserved; the heatshrink codec (phase 3) is a license-clean port of
-the **ISC** heatshrink library. This package is MIT.
+(© 2025 James Gopsill), and the **heatshrink** decoder is a port of the **ISC**
+[`atomicobject/heatshrink`](https://github.com/atomicobject/heatshrink) (© 2013–2015 Scott Vokes) —
+both attributions preserved in their source files. This package is MIT.
 
 ## Status — phased (DD-011 §14)
 
@@ -25,7 +26,7 @@ the **ISC** heatshrink library. This package is MIT.
 | Compression: None, DEFLATE | ✅ phase 1 |
 | Encoding: None | ✅ phase 1 |
 | Encoding: MeatPack (both variants) | ✅ phase 2 |
-| Compression: heatshrink 11/12 | ⏳ phase 3 (honest `E_BGCODE_UNSUPPORTED_COMPRESSION` until then) |
+| Compression: heatshrink 11/12 | ✅ phase 3 |
 | Container-adapter + worker registration + metadata/thumbnails + golden-equivalence | ⏳ phase 4 |
 
 ## Usage

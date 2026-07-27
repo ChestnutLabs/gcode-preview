@@ -10,8 +10,8 @@
  * no `three`, framework, filesystem, or network.
  *
  * Phase 1: block walker + CRC32 + None/DEFLATE compression + None encoding. Phase 2: **MeatPack**
- * encoding (both variants). heatshrink compression (phase 3) still decodes to an honest, structured
- * "not yet supported" error.
+ * encoding (both variants). Phase 3: **heatshrink** compression (windows 11 & 12). All spec codecs are
+ * now decoded; container-adapter integration + real-file golden-equivalence follow in phase 4.
  */
 export {
   BGCODE_MAGIC,
@@ -24,3 +24,4 @@ export {
 } from './bgcode.js';
 export type { BgcodeBlockInfo, BgcodeDecodeResult, BgcodeDecodeOptions } from './bgcode.js';
 export { meatpackDecode } from './meatpack.js';
+export { heatshrinkDecode } from './heatshrink.js';
