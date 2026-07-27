@@ -11,7 +11,9 @@ import type {
   Confidence,
   DialectMetadata,
   FilamentInfo,
+  FilamentUsage,
   MachineGeometry,
+  PrintEstimate,
   ThumbnailData,
   ToolpathIR,
   Warning
@@ -32,6 +34,8 @@ export class BufferedAnnotationSink implements AnnotationSink {
   private objects = new Map<number, string>();
   private machine: MachineGeometry | null = null;
   private filaments: FilamentInfo[] = [];
+  private filamentUsage: FilamentUsage | null = null;
+  private printEstimate: PrintEstimate | null = null;
   private toolInfos = new Map<number, { material?: string; colorHex?: string }>();
   private thumbnails: ThumbnailData[] = [];
   private raw = new Map<string, string>();
@@ -71,6 +75,22 @@ export class BufferedAnnotationSink implements AnnotationSink {
 
   setFilament(info: FilamentInfo): void {
     if (this.filaments.length < 64) this.filaments.push(info);
+  }
+
+  setFilamentUsage(usage: FilamentUsage): void {
+    // Merge non-undefined fields (a slicer emits length/volume/weight on separate comment lines).
+    const prev = this.filamentUsage;
+    this.filamentUsage = {
+      lengthMm: usage.lengthMm ?? prev?.lengthMm,
+      volumeCm3: usage.volumeCm3 ?? prev?.volumeCm3,
+      weightG: usage.weightG ?? prev?.weightG,
+      source: prev?.source ?? usage.source
+    };
+  }
+
+  setPrintEstimate(estimate: PrintEstimate): void {
+    // First estimate wins (adapters send the default/'normal' mode first; ignore later silent-mode).
+    if (this.printEstimate === null) this.printEstimate = estimate;
   }
 
   setToolInfo(tool: number, info: { material?: string; colorHex?: string }): void {
@@ -152,6 +172,12 @@ export class BufferedAnnotationSink implements AnnotationSink {
     }
     if (this.filaments.length > 0) {
       metadata.filaments = [...(metadata.filaments ?? []), ...this.filaments];
+    }
+    if (this.filamentUsage !== null && metadata.filamentUsage === undefined) {
+      metadata.filamentUsage = this.filamentUsage;
+    }
+    if (this.printEstimate !== null && metadata.printEstimate === undefined) {
+      metadata.printEstimate = this.printEstimate;
     }
     if (this.thumbnails.length > 0) {
       metadata.thumbnails = [...(metadata.thumbnails ?? []), ...this.thumbnails];

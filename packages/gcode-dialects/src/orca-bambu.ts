@@ -10,6 +10,7 @@
  */
 import { FeatureRole, type ToolpathIR } from '@chestnutlabs/toolpath-core';
 import type { AnnotationSink, DialectAdapter } from './contracts.js';
+import { parseFilamentTotals, parseHmsToSeconds } from './prusaslicer.js';
 import {
   ThumbnailCollector,
   applyMarkerRanges,
@@ -107,6 +108,19 @@ export function orcaBambu(): DialectAdapter {
         s.thumbs.feed(comment, sink);
         return;
       }
+      // Orca/Bambu print-time comments are colon-separated (`; total estimated time: 1h 2m 3s`).
+      const timeMatch = /^(?:total estimated time|model printing time)\s*:\s*(.+)$/i.exec(trimmed);
+      if (timeMatch !== null) {
+        const sec = parseHmsToSeconds(timeMatch[1]);
+        if (sec !== null) {
+          sink.setPrintEstimate({
+            seconds: sec,
+            source: { adapterId: 'orca-bambu', evidence: `; ${trimmed}`, srcByte }
+          });
+        }
+        return;
+      }
+      if (parseFilamentTotals(comment, srcByte, 'orca-bambu', sink)) return;
       const kv = parseKeyValue(comment);
       if (kv === null) return;
       if (kv.key === 'printable_area') {
