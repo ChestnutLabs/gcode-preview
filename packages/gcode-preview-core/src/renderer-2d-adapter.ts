@@ -20,7 +20,7 @@ import {
 } from '@chestnutlabs/gcode-renderer-2d';
 import type { BuildVolumeDef, CameraMode, QualityMode, Theme } from '@chestnutlabs/gcode-renderer-three';
 import type { MachineGeometry, MappedProgress, ToolpathIR } from '@chestnutlabs/toolpath-core';
-import type { PreviewRenderer, PreviewRendererEvent } from './renderer-interface.js';
+import type { MoveKindToggle, PreviewRenderer, PreviewRendererEvent } from './renderer-interface.js';
 
 export interface LayerView2DRendererOptions {
   colorMode?: ColorMode;
@@ -107,8 +107,10 @@ export class LayerView2DRenderer implements PreviewRenderer {
     // Segment-granular scrub is a 3D-clip feature; the 2D view is layer-granular. Documented no-op.
   }
 
-  setKindVisible(kind: 'extrude' | 'travel', visible: boolean): void {
-    if (kind !== 'travel') return; // extrusion is the point of the 2D view; never hidden.
+  setKindVisible(kind: MoveKindToggle, visible: boolean): void {
+    // extrusion is the point of the 2D view (never hidden); wipe is a 3D-line concern with no
+    // distinct 2D representation, so only the travel toggle is meaningful here.
+    if (kind !== 'travel') return;
     this.view.setTravel(visible ? { color: 'rgba(120,120,120,0.9)', lineWidth: 0.5 } : false);
     this.view.render();
   }

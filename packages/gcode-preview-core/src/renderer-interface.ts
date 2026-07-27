@@ -22,6 +22,12 @@ import type { MachineGeometry, MappedProgress, ToolpathIR } from '@chestnutlabs/
 export type RendererMode = '2d' | '3d';
 
 /**
+ * Move classes whose visibility can be toggled independently (DD-009 travel toggle + DD-016 wipe).
+ * `'wipe'` is honored by the 3D renderer as its own chunk; the flat 2D view treats it as a no-op.
+ */
+export type MoveKindToggle = 'extrude' | 'travel' | 'wipe';
+
+/**
  * Renderer events seen by the controller. The 3D renderer emits {@link RendererEvent}; either
  * renderer may emit `renderer-unsupported` to disclose a requested option it cannot honor (e.g.
  * a camera mode on the flat 2D view) — an honest capability signal, never a hard error.
@@ -43,7 +49,7 @@ export interface PreviewRenderer {
   setBuildVolume(def: BuildVolumeDef | MachineGeometry): void;
   setLayerRange(startLayer: number, endLayer: number): void;
   setScrubPosition(segIndex: number | null): void;
-  setKindVisible(kind: 'extrude' | 'travel', visible: boolean): void;
+  setKindVisible(kind: MoveKindToggle, visible: boolean): void;
   setShowRetractions(visible: boolean): void;
   setColorMode(mode: ColorMode): boolean;
   setQuality(quality: QualityMode | 'auto'): void;

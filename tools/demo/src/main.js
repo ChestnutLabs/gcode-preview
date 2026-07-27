@@ -17,7 +17,8 @@ const CORPUS = [
   ['gcodes/plant-sign.gcode', 'Plant sign'],
   ['gcodes/easel.gcode', 'Easel (19 KB)'],
   ['gcodes/mach3.gcode', 'Mach3 (CNC-style)'],
-  ['fixtures/containers/mini-project.gcode.3mf', 'mini-project.gcode.3mf (container)']
+  ['fixtures/containers/mini-project.gcode.3mf', 'mini-project.gcode.3mf (container)'],
+  ['fixtures/annotations/wipe-brackets.gcode', 'Wipe brackets (#182 demo)']
 ];
 
 const TOOL_PALETTE = [
@@ -75,6 +76,7 @@ const els = {
   endLayerVal: $('endLayerVal'),
   scrubVal: $('scrubVal'),
   travel: $('travel'),
+  wipe: $('wipe'),
   retractions: $('retractions'),
   colorMode: $('colorMode'),
   quality: $('quality'),
@@ -185,6 +187,10 @@ renderer.onEvent((e) => {
     travelAvailable = !e.travelHidden;
     els.travel.disabled = !travelAvailable;
     els.travel.checked = travelAvailable ? els.travel.checked : false;
+    // Wipe toggle: enable only when the IR actually carries wipe moves (DD-016, #182) — honest.
+    const hasWipe = renderer.ir?.header.capabilities?.wipeMoves === 'known';
+    els.wipe.disabled = !hasWipe;
+    if (!hasWipe) els.wipe.checked = false;
     // Retraction markers: enable only when the IR actually carries events (#148).
     els.retractions.disabled = !renderer.hasRetractions;
     if (!renderer.hasRetractions) els.retractions.checked = false;
@@ -387,6 +393,7 @@ els.startLayer.addEventListener('input', applyLayerRange);
 els.endLayer.addEventListener('input', applyLayerRange);
 els.scrub.addEventListener('input', applyScrub);
 els.travel.addEventListener('change', () => renderer.setKindVisible('travel', els.travel.checked));
+els.wipe.addEventListener('change', () => renderer.setKindVisible('wipe', els.wipe.checked));
 els.retractions.addEventListener('change', () => renderer.setShowRetractions(els.retractions.checked));
 els.colorMode.addEventListener('change', () => {
   if (!renderer.setColorMode(colorModeFor(els.colorMode.value))) {
