@@ -1,8 +1,9 @@
 # DD-016 — Annotation-Derived Move Kinds (Wipe & Seam)
 
-**Status:** Draft <!-- Draft | Proposed | Accepted | Superseded | Rejected -->
+**Status:** Accepted <!-- Draft | Proposed | Accepted | Superseded | Rejected -->
 **Authors/Owners:** Nathaniel Chestnut
 **Date:** 2026-07-27 · **Last revised:** 2026-07-27
+**Accepted:** 2026-07-27 — D1–D6 as recommended (D2 = the narrow additive DD-005 sink amendment; seam a non-goal). Implementation unblocked per §14.
 **Owning Epic:** E9 (Toolpath Annotations & Renderer Options, #162) · **Milestone:** Future
 **Supersedes / Superseded by:** none
 **Related:** #182 (feature), DD-001 (`MoveKind`, capability model), DD-005 (dialect/sink contracts — the invariant this DD amends), DD-009 (annotations & renderer options — retraction-marker sibling #148), DD-010 (§3 modal-state-in-interpreter pattern). Verification evidence: [#182 comment](https://github.com/ChestnutLabs/gcode-preview/issues/182).
@@ -49,6 +50,10 @@ invariant that keeps adapters from rewriting geometry — and honestly scopes se
 - **Color-by modal channels** (#180 / RR-002) — related modal-state work, different DD.
 
 ## 4. Decisions
+
+> **Accepted 2026-07-27 — D1–D6 as recommended.** D2 resolves to the narrow additive DD-005 sink
+> amendment (`addMoveKind`, allow-listed to `Wipe`/`Seam`); seam stays a non-goal (§3). Implementation
+> proceeds on the §14 phasing.
 
 ### 4.1 D1 — Signal source (what populates the bit)
 
@@ -203,3 +208,4 @@ diagnostic surface.
 | Date | Note | Source |
 |---|---|---|
 | 2026-07-27 | DD-016 drafted as **Draft**; D1–D6 open. Motivated by #182 verification: `Wipe`/`Seam` bits are defined but never set, wipe's only signal is a slicer comment the DD-005 sink invariant bars the annotation layer from turning into `kind`, and seam has no per-move signal. Proposes a narrow additive sink amendment (`addMoveKind`, allow-listed to `Wipe`/`Seam`) so detection stays in the dialect while the invariant's substance holds; scopes seam as `unavailable`. Numbered DD-016 because DD-011 (`.bgcode`, #188) and DD-012 (CNC/laser, #189) are reserved, DD-013/DD-014 are taken, and DD-015 is the RR-002 modal-color-channels candidate (#180). | Chestnut Labs |
+| 2026-07-27 | **Accepted — D1–D6 as recommended.** D2 = the narrow additive DD-005 sink amendment (`addMoveKind`, allow-listed to `Wipe`/`Seam`); seam confirmed a non-goal. Implementation unblocked on the §14 phasing (1: sink amendment + `wipeMoves` capability + synthetic fixture + parser/contract tests; 2: renderer `'wipe'` chunk + `setKindVisible('wipe', …)` + adapter passthrough; 3: seam docs). | Maintainer (Chestnut Labs) |

@@ -25,7 +25,7 @@ boundary. Architecture-sensitive work is **blocked until its DD is Accepted** (g
 | [DD-010](DD-010-motion-model-correctness.md) | Motion-Model Correctness (extruder/positioning mode, arc planes, coordinate systems) | E10 | Future | **Accepted** 2026-07-24 (revised D1–D6) (#191) |
 | [DD-013](DD-013-documentation-sdk-reference-and-published-manual.md) | Documentation, SDK Reference & Published Manual | E11 | Future | **Accepted** 2026-07-25 (D1–D7 as recommended) (#197) |
 | [DD-014](DD-014-low-resource-layer-renderer.md) | Low-Resource Layer Mode (2D/adjacent-layer renderer over IR) | E8 (#9) | Future | **Accepted** 2026-07-26 (D1–D5 as recommended; D6 build-now on the AnyBridge evidence artifact) |
-| [DD-016](DD-016-annotation-derived-move-kinds.md) | Annotation-Derived Move Kinds (Wipe & Seam) | E9 (#182) | Future | **Draft** 2026-07-27 (D1–D6 open) — narrow additive DD-005 sink amendment so a slicer-comment signal can set `Wipe`; seam scoped `unavailable` |
+| [DD-016](DD-016-annotation-derived-move-kinds.md) | Annotation-Derived Move Kinds (Wipe & Seam) | E9 (#182) | Future | **Accepted** 2026-07-27 (D1–D6 as recommended; D2 = narrow additive DD-005 sink amendment so a slicer-comment signal can set `Wipe`; seam a non-goal) |
 
 > **Reserved:** DD-011 (Binary G-code `.bgcode` decode, epic #188) and DD-012 (CNC/laser/plotter
 > non-extrusion toolpaths, epic #189) are reserved by the DD-010 sibling triage and not yet drafted —
