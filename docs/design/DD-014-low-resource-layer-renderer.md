@@ -1,8 +1,8 @@
 # DD-014 — Low-Resource Layer Mode (2D/Adjacent-Layer Renderer over ToolpathIR)
 
-**Status:** **Proposed** <!-- Draft | Proposed | Accepted | Superseded | Rejected -->
+**Status:** **Accepted** 2026-07-26 (D1–D5 as recommended; D6 resolved — evidence gate satisfied by a standing AnyBridge consumer request, build now) <!-- Draft | Proposed | Accepted | Superseded | Rejected -->
 **Authors/Owners:** Chestnut Labs
-**Date:** 2026-07-25 · **Last revised:** 2026-07-25
+**Date:** 2026-07-25 · **Last revised:** 2026-07-26
 **Owning Epic:** **E8 — Low-Resource Layer Mode** (#9) · **Milestone:** Future
 **Supersedes / Superseded by:** none
 **Related:** DD-001 (ToolpathIR + capability model — the SoA geometry, `layers` table, and floating origin this renderer consumes **unchanged**), DD-002 (package boundaries & public-API versioning — where a 2D renderer sits and what it may import), DD-004 (Three.js renderer, geometry builders, layer clipping & quality modes — the 3D sibling whose IR-consumption pattern and public option surface this mirrors), DD-006 (progress mapping — a 2D view still honors the live-progress cut/marker), DD-007 (framework adapters — the `<GcodePreview>` surface that selects the renderer), DD-008 §4.8 (roadmap note: pure-Node GPU-less still rendering as the deferred E8-class capability); the E3 renderer benchmark (`tools/benchmark/results/e3-renderer-benchmark-2026-07-22.md`) and the E0 reference comparison (RR-001, Fluidd's 2D resource strategy).
@@ -17,8 +17,10 @@
 > satisfied, and it puts the **evidence question itself** to the maintainer as an explicit decision
 > (D6) rather than letting it block indefinitely.
 
-> **This is a proposal awaiting acceptance.** No package, renderer, or adapter code is written until
-> D1–D6 are decided. In particular, nothing is built before D6 resolves the evidence gate.
+> **Accepted 2026-07-26.** D1–D5 accepted as recommended; **D6 resolved by the maintainer to build now**
+> — the evidence gate is satisfied by a standing request from the AnyBridge team for a low-resource 2D
+> viewer (D6-A's named evidence artifact is already present), so implementation is greenlit rather than
+> waiting on a future trigger. E8 (#9) is unblocked; phased issues open per §14.
 
 ---
 
@@ -164,6 +166,14 @@ gate block indefinitely, nor build a package on a hunch. Options:
 named, cheap evidence trigger for the build. This respects the gate the epic set for itself while
 removing the "blocked on an unwritten DD" impasse.
 
+> **Decision (2026-07-26, maintainer): build now.** D6-A's named evidence artifact — "an
+> AnyBridge/consumer request" — is **already present**: the AnyBridge team has a standing request for a
+> low-resource 2D viewer. The evidence gate is therefore satisfied at acceptance, not deferred to a
+> future trigger, so implementation is greenlit immediately (the D6-B *outcome* — build now — reached
+> through D6-A's evidence discipline rather than on a hunch). E8 (#9) is unblocked; open the §14 phased
+> issues. The §8 low-resource budget is still evidence-derived and measured on a real target device
+> class from the AnyBridge deployment context — that requirement is unchanged.
+
 ## 5. Lifecycle
 
 On acceptance: record D1–D6; if D6-A/B, open E8 phased implementation issues (2D canvas core over IR →
@@ -248,7 +258,8 @@ misleading result. No new telemetry.
 
 ## 15. Acceptance criteria
 
-- [ ] D1–D6 decided by the maintainer and recorded; DD marked **Accepted** (or **Deferred** per D6-C)
+- [x] D1–D6 decided by the maintainer and recorded; DD marked **Accepted** (2026-07-26 — D1–D5 as
+      recommended, D6 build-now on the AnyBridge evidence artifact)
 - [ ] If building (D6-A/B): **E8** (#9) phased issues opened per §14; a new lockstep package
       `@chestnutlabs/gcode-renderer-2d` that imports **no `three` and no framework** (boundary lint green)
 - [ ] The 2D renderer consumes the **existing IR** with **no IR/parser change** and single-sources the
@@ -263,4 +274,4 @@ misleading result. No new telemetry.
 | Date | Decision | By |
 |---|---|---|
 | 2026-07-25 | DD-014 drafted as **Proposed**; D1–D6 open. E8 (#9) proposes an opt-in 2D/adjacent-layer renderer over the existing `ToolpathIR` for low-resource/low-GPU/WebGL-blocked contexts. First gate condition (stable IR) now met through E10; the second (device-need evidence) is put to the maintainer as D6. Numbered DD-014 because **DD-011** (`.bgcode`, #188) and **DD-012** (CNC/laser, #189) are reserved and **DD-013** is the documentation epic (E11) | Chestnut Labs |
-| _pending_ | Awaiting maintainer decision on D1–D6 (esp. the D6 evidence gate) and on whether to open E8 implementation now | Maintainer |
+| 2026-07-26 | **Accepted.** D1–D5 accepted as recommended. **D6 resolved to build now:** the D6-A evidence artifact (an AnyBridge/consumer request) is already present as a standing AnyBridge-team request for a low-resource 2D viewer, so the gate is satisfied at acceptance rather than deferred — E8 (#9) unblocked, §14 phased issues to open. The §8 budget stays evidence-derived on a real target device from the AnyBridge context | Maintainer |
