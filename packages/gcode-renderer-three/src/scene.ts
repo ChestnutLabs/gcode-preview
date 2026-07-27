@@ -752,6 +752,17 @@ export class ToolpathRenderer {
       const conf = this.ir?.header.capabilities['colorChanges'];
       return conf !== undefined && conf !== 'unavailable';
     }
+    if (mode === 'object') {
+      // Color-by-object needs the object channel populated (#178) — M486/EXCLUDE_OBJECT files.
+      const conf = this.ir?.header.capabilities['objects'];
+      return conf !== undefined && conf !== 'unavailable';
+    }
+    if (mode === 'feedrate') {
+      // Color-by-speed needs known feedrates (#177) — always populated by the parser, but honor a
+      // consumer/adapter that reports it unavailable rather than fabricating a speed heatmap.
+      const conf = this.ir?.header.capabilities['feedrate'];
+      return conf !== 'unavailable';
+    }
     return true;
   }
 
@@ -1025,7 +1036,7 @@ export class ToolpathRenderer {
       this.emit({
         type: 'error',
         code: 'E_COLOR_MODE_UNAVAILABLE',
-        message: `color mode '${mode.mode}' is unavailable: IR capability featureRoles is missing or 'unavailable'`
+        message: `color mode '${mode.mode}' is unavailable: the IR does not carry the required capability ('unavailable' or missing)`
       });
       return false;
     }
