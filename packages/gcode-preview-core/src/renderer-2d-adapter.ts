@@ -152,6 +152,11 @@ export class LayerView2DRenderer implements PreviewRenderer {
     this.view.render();
   }
 
+  pickSegment(): number | null {
+    // Segment picking is a 3D raycast feature; the 2D layer view has none yet (#184).
+    return null;
+  }
+
   frame(): void {
     // The 2D view always auto-fits the whole-model frame; framing is just a redraw.
     this.view.render();
