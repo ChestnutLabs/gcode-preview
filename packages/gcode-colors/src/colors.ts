@@ -27,7 +27,12 @@ export type ColorMode =
   | { mode: 'feedrate'; ramp: RGB[]; range?: [number, number]; fallback: RGB }
   // Color-by-object (#178): shade by `seg.object` (1-based; 0 = none → fallback). `only` isolates a
   // single object (others render as fallback). Capability-gated by the caller on `objects`.
-  | { mode: 'object'; palette: RGB[]; fallback: RGB; only?: number };
+  | { mode: 'object'; palette: RGB[]; fallback: RGB; only?: number }
+  // Color-by-layer-height (#179): map each segment's LAYER height (the Z-delta to the previous layer)
+  // onto a ramp — the Orca/Bambu view that reveals variable-layer-height prints. Auto-ranged from the
+  // IR when `range` is omitted. Derived purely from `ir.layers` Z; capability-gated by the caller on
+  // `layers` (a non-planar IR collapses every segment to layer 0 → a single height).
+  | { mode: 'layerHeight'; ramp: RGB[]; range?: [number, number]; fallback: RGB };
 
 /** Neutral color used when a mode has no palette / the channel value is unknown. */
 export const DEFAULT_FALLBACK: RGB = [0.7, 0.7, 0.7];
@@ -42,6 +47,32 @@ export function feedrateRange(ir: ToolpathIR): [number, number] {
     if (Number.isNaN(v)) continue;
     if (v < min) min = v;
     if (v > max) max = v;
+  }
+  return min <= max ? [min, max] : [0, 0];
+}
+
+/**
+ * Per-layer height (mm): the Z-delta from the previous layer, indexed by layer. Layer 0's height is
+ * its absolute Z (its thickness from the bed). Negative deltas (non-monotonic Z, e.g. spiral/vase
+ * synthetic layers) clamp to 0 rather than fabricate a negative height. Derived only from `ir.layers`.
+ */
+export function layerHeights(ir: ToolpathIR): Float32Array {
+  const layers = ir.layers;
+  const h = new Float32Array(layers.length);
+  for (let i = 0; i < layers.length; i++) {
+    h[i] = i === 0 ? Math.max(0, layers[0].z) : Math.max(0, layers[i].z - layers[i - 1].z);
+  }
+  return h;
+}
+
+/** Min/max per-layer height — the auto-range for color-by-layer-height (#179). */
+export function layerHeightRange(ir: ToolpathIR): [number, number] {
+  const h = layerHeights(ir);
+  let min = Infinity;
+  let max = -Infinity;
+  for (let i = 0; i < h.length; i++) {
+    if (h[i] < min) min = h[i];
+    if (h[i] > max) max = h[i];
   }
   return min <= max ? [min, max] : [0, 0];
 }
@@ -119,6 +150,18 @@ export function createSegmentColorer(ir: ToolpathIR, mode: ColorMode): SegmentCo
     return (i) => {
       const v = seg.feedrate[i];
       return Number.isNaN(v) ? mode.fallback : rampColor(mode.ramp, span > 0 ? (v - lo) / span : 0);
+    };
+  }
+  if (mode.mode === 'layerHeight') {
+    // Precompute per-layer heights once → O(1) per segment (#179). An out-of-range layer index
+    // (shouldn't happen; a hostile IR) → fallback, never a fabricated height color.
+    const heights = layerHeights(ir);
+    const [lo, hi] = mode.range ?? layerHeightRange(ir);
+    const span = hi - lo;
+    return (i) => {
+      const li = seg.layer[i];
+      if (li < 0 || li >= heights.length) return mode.fallback;
+      return rampColor(mode.ramp, span > 0 ? (heights[li] - lo) / span : 0);
     };
   }
   // object mode: object 0 = none/unknown → fallback; `only` isolates one object, dimming the rest (#178).

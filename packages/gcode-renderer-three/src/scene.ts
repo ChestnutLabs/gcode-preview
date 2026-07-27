@@ -817,6 +817,12 @@ export class ToolpathRenderer {
       const conf = this.ir?.header.capabilities['feedrate'];
       return conf !== 'unavailable';
     }
+    if (mode === 'layerHeight') {
+      // Color-by-layer-height needs a real planar layer table (#179); a non-planar/CNC IR
+      // (`layers: 'unavailable'`) collapses every segment to one layer, so the mode is not meaningful.
+      const conf = this.ir?.header.capabilities['layers'];
+      return conf !== undefined && conf !== 'unavailable';
+    }
     return true;
   }
 

@@ -13,7 +13,7 @@ import type { ColorMode, RGB } from '@chestnutlabs/gcode-colors';
 import type { GeometryChunk } from './chunks.js';
 
 export type { ColorMode, RGB } from '@chestnutlabs/gcode-colors';
-export { feedrateRange } from '@chestnutlabs/gcode-colors';
+export { feedrateRange, layerHeightRange } from '@chestnutlabs/gcode-colors';
 
 /** Build the interleaved color attribute for a chunk: 6 floats per segment (both vertices). */
 export function buildChunkColors(ir: ToolpathIR, chunk: GeometryChunk, mode: ColorMode): Float32Array {

@@ -18,7 +18,8 @@ const CORPUS = [
   ['gcodes/easel.gcode', 'Easel (19 KB)'],
   ['gcodes/mach3.gcode', 'Mach3 (CNC-style)'],
   ['fixtures/containers/mini-project.gcode.3mf', 'mini-project.gcode.3mf (container)'],
-  ['fixtures/annotations/wipe-brackets.gcode', 'Wipe brackets (#182 demo)']
+  ['fixtures/annotations/wipe-brackets.gcode', 'Wipe brackets (#182 demo)'],
+  ['fixtures/annotations/variable-layers.gcode', 'Variable layer height (#179 demo)']
 ];
 
 const TOOL_PALETTE = [
@@ -33,6 +34,14 @@ const FEATURE_PALETTE = [
   [0.95, 0.75, 0.3],
   [0.5, 0.9, 0.5],
   [0.8, 0.5, 0.95]
+];
+
+// Color-by-layer-height ramp (#179): thin → thick as blue → green → yellow → red.
+const HEIGHT_RAMP = [
+  [0.15, 0.4, 0.9],
+  [0.2, 0.85, 0.45],
+  [0.95, 0.85, 0.2],
+  [0.9, 0.3, 0.2]
 ];
 
 // Named scene themes (#153, DD-009 D4): each is a bounded declarative Theme.
@@ -120,6 +129,7 @@ function colorModeFor(kind) {
   if (kind === 'tool') return { mode: 'tool', palette: TOOL_PALETTE, fallback: [0.7, 0.7, 0.7] };
   if (kind === 'feature') return { mode: 'feature', palette: FEATURE_PALETTE, fallback: [0.55, 0.55, 0.55] };
   if (kind === 'colorChange') return { mode: 'colorChange', palette: TOOL_PALETTE, fallback: [0.55, 0.55, 0.55] };
+  if (kind === 'layerHeight') return { mode: 'layerHeight', ramp: HEIGHT_RAMP, fallback: [0.6, 0.6, 0.6] };
   return { mode: 'single', color: [0.9, 0.4, 0.7] };
 }
 
@@ -177,6 +187,16 @@ function enableControls(ir) {
     ? 'By color change (M600)'
     : `By color change (unavailable: colorChanges = ${ir.header.capabilities.colorChanges ?? 'unknown'})`;
   if (!ccOk && els.colorMode.value === 'colorChange') {
+    els.colorMode.value = 'single';
+  }
+  // Layer-height coloring (#179): only meaningful with a real planar layer table.
+  const lhOpt = els.colorMode.querySelector('option[value="layerHeight"]');
+  const lhOk = renderer.isColorModeAvailable('layerHeight');
+  lhOpt.disabled = !lhOk;
+  lhOpt.textContent = lhOk
+    ? 'By layer height'
+    : `By layer height (unavailable: layers = ${ir.header.capabilities.layers ?? 'unknown'})`;
+  if (!lhOk && els.colorMode.value === 'layerHeight') {
     els.colorMode.value = 'single';
   }
   renderer.setColorMode(colorModeFor(els.colorMode.value));

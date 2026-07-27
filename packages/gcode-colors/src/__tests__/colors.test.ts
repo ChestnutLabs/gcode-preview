@@ -6,7 +6,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import { MoveKind, ToolpathIRBuilder, type ToolpathIR } from '@chestnutlabs/toolpath-core';
-import { createSegmentColorer, segmentColor, feedrateRange, rampColor, type RGB } from '../index.js';
+import { createSegmentColorer, segmentColor, feedrateRange, layerHeightRange, rampColor, type RGB } from '../index.js';
 
 const A: RGB = [1, 0, 0];
 const B: RGB = [0, 1, 0];
@@ -114,6 +114,57 @@ describe('object (#178)', () => {
     const c = createSegmentColorer(ir, { mode: 'object', palette: [A, B], fallback: F, only: 1 });
     expect(c(0)).toEqual([1, 0, 0]);
     expect(c(1)).toEqual([0.5, 0.5, 0.5]);
+  });
+});
+
+describe('layerHeight (#179)', () => {
+  /** One extrude segment per layer, layer i's Z = zs[i] (deriveLayers reads z1). */
+  function layeredIR(zs: number[]): ToolpathIR {
+    const b = new ToolpathIRBuilder({ parserVersion: 'test', units: 'mm', unitsSource: 'known' });
+    zs.forEach((z, i) =>
+      b.addSegment({
+        x0: 0,
+        y0: 0,
+        z0: z,
+        x1: 1,
+        y1: 0,
+        z1: z,
+        e: 1,
+        kind: MoveKind.Extrude,
+        layer: i,
+        srcByte: i * 10
+      })
+    );
+    return b.finalize();
+  }
+
+  it('auto-ranges per-layer heights (Z-deltas) and maps each segment onto the ramp', () => {
+    // heights: layer0 = 0.2 (from bed), layer1 = 0.5-0.2 = 0.3, layer2 = 0.6-0.5 = 0.1 → range [0.1, 0.3].
+    const ir = layeredIR([0.2, 0.5, 0.6]);
+    const [lo, hi] = layerHeightRange(ir);
+    expect(lo).toBeCloseTo(0.1, 5);
+    expect(hi).toBeCloseTo(0.3, 5);
+
+    const c = createSegmentColorer(ir, { mode: 'layerHeight', ramp: [A, B], fallback: F });
+    // layer2 (thinnest, 0.1) → ramp start A; layer1 (thickest, 0.3) → ramp end B; layer0 (0.2) → midpoint.
+    expect(c(2)).toEqual([1, 0, 0]);
+    expect(c(1)).toEqual([0, 1, 0]);
+    const mid = c(0);
+    expect(mid[0]).toBeCloseTo(0.5, 5);
+    expect(mid[1]).toBeCloseTo(0.5, 5);
+  });
+
+  it('an explicit range keeps the scale stable across files', () => {
+    const ir = layeredIR([0.2, 0.4]); // heights 0.2, 0.2
+    const c = createSegmentColorer(ir, { mode: 'layerHeight', ramp: [A, B], range: [0, 0.4], fallback: F });
+    // both layers are 0.2 → t = 0.5 on [0, 0.4] → midpoint, regardless of this file's own spread.
+    expect(c(0)[0]).toBeCloseTo(0.5, 5);
+  });
+
+  it('a single layer (zero span) → ramp start, never a divide-by-zero', () => {
+    const ir = layeredIR([0.2]);
+    const c = createSegmentColorer(ir, { mode: 'layerHeight', ramp: [A, B], fallback: F });
+    expect(c(0)).toEqual([1, 0, 0]);
   });
 });
 
