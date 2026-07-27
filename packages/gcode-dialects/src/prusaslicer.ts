@@ -11,10 +11,13 @@ import type { AnnotationSink, DialectAdapter } from './contracts.js';
 import {
   ThumbnailCollector,
   applyMarkerRanges,
+  applyWipeRanges,
   bedFromPoints,
+  matchWipeComment,
   parseAreaPoints,
   parseKeyValue,
-  type RangeMarker
+  type RangeMarker,
+  type WipeMark
 } from './annotate.js';
 
 /** Prusa `;TYPE:` names → DD-001 FeatureRole (unknown names → Custom, honestly generic). */
@@ -76,6 +79,7 @@ export function parseFilamentTotals(
 
 interface PrusaState {
   markers: RangeMarker[];
+  wipes: WipeMark[];
   bedPoints: string | null;
   bedSrcByte?: number;
   heightMm?: number;
@@ -88,7 +92,7 @@ const state = new WeakMap<AnnotationSink, PrusaState>();
 function stateFor(sink: AnnotationSink): PrusaState {
   let s = state.get(sink);
   if (s === undefined) {
-    s = { markers: [], bedPoints: null, thumbs: new ThumbnailCollector() };
+    s = { markers: [], wipes: [], bedPoints: null, thumbs: new ThumbnailCollector() };
     state.set(sink, s);
   }
   return s;
@@ -115,6 +119,11 @@ export function prusaSlicer(): DialectAdapter {
       if (comment.startsWith('TYPE:')) {
         const role = TYPE_MAP[comment.slice(5).trim().toLowerCase()];
         s.markers.push({ srcByte, value: role ?? FeatureRole.Custom });
+        return;
+      }
+      const wipe = matchWipeComment(comment);
+      if (wipe !== null) {
+        s.wipes.push({ srcByte, open: wipe === 'start' });
         return;
       }
       if (s.thumbs.isActive || comment.trimStart().toLowerCase().startsWith('thumbnail')) {
@@ -151,6 +160,7 @@ export function prusaSlicer(): DialectAdapter {
       const s = stateFor(sink);
       const applied = applyMarkerRanges(ir, s.markers, (a, b, v) => sink.setFeature(a, b, v));
       if (applied > 0) sink.upgradeCapability('featureRoles', 'known');
+      if (applyWipeRanges(ir, s.wipes, sink) > 0) sink.upgradeCapability('wipeMoves', 'known');
       if (s.bedPoints !== null) {
         const points = parseAreaPoints(s.bedPoints);
         if (points !== null) {

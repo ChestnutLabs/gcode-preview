@@ -876,6 +876,11 @@ export function createEngine(input: string | Uint8Array, opts: ParseOptions): En
       objects: 'unavailable',
       retractions: retractionEvents.length > 0 ? 'known' : 'unavailable',
       colorChanges: colorChangeEvents.length > 0 ? 'known' : 'unavailable',
+      // Annotation-derived move kinds (DD-016, #182). The parser never sets these — they come from a
+      // slicer adapter's WIPE_START/END brackets (upgraded to 'known' via the sink). Seam has no
+      // per-move G-code signal and stays 'unavailable' (a future geometry-heuristic DD may change it).
+      wipeMoves: 'unavailable',
+      seamMoves: 'unavailable',
       // Motion-model modes (DD-010 E10 phase 1). 'known' when the governing command was seen
       // (M82/M83, or a firmware-known G90/G91 for E); 'inferred' when defaulted (absolute).
       extrusionMode: eModeExplicit !== null || (extruderFollowsPositioning && positioningSeen) ? 'known' : 'inferred',
@@ -988,6 +993,8 @@ export function createEngine(input: string | Uint8Array, opts: ParseOptions): En
           objects: 'unavailable',
           retractions: 'unavailable', // markers resolve on the final IR, not on preview slices
           colorChanges: 'unavailable', // color-change boundaries resolve on the final IR
+          wipeMoves: 'unavailable', // annotation move kinds resolve on the final IR (DD-016)
+          seamMoves: 'unavailable',
           extrusionMode: 'inferred', // motion modes resolve fully on the final IR (E10)
           positioningMode: 'inferred',
           arcPlanes: 'inferred',

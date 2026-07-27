@@ -41,6 +41,13 @@ export interface DetectInput {
 export interface AnnotationSink {
   /** Write a FeatureRole index for segments [segStart, segEnd] (bounds validated at apply). */
   setFeature(segStart: number, segEnd: number, role: number): void;
+  /**
+   * Additively OR an annotation move-kind bit onto segments [segStart, segEnd] (DD-016 §4.2).
+   * Allow-listed to `MoveKind.Wipe | MoveKind.Seam` — the ONLY exception to the sink's kind
+   * immutability, and additive-only: it never clears an existing Extrude/Travel bit and never
+   * reclassifies a move. Non-allow-listed bits are dropped with a warning (bounded failure).
+   */
+  addMoveKind(segStart: number, segEnd: number, kindBits: number): void;
   /** `objectValue` is the 1-based object-channel value (DD-001: v indexes ir.objects[v-1]). */
   setObject(segStart: number, segEnd: number, objectValue: number): void;
   defineObject(objectValue: number, name: string): void;

@@ -5,7 +5,7 @@
  * IR's byte-ordered sourceIndex resolves them to segment ranges in `finalize`
  * (DD-005 §4.3: "annotation ranges are [segAtEvent, segBeforeNextEvent]").
  */
-import type { MachineGeometry, Point2, ToolpathIR } from '@chestnutlabs/toolpath-core';
+import { MoveKind, type MachineGeometry, type Point2, type ToolpathIR } from '@chestnutlabs/toolpath-core';
 import type { AnnotationSink } from './contracts.js';
 
 /** First segment whose producing command starts at or after `byte`. */
@@ -43,6 +43,56 @@ export function applyMarkerRanges(
     const end = (i + 1 < markers.length ? segAtOrAfterByte(ir, markers[i + 1].srcByte) : ir.segments.count) - 1;
     if (end >= start) {
       write(start, end, markers[i].value);
+      applied++;
+    }
+  }
+  return applied;
+}
+
+/** One end of a wipe bracket (DD-016, #182): the source byte and whether it OPENED the bracket. */
+export interface WipeMark {
+  srcByte: number;
+  open: boolean; // true = WIPE_START, false = WIPE_END
+}
+
+/**
+ * Classify a comment as a PrusaSlicer/OrcaSlicer wipe-bracket marker. The convention is bare
+ * `;WIPE_START` / `;WIPE_END` (the semicolon is already stripped before onComment); tolerant of a
+ * leading space and casing. Returns null for any other comment.
+ */
+export function matchWipeComment(comment: string): 'start' | 'end' | null {
+  const t = comment.trim().toUpperCase();
+  if (t === 'WIPE_START') return 'start';
+  if (t === 'WIPE_END') return 'end';
+  return null;
+}
+
+/**
+ * Resolve WIPE_START/END byte marks to segment ranges and add `MoveKind.Wipe` additively via the sink
+ * (DD-016 §4.2). Segments emitted between a START and its END are the wipe moves. Unbalanced or nested
+ * markers degrade safely: a stray END is ignored, a second START before an END is folded into the open
+ * bracket, and a START left open at end-of-file closes at the last segment. Returns ranges applied.
+ */
+export function applyWipeRanges(ir: ToolpathIR, marks: WipeMark[], sink: AnnotationSink): number {
+  let applied = 0;
+  let openByte = -1;
+  for (const mark of marks) {
+    if (mark.open) {
+      if (openByte < 0) openByte = mark.srcByte;
+    } else if (openByte >= 0) {
+      const start = segAtOrAfterByte(ir, openByte);
+      const end = segAtOrAfterByte(ir, mark.srcByte); // first segment AFTER the wipe block
+      if (end - 1 >= start) {
+        sink.addMoveKind(start, end - 1, MoveKind.Wipe);
+        applied++;
+      }
+      openByte = -1;
+    }
+  }
+  if (openByte >= 0) {
+    const start = segAtOrAfterByte(ir, openByte);
+    if (ir.segments.count - 1 >= start) {
+      sink.addMoveKind(start, ir.segments.count - 1, MoveKind.Wipe);
       applied++;
     }
   }
