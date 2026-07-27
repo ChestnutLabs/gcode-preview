@@ -37,8 +37,10 @@ import {
   PerspectiveCamera,
   Points,
   PointsMaterial,
+  Raycaster,
   Scene,
   SphereGeometry,
+  Vector2,
   Vector3,
   WebGLRenderer
 } from 'three';
@@ -174,6 +176,21 @@ const TICK_BUDGET_MS = 8;
 /** Tubes chunk target: ~2k segments keeps a single tube-chunk build under the stall budget. */
 const TUBES_CHUNK_TARGET = 2048;
 
+/**
+ * Map a raycast hit on a toolpath chunk mesh — identified by its hit vertex index — back to the IR
+ * segment index (#184, the "click a segment → source line" half). Lines mode has 2 vertices per
+ * segment; tube meshes carry a `vertexSegment` table (vertex → in-chunk segment). Returns null when
+ * the mesh isn't a pickable chunk or the index is out of range. Pure — testable without a GL context.
+ */
+export function resolveHitSegment(mesh: LineSegments | Mesh, vertexIndex: number): number | null {
+  const chunk = mesh.userData.chunk as GeometryChunk | undefined;
+  if (chunk === undefined) return null;
+  const vertexSegment = mesh.userData.vertexSegment as Uint32Array | undefined;
+  const inChunk = vertexSegment !== undefined ? vertexSegment[vertexIndex] : Math.floor(vertexIndex / 2);
+  if (inChunk === undefined || inChunk < 0 || inChunk >= chunk.count) return null;
+  return chunk.segIndices[inChunk];
+}
+
 export class ToolpathRenderer {
   private readonly canvas: RenderTargetCanvas;
   private readonly gl: GLRendererLike;
@@ -204,6 +221,8 @@ export class ToolpathRenderer {
   private controls: OrbitControls | null = null;
 
   private ir: ToolpathIR | null = null;
+  private readonly raycaster = new Raycaster();
+  private readonly pointer = new Vector2();
   private buildResult: ChunkBuildResult | null = null;
   private pendingChunks: GeometryChunk[] = [];
   private builtCount = 0;
@@ -619,6 +638,33 @@ export class ToolpathRenderer {
   /** Number of IR segments (scrub-slider bounds for consumers). */
   get segmentCount(): number {
     return this.ir?.segments.count ?? 0;
+  }
+
+  /**
+   * Pick the IR segment under a pointer, or null (#184 — click a segment → its G-code source line via
+   * {@link sourceLineOfSegment}). `ndcX`/`ndcY` are normalized device coords (each in [-1, 1]); a
+   * consumer converts a canvas click with `(x/w)*2-1`, `-(y/h)*2+1`. `threshold` is the world-space
+   * line hit radius — auto-derived from the model size when omitted. Lines mode; tube meshes resolve
+   * when they carry a vertex→segment table.
+   */
+  pickSegment(ndcX: number, ndcY: number, threshold?: number): number | null {
+    if (this.chunkMeshes.length === 0) return null;
+    this.pointer.set(ndcX, ndcY);
+    this.raycaster.setFromCamera(this.pointer, this.activeCamera);
+    this.raycaster.params.Line.threshold = threshold ?? this.pickThreshold();
+    for (const hit of this.raycaster.intersectObjects(this.chunkMeshes, false)) {
+      if (hit.index === undefined) continue;
+      const seg = resolveHitSegment(hit.object as LineSegments, hit.index);
+      if (seg !== null) return seg;
+    }
+    return null;
+  }
+
+  /** Forgiving click radius (~0.5% of the model diagonal) that scales with model size. */
+  private pickThreshold(): number {
+    const b = this.ir?.bounds;
+    if (b === undefined) return 0.5;
+    return Math.max(0.2, 0.005 * Math.hypot(b.max.x - b.min.x, b.max.y - b.min.y, b.max.z - b.min.z));
   }
 
   /**

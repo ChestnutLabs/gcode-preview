@@ -50,6 +50,11 @@ export interface PreviewRenderer {
   setCameraMode(mode: CameraMode): void;
   setTheme(theme: Theme): void;
   setProgress(p: MappedProgress | null): void;
+  /**
+   * Pick the IR segment under a pointer (normalized device coords in [-1, 1]), or null (#184). The 3D
+   * renderer raycasts the toolpath; the 2D renderer returns null (no picking yet).
+   */
+  pickSegment(ndcX: number, ndcY: number, threshold?: number): number | null;
   frame(): void;
   dispose(): void;
 }

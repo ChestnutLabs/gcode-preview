@@ -12,3 +12,4 @@ export * from './source-index.js';
 export * from './metadata.js';
 export * from './progress.js';
 export * from './time.js';
+export * from './source-map.js';
