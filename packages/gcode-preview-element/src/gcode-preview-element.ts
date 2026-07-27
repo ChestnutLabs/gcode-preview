@@ -33,7 +33,15 @@ export type ElementRendererOptions = Omit<
 type PreviewControllerRenderer = NonNullable<Parameters<typeof createPreviewController>[0]>['renderer'];
 
 /** Observed scalar/boolean/number attributes; rich options are property-only. */
-const OBSERVED = ['quality', 'camera-mode', 'show-travel', 'show-retractions', 'scrub', 'layer-range'] as const;
+const OBSERVED = [
+  'quality',
+  'camera-mode',
+  'show-travel',
+  'show-retractions',
+  'scrub',
+  'scrub-time',
+  'layer-range'
+] as const;
 
 /** The default tag name (DD-009 §4.5). */
 export const DEFAULT_TAG = 'gcode-preview';
@@ -152,6 +160,14 @@ export class GcodePreviewElement extends HTMLElement {
   set scrub(v: number | null) {
     this.reflect('scrub', v);
   }
+  /** Time-based scrub cut in ms of print time (#181). */
+  get scrubTime(): number | null {
+    const a = this.getAttribute('scrub-time');
+    return a === null ? null : Number(a);
+  }
+  set scrubTime(v: number | null) {
+    this.reflect('scrub-time', v);
+  }
   get layerRange(): [number, number] | null {
     return parseLayerRange(this.getAttribute('layer-range'));
   }
@@ -247,6 +263,9 @@ export class GcodePreviewElement extends HTMLElement {
       case 'scrub':
         c.setScrubPosition(value === null ? null : Number(value));
         break;
+      case 'scrub-time':
+        c.setScrubTime(value === null ? null : Number(value));
+        break;
       case 'layer-range': {
         const r = parseLayerRange(value);
         if (r === null) c.setLayerRange(0, Number.POSITIVE_INFINITY);
@@ -268,6 +287,7 @@ export class GcodePreviewElement extends HTMLElement {
     if (r === null) c.setLayerRange(0, Number.POSITIVE_INFINITY);
     else c.setLayerRange(r[0], r[1]);
     c.setScrubPosition(this.scrub);
+    c.setScrubTime(this.scrubTime);
     this.applyProgress();
   }
 

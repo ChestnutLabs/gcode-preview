@@ -33,13 +33,16 @@ import { LayerView2DRenderer } from './renderer-2d-adapter.js';
 import type { PreviewRenderer, PreviewRendererEvent, RendererMode } from './renderer-interface.js';
 import {
   createProgressMapper,
+  computeToolpathTime,
+  segmentsCompletedAtTime,
   type Confidence,
   type DialectMetadata,
   type MachineGeometry,
   type MappedProgress,
   type ProgressMapper,
   type ProgressObservation,
-  type ToolpathIR
+  type ToolpathIR,
+  type ToolpathTime
 } from '@chestnutlabs/toolpath-core';
 
 /** Session/renderer events, re-emitted, plus the controller's own lifecycle events. */
@@ -113,12 +116,24 @@ export interface GcodePreviewState {
   segmentCount: number;
   /** User-presentable decimation/travel disclosure (empty when rendering everything). */
   disclosure: string;
+  /**
+   * Estimated total print time in ms (#181), or null before a parse. `timeEstimateSource` says whether
+   * it's the slicer's own estimate (`'slicer'`, trustworthy) or a kinematic approximation
+   * (`'kinematic'`, constant-velocity, slightly low — disclose when shown).
+   */
+  totalTimeMs: number | null;
+  timeEstimateSource: 'slicer' | 'kinematic' | null;
   error: { code: string; message: string } | null;
 }
 
 export interface GcodePreviewControls {
   setLayerRange(startLayer: number, endLayer: number): void;
   setScrubPosition(segIndex: number | null): void;
+  /**
+   * Time-based scrub (#181): cut the toolpath at print time `ms` (kinematic axis). null clears the
+   * cut. Resolves to a segment-index scrub; no-op before a successful parse.
+   */
+  setScrubTime(ms: number | null): void;
   setKindVisible(kind: 'extrude' | 'travel', visible: boolean): void;
   /** Opt-in retraction/deretraction markers (DD-009 D1, #148). Off by default. */
   setShowRetractions(visible: boolean): void;
@@ -168,6 +183,8 @@ const INITIAL_STATE: GcodePreviewState = {
   layerCount: 0,
   segmentCount: 0,
   disclosure: '',
+  totalTimeMs: null,
+  timeEstimateSource: null,
   error: null
 };
 
@@ -188,6 +205,7 @@ export function createPreviewController(options: PreviewControllerOptions = {}):
   let renderer: PreviewRenderer | null = null;
   let unbindRendererEvents: (() => void) | null = null;
   let lastIR: ToolpathIR | null = null;
+  let timeAxis: ToolpathTime | null = null;
   let lastMachine: MachineGeometry | undefined;
   let mapper: ProgressMapper | null = null;
   let consumerVolumeSet = options.renderer?.buildVolume !== undefined;
@@ -349,6 +367,12 @@ export function createPreviewController(options: PreviewControllerOptions = {}):
       lastIR = result.ir;
       lastMachine = result.metadata?.machine;
       mapper = createProgressMapper(result.ir, { fileSizeBytes: bytes });
+      // Time axis (#181): prefer the slicer's own estimate (#183) for the total; the kinematic axis
+      // always backs time-scrub. `hasUnknownFeedrate` means the kinematic total is a lower bound.
+      timeAxis = computeToolpathTime(result.ir);
+      const slicerSeconds = result.metadata?.printEstimate?.seconds;
+      const totalTimeMs = slicerSeconds !== undefined ? slicerSeconds * 1000 : timeAxis.totalMs;
+      const timeEstimateSource: 'slicer' | 'kinematic' = slicerSeconds !== undefined ? 'slicer' : 'kinematic';
       const counts =
         renderer !== null
           ? { layerCount: renderer.layerCount, segmentCount: renderer.segmentCount }
@@ -365,6 +389,8 @@ export function createPreviewController(options: PreviewControllerOptions = {}):
         },
         metadata: result.metadata,
         presentation: 'hidden',
+        totalTimeMs,
+        timeEstimateSource,
         ...(renderer !== null ? { layerCount: renderer.layerCount, segmentCount: renderer.segmentCount } : counts)
       });
       // DD-005 consumer-wins precedence: a consumer-configured volume blocks auto-apply.
@@ -399,6 +425,11 @@ export function createPreviewController(options: PreviewControllerOptions = {}):
     // Controls queue when the (async) renderer isn't ready yet, then replay in order on bind.
     setLayerRange: (a, b) => withRenderer((r) => r.setLayerRange(a, b)),
     setScrubPosition: (s) => withRenderer((r) => r.setScrubPosition(s)),
+    setScrubTime: (ms) => {
+      // Resolve a print time to a segment-index scrub cut via the kinematic axis (#181).
+      const seg = ms === null || timeAxis === null ? null : segmentsCompletedAtTime(timeAxis.cumulativeMs, ms);
+      withRenderer((r) => r.setScrubPosition(seg));
+    },
     setKindVisible: (k, v) => withRenderer((r) => r.setKindVisible(k, v)),
     setShowRetractions: (v) => withRenderer((r) => r.setShowRetractions(v)),
     // Availability is IR/renderer-dependent; before the renderer is ready we optimistically queue
@@ -428,6 +459,7 @@ export function createPreviewController(options: PreviewControllerOptions = {}):
     disposeRenderer();
     pendingOps.length = 0;
     lastIR = null;
+    timeAxis = null;
     mapper = null;
     listeners.clear();
     stateListeners.clear();
