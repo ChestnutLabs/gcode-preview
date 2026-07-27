@@ -16,3 +16,4 @@ alternatives.
 | ID | Title | Epic | Status |
 |---|---|---|---|
 | [RR-001](RR-001-upstream-baseline-and-architecture-audit.md) | Upstream Baseline and Architecture Audit | E0 | **Complete — ready for E0 acceptance.** Baseline = `develop` @ `15375e56` (maintainer-confirmed). Benchmarks (§5.5) + reference comparison (§5.4) done; inherited red suite fixed (#23). |
+| [RR-002](RR-002-modal-state-color-channels.md) | Advanced color modes via modal-state channels (fan/temp/accel/jerk/PA/flow) | E9 | **Complete (#180).** Flow + volumetric-flow are derivable free (ship as `gcode-colors` colorers); accel/fan/temp/jerk/PA need an **opt-in** modal register (~15 MB/1 M segments if always-on → gated). Recommends one capability-gated "modal state channels" subsystem, shared with the CNC/laser tool-state DD (#189). |
