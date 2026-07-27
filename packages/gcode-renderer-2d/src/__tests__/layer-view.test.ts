@@ -244,4 +244,31 @@ describe('drawLayers (adjacent ghosts, #213)', () => {
     expect(res.drawn).toBe(false);
     expect(m.strokes).toHaveLength(0);
   });
+
+  it('progress cut dims not-yet-printed extrusion on the active layer (DD-006)', () => {
+    const ir = makeIR(1, 4); // extrusion indices 0..3 (travel is 4)
+    const m = new MockCtx();
+    drawLayers(m.ctx, ir, {
+      layer: 0,
+      adjacentLayers: 0,
+      colorMode: single,
+      fit,
+      progress: { segIndex: 1, layerIndex: 0 }
+    });
+    // segs 0,1 printed → full; segs 2,3 upcoming → dimmed (0.15).
+    expect(m.strokes.map((s) => s.alpha)).toEqual([1, 1, 0.15, 0.15]);
+  });
+
+  it('progress on a different layer does not cut the active layer', () => {
+    const ir = makeIR(2, 3);
+    const m = new MockCtx();
+    drawLayers(m.ctx, ir, {
+      layer: 1,
+      adjacentLayers: 0,
+      colorMode: single,
+      fit,
+      progress: { segIndex: 0, layerIndex: 0 } // progress is on layer 0, we're viewing layer 1
+    });
+    expect(m.strokes.every((s) => s.alpha === 1)).toBe(true); // no cut applied
+  });
 });

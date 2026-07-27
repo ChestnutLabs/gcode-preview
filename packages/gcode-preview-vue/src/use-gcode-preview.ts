@@ -9,7 +9,6 @@
  */
 import { getCurrentScope, onScopeDispose, readonly, ref, shallowReactive, watch, type Ref } from 'vue';
 import type { GcodeParseSession, WireParseOptions } from '@chestnutlabs/gcode-parser';
-import type { ToolpathRenderer } from '@chestnutlabs/gcode-renderer-three';
 import type { MappedProgress, ProgressObservation } from '@chestnutlabs/toolpath-core';
 import {
   createPreviewController,
@@ -17,7 +16,8 @@ import {
   type GcodePreviewState,
   type ParseOutcome,
   type PreviewControllerOptions,
-  type PreviewEvent
+  type PreviewEvent,
+  type PreviewRenderer
 } from '@chestnutlabs/gcode-preview-core';
 
 // Shared contracts pass through unchanged (D1 amendment: re-export, never redeclare).
@@ -25,7 +25,9 @@ export type {
   GcodePreviewControls,
   GcodePreviewState,
   ParseOutcome,
-  PreviewEvent
+  PreviewEvent,
+  PreviewRenderer,
+  RendererMode
 } from '@chestnutlabs/gcode-preview-core';
 
 /** Vue-facing options — identical to the controller's (the alias is the public name). */
@@ -44,7 +46,7 @@ export interface GcodePreviewHandle {
   state: Readonly<GcodePreviewState>;
   controls: GcodePreviewControls;
   /** Escape hatches — the neutral objects themselves (advanced use; not reactive). */
-  raw: { session: GcodeParseSession; renderer: () => ToolpathRenderer | null };
+  raw: { session: GcodeParseSession; renderer: () => PreviewRenderer | null };
   onEvent(cb: (e: PreviewEvent) => void): () => void;
   dispose(): void;
 }

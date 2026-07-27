@@ -11,11 +11,12 @@ single-sourced with the 3D renderer via `@chestnutlabs/gcode-colors`, so the two
 The memory ceiling is the point: drawing is bounded to the active (± adjacent, later phases) layer,
 never the whole model.
 
-> **Status:** E8 phases 1–2 done. Phase 1 (#212): the Canvas 2D core — draw one layer from the IR,
+> **Status:** E8 phases 1–3 done. Phase 1 (#212): the Canvas 2D core — draw one layer from the IR,
 > honest color, fit-to-canvas. Phase 2 (#213): current-layer **+ adjacent "ghost" layers** (dimmed
-> preceding layers, `adjacentLayers` default 1 / floor 0) over one stable model frame. Still ahead:
-> the `renderer: '2d' | '3d'` adapter prop + live progress marker (#214), and the low-resource
-> benchmark + capability-honesty UX (#215).
+> preceding layers, `adjacentLayers` default 1 / floor 0) over one stable model frame. Phase 3 (#214):
+> selectable from the viewer via **`<GcodePreview renderer="2d" />`** (the 3D renderer is loaded on
+> demand, so a 2D-only bundle never ships Three.js), plus a **live-progress "completed cut"**
+> (`setProgress`). Still ahead: the low-resource benchmark + capability-honesty UX (#215).
 
 ## Usage
 

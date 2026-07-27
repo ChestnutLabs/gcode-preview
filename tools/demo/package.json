@@ -16,7 +16,9 @@
     "@chestnutlabs/toolpath-core": "file:../../packages/toolpath-core",
     "three": "0.178.0",
     "@chestnutlabs/gcode-preview-vue": "file:../../packages/gcode-preview-vue",
-    "vue": "^3.4.0"
+    "vue": "^3.4.0",
+    "@chestnutlabs/gcode-colors": "file:../../packages/gcode-colors",
+    "@chestnutlabs/gcode-renderer-2d": "file:../../packages/gcode-renderer-2d"
   },
   "devDependencies": {
     "vite": "^6.0.0"

@@ -11,7 +11,6 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useSyncExternalStore } from 'react';
 import type { GcodeParseSession, WireParseOptions } from '@chestnutlabs/gcode-parser';
-import type { ToolpathRenderer } from '@chestnutlabs/gcode-renderer-three';
 import type { MappedProgress, ProgressObservation } from '@chestnutlabs/toolpath-core';
 import {
   createPreviewController,
@@ -20,7 +19,8 @@ import {
   type ParseOutcome,
   type PreviewController,
   type PreviewControllerOptions,
-  type PreviewEvent
+  type PreviewEvent,
+  type PreviewRenderer
 } from '@chestnutlabs/gcode-preview-core';
 
 // Shared contracts pass through unchanged (D1 amendment: re-export, never redeclare).
@@ -28,7 +28,9 @@ export type {
   GcodePreviewControls,
   GcodePreviewState,
   ParseOutcome,
-  PreviewEvent
+  PreviewEvent,
+  PreviewRenderer,
+  RendererMode
 } from '@chestnutlabs/gcode-preview-core';
 
 /** React-facing options — identical to the controller's (the alias is the public name). */
@@ -45,7 +47,7 @@ export interface GcodePreviewHandle {
   /** Current state snapshot — render-subscribed via useSyncExternalStore. */
   state: GcodePreviewState;
   controls: GcodePreviewControls;
-  raw: { session: GcodeParseSession; renderer: () => ToolpathRenderer | null };
+  raw: { session: GcodeParseSession; renderer: () => PreviewRenderer | null };
   onEvent(cb: (e: PreviewEvent) => void): () => void;
   dispose(): void;
 }

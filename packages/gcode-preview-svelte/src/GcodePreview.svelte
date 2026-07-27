@@ -37,6 +37,10 @@
   export let progress = null;
   /** Worker factory escape hatch (DD-005 slim/custom entries; D2). */
   export let createWorker = undefined;
+  /** DD-014 D5: '3d' (default, Three.js — loaded on demand) or '2d' (low-resource Canvas view). */
+  export let renderer = undefined;
+  /** 2D only (renderer="2d"): preceding "ghost" layers beneath the active one (default 1, floor 0). */
+  export let adjacentLayers = undefined;
   /** Advanced/test renderer injectables (pass-throughs of the renderer contract). */
   export let rendererOptions = undefined;
 
@@ -47,12 +51,14 @@
   export const preview = createGcodePreview({
     createWorker,
     renderer: {
+      mode: renderer,
       buildVolume: isMachine ? undefined : buildVolume,
       quality,
       cameraMode,
       theme,
       colorMode,
       tube,
+      adjacentLayers,
       ...rendererOptions
     },
     parseDefaults: parseOptions

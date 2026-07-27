@@ -23,6 +23,7 @@ export type {
   DrawLayerResult,
   DrawLayersOptions,
   DrawLayersResult,
+  LayerProgress,
   LayerFit,
   LayerBounds2D,
   TravelStyle,

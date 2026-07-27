@@ -60,6 +60,14 @@ export interface DrawLayerOptions {
   travel?: TravelStyle | false;
   /** Layer opacity in [0,1] via `globalAlpha` (default 1). Used to dim adjacent "ghost" layers. */
   opacity?: number;
+  /**
+   * Live-progress "completed cut" (DD-006): the last printed segment index in THIS layer. Extrusion
+   * segments at or before it draw at full opacity; those after it draw at {@link upcomingOpacity}
+   * (not yet printed). Omit for no progress split. Honest — nothing is hidden, only dimmed.
+   */
+  progressCutSeg?: number;
+  /** Opacity of not-yet-printed extrusion when {@link progressCutSeg} is set (default 0.15). */
+  upcomingOpacity?: number;
 }
 
 export interface TravelStyle {
@@ -190,11 +198,16 @@ export function drawLayer(ctx: CanvasContext2DLike, ir: ToolpathIR, opts: DrawLa
     }
   }
 
-  // Extrusion, colored per-segment.
+  // Extrusion, colored per-segment. With a progress cut, segments after `progressCutSeg` in this
+  // layer are the not-yet-printed part — drawn dimmed (never hidden), the 2D "completed cut" (DD-006).
   ctx.lineWidth = extrudeWidth;
+  const baseOpacity = opts.opacity ?? 1;
+  const upcomingOpacity = baseOpacity * (opts.upcomingOpacity ?? 0.15);
+  const cut = opts.progressCutSeg;
   let extrudeDrawn = 0;
   for (let i = l.segStart; i <= l.segEnd && i < seg.count; i++) {
     if ((seg.kind[i] & MoveKind.Extrude) === 0) continue;
+    ctx.globalAlpha = cut !== undefined && i > cut ? upcomingOpacity : baseOpacity;
     ctx.strokeStyle = rgbToCss(colorOf(i));
     const [ax, ay] = opts.fit.project(seg.x0[i], seg.y0[i]);
     const [bx, by] = opts.fit.project(seg.x1[i], seg.y1[i]);
@@ -249,6 +262,16 @@ export interface DrawLayersOptions {
   travel?: TravelStyle | false;
   /** Opacity of each ghost layer in [0,1] (default 0.25). The active layer is always fully opaque. */
   ghostOpacity?: number;
+  /** Live-progress cut (DD-006). Applied only when its `layerIndex` is the active layer. */
+  progress?: LayerProgress | null;
+}
+
+/** The minimal live-progress shape the 2D view needs (a projection of DD-006's `MappedProgress`). */
+export interface LayerProgress {
+  /** Last printed segment index (global IR index); null when unknown. */
+  segIndex: number | null;
+  /** Layer currently printing; null when unknown. */
+  layerIndex: number | null;
 }
 
 export interface DrawLayersResult {
@@ -303,13 +326,17 @@ export function drawLayers(ctx: CanvasContext2DLike, ir: ToolpathIR, opts: DrawL
     }
   }
 
-  // Active layer last, full opacity, with travel if requested.
+  // Active layer last, full opacity, with travel if requested. Apply the progress cut only when the
+  // live-progress layer IS the active layer — otherwise the marker would be misplaced (honest).
+  const p = opts.progress;
+  const progressCutSeg = p != null && p.segIndex != null && p.layerIndex === opts.layer ? p.segIndex : undefined;
   const active = drawLayer(ctx, ir, {
     layer: opts.layer,
     colorMode: opts.colorMode,
     fit: opts.fit,
     lineWidth: opts.lineWidth,
-    travel: opts.travel
+    travel: opts.travel,
+    progressCutSeg
   });
   extrudeDrawn += active.extrudeDrawn;
   travelDrawn += active.travelDrawn;
@@ -354,6 +381,7 @@ export class LayerView2D {
   private padding: number;
   private adjacentLayers: number;
   private ghostOpacity: number;
+  private progress: LayerProgress | null = null;
 
   constructor(
     private readonly canvas: HTMLCanvasElement,
@@ -388,6 +416,16 @@ export class LayerView2D {
     this.adjacentLayers = Math.max(0, Math.floor(n));
   }
 
+  /** Live-progress cut (DD-006); null clears it. Applied only when on the active layer. */
+  setProgress(progress: LayerProgress | null): void {
+    this.progress = progress;
+  }
+
+  /** Show/hide travel moves on the active layer (`false` hides). */
+  setTravel(travel: TravelStyle | false): void {
+    this.travel = travel;
+  }
+
   /** Number of layers in the current IR (0 when none / no layer table). */
   get layerCount(): number {
     return this.ir?.layers.length ?? 0;
@@ -415,7 +453,8 @@ export class LayerView2D {
       fit,
       lineWidth: this.lineWidth,
       travel: this.travel,
-      ghostOpacity: this.ghostOpacity
+      ghostOpacity: this.ghostOpacity,
+      progress: this.progress
     });
   }
 }
