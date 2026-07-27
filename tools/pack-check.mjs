@@ -24,10 +24,12 @@ const UPDATE = process.env.UPDATE_PACK_SNAPSHOTS === '1';
 // Dependency order matters: later packages compile against earlier dists.
 const PACKAGES = [
   'toolpath-core',
+  'gcode-colors',
   'gcode-dialects',
   'gcode-containers',
   'gcode-parser',
   'gcode-renderer-three',
+  'gcode-renderer-2d',
   'gcode-preview-core',
   'gcode-preview-vue',
   'gcode-preview-react',

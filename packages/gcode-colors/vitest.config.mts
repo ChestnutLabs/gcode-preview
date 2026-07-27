@@ -4,10 +4,9 @@ import { fileURLToPath } from 'node:url';
 export default defineConfig({
   resolve: {
     alias: {
-      // Resolve the sibling workspaces from SOURCE (npm runs lifecycle scripts
+      // Resolve the sibling workspace from SOURCE (npm runs lifecycle scripts
       // alphabetically, not in dependency order).
-      '@chestnutlabs/toolpath-core': fileURLToPath(new URL('../toolpath-core/src/index.ts', import.meta.url)),
-      '@chestnutlabs/gcode-colors': fileURLToPath(new URL('../gcode-colors/src/index.ts', import.meta.url))
+      '@chestnutlabs/toolpath-core': fileURLToPath(new URL('../toolpath-core/src/index.ts', import.meta.url))
     }
   },
   test: {

@@ -24,6 +24,16 @@
     "dist/source-index.js",
     "package.json"
   ],
+  "gcode-colors": [
+    "README.md",
+    "dist/colors.d.ts",
+    "dist/colors.d.ts.map",
+    "dist/colors.js",
+    "dist/index.d.ts",
+    "dist/index.d.ts.map",
+    "dist/index.js",
+    "package.json"
+  ],
   "gcode-dialects": [
     "README.md",
     "dist/annotate.d.ts",
@@ -125,6 +135,16 @@
     "dist/tubes.d.ts",
     "dist/tubes.d.ts.map",
     "dist/tubes.js",
+    "package.json"
+  ],
+  "gcode-renderer-2d": [
+    "README.md",
+    "dist/index.d.ts",
+    "dist/index.d.ts.map",
+    "dist/index.js",
+    "dist/layer-view.d.ts",
+    "dist/layer-view.d.ts.map",
+    "dist/layer-view.js",
     "package.json"
   ],
   "gcode-preview-core": [

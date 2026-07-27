@@ -22,10 +22,12 @@ const DRY = process.argv.includes('--dry-run');
 // Dependency order (same list pack-check builds in).
 const ORDER = [
   'toolpath-core',
+  'gcode-colors',
   'gcode-dialects',
   'gcode-containers',
   'gcode-parser',
   'gcode-renderer-three',
+  'gcode-renderer-2d',
   'gcode-preview-core',
   'gcode-preview-vue',
   'gcode-preview-react',
