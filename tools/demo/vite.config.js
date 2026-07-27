@@ -20,6 +20,8 @@ export default defineConfig({
       '@chestnutlabs/gcode-parser',
       '@chestnutlabs/toolpath-core',
       '@chestnutlabs/gcode-renderer-three',
+      '@chestnutlabs/gcode-colors',
+      '@chestnutlabs/gcode-renderer-2d',
       '@chestnutlabs/gcode-dialects',
       '@chestnutlabs/gcode-containers',
       '@chestnutlabs/gcode-preview-vue',

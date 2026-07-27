@@ -6,7 +6,9 @@ module.exports = {
   extends: ['eslint:recommended', 'plugin:@typescript-eslint/recommended'],
   rules: {
     'no-unused-vars': 'off',
-    '@typescript-eslint/no-unused-vars': ['error'],
+    // `_`-prefixed args/vars are intentionally unused — the convention for satisfying a wide
+    // interface whose members a given implementation ignores (e.g. the 2D renderer's 3D-only ops).
+    '@typescript-eslint/no-unused-vars': ['error', { argsIgnorePattern: '^_', varsIgnorePattern: '^_' }],
     '@typescript-eslint/no-unsafe-declaration-merging': 'off'
   },
   ignorePatterns: ['dist', 'docs-site', 'docs-api'],

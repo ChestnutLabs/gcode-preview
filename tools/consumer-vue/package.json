@@ -13,6 +13,7 @@
     "@chestnutlabs/gcode-dialects": "file:tarballs/chestnutlabs-gcode-dialects.tgz",
     "@chestnutlabs/gcode-parser": "file:tarballs/chestnutlabs-gcode-parser.tgz",
     "@chestnutlabs/gcode-preview-vue": "file:tarballs/chestnutlabs-gcode-preview-vue.tgz",
+    "@chestnutlabs/gcode-renderer-2d": "file:tarballs/chestnutlabs-gcode-renderer-2d.tgz",
     "@chestnutlabs/gcode-renderer-three": "file:tarballs/chestnutlabs-gcode-renderer-three.tgz",
     "@chestnutlabs/toolpath-core": "file:tarballs/chestnutlabs-toolpath-core.tgz",
     "vue": "^3.4.0",

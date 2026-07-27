@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>gcode-renderer-2d — low-resource Canvas 2D layer view (E8/DD-014)</title>
+    <style>
+      :root {
+        font-family: 'IBM Plex Sans', system-ui, sans-serif;
+      }
+      body {
+        margin: 0;
+        background: #0e1416;
+        color: #cfe;
+        display: grid;
+        grid-template-rows: auto 1fr auto;
+        height: 100vh;
+      }
+      header {
+        padding: 10px 16px;
+        border-bottom: 2px solid #1c5a5f;
+        background: #0a1113;
+      }
+      header h1 {
+        font-size: 15px;
+        margin: 0;
+        color: #7fd6d6;
+      }
+      header small {
+        color: #6a8a8a;
+      }
+      #view {
+        display: block;
+        width: 100%;
+        height: 100%;
+        background: #0e1416;
+      }
+      footer {
+        padding: 10px 16px;
+        border-top: 1px solid #1c3a3d;
+        display: flex;
+        gap: 20px;
+        align-items: center;
+        font-size: 13px;
+        background: #0a1113;
+      }
+      footer label {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+        color: #9fc;
+      }
+      input[type='range'] {
+        width: 220px;
+      }
+      #status {
+        color: #7fd6d6;
+        margin-left: auto;
+        font-variant-numeric: tabular-nums;
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>@chestnutlabs/gcode-renderer-2d — low-resource Canvas 2D layer view</h1>
+      <small>E8 / DD-014 · no WebGL, no three · current layer + adjacent "ghost" layers · color-by-speed</small>
+    </header>
+    <canvas id="view"></canvas>
+    <footer>
+      <label>Layer <input id="layer" type="range" min="0" max="0" value="0" /></label>
+      <label>Ghost layers <input id="ghost" type="range" min="0" max="4" value="1" /></label>
+      <span id="status">loading…</span>
+    </footer>
+    <script type="module" src="./src/2d-demo.js"></script>
+  </body>
+</html>

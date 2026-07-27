@@ -112,7 +112,11 @@ function makeHarness(opts: { machine?: MachineGeometry; buildVolume?: boolean } 
   const runTicks = (): void => {
     while (ticks.length > 0) ticks.shift()?.();
   };
-  return { preview, canvas, glCalls, scope, events, runTicks };
+  // The 3D renderer is loaded on demand (DD-014): binding resolves a few macrotasks later.
+  const settle = async (): Promise<void> => {
+    for (let i = 0; i < 4; i++) await new Promise((r) => setTimeout(r, 0));
+  };
+  return { preview, canvas, glCalls, scope, events, runTicks, settle };
 }
 
 describe('useGcodePreview — lifecycle (§4.2)', () => {
@@ -120,6 +124,7 @@ describe('useGcodePreview — lifecycle (§4.2)', () => {
     const h = makeHarness();
     h.preview.canvasRef.value = h.canvas;
     await nextTick();
+    await h.settle();
     const outcome = await h.preview.parse(new Uint8Array(1_000));
     h.runTicks();
     expect(outcome.ok).toBe(true);
@@ -136,6 +141,7 @@ describe('useGcodePreview — lifecycle (§4.2)', () => {
     expect(h.preview.raw.renderer()).toBeNull();
     h.preview.canvasRef.value = h.canvas;
     await nextTick();
+    await h.settle();
     h.runTicks();
     expect(h.preview.raw.renderer()?.segmentCount).toBe(12);
   });
@@ -146,6 +152,7 @@ describe('useGcodePreview — lifecycle (§4.2)', () => {
     const h = makeHarness();
     h.preview.canvasRef.value = h.canvas;
     await nextTick();
+    await h.settle();
     await h.preview.parse(new Uint8Array(8));
     h.scope.stop();
     h.preview.dispose(); // second call must be a no-op
@@ -176,6 +183,7 @@ describe('useGcodePreview — reactivity boundary (§4.2)', () => {
     const h = makeHarness();
     h.preview.canvasRef.value = h.canvas;
     await nextTick();
+    await h.settle();
     const outcome = await h.preview.parse(new Uint8Array(1_000));
     if (!outcome.ok) throw new Error('parse failed');
     expect(isReactive(outcome.result.ir)).toBe(false);
@@ -191,6 +199,7 @@ describe('useGcodePreview — controls & progress', () => {
     const h = makeHarness();
     h.preview.canvasRef.value = h.canvas;
     await nextTick();
+    await h.settle();
     await h.preview.parse(new Uint8Array(1_000));
     h.runTicks();
     const mesh = h.preview.raw.renderer()!.chunkMeshes[0];
@@ -205,6 +214,7 @@ describe('useGcodePreview — controls & progress', () => {
     const h = makeHarness();
     h.preview.canvasRef.value = h.canvas;
     await nextTick();
+    await h.settle();
     await h.preview.parse(new Uint8Array(1_000));
     h.runTicks();
     const mapped = h.preview.observeProgress({ v: 1, timestampMs: 1_000, position: { byte: 55 } });
@@ -228,6 +238,7 @@ describe('useGcodePreview — bed geometry precedence (DD-005 consumer-wins)', (
     const h = makeHarness({ machine: MACHINE });
     h.preview.canvasRef.value = h.canvas;
     await nextTick();
+    await h.settle();
     await h.preview.parse(new Uint8Array(1_000));
     expect(h.preview.state.metadata?.machine).toMatchObject({ confidence: 'known' });
     expect(h.events.some((e) => e.type === 'machine-geometry-discovered')).toBe(false);
@@ -237,6 +248,7 @@ describe('useGcodePreview — bed geometry precedence (DD-005 consumer-wins)', (
     const h = makeHarness({ machine: MACHINE, buildVolume: true });
     h.preview.canvasRef.value = h.canvas;
     await nextTick();
+    await h.settle();
     await h.preview.parse(new Uint8Array(1_000));
     const ev = h.events.find((e) => e.type === 'machine-geometry-discovered');
     expect(ev).toMatchObject({ machine: { confidence: 'known' } });
@@ -248,6 +260,7 @@ describe('useGcodePreview — parse-during-parse & cancellation (§5)', () => {
     const h = makeHarness();
     h.preview.canvasRef.value = h.canvas;
     await nextTick();
+    await h.settle();
     const p = h.preview.parse(new Uint8Array(8));
     h.preview.cancel();
     const outcome = await p;

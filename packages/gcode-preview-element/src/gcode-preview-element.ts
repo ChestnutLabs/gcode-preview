@@ -16,7 +16,8 @@ import {
   type GcodePreviewState,
   type ParseOutcome,
   type PreviewController,
-  type PreviewEvent
+  type PreviewEvent,
+  type RendererMode
 } from '@chestnutlabs/gcode-preview-core';
 import type { BuildVolumeDef, CameraMode, ColorMode, Theme, TubeOptions } from '@chestnutlabs/gcode-renderer-three';
 import type { MachineGeometry, MappedProgress, ProgressObservation } from '@chestnutlabs/toolpath-core';
@@ -200,12 +201,15 @@ export class GcodePreviewElement extends HTMLElement {
     this.controller = createPreviewController({
       createWorker: this._createWorker,
       renderer: {
+        // DD-014 D5: construction-time renderer selection (mode switching post-mount is out of scope).
+        mode: (this.getAttribute('renderer') as RendererMode | null) ?? undefined,
         buildVolume: isMachine ? undefined : (this._buildVolume as BuildVolumeDef | undefined),
         quality: (this.getAttribute('quality') as 'auto' | 'lines' | 'tubes' | null) ?? 'auto',
         cameraMode: (this.getAttribute('camera-mode') as CameraMode | null) ?? undefined,
         colorMode: this._colorMode,
         tube: this._tube,
         theme: this._theme,
+        adjacentLayers: this.hasAttribute('adjacent-layers') ? Number(this.getAttribute('adjacent-layers')) : undefined,
         ...this._rendererOptions
       },
       parseDefaults: this._parseOptions
