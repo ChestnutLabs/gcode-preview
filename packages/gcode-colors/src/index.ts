@@ -8,4 +8,12 @@
  * `three`, no canvas, no framework.
  */
 export type { RGB, ColorMode, SegmentColorer } from './colors.js';
-export { DEFAULT_FALLBACK, feedrateRange, rampColor, createSegmentColorer, segmentColor } from './colors.js';
+export {
+  DEFAULT_FALLBACK,
+  feedrateRange,
+  layerHeights,
+  layerHeightRange,
+  rampColor,
+  createSegmentColorer,
+  segmentColor
+} from './colors.js';
