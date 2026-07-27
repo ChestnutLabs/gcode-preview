@@ -30,7 +30,7 @@ import type {
   TubeOptions
 } from '@chestnutlabs/gcode-renderer-three';
 import { LayerView2DRenderer } from './renderer-2d-adapter.js';
-import type { PreviewRenderer, PreviewRendererEvent, RendererMode } from './renderer-interface.js';
+import type { MoveKindToggle, PreviewRenderer, PreviewRendererEvent, RendererMode } from './renderer-interface.js';
 import {
   createProgressMapper,
   computeToolpathTime,
@@ -134,7 +134,7 @@ export interface GcodePreviewControls {
    * cut. Resolves to a segment-index scrub; no-op before a successful parse.
    */
   setScrubTime(ms: number | null): void;
-  setKindVisible(kind: 'extrude' | 'travel', visible: boolean): void;
+  setKindVisible(kind: MoveKindToggle, visible: boolean): void;
   /** Opt-in retraction/deretraction markers (DD-009 D1, #148). Off by default. */
   setShowRetractions(visible: boolean): void;
   setColorMode(mode: ColorMode): boolean;

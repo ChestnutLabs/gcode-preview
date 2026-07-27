@@ -37,6 +37,7 @@ const OBSERVED = [
   'quality',
   'camera-mode',
   'show-travel',
+  'show-wipe',
   'show-retractions',
   'scrub',
   'scrub-time',
@@ -145,6 +146,13 @@ export class GcodePreviewElement extends HTMLElement {
   }
   set showTravel(v: boolean) {
     this.setAttribute('show-travel', v ? 'true' : 'false');
+  }
+  /** DD-016 (#182): default true; only `show-wipe="false"` hides slicer wipe moves. */
+  get showWipe(): boolean {
+    return this.getAttribute('show-wipe') !== 'false';
+  }
+  set showWipe(v: boolean) {
+    this.setAttribute('show-wipe', v ? 'true' : 'false');
   }
   /** Default false; only `show-retractions="true"` shows markers. */
   get showRetractions(): boolean {
@@ -257,6 +265,9 @@ export class GcodePreviewElement extends HTMLElement {
       case 'show-travel':
         c.setKindVisible('travel', value !== 'false');
         break;
+      case 'show-wipe':
+        c.setKindVisible('wipe', value !== 'false');
+        break;
       case 'show-retractions':
         c.setShowRetractions(value === 'true');
         break;
@@ -282,6 +293,7 @@ export class GcodePreviewElement extends HTMLElement {
   private applyRuntimeState(): void {
     const c = this.requireController().controls;
     c.setKindVisible('travel', this.showTravel);
+    c.setKindVisible('wipe', this.showWipe);
     c.setShowRetractions(this.showRetractions);
     const r = this.layerRange;
     if (r === null) c.setLayerRange(0, Number.POSITIVE_INFINITY);

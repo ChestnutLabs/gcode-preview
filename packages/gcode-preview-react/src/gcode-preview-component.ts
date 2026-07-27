@@ -65,6 +65,8 @@ export interface GcodePreviewProps {
   /** Time-based scrub cut in ms of print time (#181); null clears it. */
   scrubTime?: number | null;
   showTravel?: boolean;
+  /** DD-016 (#182): show slicer wipe moves. Default true; set false to hide the wipe chunk. */
+  showWipe?: boolean;
   /** DD-009 D1 (#148): opt-in retraction/deretraction markers. */
   showRetractions?: boolean;
   /** DD-006 live progress observation; null hides the overlay. */
@@ -159,6 +161,7 @@ function GcodePreviewImpl(props: GcodePreviewProps, ref: ForwardedRef<GcodePrevi
     scrub,
     scrubTime,
     showTravel,
+    showWipe,
     showRetractions,
     colorMode,
     quality,
@@ -183,6 +186,9 @@ function GcodePreviewImpl(props: GcodePreviewProps, ref: ForwardedRef<GcodePrevi
   useEffect(() => {
     preview.controls.setKindVisible('travel', showTravel ?? true);
   }, [showTravel]);
+  useEffect(() => {
+    preview.controls.setKindVisible('wipe', showWipe ?? true);
+  }, [showWipe]);
   useEffect(() => {
     preview.controls.setShowRetractions(showRetractions ?? false);
   }, [showRetractions]);

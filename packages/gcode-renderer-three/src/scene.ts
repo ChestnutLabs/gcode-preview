@@ -246,7 +246,7 @@ export class ToolpathRenderer {
   private startLayer = 0;
   private endLayer = Infinity;
   private scrubSegIndex: number | null = null;
-  private kindVisible: Record<GeometryChunk['kind'], boolean> = { extrude: true, travel: true };
+  private kindVisible: Record<GeometryChunk['kind'], boolean> = { extrude: true, travel: true, wipe: true };
   // Live-progress overlay state (DD-006 §4.5, phase 3): completed cut + ghost + marker/band.
   private progress: MappedProgress | null = null;
   private presentationMode: ProgressPresentationMode = 'hidden';

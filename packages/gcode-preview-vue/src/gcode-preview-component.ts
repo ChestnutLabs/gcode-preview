@@ -55,6 +55,8 @@ export const GcodePreview = defineComponent({
     /** Time-based scrub cut in ms of print time (#181); null clears it. */
     scrubTime: { type: Number as PropType<number | null>, default: null },
     showTravel: { type: Boolean, default: true },
+    /** DD-016 (#182): show slicer wipe moves. Default true. */
+    showWipe: { type: Boolean, default: true },
     /** DD-009 D1 (#148): opt-in retraction/deretraction markers. */
     showRetractions: { type: Boolean, default: false },
     /** DD-006 live progress observation; null hides the overlay. */
@@ -180,6 +182,10 @@ export const GcodePreview = defineComponent({
     watch(
       () => props.showTravel,
       (visible) => preview.controls.setKindVisible('travel', visible)
+    );
+    watch(
+      () => props.showWipe,
+      (visible) => preview.controls.setKindVisible('wipe', visible)
     );
     watch(
       () => props.showRetractions,
