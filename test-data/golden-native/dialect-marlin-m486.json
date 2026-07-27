@@ -16,6 +16,8 @@
     "objects": "unavailable",
     "retractions": "unavailable",
     "colorChanges": "unavailable",
+    "wipeMoves": "unavailable",
+    "seamMoves": "unavailable",
     "extrusionMode": "inferred",
     "positioningMode": "inferred",
     "arcPlanes": "inferred",

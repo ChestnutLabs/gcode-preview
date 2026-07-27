@@ -4,7 +4,7 @@
  * annotate; they can never reshape the toolpath.
  */
 import { describe, expect, it } from 'vitest';
-import { FeatureRole, type ToolpathIR } from '@chestnutlabs/toolpath-core';
+import { FeatureRole, MoveKind, type ToolpathIR } from '@chestnutlabs/toolpath-core';
 import { createDialectRunner, klipper, prusaSlicer, type DialectAdapter } from '@chestnutlabs/gcode-dialects';
 import type { ReadableStreamLike } from '../streaming';
 import { parseGcodeToIR, type CommandEvent } from '../parse';
@@ -64,10 +64,16 @@ function loopbackWorker(opts?: WorkerHandlerOptions): WorkerLike {
 
 const GEOMETRY_CHANNELS = ['x0', 'y0', 'z0', 'x1', 'y1', 'z1', 'e', 'kind', 'layer', 'srcByte'] as const;
 
+// DD-016: adapters MAY add the annotation kind bits (Wipe/Seam) but must never change the base motion
+// classification. The invariance gate therefore hashes the kind channel MASKED to Extrude|Travel, so it
+// still proves an adapter can't move/reclassify geometry while permitting the additive annotation bits.
+const BASE_KIND_MASK = MoveKind.Extrude | MoveKind.Travel;
+
 function geometryDigest(ir: ToolpathIR): string {
   return GEOMETRY_CHANNELS.map((ch) => {
-    // FNV-1a over the raw bytes of each channel.
-    const bytes = new Uint8Array(ir.segments[ch].buffer, ir.segments[ch].byteOffset, ir.segments[ch].byteLength);
+    // FNV-1a over the raw bytes of each channel (kind is masked to its base motion class).
+    const raw = new Uint8Array(ir.segments[ch].buffer, ir.segments[ch].byteOffset, ir.segments[ch].byteLength);
+    const bytes = ch === 'kind' ? Uint8Array.from(ir.segments.kind, (k) => k & BASE_KIND_MASK) : raw;
     let h = 0x811c9dc5;
     for (let i = 0; i < bytes.length; i++) {
       h ^= bytes[i];
