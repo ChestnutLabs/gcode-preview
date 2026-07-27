@@ -1,8 +1,9 @@
 # DD-011 — Binary G-code (`.bgcode`) Decode Adapter
 
-**Status:** Draft <!-- Draft | Proposed | Accepted | Superseded | Rejected -->
+**Status:** Accepted <!-- Draft | Proposed | Accepted | Superseded | Rejected -->
 **Authors/Owners:** Nathaniel Chestnut
 **Date:** 2026-07-27 · **Last revised:** 2026-07-27
+**Accepted:** 2026-07-27 — D1–D7 as recommended, with **D4 amended**: metadata/thumbnail surfacing is **in-scope, not deferred** (lands with the adapter, reusing the existing sink). Implementation unblocked per §14.
 **Owning Epic:** E-bgcode (#188) · **Milestone:** Future
 **Supersedes / Superseded by:** none
 **Related:** [RR-003](../research/RR-003-bgcode-licensing-and-format-audit.md) (licensing + format audit — the gate this DD answers), DD-005 (dialect/container adapter contracts — `.bgcode` is a sibling of `.gcode.3mf`), DD-003 (worker parsing, streaming, resource limits — bounded decompression), DD-002 (package boundaries — a new lockstep package), DD-001 (capability model). Reserved number: DD-011 (#188).
@@ -39,6 +40,11 @@ license-clean. This DD specifies that adapter.
 
 ## 4. Decisions
 
+> **Accepted 2026-07-27 — D1–D7 as recommended, D4 AMENDED.** Metadata/thumbnail surfacing is
+> **in-scope from the start** (not deferred to a late phase); it lands with the container-adapter
+> integration, reusing the existing sink. All other decisions stand as drafted. Implementation
+> proceeds on the §14 phasing.
+
 ### 4.1 D1 — Package & placement (DD-002)
 A new lockstep package **`@chestnutlabs/gcode-bgcode`** (dependencies: `@chestnutlabs/toolpath-core` and
 `@chestnutlabs/gcode-containers` — to reuse `crc32`/`crc32Final`, `ContainerLimits`/
@@ -69,9 +75,11 @@ real file (the ZIP path uses `'deflate-raw'`; bgcode may differ). Recommended: *
 Walk blocks in file order. For each **GCode block**: (compressed?) decompress `compressedSize`→
 `uncompressedSize` via the block's compression ID; (encoded?) MeatPack-decode; append the ASCII G-code.
 Concatenate all GCode blocks → one plain-G-code buffer → the **existing** parser/dialect/IR stack. **File/
-Printer/Print/Slicer Metadata** (INI) and **Thumbnail** blocks optionally feed the existing sink
-(`MachineGeometry`, thumbnails) — same honesty/capability rules as the dialect adapters. Metadata surfacing
-is **optional** and may land after the core decode (phase 4).
+Printer/Print/Slicer Metadata** (INI) and **Thumbnail** blocks feed the existing sink
+(`MachineGeometry`, thumbnails) — same honesty/capability rules as the dialect adapters. Metadata/
+thumbnail surfacing is **in-scope (maintainer amendment 2026-07-27), not deferred** — it lands with the
+container-adapter integration (§14 phase 4), reusing the existing sink plumbing rather than as a later
+optional add-on.
 
 ### 4.5 D5 — Security & honest rejection (DD-003 §7 + a §7.3 review)
 - **Pin & reject:** file version ≠ 1, checksum type ∉ {0,1}, block type/compression/encoding outside the
@@ -173,7 +181,8 @@ and which codecs were seen — privacy-preserving (counts/enums only, no local p
    flavor + `DecompressionStream`-in-worker unknowns).
 2. **MeatPack decoder** (clean-room) + vectors.
 3. **heatshrink decoder** (ISC port + attribution) + bounded-output guard + vectors.
-4. **Container-adapter integration** + the **golden-equivalence killer test** + optional metadata/thumbnails.
+4. **Container-adapter integration** + the **golden-equivalence killer test** + **metadata/thumbnail
+   surfacing** (in-scope per the D4 amendment).
 5. **Adversarial corpus + §7.3 security review** + decode benchmark + matrix/README.
 6. **Epic exit.**
 
@@ -194,3 +203,4 @@ and which codecs were seen — privacy-preserving (counts/enums only, no local p
 | Date | Note | Source |
 |---|---|---|
 | 2026-07-27 | DD-011 drafted as **Draft**; D1–D7 open. Follows [RR-003](../research/RR-003-bgcode-licensing-and-format-audit.md): `.bgcode` v1 is a container of plain G-code; `libbgcode`/MeatPack are **AGPL** (reference/verify only), heatshrink is **ISC** (port + attribution). Proposes a new `@chestnutlabs/gcode-bgcode` container adapter (sniff/open beside `.gcode.3mf`), reusing DEFLATE/CRC32/limits, porting heatshrink, clean-rooming MeatPack + the block walker; gated by bounded-output guards, version/codec pinning, the plain-vs-`.bgcode` golden-equivalence killer test, and a §7.3 security review. Numbered DD-011 (reserved for #188 by the DD-010 sibling triage). | Chestnut Labs |
+| 2026-07-27 | **Accepted — D1–D7 as recommended, D4 amended.** Metadata/thumbnail surfacing is **in-scope, not deferred** (lands with the container-adapter integration, reusing the sink). All other decisions stand. Implementation unblocked on the §14 phasing (1: walker + CRC + DEFLATE/None → parser; 2: MeatPack; 3: heatshrink ISC port; 4: integration + golden-equivalence + metadata/thumbnails; 5: adversarial corpus + §7.3 review + benchmark; 6: exit). | Maintainer (Chestnut Labs) |
