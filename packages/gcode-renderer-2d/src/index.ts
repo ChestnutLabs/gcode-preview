@@ -8,11 +8,21 @@
  *
  * Re-exports the color model so 2D consumers get `ColorMode`/`RGB` from one import.
  */
-export { LayerView2D, drawLayer, computeLayerFit, layerBounds2D, rgbToCss } from './layer-view.js';
+export {
+  LayerView2D,
+  drawLayer,
+  drawLayers,
+  computeLayerFit,
+  layerBounds2D,
+  modelBounds2D,
+  rgbToCss
+} from './layer-view.js';
 export type {
   LayerView2DOptions,
   DrawLayerOptions,
   DrawLayerResult,
+  DrawLayersOptions,
+  DrawLayersResult,
   LayerFit,
   LayerBounds2D,
   TravelStyle,

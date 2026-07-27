@@ -12,7 +12,9 @@ import { createSegmentColorer, type ColorMode } from '@chestnutlabs/gcode-colors
 import {
   computeLayerFit,
   drawLayer,
+  drawLayers,
   layerBounds2D,
+  modelBounds2D,
   rgbToCss,
   type CanvasContext2DLike,
   type LayerBounds2D
@@ -23,14 +25,16 @@ interface Stroke {
   from: [number, number];
   to: [number, number];
   width: number;
+  alpha: number;
 }
 
-/** A minimal recording 2D context: captures each stroked segment with its style/width. */
+/** A minimal recording 2D context: captures each stroked segment with its style/width/alpha. */
 class MockCtx {
   strokeStyle: string = '';
   lineWidth = 1;
   lineCap = 'butt';
   lineJoin = 'miter';
+  globalAlpha = 1;
   strokes: Stroke[] = [];
   clears = 0;
   private cur: [number, number] = [0, 0];
@@ -44,7 +48,13 @@ class MockCtx {
     this.cur = [x, y];
   }
   stroke(): void {
-    this.strokes.push({ style: this.strokeStyle, from: this.start, to: this.cur, width: this.lineWidth });
+    this.strokes.push({
+      style: this.strokeStyle,
+      from: this.start,
+      to: this.cur,
+      width: this.lineWidth,
+      alpha: this.globalAlpha
+    });
   }
   clearRect(): void {
     this.clears++;
@@ -171,5 +181,67 @@ describe('drawLayer', () => {
     drawLayer(m.ctx, ir, { layer: 0, colorMode: mode, fit });
     // layer 0 extrusion segments are indices 0..2 (travel is index 3)
     expect(m.strokes.map((s) => s.style)).toEqual([rgbToCss(colorOf(0)), rgbToCss(colorOf(1)), rgbToCss(colorOf(2))]);
+  });
+
+  it('opacity sets globalAlpha for the layer’s strokes, then restores it', () => {
+    const ir = makeIR(1, 2);
+    const m = new MockCtx();
+    m.globalAlpha = 1;
+    drawLayer(m.ctx, ir, { layer: 0, colorMode: single, fit, opacity: 0.3 });
+    expect(m.strokes.every((s) => s.alpha === 0.3)).toBe(true);
+    expect(m.globalAlpha).toBe(1); // restored after the call
+  });
+});
+
+describe('modelBounds2D', () => {
+  it('spans every layer (a stable frame), not just one', () => {
+    const ir = makeIR(3, 2); // y grows with layer index in makeIR
+    const b = modelBounds2D(ir);
+    expect(b.hasContent).toBe(true);
+    const l0 = layerBounds2D(ir, 0);
+    // The model frame extends past layer 0 in Y (later layers sit higher).
+    expect(b.maxY).toBeGreaterThan(l0.maxY);
+  });
+});
+
+describe('drawLayers (adjacent ghosts, #213)', () => {
+  const single: ColorMode = { mode: 'single', color: [1, 0, 0] };
+  const fit = computeLayerFit({ minX: 0, minY: 0, maxX: 10, maxY: 10, hasContent: true }, 100, 100, 8);
+
+  it('draws N preceding ghosts under the active layer, dimmed; active at full opacity', () => {
+    const ir = makeIR(5, 3); // 3 extrude + 1 travel per layer
+    const m = new MockCtx();
+    const res = drawLayers(m.ctx, ir, { layer: 3, adjacentLayers: 2, colorMode: single, fit, ghostOpacity: 0.25 });
+    expect(res.drawn).toBe(true);
+    expect(res.ghostLayers).toEqual([1, 2]); // the 2 layers below the active (3), oldest→newest
+    expect(res.extrudeDrawn).toBe(9); // 3 layers × 3 extrusion segments
+    // 6 ghost strokes at 0.25, then 3 active strokes at 1.0 — active drawn last (on top).
+    const alphas = m.strokes.map((s) => s.alpha);
+    expect(alphas.slice(0, 6).every((a) => a === 0.25)).toBe(true);
+    expect(alphas.slice(6).every((a) => a === 1)).toBe(true);
+  });
+
+  it('adjacentLayers: 0 is the floor — active layer only', () => {
+    const ir = makeIR(4, 3);
+    const m = new MockCtx();
+    const res = drawLayers(m.ctx, ir, { layer: 2, adjacentLayers: 0, colorMode: single, fit });
+    expect(res.ghostLayers).toEqual([]);
+    expect(res.extrudeDrawn).toBe(3);
+    expect(m.strokes.every((s) => s.alpha === 1)).toBe(true);
+  });
+
+  it('clamps the ghost window at layer 0 (no negative layers)', () => {
+    const ir = makeIR(4, 2);
+    const m = new MockCtx();
+    const res = drawLayers(m.ctx, ir, { layer: 1, adjacentLayers: 5, colorMode: single, fit });
+    expect(res.ghostLayers).toEqual([0]); // only layer 0 exists below layer 1
+  });
+
+  it('out-of-range active layer is an honest no-op', () => {
+    const ir = makeIR(2, 2);
+    const m = new MockCtx();
+    const res = drawLayers(m.ctx, ir, { layer: 9, adjacentLayers: 1, colorMode: single, fit });
+    expect(res.drawn).toBe(false);
+    expect(m.strokes).toHaveLength(0);
   });
 });
