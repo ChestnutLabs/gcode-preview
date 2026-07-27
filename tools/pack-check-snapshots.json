@@ -92,6 +92,9 @@
     "dist/index.d.ts",
     "dist/index.d.ts.map",
     "dist/index.js",
+    "dist/meatpack.d.ts",
+    "dist/meatpack.d.ts.map",
+    "dist/meatpack.js",
     "package.json"
   ],
   "gcode-parser": [

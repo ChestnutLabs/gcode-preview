@@ -9,8 +9,9 @@
  * `@chestnutlabs/toolpath-core` and `@chestnutlabs/gcode-containers` (for `crc32`/`ContainerError`);
  * no `three`, framework, filesystem, or network.
  *
- * Phase 1: block walker + CRC32 + None/DEFLATE compression + None encoding. MeatPack (phase 2) and
- * heatshrink (phase 3) decode to honest, structured "not yet supported" errors.
+ * Phase 1: block walker + CRC32 + None/DEFLATE compression + None encoding. Phase 2: **MeatPack**
+ * encoding (both variants). heatshrink compression (phase 3) still decodes to an honest, structured
+ * "not yet supported" error.
  */
 export {
   BGCODE_MAGIC,
@@ -22,3 +23,4 @@ export {
   openBgcode
 } from './bgcode.js';
 export type { BgcodeBlockInfo, BgcodeDecodeResult, BgcodeDecodeOptions } from './bgcode.js';
+export { meatpackDecode } from './meatpack.js';

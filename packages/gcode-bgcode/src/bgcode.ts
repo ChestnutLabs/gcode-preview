@@ -13,6 +13,7 @@
  * supported" errors until phases 2 and 3.
  */
 import { ContainerError, crc32, crc32Final } from '@chestnutlabs/gcode-containers';
+import { meatpackDecode } from './meatpack.js';
 
 /** ASCII magic at the start of every `.bgcode` file: "GCDE". */
 export const BGCODE_MAGIC = 'GCDE';
@@ -164,14 +165,12 @@ async function decompress(
   throw new ContainerError('E_BGCODE_UNSUPPORTED_COMPRESSION', `unknown compression id ${compression}`);
 }
 
-/** Decode a GCode block's post-decompression bytes by its encoding ID. */
-function decode(encoding: number, bytes: Uint8Array): Uint8Array {
+/** Decode a GCode block's post-decompression bytes by its encoding ID, bounded to `limit` output bytes. */
+function decode(encoding: number, bytes: Uint8Array, limit: number): Uint8Array {
   if (encoding === BgcodeEncoding.None) return bytes;
+  // Both MeatPack variants decode identically — comment stripping is an encoder choice (#188 phase 2).
   if (encoding === BgcodeEncoding.MeatPack || encoding === BgcodeEncoding.MeatPackComments) {
-    throw new ContainerError(
-      'E_BGCODE_UNSUPPORTED_ENCODING',
-      'MeatPack encoding is not yet supported (DD-011 phase 2)'
-    );
+    return meatpackDecode(bytes, limit);
   }
   throw new ContainerError('E_BGCODE_UNSUPPORTED_ENCODING', `unknown gcode encoding id ${encoding}`);
 }
@@ -180,7 +179,8 @@ function decode(encoding: number, bytes: Uint8Array): Uint8Array {
  * Decode a `.bgcode` v1 buffer to plain G-code. Walks every block, verifies per-block CRC32 (when the
  * file declares it), decompresses + decodes the GCode blocks, and concatenates them in file order.
  * Non-GCode blocks are walked past (their metadata/thumbnails are surfaced in phase 4). Every failure
- * is a structured, bounded {@link ContainerError} — never a crash or an unbounded read/allocation.
+ * is a structured, bounded `ContainerError` (from `@chestnutlabs/gcode-containers`) — never a crash or
+ * an unbounded read/allocation.
  */
 export async function openBgcode(bytes: Uint8Array, opts: BgcodeDecodeOptions = {}): Promise<BgcodeDecodeResult> {
   const limit = opts.maxOutputBytes ?? DEFAULT_MAX_OUTPUT;
@@ -239,7 +239,7 @@ export async function openBgcode(bytes: Uint8Array, opts: BgcodeDecodeOptions = 
 
     if (type === BgcodeBlockType.GCode) {
       const decompressed = await decompress(compression, data, uncompressedSize, limit - totalOut);
-      const decoded = decode(encoding, decompressed);
+      const decoded = decode(encoding, decompressed, limit - totalOut);
       totalOut += decoded.length;
       if (totalOut > limit)
         throw new ContainerError('E_BGCODE_BOMB', `decoded G-code exceeds the output limit (${totalOut})`);
