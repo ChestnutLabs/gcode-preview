@@ -93,9 +93,10 @@ export function sniffBgcode(prefix: Uint8Array, name?: string): boolean {
 
 /** DEFLATE-decode `data` to at most `limit` bytes via the platform stream (bounded — bomb-safe). */
 async function inflate(data: Uint8Array, expected: number, limit: number): Promise<Uint8Array> {
-  // Flavor: raw DEFLATE (matches our ZIP reader / miniz-style raw streams). The definitive Prusa
-  // flavor is confirmed against real files in phase 4; phase-1 fixtures are self-consistent.
-  const ds = new DecompressionStream('deflate-raw');
+  // Flavor: zlib-wrapped DEFLATE. Confirmed against a real Prusa XL `.bgcode` (phase 4) — its
+  // DEFLATE metadata blocks decode with the zlib header, and fail as raw. (bgcode GCode blocks use
+  // heatshrink, not DEFLATE; only Slicer/Print metadata blocks are DEFLATE.)
+  const ds = new DecompressionStream('deflate');
   const writer = ds.writable.getWriter();
   const reader = ds.readable.getReader();
   // The writer promise must never float unobserved: a corrupt stream errors BOTH ends, and an

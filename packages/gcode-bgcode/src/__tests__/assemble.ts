@@ -31,7 +31,8 @@ export interface AssembleOptions {
 }
 
 async function deflateRaw(data: Uint8Array): Promise<Uint8Array> {
-  const cs = new CompressionStream('deflate-raw');
+  // zlib-wrapped DEFLATE, matching real Prusa `.bgcode` metadata blocks (confirmed phase 4).
+  const cs = new CompressionStream('deflate');
   const writer = cs.writable.getWriter();
   const reader = cs.readable.getReader();
   const done = (async () => {
