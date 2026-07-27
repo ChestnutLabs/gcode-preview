@@ -180,7 +180,8 @@ function decode(encoding: number, bytes: Uint8Array): Uint8Array {
  * Decode a `.bgcode` v1 buffer to plain G-code. Walks every block, verifies per-block CRC32 (when the
  * file declares it), decompresses + decodes the GCode blocks, and concatenates them in file order.
  * Non-GCode blocks are walked past (their metadata/thumbnails are surfaced in phase 4). Every failure
- * is a structured, bounded {@link ContainerError} — never a crash or an unbounded read/allocation.
+ * is a structured, bounded `ContainerError` (from `@chestnutlabs/gcode-containers`) — never a crash or
+ * an unbounded read/allocation.
  */
 export async function openBgcode(bytes: Uint8Array, opts: BgcodeDecodeOptions = {}): Promise<BgcodeDecodeResult> {
   const limit = opts.maxOutputBytes ?? DEFAULT_MAX_OUTPUT;
