@@ -24,10 +24,12 @@ const root = join(here, '..', '..');
 // for a registry install — npm resolves the graph).
 const PACKAGES = [
   'toolpath-core',
+  'gcode-colors',
   'gcode-dialects',
   'gcode-containers',
   'gcode-parser',
   'gcode-renderer-three',
+  'gcode-renderer-2d',
   'gcode-preview-core',
   'gcode-preview-vue'
 ];
