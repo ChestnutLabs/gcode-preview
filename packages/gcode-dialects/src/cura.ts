@@ -64,6 +64,25 @@ export function cura(): DialectAdapter {
         s.printerName = trimmed.slice('TARGET_MACHINE.NAME:'.length).trim();
         return;
       }
+      // Cura print-time comment: `;TIME:<seconds>` (total; per-layer `;TIME_ELAPSED:` is ignored).
+      if (trimmed.startsWith('TIME:')) {
+        const sec = Number(trimmed.slice('TIME:'.length).trim());
+        if (Number.isFinite(sec) && sec > 0) {
+          sink.setPrintEstimate({ seconds: sec, source: { adapterId: 'cura', evidence: ';TIME:', srcByte } });
+        }
+        return;
+      }
+      // Cura filament comment: `;Filament used: 2.22m` (metres; multi-material → first value).
+      if (trimmed.toLowerCase().startsWith('filament used:')) {
+        const metres = parseFloat(trimmed.slice('filament used:'.length).trim());
+        if (Number.isFinite(metres)) {
+          sink.setFilamentUsage({
+            lengthMm: metres * 1000,
+            source: { adapterId: 'cura', evidence: ';Filament used:', srcByte }
+          });
+        }
+        return;
+      }
       const kv = parseKeyValue(comment);
       if (kv !== null && kv.key === 'target_machine') s.printerName = kv.value;
     },

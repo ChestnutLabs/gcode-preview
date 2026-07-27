@@ -14,6 +14,8 @@ import type {
   DialectDetection,
   MachineGeometry,
   FilamentInfo,
+  FilamentUsage,
+  PrintEstimate,
   ThumbnailData,
   ToolpathIR
 } from '@chestnutlabs/toolpath-core';
@@ -44,6 +46,10 @@ export interface AnnotationSink {
   defineObject(objectValue: number, name: string): void;
   setMachine(machine: MachineGeometry): void;
   setFilament(info: FilamentInfo): void;
+  /** Slicer-reported total filament consumption (#183). Later calls merge non-undefined fields. */
+  setFilamentUsage(usage: FilamentUsage): void;
+  /** The slicer's own print-time estimate (#183). Prefer the 'normal'/default mode when several. */
+  setPrintEstimate(estimate: PrintEstimate): void;
   /** Enrich a tool's identity (material, '#RRGGBB' color) — merged into ir.tools (DD-005 phase 5). */
   setToolInfo(tool: number, info: { material?: string; colorHex?: string }): void;
   addThumbnail(thumb: ThumbnailData): void;
