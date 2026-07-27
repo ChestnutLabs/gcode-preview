@@ -114,11 +114,10 @@ describe('openBgcode — honest rejection & bounds', () => {
     await expect(openBgcode(buf.subarray(0, 14))).rejects.toMatchObject({ code: 'E_BGCODE_TRUNCATED' });
   });
 
-  it('honestly reports heatshrink compression (phase 3) as not-yet-supported', async () => {
-    const hs = await assembleBgcode([
-      { type: 1, compression: BgcodeCompression.Heatshrink12, encoding: 0, data: enc(GCODE) }
-    ]);
-    await expect(openBgcode(hs)).rejects.toMatchObject({ code: 'E_BGCODE_UNSUPPORTED_COMPRESSION' });
+  it('honestly rejects an unknown compression id', async () => {
+    // compression id 7 is outside the spec enum (0..3) — bounded structured error, not a guess.
+    const bad = await assembleBgcode([{ type: 1, compression: 7, encoding: 0, data: enc(GCODE) }]);
+    await expect(openBgcode(bad)).rejects.toMatchObject({ code: 'E_BGCODE_UNSUPPORTED_COMPRESSION' });
   });
 
   it('enforces the output-bytes cap (decompression-bomb defense)', async () => {
