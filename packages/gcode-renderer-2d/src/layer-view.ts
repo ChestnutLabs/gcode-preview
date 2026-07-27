@@ -17,7 +17,16 @@ import { createSegmentColorer, type ColorMode, type RGB } from '@chestnutlabs/gc
 /** The subset of `CanvasRenderingContext2D` the layer view uses (a real context satisfies it). */
 export type CanvasContext2DLike = Pick<
   CanvasRenderingContext2D,
-  'strokeStyle' | 'lineWidth' | 'lineCap' | 'lineJoin' | 'beginPath' | 'moveTo' | 'lineTo' | 'stroke' | 'clearRect'
+  | 'strokeStyle'
+  | 'lineWidth'
+  | 'lineCap'
+  | 'lineJoin'
+  | 'globalAlpha'
+  | 'beginPath'
+  | 'moveTo'
+  | 'lineTo'
+  | 'stroke'
+  | 'clearRect'
 >;
 
 /** XY extent of a set of segments, in the IR's origin-relative frame. */
@@ -49,6 +58,8 @@ export interface DrawLayerOptions {
   lineWidth?: number;
   /** Draw travel moves too, in this style. Omitted/false → extrusion only (the default). */
   travel?: TravelStyle | false;
+  /** Layer opacity in [0,1] via `globalAlpha` (default 1). Used to dim adjacent "ghost" layers. */
+  opacity?: number;
 }
 
 export interface TravelStyle {
@@ -159,6 +170,8 @@ export function drawLayer(ctx: CanvasContext2DLike, ir: ToolpathIR, opts: DrawLa
 
   ctx.lineCap = 'round';
   ctx.lineJoin = 'round';
+  const prevAlpha = ctx.globalAlpha;
+  ctx.globalAlpha = opts.opacity ?? 1;
 
   // Travel first (underneath), if requested.
   let travelDrawn = 0;
@@ -192,7 +205,116 @@ export function drawLayer(ctx: CanvasContext2DLike, ir: ToolpathIR, opts: DrawLa
     extrudeDrawn++;
   }
 
+  ctx.globalAlpha = prevAlpha;
   return { layer: opts.layer, layerCount, extrudeDrawn, travelDrawn, drawn: true };
+}
+
+/** XY bounds over ALL of the IR's segments — a stable frame for the layer view (not per-layer). */
+export function modelBounds2D(ir: ToolpathIR): LayerBounds2D {
+  const seg = ir.segments;
+  let minX = Infinity;
+  let minY = Infinity;
+  let maxX = -Infinity;
+  let maxY = -Infinity;
+  for (let i = 0; i < seg.count; i++) {
+    const x0 = seg.x0[i];
+    const x1 = seg.x1[i];
+    const y0 = seg.y0[i];
+    const y1 = seg.y1[i];
+    if (x0 < minX) minX = x0;
+    if (x1 < minX) minX = x1;
+    if (x0 > maxX) maxX = x0;
+    if (x1 > maxX) maxX = x1;
+    if (y0 < minY) minY = y0;
+    if (y1 < minY) minY = y1;
+    if (y0 > maxY) maxY = y0;
+    if (y1 > maxY) maxY = y1;
+  }
+  if (minX > maxX) return { minX: 0, minY: 0, maxX: 0, maxY: 0, hasContent: false };
+  return { minX, minY, maxX, maxY, hasContent: true };
+}
+
+export interface DrawLayersOptions {
+  /** Active (fully-drawn) layer index. */
+  layer: number;
+  /** Number of preceding layers drawn beneath the active one as dimmed "ghosts" (default 1, floor 0). */
+  adjacentLayers?: number;
+  /** Per-segment color mode for all drawn layers (shared with the 3D renderer). */
+  colorMode: ColorMode;
+  /** Shared world→pixel mapping — the SAME fit for every layer so they overlay in printer XY. */
+  fit: LayerFit;
+  /** Extrusion stroke width in device px (default 1). */
+  lineWidth?: number;
+  /** Draw travel moves too (default hidden). Applied to the active layer only. */
+  travel?: TravelStyle | false;
+  /** Opacity of each ghost layer in [0,1] (default 0.25). The active layer is always fully opaque. */
+  ghostOpacity?: number;
+}
+
+export interface DrawLayersResult {
+  layer: number;
+  layerCount: number;
+  /** Ghost layer indices actually drawn (oldest→newest, beneath the active layer). */
+  ghostLayers: number[];
+  /** Extrusion segments drawn across the active layer + ghosts. */
+  extrudeDrawn: number;
+  travelDrawn: number;
+  drawn: boolean;
+}
+
+/**
+ * Draw the active layer over its preceding "ghost" layers (DD-014 D2, #213). Ghosts are the
+ * `adjacentLayers` layers immediately below the active one, drawn first (underneath) and dimmed to
+ * `ghostOpacity`; the active layer is drawn last at full opacity. All layers share ONE `fit`, so
+ * they overlay correctly in printer XY. `adjacentLayers: 0` draws the active layer only (the floor).
+ */
+export function drawLayers(ctx: CanvasContext2DLike, ir: ToolpathIR, opts: DrawLayersOptions): DrawLayersResult {
+  const layerCount = ir.layers.length;
+  const base: DrawLayersResult = {
+    layer: opts.layer,
+    layerCount,
+    ghostLayers: [],
+    extrudeDrawn: 0,
+    travelDrawn: 0,
+    drawn: false
+  };
+  if (!ir.layers[opts.layer]) return base;
+
+  const adjacent = Math.max(0, Math.floor(opts.adjacentLayers ?? 1));
+  const ghostOpacity = opts.ghostOpacity ?? 0.25;
+  const firstGhost = Math.max(0, opts.layer - adjacent);
+
+  const ghostLayers: number[] = [];
+  let extrudeDrawn = 0;
+  let travelDrawn = 0;
+
+  // Ghosts first (oldest→newest), dimmed, extrusion only — a depth cue, not the focus.
+  for (let li = firstGhost; li < opts.layer; li++) {
+    const r = drawLayer(ctx, ir, {
+      layer: li,
+      colorMode: opts.colorMode,
+      fit: opts.fit,
+      lineWidth: opts.lineWidth,
+      opacity: ghostOpacity
+    });
+    if (r.drawn) {
+      ghostLayers.push(li);
+      extrudeDrawn += r.extrudeDrawn;
+    }
+  }
+
+  // Active layer last, full opacity, with travel if requested.
+  const active = drawLayer(ctx, ir, {
+    layer: opts.layer,
+    colorMode: opts.colorMode,
+    fit: opts.fit,
+    lineWidth: opts.lineWidth,
+    travel: opts.travel
+  });
+  extrudeDrawn += active.extrudeDrawn;
+  travelDrawn += active.travelDrawn;
+
+  return { layer: opts.layer, layerCount, ghostLayers, extrudeDrawn, travelDrawn, drawn: true };
 }
 
 export interface LayerView2DOptions {
@@ -206,6 +328,10 @@ export interface LayerView2DOptions {
   travel?: TravelStyle | false;
   /** Padding inset in device px (default 8). */
   padding?: number;
+  /** Preceding "ghost" layers drawn beneath the active one (default 1, floor 0). */
+  adjacentLayers?: number;
+  /** Ghost-layer opacity in [0,1] (default 0.25). */
+  ghostOpacity?: number;
 }
 
 const DEFAULT_COLOR_MODE: ColorMode = { mode: 'single', color: [0.55, 0.72, 0.55] };
@@ -213,16 +339,21 @@ const DEFAULT_COLOR_MODE: ColorMode = { mode: 'single', color: [0.55, 0.72, 0.55
 /**
  * A thin lifecycle wrapper binding a `ToolpathIR` to a `<canvas>`: pick a layer, pick a color
  * mode, `render()`. It owns no WebGL context and holds no per-layer geometry — each `render()`
- * clears and redraws the active layer, so peak memory stays near one layer (DD-014 §6). Adapter
- * wiring (the `renderer: '2d' | '3d'` prop) and adjacent "ghost" layers arrive in later E8 phases.
+ * clears and redraws the active layer (plus its dimmed "ghost" layers), so peak memory stays near
+ * one layer (DD-014 §6). The view frame is the whole-model XY bounds (cached on `setToolpath`), so
+ * scrubbing layers doesn't jump or rescale and ghosts overlay the active layer exactly. Adapter
+ * wiring (the `renderer: '2d' | '3d'` prop) arrives in a later E8 phase.
  */
 export class LayerView2D {
   private ir: ToolpathIR | null = null;
+  private bounds: LayerBounds2D = { minX: 0, minY: 0, maxX: 0, maxY: 0, hasContent: false };
   private layer: number;
   private colorMode: ColorMode;
   private lineWidth: number;
   private travel: TravelStyle | false;
   private padding: number;
+  private adjacentLayers: number;
+  private ghostOpacity: number;
 
   constructor(
     private readonly canvas: HTMLCanvasElement,
@@ -233,10 +364,14 @@ export class LayerView2D {
     this.lineWidth = opts.lineWidth ?? 1;
     this.travel = opts.travel ?? false;
     this.padding = opts.padding ?? 8;
+    this.adjacentLayers = Math.max(0, Math.floor(opts.adjacentLayers ?? 1));
+    this.ghostOpacity = opts.ghostOpacity ?? 0.25;
   }
 
   setToolpath(ir: ToolpathIR | null): void {
     this.ir = ir;
+    // Cache the stable whole-model frame once (a scan is O(segments); render() stays layer-bounded).
+    this.bounds = ir ? modelBounds2D(ir) : { minX: 0, minY: 0, maxX: 0, maxY: 0, hasContent: false };
     if (ir && this.layer > ir.layers.length - 1) this.layer = Math.max(0, ir.layers.length - 1);
   }
 
@@ -248,17 +383,23 @@ export class LayerView2D {
     this.colorMode = colorMode;
   }
 
+  /** Number of preceding ghost layers drawn beneath the active one (clamped to ≥ 0). */
+  setAdjacentLayers(n: number): void {
+    this.adjacentLayers = Math.max(0, Math.floor(n));
+  }
+
   /** Number of layers in the current IR (0 when none / no layer table). */
   get layerCount(): number {
     return this.ir?.layers.length ?? 0;
   }
 
-  /** Clear and redraw the active layer. Returns the draw result (drawn:false when nothing to show). */
-  render(): DrawLayerResult {
+  /** Clear and redraw the active layer + ghosts. Returns the draw result (drawn:false when empty). */
+  render(): DrawLayersResult {
     const ctx = this.canvas.getContext('2d');
-    const empty: DrawLayerResult = {
+    const empty: DrawLayersResult = {
       layer: this.layer,
       layerCount: this.layerCount,
+      ghostLayers: [],
       extrudeDrawn: 0,
       travelDrawn: 0,
       drawn: false
@@ -266,18 +407,15 @@ export class LayerView2D {
     if (!ctx) return empty;
     ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
     if (!this.ir) return empty;
-    const fit = computeLayerFit(
-      layerBounds2D(this.ir, this.layer),
-      this.canvas.width,
-      this.canvas.height,
-      this.padding
-    );
-    return drawLayer(ctx, this.ir, {
+    const fit = computeLayerFit(this.bounds, this.canvas.width, this.canvas.height, this.padding);
+    return drawLayers(ctx, this.ir, {
       layer: this.layer,
+      adjacentLayers: this.adjacentLayers,
       colorMode: this.colorMode,
       fit,
       lineWidth: this.lineWidth,
-      travel: this.travel
+      travel: this.travel,
+      ghostOpacity: this.ghostOpacity
     });
   }
 }
