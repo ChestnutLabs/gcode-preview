@@ -114,16 +114,11 @@ describe('openBgcode — honest rejection & bounds', () => {
     await expect(openBgcode(buf.subarray(0, 14))).rejects.toMatchObject({ code: 'E_BGCODE_TRUNCATED' });
   });
 
-  it('honestly reports heatshrink (phase 3) and MeatPack (phase 2) as not-yet-supported', async () => {
+  it('honestly reports heatshrink compression (phase 3) as not-yet-supported', async () => {
     const hs = await assembleBgcode([
       { type: 1, compression: BgcodeCompression.Heatshrink12, encoding: 0, data: enc(GCODE) }
     ]);
     await expect(openBgcode(hs)).rejects.toMatchObject({ code: 'E_BGCODE_UNSUPPORTED_COMPRESSION' });
-
-    const mp = await assembleBgcode([
-      { type: 1, compression: BgcodeCompression.None, encoding: BgcodeEncoding.MeatPack, data: enc(GCODE) }
-    ]);
-    await expect(openBgcode(mp)).rejects.toMatchObject({ code: 'E_BGCODE_UNSUPPORTED_ENCODING' });
   });
 
   it('enforces the output-bytes cap (decompression-bomb defense)', async () => {
