@@ -153,7 +153,47 @@ module.exports = {
       }
     },
     {
-      files: ['packages/gcode-containers/src/__tests__/**/*.ts', 'packages/gcode-dialects/src/__tests__/**/*.ts'],
+      files: ['packages/gcode-bgcode/**/*.ts', 'packages/gcode-bgcode/**/*.mts'],
+      rules: {
+        'no-restricted-imports': [
+          'error',
+          {
+            patterns: [
+              { group: ['three', 'three/*'], message: 'gcode-bgcode must not depend on three (DD-002 §4).' },
+              { group: ['vue', 'vue/*'], message: 'gcode-bgcode must not depend on Vue (DD-002 §4).' },
+              {
+                group: [
+                  '@chestnutlabs/gcode-parser*',
+                  '@chestnutlabs/gcode-dialects*',
+                  '@chestnutlabs/gcode-renderer*',
+                  '@chestnutlabs/gcode-preview*',
+                  '@chestnutlabs/gcode-colors*'
+                ],
+                message: 'gcode-bgcode depends only on toolpath-core + gcode-containers (DD-011 D1).'
+              },
+              {
+                group: ['node:fs*', 'fs', 'node:child_process', 'child_process', 'node:net', 'node:http*'],
+                message: 'gcode-bgcode is in-memory only — no filesystem, process, or network access (DD-011 §7).'
+              },
+              {
+                group: ['*anybridge*', '*AnyBridge*'],
+                message: 'No reusable package may import AnyBridge (DD-002 §4 core rule).'
+              },
+              {
+                group: ['../../../*'],
+                message: 'gcode-bgcode must not reach outside its package (DD-002 §4).'
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      files: [
+        'packages/gcode-containers/src/__tests__/**/*.ts',
+        'packages/gcode-dialects/src/__tests__/**/*.ts',
+        'packages/gcode-bgcode/src/__tests__/**/*.ts'
+      ],
       rules: {
         // Tests read committed fixtures and drive the real parser to produce IRs;
         // the shipped libraries keep the full restrictions above.

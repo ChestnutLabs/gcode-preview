@@ -28,6 +28,7 @@ const PACKAGES = [
   'gcode-colors',
   'gcode-dialects',
   'gcode-containers',
+  'gcode-bgcode',
   'gcode-parser',
   'gcode-renderer-three',
   'gcode-renderer-2d',
