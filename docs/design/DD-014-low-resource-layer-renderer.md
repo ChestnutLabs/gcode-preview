@@ -1,6 +1,6 @@
 # DD-014 — Low-Resource Layer Mode (2D/Adjacent-Layer Renderer over ToolpathIR)
 
-**Status:** **Accepted** 2026-07-26 (D1–D5 as recommended; D6 resolved — evidence gate satisfied by a standing AnyBridge consumer request, build now) <!-- Draft | Proposed | Accepted | Superseded | Rejected -->
+**Status:** **Accepted — E8 COMPLETE** 2026-07-26 (D1–D5 as recommended; D6 build-now on the AnyBridge evidence; all four §14 phases #212–#215 shipped, §15 criteria met, §8 budget verified on a real device) <!-- Draft | Proposed | Accepted | Superseded | Rejected -->
 **Authors/Owners:** Chestnut Labs
 **Date:** 2026-07-25 · **Last revised:** 2026-07-26
 **Owning Epic:** **E8 — Low-Resource Layer Mode** (#9) · **Milestone:** Future
@@ -269,13 +269,18 @@ misleading result. No new telemetry.
 
 - [x] D1–D6 decided by the maintainer and recorded; DD marked **Accepted** (2026-07-26 — D1–D5 as
       recommended, D6 build-now on the AnyBridge evidence artifact)
-- [ ] If building (D6-A/B): **E8** (#9) phased issues opened per §14; a new lockstep package
-      `@chestnutlabs/gcode-renderer-2d` that imports **no `three` and no framework** (boundary lint green)
-- [ ] The 2D renderer consumes the **existing IR** with **no IR/parser change** and single-sources the
-      per-segment color function with the 3D renderer (parity test)
-- [ ] Capability-honest: non-XY/CNC and `layers: unavailable` inputs are disclosed, never fabricated
-- [ ] §8 low-resource budget met on a stated target device class (evidence-derived, not invented)
-- [ ] No change to the default (`'3d'`) behavior or existing adapter APIs; no core package depends on
+- [x] If building (D6-A/B): **E8** (#9) phased issues opened per §14 (#212–#215, all shipped); a new
+      lockstep package `@chestnutlabs/gcode-renderer-2d` that imports **no `three` and no framework**
+      (boundary lint green)
+- [x] The 2D renderer consumes the **existing IR** with **no IR/parser change** and single-sources the
+      per-segment color function with the 3D renderer (parity test) — via the shared
+      `@chestnutlabs/gcode-colors` package (D3-A resolution)
+- [x] Capability-honest: non-XY/CNC and `layers: unavailable` inputs are disclosed, never fabricated
+      (`describe2DDisclosures` → `renderer-unsupported`; phase 4 / #215)
+- [x] §8 low-resource budget met on a stated target device class (evidence-derived, not invented) —
+      [e8-2d-lowresource-benchmark-2026-07-26](../../tools/benchmark/results/e8-2d-lowresource-benchmark-2026-07-26.md):
+      redraw ~0.2 ms median (≤ 3.6 ms @ 6× CPU throttle) vs the 16 ms budget, ~0 MB heap growth over 870 renders
+- [x] No change to the default (`'3d'`) behavior or existing adapter APIs; no core package depends on
       AnyBridge
 
 ## Decision log
@@ -287,3 +292,4 @@ misleading result. No new telemetry.
 | 2026-07-26 | **D3-A resolved:** the shared color module is a **new package `@chestnutlabs/gcode-colors`** (not folded into `toolpath-core`), the single home for the whole color subsystem (6 shipped modes + #179/#180), consumed by both renderers. **Phase 1 (#212) shipped:** `gcode-colors` (12th lockstep pkg) + `gcode-renderer-2d` (13th; Canvas 2D `LayerView2D` + pure `drawLayer`/`computeLayerFit`) + `gcode-renderer-three` refactored onto the shared colorer (public API unchanged, parity test). No IR/parser change | Chestnut Labs |
 | 2026-07-26 | **Phase 2 (#213) shipped (D2):** current layer + adjacent "ghost" layers — `LayerView2D.adjacentLayers` (default 1, floor 0) + `setAdjacentLayers`, dimmed preceding layers via a new `drawLayers` window (`drawLayer` gained an `opacity`/`globalAlpha` option). View frame is now the whole-model XY bounds (`modelBounds2D`, cached) so layer scrubbing is stable and ghosts overlay exactly. `gcode-renderer-2d` only; no other package change | Chestnut Labs |
 | 2026-07-26 | **Phase 3 (#214) shipped (D5):** `renderer: '2d' \| '3d'` prop (default `'3d'`) through `gcode-preview-core` + all four adapters. Controller talks to a renderer-agnostic `PreviewRenderer` seam; the **3D renderer is loaded on demand** (dynamic `import()`) so a 2D-only bundle never ships Three.js — the renderer now resolves asynchronously (pending controls queue + replay; `bindGen` guards rebind/dispose during load). New `LayerView2DRenderer` wrapper adapts the 2D renderer; 3D-only requests disclosed via `renderer-unsupported` (honest, not faked). 2D live-progress "completed cut" (DD-006) via `LayerView2D.setProgress`. No IR/parser/3D-API change | Chestnut Labs |
+| 2026-07-26 | **Phase 4 (#215) shipped (§6/§8/§11) — E8 COMPLETE.** Capability honesty: `describe2DDisclosures(ir)` / `getDisclosures()` disclose non-planar/CNC (`layers: unavailable`) + inferred-layer inputs, surfaced by `LayerView2DRenderer` on `renderer-unsupported`. **§8 budget verified on a real device** (Linux/Chrome host, i5-6500; CPU-throttle passes approximate the low-resource class): layer-change redraw **~0.2 ms median** (≤ 3.6 ms @ 6× throttle) vs the 16 ms budget; **~0 MB heap growth over 870 renders** (no per-layer geometry — bounded to the active layer). Report: `tools/benchmark/results/e8-2d-lowresource-benchmark-2026-07-26.md`; harness `tools/demo/bench.html`. §15 acceptance criteria met | Chestnut Labs |

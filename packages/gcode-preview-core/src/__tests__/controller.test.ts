@@ -5,8 +5,8 @@
  * plus the snapshot state-model guarantees the framework bridges rely on.
  */
 import { describe, expect, it } from 'vitest';
-import type { MachineGeometry } from '@chestnutlabs/toolpath-core';
-import { createPreviewController, type PreviewEvent } from '../index';
+import { MoveKind, ToolpathIRBuilder, type MachineGeometry } from '@chestnutlabs/toolpath-core';
+import { createPreviewController, LayerView2DRenderer, type PreviewEvent, type PreviewRendererEvent } from '../index';
 import { SuiteStubWorker, makeSuiteStubGL, runBehavioralSuite, type AdapterInstance } from '../testing';
 
 const settle = async (): Promise<void> => {
@@ -122,5 +122,46 @@ describe('renderer.mode selection (DD-014 D5)', () => {
     await settle();
     expect(controller.raw.renderer()).not.toBeNull();
     controller.dispose();
+  });
+});
+
+describe('LayerView2DRenderer honesty (DD-014 §6/§11)', () => {
+  function irWithLayers(conf: 'known' | 'unavailable') {
+    const b = new ToolpathIRBuilder({ parserVersion: 'test', units: 'mm', unitsSource: 'known' });
+    b.addSegment({ x0: 0, y0: 0, z0: 0.2, x1: 1, y1: 0, z1: 0.2, e: 1, kind: MoveKind.Extrude, layer: 0, srcByte: 0 });
+    const ir = b.finalize();
+    ir.header.capabilities['layers'] = conf;
+    return ir;
+  }
+
+  it('discloses a non-planar/CNC IR via renderer-unsupported; a planar IR does not', () => {
+    const canvas = document.createElement('canvas');
+    const r = new LayerView2DRenderer(canvas);
+    const events: PreviewRendererEvent[] = [];
+    r.onEvent((e) => events.push(e));
+
+    r.setIR(irWithLayers('known'));
+    expect(events.filter((e) => e.type === 'renderer-unsupported')).toHaveLength(0);
+
+    r.setIR(irWithLayers('unavailable'));
+    const disclosures = events.filter(
+      (e): e is Extract<PreviewRendererEvent, { type: 'renderer-unsupported' }> => e.type === 'renderer-unsupported'
+    );
+    expect(disclosures).toHaveLength(1);
+    expect(disclosures[0].feature).toBe('layers');
+    r.dispose();
+  });
+
+  it('camera/quality on the 2D view disclose, never throw', () => {
+    const canvas = document.createElement('canvas');
+    const r = new LayerView2DRenderer(canvas);
+    const feats: string[] = [];
+    r.onEvent((e) => {
+      if (e.type === 'renderer-unsupported') feats.push(e.feature);
+    });
+    r.setCameraMode('orthographic');
+    r.setQuality('high');
+    expect(feats.sort()).toEqual(['camera', 'quality']);
+    r.dispose();
   });
 });

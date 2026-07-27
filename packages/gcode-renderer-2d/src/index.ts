@@ -15,6 +15,7 @@ export {
   computeLayerFit,
   layerBounds2D,
   modelBounds2D,
+  describe2DDisclosures,
   rgbToCss
 } from './layer-view.js';
 export type {
