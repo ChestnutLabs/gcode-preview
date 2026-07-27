@@ -12,6 +12,32 @@ const enc = (s: string): Uint8Array => new TextEncoder().encode(s);
 const dec = (b: Uint8Array): string => new TextDecoder().decode(b);
 const GCODE = 'M83\nG1 X0 Y0 Z0.2 F1200\nG1 X10 Y0 E1\nG1 X10 Y10 E1\n';
 
+/** Compress via RAW DEFLATE (no zlib header) — the flavor Prusa does NOT use, for the flavor-lock test. */
+async function rawDeflate(data: Uint8Array): Promise<Uint8Array> {
+  const cs = new CompressionStream('deflate-raw');
+  const w = cs.writable.getWriter();
+  const r = cs.readable.getReader();
+  const done = (async () => {
+    await w.write(data);
+    await w.close();
+  })();
+  const chunks: Uint8Array[] = [];
+  for (;;) {
+    const { done: d, value } = await r.read();
+    if (d) break;
+    if (value) chunks.push(value);
+  }
+  await done;
+  const total = chunks.reduce((n, c) => n + c.byteLength, 0);
+  const out = new Uint8Array(total);
+  let o = 0;
+  for (const c of chunks) {
+    out.set(c, o);
+    o += c.byteLength;
+  }
+  return out;
+}
+
 describe('sniffBgcode', () => {
   it('matches the "GCDE" magic and the .bgcode extension', () => {
     expect(sniffBgcode(enc('GCDE....'))).toBe(true);
@@ -112,6 +138,22 @@ describe('openBgcode — honest rejection & bounds', () => {
   it('rejects a truncated file', async () => {
     const buf = await assembleBgcode([{ type: 1, compression: 0, encoding: 0, data: enc(GCODE) }]);
     await expect(openBgcode(buf.subarray(0, 14))).rejects.toMatchObject({ code: 'E_BGCODE_TRUNCATED' });
+  });
+
+  it('DEFLATE is zlib-wrapped, not raw (the flavor real Prusa .bgcode uses)', async () => {
+    // A raw-DEFLATE stream (no zlib header) must FAIL to decode — proving the decoder expects the
+    // zlib-wrapped flavor confirmed against a real Prusa XL file (phase 4), not raw deflate.
+    const rawStored = await rawDeflate(enc(GCODE));
+    const buf = await assembleBgcode([
+      {
+        type: 1,
+        compression: BgcodeCompression.Deflate,
+        encoding: 0,
+        data: new Uint8Array(),
+        preCompressed: { stored: rawStored, uncompressedSize: GCODE.length }
+      }
+    ]);
+    await expect(openBgcode(buf)).rejects.toMatchObject({ code: expect.stringMatching(/E_BGCODE_(INFLATE|SIZE)/) });
   });
 
   it('honestly rejects an unknown compression id', async () => {
