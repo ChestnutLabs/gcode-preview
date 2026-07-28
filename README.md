@@ -1,14 +1,16 @@
 # Chestnut Labs G-code Preview
 
-A worker-based, cross-vendor **G-code toolpath stack** for the browser: parse `.gcode` and
-`.gcode.3mf` off the main thread, normalize them into a versioned intermediate representation
-(`ToolpathIR`), and render an interactive Three.js preview — with first-class **Vue, React, and
-Svelte** integrations that are thin adapters over one shared, framework-neutral engine.
+A worker-based, cross-vendor **G-code toolpath stack** for the browser: parse `.gcode`,
+`.gcode.3mf`, and Prusa binary `.bgcode` off the main thread, normalize them into a versioned
+intermediate representation (`ToolpathIR`), and render an interactive Three.js (or low-resource
+Canvas 2D) preview — with first-class **Vue, React, and Svelte** integrations that are thin adapters
+over one shared, framework-neutral engine.
 
-> **Status: published.** All ten `@chestnutlabs/*` packages are on npm (latest **`v0.2.0`**,
-> lockstep-versioned with npm provenance). E0–E9 of the
-> [master plan](docs/00_PROJECT_MASTER_PLAN.md) are closed; E10 (motion-model correctness) is in
-> progress. Install from npm — see *Quick start* below.
+> **Status: published.** Thirteen `@chestnutlabs/*` packages are on npm (latest **`v0.3.0`**,
+> lockstep-versioned with npm provenance). E0–E11 of the
+> [master plan](docs/00_PROJECT_MASTER_PLAN.md) are closed; `v0.3.0` adds the low-resource Canvas 2D
+> renderer, expanded color modes, wipe/seam visibility, time-based scrub, and binary G-code
+> (`.bgcode`) decode. Install from npm — see *Quick start* below.
 
 ![3DBenchy rendered as tubes with feature coloring in the showcase viewer](docs/media/viewer-benchy-tubes.png)
 
@@ -22,11 +24,19 @@ Svelte** integrations that are thin adapters over one shared, framework-neutral 
   fabricate what it cannot know.
 - **`.gcode.3mf` container support** — zero-dependency, bounded ZIP extraction with multi-plate
   selection, hardened against adversarial archives.
+- **Binary G-code (`.bgcode`) decode** — Prusa's binary container (heatshrink / DEFLATE / MeatPack
+  codecs) decoded to plain G-code through the same pipeline, byte-for-byte equivalent to the
+  `.gcode` original.
 - **A versioned neutral IR** (`ToolpathIR`) — structure-of-arrays geometry + metadata + source
   index; the seam between parsing and everything else.
 - **A Three.js renderer** — layer chunks with decimation disclosure, layer-range clip and
   segment-level scrub, tube or line geometry with automatic quality fallback, per-file build
   plates, WebGL context-loss recovery.
+- **A low-resource Canvas 2D renderer** — an optional `renderer: '2d'` layer view for constrained
+  environments, with adjacent "ghost" layers and its own progress mapping (no WebGL required).
+- **Rich toolpath coloring** — by feature type, move speed, object, or per-layer height, plus
+  toggleable wipe/seam moves; time-based scrub with a print-time estimate; and a source-line ↔
+  segment debugger mapping.
 - **Honest live progress** (for printer telemetry) — a normalized `ProgressObservation` contract
   mapped onto the toolpath with tiered confidence: a precise cut + marker when the source position
   is known, an uncertainty band when it is approximated, stale-signal handling, and user scrub
@@ -48,7 +58,10 @@ Svelte** integrations that are thin adapters over one shared, framework-neutral 
 | [`@chestnutlabs/gcode-parser`](packages/gcode-parser) | Worker parse core + session client (streaming, limits, workers) |
 | [`@chestnutlabs/gcode-dialects`](packages/gcode-dialects) | Slicer/firmware dialect annotators |
 | [`@chestnutlabs/gcode-containers`](packages/gcode-containers) | `.gcode.3mf` / ZIP container adapters |
+| [`@chestnutlabs/gcode-bgcode`](packages/gcode-bgcode) | Prusa binary G-code (`.bgcode`) decode container adapter |
 | [`@chestnutlabs/gcode-renderer-three`](packages/gcode-renderer-three) | Three.js toolpath renderer (peer: `three`) |
+| [`@chestnutlabs/gcode-renderer-2d`](packages/gcode-renderer-2d) | Low-resource Canvas 2D layer renderer (no WebGL) |
+| [`@chestnutlabs/gcode-colors`](packages/gcode-colors) | Shared color models (feature / speed / object / layer-height) |
 | [`@chestnutlabs/gcode-preview-core`](packages/gcode-preview-core) | Framework-neutral preview controller + portable behavioral suite |
 | [`@chestnutlabs/gcode-preview-vue`](packages/gcode-preview-vue) | Vue 3 component + `useGcodePreview()` composable |
 | [`@chestnutlabs/gcode-preview-react`](packages/gcode-preview-react) | React component + `useGcodePreview()` hook |
