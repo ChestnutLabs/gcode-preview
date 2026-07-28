@@ -27,6 +27,14 @@ include only the ones you need (see [Workers](concept-workers.md)).
 **zero dependencies** and **bounded, hardened** extraction (defended against adversarial archives).
 A container can hold several plates; select one with `parseOptions.plate`.
 
+## Containers — `.bgcode` (Prusa binary)
+
+**`@chestnutlabs/gcode-bgcode`** decodes Prusa's block-structured binary G-code container
+(`.bgcode`, with heatshrink / DEFLATE / MeatPack codecs) into plain G-code that flows through the
+same pipeline — a decoded `.bgcode` yields the same `ToolpathIR` as the equivalent `.gcode`. It
+registers as a container adapter alongside `.gcode.3mf`, is discovered automatically by magic
+sniff, and enforces per-block CRC32 integrity with bounded, output-capped decompression.
+
 ## Object exclusion & multi-tool
 
 Object-exclusion markers (`M486` / `EXCLUDE_OBJECT`) and multi-tool metadata are parsed where the
