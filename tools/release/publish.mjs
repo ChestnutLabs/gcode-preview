@@ -25,6 +25,7 @@ const ORDER = [
   'gcode-colors',
   'gcode-dialects',
   'gcode-containers',
+  'gcode-bgcode',
   'gcode-parser',
   'gcode-renderer-three',
   'gcode-renderer-2d',
@@ -59,6 +60,22 @@ for (const name of ORDER) {
     process.stderr.write(`✗ ${manifest.name} is still private — the release phase removes the flag first.\n`);
     failed = true;
     break;
+  }
+
+  // Idempotent recovery (DD-008 §6): a rerun publishes only the not-yet-published
+  // remainder at the same version. If this exact name@version is already on the
+  // registry, skip it rather than failing the whole line on "cannot publish over
+  // existing version".
+  if (!DRY) {
+    const seen = spawnSync(npmCmd, ['view', `${manifest.name}@${manifest.version}`, 'version'], {
+      cwd: dir,
+      encoding: 'utf8',
+      shell: process.platform === 'win32'
+    });
+    if (seen.status === 0 && seen.stdout.trim() === manifest.version) {
+      process.stderr.write(`↷ ${manifest.name}@${manifest.version} already on the registry — skipping\n`);
+      continue;
+    }
   }
 
   try {
