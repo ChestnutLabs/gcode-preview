@@ -20,6 +20,7 @@ import {
   repRap
 } from '@chestnutlabs/gcode-dialects';
 import { openGcode3mf, sniffGcode3mf } from '@chestnutlabs/gcode-containers';
+import { openBgcodeContainer, sniffBgcode } from '@chestnutlabs/gcode-bgcode';
 import { createWorkerHandler, type ContainerAdapterLike, type PostFn } from './worker-core.js';
 import type { WorkerRequest } from './protocol.js';
 
@@ -33,9 +34,10 @@ const BUILTIN_ADAPTERS: Parameters<typeof createDialectRunner>[0] = [
   repRap()
 ];
 
-/** Built-in container adapters (DD-005 §4.4): .gcode.3mf. */
+/** Built-in container adapters (DD-005 §4.4): .gcode.3mf and Prusa binary G-code (.bgcode, #188). */
 const BUILTIN_CONTAINERS: ContainerAdapterLike[] = [
-  { id: 'gcode-3mf', sniff: sniffGcode3mf, open: (bytes) => openGcode3mf(bytes) }
+  { id: 'gcode-3mf', sniff: sniffGcode3mf, open: (bytes) => openGcode3mf(bytes) },
+  { id: 'bgcode', sniff: (prefix) => sniffBgcode(prefix), open: (bytes) => openBgcodeContainer(bytes) }
 ];
 
 declare const self: {

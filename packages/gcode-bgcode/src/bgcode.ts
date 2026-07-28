@@ -56,6 +56,14 @@ export interface BgcodeBlockInfo {
   compressedSize: number;
 }
 
+/** A thumbnail decoded from a `.bgcode` Thumbnail block (#188 phase 4c). */
+export interface BgcodeThumbnail {
+  format: 'png' | 'jpg' | 'qoi' | 'unknown';
+  width: number;
+  height: number;
+  bytes: Uint8Array;
+}
+
 export interface BgcodeDecodeResult {
   /** The decoded plain G-code (all GCode blocks concatenated in file order). */
   gcode: Uint8Array;
@@ -63,11 +71,35 @@ export interface BgcodeDecodeResult {
   blocks: BgcodeBlockInfo[];
   /** Whether the file declared per-block CRC32. */
   checksum: 'none' | 'crc32';
+  /**
+   * Merged INI key/values from the File/Printer/Print/Slicer metadata blocks (#188 phase 4c) — only
+   * populated when `metadata: true`. Later blocks win on key conflicts. Empty otherwise.
+   */
+  settings: Record<string, string>;
+  /** Thumbnails from Thumbnail blocks (#188 phase 4c) — only when `metadata: true`. */
+  thumbnails: BgcodeThumbnail[];
 }
 
 export interface BgcodeDecodeOptions {
   /** Hard cap on total decoded G-code bytes — decompression-bomb defense (default 512 MiB). */
   maxOutputBytes?: number;
+  /** Also decode the metadata (INI) + thumbnail blocks into `settings`/`thumbnails` (default false). */
+  metadata?: boolean;
+}
+
+const THUMB_FORMAT: Record<number, BgcodeThumbnail['format']> = { 0: 'png', 1: 'jpg', 2: 'qoi' };
+
+/** Parse a PrusaSlicer-style INI block (`key = value` lines) into a record. */
+function parseIni(text: string): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const line of text.split('\n')) {
+    const eq = line.indexOf('=');
+    if (eq <= 0) continue;
+    const key = line.slice(0, eq).trim();
+    if (key.length === 0 || key.startsWith(';') || key.startsWith('#') || key.startsWith('[')) continue;
+    out[key] = line.slice(eq + 1).trim();
+  }
+  return out;
 }
 
 const DEFAULT_MAX_OUTPUT = 512 * 1024 * 1024;
@@ -198,8 +230,11 @@ export async function openBgcode(bytes: Uint8Array, opts: BgcodeDecodeOptions = 
   if (checksumType > 1) throw new ContainerError('E_BGCODE_CHECKSUM', `unknown checksum type ${checksumType}`);
   const hasCrc = checksumType === 1;
 
+  const wantMeta = opts.metadata === true;
   const blocks: BgcodeBlockInfo[] = [];
   const gcodeParts: Uint8Array[] = [];
+  const settings: Record<string, string> = {};
+  const thumbnails: BgcodeThumbnail[] = [];
   let totalOut = 0;
   let off = 10;
 
@@ -219,9 +254,13 @@ export async function openBgcode(bytes: Uint8Array, opts: BgcodeDecodeOptions = 
     }
 
     // Block parameters: 2 bytes (encoding u16) for metadata/GCode; 6 bytes (format+w+h) for thumbnails.
-    const paramLen = type === BgcodeBlockType.Thumbnail ? 6 : 2;
+    const isThumb = type === BgcodeBlockType.Thumbnail;
+    const paramLen = isThumb ? 6 : 2;
     if (off + paramLen > len) throw new ContainerError('E_BGCODE_TRUNCATED', 'truncated block parameters');
-    const encoding = type === BgcodeBlockType.Thumbnail ? 0 : readU16(bytes, off);
+    const encoding = isThumb ? 0 : readU16(bytes, off);
+    const thumbFormat = isThumb ? readU16(bytes, off) : 0;
+    const thumbWidth = isThumb ? readU16(bytes, off + 2) : 0;
+    const thumbHeight = isThumb ? readU16(bytes, off + 4) : 0;
     off += paramLen;
 
     const dataLen = compression === BgcodeCompression.None ? uncompressedSize : compressedSize;
@@ -248,8 +287,20 @@ export async function openBgcode(bytes: Uint8Array, opts: BgcodeDecodeOptions = 
       if (totalOut > limit)
         throw new ContainerError('E_BGCODE_BOMB', `decoded G-code exceeds the output limit (${totalOut})`);
       gcodeParts.push(decoded);
+    } else if (wantMeta && isThumb) {
+      // Thumbnails are stored as image bytes (PrusaSlicer uses None compression); decompress if flagged.
+      const raw = await decompress(compression, data, uncompressedSize, limit);
+      thumbnails.push({
+        format: THUMB_FORMAT[thumbFormat] ?? 'unknown',
+        width: thumbWidth,
+        height: thumbHeight,
+        bytes: raw.slice()
+      });
+    } else if (wantMeta && (type === 0 || type === 2 || type === 3 || type === 4)) {
+      // File/Printer/Print/Slicer metadata: an INI block (encoding 0), maybe DEFLATE-compressed.
+      const ini = await decompress(compression, data, uncompressedSize, limit);
+      Object.assign(settings, parseIni(new TextDecoder().decode(ini)));
     }
-    // Metadata / thumbnail blocks are walked past here; surfaced via the sink in phase 4.
   }
 
   const gcode = new Uint8Array(totalOut);
@@ -258,5 +309,5 @@ export async function openBgcode(bytes: Uint8Array, opts: BgcodeDecodeOptions = 
     gcode.set(part, o);
     o += part.length;
   }
-  return { gcode, blocks, checksum: hasCrc ? 'crc32' : 'none' };
+  return { gcode, blocks, checksum: hasCrc ? 'crc32' : 'none', settings, thumbnails };
 }

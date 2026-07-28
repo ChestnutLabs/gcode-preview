@@ -9,9 +9,9 @@
  * `@chestnutlabs/toolpath-core` and `@chestnutlabs/gcode-containers` (for `crc32`/`ContainerError`);
  * no `three`, framework, filesystem, or network.
  *
- * Phase 1: block walker + CRC32 + None/DEFLATE compression + None encoding. Phase 2: **MeatPack**
- * encoding (both variants). Phase 3: **heatshrink** compression (windows 11 & 12). All spec codecs are
- * now decoded; container-adapter integration + real-file golden-equivalence follow in phase 4.
+ * All spec codecs are decoded (None/DEFLATE/heatshrink × None/MeatPack), validated against real Prusa
+ * files (golden-equivalence). Phase 4c registers a **container adapter** so `.bgcode` flows through the
+ * parser pipeline via `containers: 'auto'`, surfacing machine geometry + settings + thumbnails.
  */
 export {
   BGCODE_MAGIC,
@@ -22,6 +22,9 @@ export {
   sniffBgcode,
   openBgcode
 } from './bgcode.js';
-export type { BgcodeBlockInfo, BgcodeDecodeResult, BgcodeDecodeOptions } from './bgcode.js';
+export type { BgcodeBlockInfo, BgcodeDecodeResult, BgcodeDecodeOptions, BgcodeThumbnail } from './bgcode.js';
 export { meatpackDecode } from './meatpack.js';
 export { heatshrinkDecode } from './heatshrink.js';
+// Container-adapter integration (DD-005 §4.4, #188 phase 4c).
+export { openBgcodeContainer } from './adapter.js';
+export type { OpenedBgcode, BgcodeStreamLike } from './adapter.js';

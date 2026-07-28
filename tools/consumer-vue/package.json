@@ -8,6 +8,7 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@chestnutlabs/gcode-bgcode": "file:tarballs/chestnutlabs-gcode-bgcode.tgz",
     "@chestnutlabs/gcode-colors": "file:tarballs/chestnutlabs-gcode-colors.tgz",
     "@chestnutlabs/gcode-containers": "file:tarballs/chestnutlabs-gcode-containers.tgz",
     "@chestnutlabs/gcode-dialects": "file:tarballs/chestnutlabs-gcode-dialects.tgz",
