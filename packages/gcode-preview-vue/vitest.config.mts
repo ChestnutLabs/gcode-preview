@@ -11,6 +11,8 @@ export default defineConfig({
       ),
       '@chestnutlabs/gcode-preview-core': fileURLToPath(new URL('../gcode-preview-core/src/index.ts', import.meta.url)),
       '@chestnutlabs/toolpath-core': fileURLToPath(new URL('../toolpath-core/src/index.ts', import.meta.url)),
+      '@chestnutlabs/gcode-colors': fileURLToPath(new URL('../gcode-colors/src/index.ts', import.meta.url)),
+      '@chestnutlabs/gcode-renderer-2d': fileURLToPath(new URL('../gcode-renderer-2d/src/index.ts', import.meta.url)),
       '@chestnutlabs/gcode-parser': fileURLToPath(new URL('../gcode-parser/src/index.ts', import.meta.url)),
       '@chestnutlabs/gcode-renderer-three': fileURLToPath(
         new URL('../gcode-renderer-three/src/index.ts', import.meta.url)

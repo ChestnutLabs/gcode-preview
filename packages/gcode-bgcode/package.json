@@ -1,0 +1,53 @@
+{
+  "name": "@chestnutlabs/gcode-bgcode",
+  "version": "0.3.0",
+  "description": "Binary G-code (.bgcode) decode adapter for the Chestnut Labs G-code toolpath stack (DD-011): a license-clean, in-memory block walker that decodes Prusa .bgcode to plain G-code for the existing parser/dialect/renderer pipeline. Decode-only.",
+  "keywords": [
+    "gcode",
+    "bgcode",
+    "binary-gcode",
+    "3d-printing",
+    "toolpath",
+    "prusa",
+    "chestnutlabs",
+    "container"
+  ],
+  "author": "Chestnut Labs",
+  "homepage": "https://github.com/ChestnutLabs/gcode-preview#readme",
+  "bugs": "https://github.com/ChestnutLabs/gcode-preview/issues",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ChestnutLabs/gcode-preview.git",
+    "directory": "packages/gcode-bgcode"
+  },
+  "license": "MIT",
+  "engines": {
+    "node": ">=22"
+  },
+  "type": "module",
+  "sideEffects": false,
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@chestnutlabs/toolpath-core": "0.3.0",
+    "@chestnutlabs/gcode-containers": "0.3.0"
+  }
+}

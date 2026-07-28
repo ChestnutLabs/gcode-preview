@@ -20,7 +20,12 @@ import type {
 } from '@chestnutlabs/gcode-renderer-three';
 import type { MachineGeometry, ProgressObservation } from '@chestnutlabs/toolpath-core';
 import type { WireParseOptions, WorkerLike } from '@chestnutlabs/gcode-parser';
-import { useGcodePreview, type PreviewEvent, type UseGcodePreviewOptions } from './use-gcode-preview.js';
+import {
+  useGcodePreview,
+  type PreviewEvent,
+  type RendererMode,
+  type UseGcodePreviewOptions
+} from './use-gcode-preview.js';
 
 export type GcodePreviewSource = Uint8Array | ArrayBuffer | File | null;
 
@@ -30,6 +35,10 @@ export const GcodePreview = defineComponent({
     /** The one required-in-practice prop: bytes/File to parse. Changing it re-parses. */
     source: { type: [Object, Uint8Array, ArrayBuffer, File] as PropType<GcodePreviewSource>, default: null },
     parseOptions: { type: Object as PropType<WireParseOptions>, default: undefined },
+    /** DD-014 D5: `'3d'` (default, Three.js — loaded on demand) or `'2d'` (low-resource Canvas view). */
+    renderer: { type: String as PropType<RendererMode>, default: undefined },
+    /** 2D only (`renderer="2d"`): preceding "ghost" layers beneath the active one (default 1, floor 0). */
+    adjacentLayers: { type: Number as PropType<number>, default: undefined },
     /** Consumer-configured volume — wins over file-discovered geometry (DD-005 precedence). */
     buildVolume: { type: Object as PropType<BuildVolumeDef | MachineGeometry>, default: undefined },
     quality: { type: String as PropType<QualityMode | 'auto'>, default: 'auto' },
@@ -43,7 +52,11 @@ export const GcodePreview = defineComponent({
     layerRange: { type: Array as unknown as PropType<[number, number] | null>, default: null },
     /** Scrub cut (IR segment index); null shows everything up to the layer range. */
     scrub: { type: Number as PropType<number | null>, default: null },
+    /** Time-based scrub cut in ms of print time (#181); null clears it. */
+    scrubTime: { type: Number as PropType<number | null>, default: null },
     showTravel: { type: Boolean, default: true },
+    /** DD-016 (#182): show slicer wipe moves. Default true. */
+    showWipe: { type: Boolean, default: true },
     /** DD-009 D1 (#148): opt-in retraction/deretraction markers. */
     showRetractions: { type: Boolean, default: false },
     /** DD-006 live progress observation; null hides the overlay. */
@@ -84,12 +97,14 @@ export const GcodePreview = defineComponent({
     const preview = useGcodePreview({
       createWorker: props.createWorker,
       renderer: {
+        mode: props.renderer,
         buildVolume: 'bed' in (props.buildVolume ?? {}) ? undefined : (props.buildVolume as BuildVolumeDef | undefined),
         quality: props.quality,
         cameraMode: props.cameraMode,
         theme: props.theme,
         colorMode: props.colorMode,
         tube: props.tube,
+        adjacentLayers: props.adjacentLayers,
         ...props.rendererOptions
       },
       parseDefaults: props.parseOptions
@@ -161,8 +176,16 @@ export const GcodePreview = defineComponent({
       (scrub) => preview.controls.setScrubPosition(scrub)
     );
     watch(
+      () => props.scrubTime,
+      (t) => preview.controls.setScrubTime(t)
+    );
+    watch(
       () => props.showTravel,
       (visible) => preview.controls.setKindVisible('travel', visible)
+    );
+    watch(
+      () => props.showWipe,
+      (visible) => preview.controls.setKindVisible('wipe', visible)
     );
     watch(
       () => props.showRetractions,

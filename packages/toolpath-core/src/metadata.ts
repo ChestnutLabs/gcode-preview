@@ -58,6 +58,33 @@ export interface FilamentInfo {
   name?: string;
 }
 
+/**
+ * Slicer-reported filament consumption (#183) — the "info panel" totals a slicer emits as G-code
+ * comments. Absent when the slicer doesn't report it (capability-honest). Aggregate across extruders;
+ * fields are independently optional (a slicer may report length but not weight).
+ */
+export interface FilamentUsage {
+  /** Total filament length in millimetres. */
+  lengthMm?: number;
+  /** Total extruded volume in cm³. */
+  volumeCm3?: number;
+  /** Total filament weight in grams. */
+  weightG?: number;
+  source: { adapterId: string; evidence: string; srcByte?: number };
+}
+
+/**
+ * The slicer's own print-time estimate (#183) — the trustworthy figure for a time readout / time
+ * scrub, versus a kinematic estimate. Absent when the slicer doesn't emit it.
+ */
+export interface PrintEstimate {
+  /** Estimated print duration in seconds. */
+  seconds: number;
+  /** Slicer mode label when given (e.g. PrusaSlicer 'normal' / 'silent'). */
+  mode?: string;
+  source: { adapterId: string; evidence: string; srcByte?: number };
+}
+
 export interface ThumbnailData {
   width: number;
   height: number;
@@ -75,6 +102,10 @@ export interface DialectMetadata {
   dialects?: DialectDetection[];
   machine?: MachineGeometry;
   filaments?: FilamentInfo[];
+  /** Slicer-reported total filament consumption (#183); absent when not emitted. */
+  filamentUsage?: FilamentUsage;
+  /** The slicer's own print-time estimate (#183); absent when not emitted. */
+  printEstimate?: PrintEstimate;
   thumbnails?: ThumbnailData[];
   /** Whitelisted key/value settings only — bounded, never local paths. */
   raw?: Record<string, string>;

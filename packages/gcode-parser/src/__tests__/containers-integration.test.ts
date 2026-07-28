@@ -8,6 +8,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { openGcode3mf, sniffGcode3mf } from '@chestnutlabs/gcode-containers';
+import { openBgcodeContainer, sniffBgcode } from '@chestnutlabs/gcode-bgcode';
 import { createDialectRunner, orcaBambu, prusaSlicer } from '@chestnutlabs/gcode-dialects';
 import { FeatureRole } from '@chestnutlabs/toolpath-core';
 import { createWorkerHandler, type WorkerHandlerOptions } from '../worker-core';
@@ -129,6 +130,39 @@ describe('.gcode.3mf through the worker pipeline (#74)', () => {
     const result = await session.parse(load('mini-project.gcode.3mf'), { yieldIntervalMs: 5 });
     expect(result.ir.segments.count).toBe(0);
     expect(result.metadata).toBeUndefined();
+    session.dispose();
+  });
+});
+
+describe('.bgcode through the worker pipeline (#188)', () => {
+  const bgcodeDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../../test-data/fixtures/bgcode');
+  const BGCODE: WorkerHandlerOptions['containers'] = [
+    { id: 'bgcode', sniff: (prefix) => sniffBgcode(prefix), open: (bytes) => openBgcodeContainer(bytes) }
+  ];
+
+  it('sniffs + decodes a real Prusa .bgcode → the same IR as the plain .gcode + machine metadata', async () => {
+    const session = new GcodeParseSession({ worker: loopbackWorker({ containers: BGCODE }) });
+    const bytes = new Uint8Array(fs.readFileSync(path.join(bgcodeDir, 'prim-cube.bgcode')));
+    const result = await session.parse(bytes, { yieldIntervalMs: 5 });
+    expect(result.ir.header.complete).toBe(true);
+    // Same segment count the golden-equivalence test pins against the plain .gcode.
+    expect(result.ir.segments.count).toBe(11417);
+    // Machine geometry surfaced from the container's decoded metadata blocks (bed_shape).
+    expect(result.metadata?.machine?.bed).toEqual({ kind: 'rect', min: { x: 0, y: 0 }, max: { x: 360, y: 360 } });
+    expect(result.metadata?.machine?.printerName).toBe('XL2IS');
+    expect(result.metadata?.machine?.confidence).toBe('inferred');
+    expect(result.metadata?.raw?.['printer_model']).toBe('XL2IS');
+    expect(result.metadata?.raw?.['Producer']).toContain('PrusaSlicer');
+    session.dispose();
+  });
+
+  it('a worker without the bgcode adapter does not decode it (honest — no adapter, no magic)', async () => {
+    const session = new GcodeParseSession({ worker: loopbackWorker({ containers: CONTAINERS }) }); // only 3mf
+    const bytes = new Uint8Array(fs.readFileSync(path.join(bgcodeDir, 'prim-cube.bgcode')));
+    const result = await session.parse(bytes, { yieldIntervalMs: 5 });
+    // Binary bytes fed to the raw parser → at most a few spurious moves from byte noise, nowhere near
+    // the real 11417-segment decode; never a crash.
+    expect(result.ir.segments.count).toBeLessThan(100);
     session.dispose();
   });
 });

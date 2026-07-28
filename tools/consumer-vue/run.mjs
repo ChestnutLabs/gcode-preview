@@ -25,10 +25,13 @@ const tarballDir = join(here, 'tarballs');
 // parser (its batteries worker imports them); the Vue adapter last.
 const PACKAGES = [
   'toolpath-core',
+  'gcode-colors',
   'gcode-dialects',
   'gcode-containers',
+  'gcode-bgcode',
   'gcode-parser',
   'gcode-renderer-three',
+  'gcode-renderer-2d',
   'gcode-preview-core',
   'gcode-preview-vue'
 ];

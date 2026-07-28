@@ -14,6 +14,8 @@ import type {
   DialectDetection,
   MachineGeometry,
   FilamentInfo,
+  FilamentUsage,
+  PrintEstimate,
   ThumbnailData,
   ToolpathIR
 } from '@chestnutlabs/toolpath-core';
@@ -39,11 +41,22 @@ export interface DetectInput {
 export interface AnnotationSink {
   /** Write a FeatureRole index for segments [segStart, segEnd] (bounds validated at apply). */
   setFeature(segStart: number, segEnd: number, role: number): void;
+  /**
+   * Additively OR an annotation move-kind bit onto segments [segStart, segEnd] (DD-016 §4.2).
+   * Allow-listed to `MoveKind.Wipe | MoveKind.Seam` — the ONLY exception to the sink's kind
+   * immutability, and additive-only: it never clears an existing Extrude/Travel bit and never
+   * reclassifies a move. Non-allow-listed bits are dropped with a warning (bounded failure).
+   */
+  addMoveKind(segStart: number, segEnd: number, kindBits: number): void;
   /** `objectValue` is the 1-based object-channel value (DD-001: v indexes ir.objects[v-1]). */
   setObject(segStart: number, segEnd: number, objectValue: number): void;
   defineObject(objectValue: number, name: string): void;
   setMachine(machine: MachineGeometry): void;
   setFilament(info: FilamentInfo): void;
+  /** Slicer-reported total filament consumption (#183). Later calls merge non-undefined fields. */
+  setFilamentUsage(usage: FilamentUsage): void;
+  /** The slicer's own print-time estimate (#183). Prefer the 'normal'/default mode when several. */
+  setPrintEstimate(estimate: PrintEstimate): void;
   /** Enrich a tool's identity (material, '#RRGGBB' color) — merged into ir.tools (DD-005 phase 5). */
   setToolInfo(tool: number, info: { material?: string; colorHex?: string }): void;
   addThumbnail(thumb: ThumbnailData): void;

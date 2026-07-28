@@ -15,19 +15,26 @@
     "featureRoles": "unavailable",
     "objects": "unavailable",
     "retractions": "unavailable",
-    "colorChanges": "unavailable"
+    "colorChanges": "unavailable",
+    "wipeMoves": "unavailable",
+    "seamMoves": "unavailable",
+    "extrusionMode": "inferred",
+    "positioningMode": "inferred",
+    "arcPlanes": "inferred",
+    "coordinateSystem": "known"
   },
   "warningCodes": [
     "layers-unavailable",
+    "probe-position-runtime-dependent",
     "unsupported-command"
   ],
   "bufferDigests": {
     "x0": "fbeeafe5",
     "y0": "ab2535a3",
-    "z0": "b7bd6e7b",
+    "z0": "88e0fb11",
     "x1": "3d0ea825",
     "y1": "f0ad3a03",
-    "z1": "00c648b2",
+    "z1": "5cde1254",
     "e": "54b90035",
     "feedrate": "3e3b6563",
     "kind": "4a13bc65",

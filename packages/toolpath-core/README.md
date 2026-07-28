@@ -2,7 +2,7 @@
 
 Neutral **`ToolpathIR`** and **capability model** for the Chestnut Labs G-code Preview toolpath stack.
 This is the replacement seam for the whole stack: the parser **writes** it, renderers and analyzers **read**
-it. See [`docs/design/DD-001`](../../docs/design/DD-001-toolpath-ir-and-capability-model.md).
+it. See [`docs/design/DD-001`](https://github.com/ChestnutLabs/gcode-preview/blob/dev/docs/design/DD-001-toolpath-ir-and-capability-model.md).
 
 **Design rules**
 

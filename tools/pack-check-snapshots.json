@@ -22,6 +22,22 @@
     "dist/source-index.d.ts",
     "dist/source-index.d.ts.map",
     "dist/source-index.js",
+    "dist/source-map.d.ts",
+    "dist/source-map.d.ts.map",
+    "dist/source-map.js",
+    "dist/time.d.ts",
+    "dist/time.d.ts.map",
+    "dist/time.js",
+    "package.json"
+  ],
+  "gcode-colors": [
+    "README.md",
+    "dist/colors.d.ts",
+    "dist/colors.d.ts.map",
+    "dist/colors.js",
+    "dist/index.d.ts",
+    "dist/index.d.ts.map",
+    "dist/index.js",
     "package.json"
   ],
   "gcode-dialects": [
@@ -66,6 +82,25 @@
     "dist/zip.d.ts",
     "dist/zip.d.ts.map",
     "dist/zip.js",
+    "package.json"
+  ],
+  "gcode-bgcode": [
+    "README.md",
+    "dist/adapter.d.ts",
+    "dist/adapter.d.ts.map",
+    "dist/adapter.js",
+    "dist/bgcode.d.ts",
+    "dist/bgcode.d.ts.map",
+    "dist/bgcode.js",
+    "dist/heatshrink.d.ts",
+    "dist/heatshrink.d.ts.map",
+    "dist/heatshrink.js",
+    "dist/index.d.ts",
+    "dist/index.d.ts.map",
+    "dist/index.js",
+    "dist/meatpack.d.ts",
+    "dist/meatpack.d.ts.map",
+    "dist/meatpack.js",
     "package.json"
   ],
   "gcode-parser": [
@@ -127,6 +162,16 @@
     "dist/tubes.js",
     "package.json"
   ],
+  "gcode-renderer-2d": [
+    "README.md",
+    "dist/index.d.ts",
+    "dist/index.d.ts.map",
+    "dist/index.js",
+    "dist/layer-view.d.ts",
+    "dist/layer-view.d.ts.map",
+    "dist/layer-view.js",
+    "package.json"
+  ],
   "gcode-preview-core": [
     "README.md",
     "dist/controller.d.ts",
@@ -138,6 +183,12 @@
     "dist/render-still.d.ts",
     "dist/render-still.d.ts.map",
     "dist/render-still.js",
+    "dist/renderer-2d-adapter.d.ts",
+    "dist/renderer-2d-adapter.d.ts.map",
+    "dist/renderer-2d-adapter.js",
+    "dist/renderer-interface.d.ts",
+    "dist/renderer-interface.d.ts.map",
+    "dist/renderer-interface.js",
     "dist/testing.d.ts",
     "dist/testing.d.ts.map",
     "dist/testing.js",

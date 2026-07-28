@@ -11,10 +11,13 @@ import type { AnnotationSink, DialectAdapter } from './contracts.js';
 import {
   ThumbnailCollector,
   applyMarkerRanges,
+  applyWipeRanges,
   bedFromPoints,
+  matchWipeComment,
   parseAreaPoints,
   parseKeyValue,
-  type RangeMarker
+  type RangeMarker,
+  type WipeMark
 } from './annotate.js';
 
 /** Prusa `;TYPE:` names → DD-001 FeatureRole (unknown names → Custom, honestly generic). */
@@ -36,8 +39,47 @@ const TYPE_MAP: Record<string, number> = {
   custom: FeatureRole.Custom
 };
 
+/** Parse PrusaSlicer/Orca `<h>h <m>m <s>s` (any part optional) → seconds; null when zero/unparsed. */
+export function parseHmsToSeconds(text: string): number | null {
+  const m = /^\s*(?:(\d+)\s*h)?\s*(?:(\d+)\s*m)?\s*(?:(\d+)\s*s)?\s*$/.exec(text);
+  if (m === null) return null;
+  const total = Number(m[1] ?? 0) * 3600 + Number(m[2] ?? 0) * 60 + Number(m[3] ?? 0);
+  return total > 0 ? total : null;
+}
+
+/**
+ * Prusa-style filament totals (`; filament used [mm|cm3] = X`, `; total filament used [g] = X`) —
+ * shared by PrusaSlicer and the Prusa-derived Orca/Bambu adapter (#183). Multi-word bracketed keys
+ * that `parseKeyValue` can't tokenize. Returns true when the comment was a filament total.
+ */
+export function parseFilamentTotals(
+  comment: string,
+  srcByte: number,
+  adapterId: string,
+  sink: AnnotationSink
+): boolean {
+  const source = { adapterId, evidence: '; filament used comments', srcByte };
+  let m = /^\s*filament used \[mm\]\s*=\s*([\d.]+)/i.exec(comment);
+  if (m !== null) {
+    sink.setFilamentUsage({ lengthMm: parseFloat(m[1]), source });
+    return true;
+  }
+  m = /^\s*filament used \[cm3\]\s*=\s*([\d.]+)/i.exec(comment);
+  if (m !== null) {
+    sink.setFilamentUsage({ volumeCm3: parseFloat(m[1]), source });
+    return true;
+  }
+  m = /^\s*total filament used \[g\]\s*=\s*([\d.]+)/i.exec(comment);
+  if (m !== null) {
+    sink.setFilamentUsage({ weightG: parseFloat(m[1]), source });
+    return true;
+  }
+  return false;
+}
+
 interface PrusaState {
   markers: RangeMarker[];
+  wipes: WipeMark[];
   bedPoints: string | null;
   bedSrcByte?: number;
   heightMm?: number;
@@ -50,7 +92,7 @@ const state = new WeakMap<AnnotationSink, PrusaState>();
 function stateFor(sink: AnnotationSink): PrusaState {
   let s = state.get(sink);
   if (s === undefined) {
-    s = { markers: [], bedPoints: null, thumbs: new ThumbnailCollector() };
+    s = { markers: [], wipes: [], bedPoints: null, thumbs: new ThumbnailCollector() };
     state.set(sink, s);
   }
   return s;
@@ -79,8 +121,27 @@ export function prusaSlicer(): DialectAdapter {
         s.markers.push({ srcByte, value: role ?? FeatureRole.Custom });
         return;
       }
+      const wipe = matchWipeComment(comment);
+      if (wipe !== null) {
+        s.wipes.push({ srcByte, open: wipe === 'start' });
+        return;
+      }
       if (s.thumbs.isActive || comment.trimStart().toLowerCase().startsWith('thumbnail')) {
         s.thumbs.feed(comment, sink);
+        return;
+      }
+      // Filament totals + print time — multi-word keys `parseKeyValue` can't tokenize (#183).
+      if (parseFilamentTotals(comment, srcByte, 'prusaslicer', sink)) return;
+      const time = /^\s*estimated printing time \(normal mode\)\s*=\s*(.+)$/i.exec(comment);
+      if (time !== null) {
+        const sec = parseHmsToSeconds(time[1].trim());
+        if (sec !== null) {
+          sink.setPrintEstimate({
+            seconds: sec,
+            mode: 'normal',
+            source: { adapterId: 'prusaslicer', evidence: '; estimated printing time', srcByte }
+          });
+        }
         return;
       }
       const kv = parseKeyValue(comment);
@@ -99,6 +160,7 @@ export function prusaSlicer(): DialectAdapter {
       const s = stateFor(sink);
       const applied = applyMarkerRanges(ir, s.markers, (a, b, v) => sink.setFeature(a, b, v));
       if (applied > 0) sink.upgradeCapability('featureRoles', 'known');
+      if (applyWipeRanges(ir, s.wipes, sink) > 0) sink.upgradeCapability('wipeMoves', 'known');
       if (s.bedPoints !== null) {
         const points = parseAreaPoints(s.bedPoints);
         if (points !== null) {

@@ -7,13 +7,13 @@
  */
 export { buildChunks, autoDecimation } from './chunks.js';
 export type { ChunkBuildOptions, ChunkBuildResult, GeometryChunk } from './chunks.js';
-export { buildChunkColors } from './colors.js';
+export { buildChunkColors, feedrateRange } from './colors.js';
 export type { ColorMode, RGB } from './colors.js';
 export { computeDrawState, computeOverlayDrawStates } from './ranges.js';
 export type { ChunkDrawState, OverlayDrawStates } from './ranges.js';
 export { buildTubeChunk, TUBES_AUTO_MAX_SEGMENTS } from './tubes.js';
 export type { TubeOptions, TubeChunkGeometry } from './tubes.js';
-export { ToolpathRenderer, chooseQuality, machineToVolume } from './scene.js';
+export { ToolpathRenderer, chooseQuality, machineToVolume, resolveHitSegment } from './scene.js';
 export type {
   ToolpathRendererOptions,
   RenderTargetCanvas,
@@ -26,4 +26,4 @@ export type {
 export { createBuildVolume } from './build-volume.js';
 export type { BuildVolumeDef, BuildVolumeStyle } from './build-volume.js';
 export { DEFAULT_THEME, resolveTheme } from './theme.js';
-export type { Theme, MaterialPreset, ThemeColor, ResolvedTheme } from './theme.js';
+export type { Theme, MaterialPreset, ThemeColor, ResolvedTheme, BedSurface, BedTextureSource } from './theme.js';

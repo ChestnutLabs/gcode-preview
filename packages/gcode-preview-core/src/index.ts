@@ -5,6 +5,9 @@
  * The portable behavioral suite ships via the `./testing` subpath.
  */
 export * from './controller.js';
+// The renderer-agnostic seam (DD-014 D5): the mode selector + interface adapters re-export.
+export type { PreviewRenderer, PreviewRendererEvent, RendererMode } from './renderer-interface.js';
+export { LayerView2DRenderer, type LayerView2DRendererOptions } from './renderer-2d-adapter.js';
 export { renderStill, type RenderStillOptions, type RenderStillResult, type StillCameraPose } from './render-still.js';
 // Re-export the theme contract so core consumers get it three-free (#153, DD-009 D4).
 export type { Theme, MaterialPreset, ThemeColor } from '@chestnutlabs/gcode-renderer-three';

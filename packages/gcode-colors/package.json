@@ -1,0 +1,52 @@
+{
+  "name": "@chestnutlabs/gcode-colors",
+  "version": "0.3.0",
+  "description": "Renderer-agnostic per-segment color model for the Chestnut Labs G-code toolpath stack (DD-014 D3): the ColorMode union and honest, capability-gated segment coloring over ToolpathIR channels, shared by the 3D and 2D renderers.",
+  "keywords": [
+    "gcode",
+    "3d-printing",
+    "toolpath",
+    "cnc",
+    "chestnutlabs",
+    "color",
+    "colormap",
+    "visualization"
+  ],
+  "author": "Chestnut Labs",
+  "homepage": "https://github.com/ChestnutLabs/gcode-preview#readme",
+  "bugs": "https://github.com/ChestnutLabs/gcode-preview/issues",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ChestnutLabs/gcode-preview.git",
+    "directory": "packages/gcode-colors"
+  },
+  "license": "MIT",
+  "engines": {
+    "node": ">=22"
+  },
+  "type": "module",
+  "sideEffects": false,
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@chestnutlabs/toolpath-core": "0.3.0"
+  }
+}

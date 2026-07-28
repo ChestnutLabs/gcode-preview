@@ -1,0 +1,152 @@
+/*
+   Chestnut Labs G-code Preview — API reference theme (E11 phase 2, DD-013 D1/D3).
+
+   A sibling of the Printer Protocol Orchard docs theme
+   (ChestnutLabs/printer-protocol-orchard, Material for MkDocs "orchard" scheme):
+   SAME family identity — IBM Plex Sans/Mono, warm cream paper, accent-bordered
+   header, tight 600-weight headings, 6px radii — with the saturated palette
+   HUE-SHIFTED from orchard's warm chestnut + leaf-green to a cool "blueprint"
+   teal + blue, so it reads as the same design system for a different project.
+
+   Orchard  → primary #5c3620 (chestnut) · accent #55793f (leaf)
+   Preview  → primary #1c5a5f (petrol/teal) · accent/link #176985 (blueprint blue)
+*/
+
+/* IBM Plex is loaded via a non-blocking <link> injected into each page's <head>
+   by tools/docs/build-api.mjs — NOT an @import here (an @import blocks the whole
+   stylesheet until the font CDN responds; a <link> loads independently). */
+
+/* ---------- Palette: LIGHT (default + forced light) ---------- */
+:root,
+:root[data-theme='light'] {
+  --color-background: #f6f3ec; /* warm cream paper (shared with orchard) */
+  --color-background-secondary: #efece1;
+  --color-background-active: #e4e7e1;
+  --color-background-navbar: #efece1;
+  --color-text: #2a302e;
+  --color-text-aside: #5d6b68;
+  --color-link: #176985; /* blueprint blue */
+  --color-accent: #1c5a5f; /* deep petrol/teal (← chestnut) */
+  --color-active-menu-item: #d7e5e5; /* soft teal tint */
+  --color-contrast-text: #f6f3ec;
+  --color-focus-outline: #1c5a5f;
+  --color-ts-keyword: #1a6a7a; /* cool keyword (← orchard warm #9a4e20) */
+  --gp-toolbar-bg: #efece1;
+  --gp-border: #dcded4;
+  --gp-primary-strong: #123f43;
+}
+
+/* ---------- Palette: DARK ---------- */
+:root[data-theme='dark'] {
+  --color-background: #141d1f; /* deep petrol charcoal (← orchard bark) */
+  --color-background-secondary: #1b2629;
+  --color-background-active: #243133;
+  --color-background-navbar: #1b2629;
+  --color-text: #dfe7e5;
+  --color-text-aside: #9fb0ad;
+  --color-link: #5bb2c9; /* bright blueprint cyan */
+  --color-accent: #7fc4c0; /* light teal (← orchard light leaf #9fc47f) */
+  --color-active-menu-item: #233436;
+  --color-contrast-text: #0f1618;
+  --color-focus-outline: #5bb2c9;
+  --color-ts-keyword: #6fb7c4;
+  --gp-toolbar-bg: #1b2629;
+  --gp-border: #2b3a3c;
+  --gp-primary-strong: #7fc4c0;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    --color-background: #141d1f;
+    --color-background-secondary: #1b2629;
+    --color-background-active: #243133;
+    --color-background-navbar: #1b2629;
+    --color-text: #dfe7e5;
+    --color-text-aside: #9fb0ad;
+    --color-link: #5bb2c9;
+    --color-accent: #7fc4c0;
+    --color-active-menu-item: #233436;
+    --color-contrast-text: #0f1618;
+    --color-focus-outline: #5bb2c9;
+    --color-ts-keyword: #6fb7c4;
+    --gp-toolbar-bg: #1b2629;
+    --gp-border: #2b3a3c;
+    --gp-primary-strong: #7fc4c0;
+  }
+}
+
+/* ---------- Typography (IBM Plex, matching orchard) ---------- */
+body {
+  font-family:
+    'IBM Plex Sans',
+    -apple-system,
+    BlinkMacSystemFont,
+    'Segoe UI',
+    Roboto,
+    sans-serif;
+}
+code,
+pre,
+.tsd-signature,
+.tsd-signatures,
+kbd {
+  font-family: 'IBM Plex Mono', ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, monospace;
+}
+.tsd-typography h1,
+.tsd-typography h2,
+.tsd-typography h3,
+.tsd-page-title h1 {
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+/* ---------- Header: accent bottom border (orchard signature) ---------- */
+.tsd-page-toolbar {
+  background: var(--gp-toolbar-bg);
+  border-bottom: 3px solid var(--color-accent);
+  backdrop-filter: none;
+}
+.tsd-page-toolbar .title {
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+/* ---------- Panels, code, tables: 6px radii, hairline borders ---------- */
+pre,
+.tsd-panel,
+.tsd-signature,
+table.tsd-typography,
+.tsd-typeset table:not([class]) {
+  border-radius: 6px;
+}
+pre {
+  border: 1px solid var(--gp-border);
+}
+
+/* ---------- Active navigation: accent left-border (orchard tab feel) ---------- */
+.tsd-navigation a.current,
+.tsd-navigation .tsd-nav-link.current {
+  border-left: 2px solid var(--color-accent);
+}
+
+/* ---------- Links: subtle weight, brand color ---------- */
+.tsd-typography a,
+a.tsd-index-link {
+  color: var(--color-link);
+}
+.tsd-page-title a {
+  color: var(--gp-primary-strong);
+}
+
+/* ---------- Version footer (DD-013 D4) ---------- */
+.gp-docs-footer {
+  margin: 3rem 0 1.5rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--gp-border);
+  font-size: 0.8rem;
+  color: var(--color-text-aside);
+  text-align: center;
+}
+.gp-docs-footer a {
+  color: var(--color-link);
+}

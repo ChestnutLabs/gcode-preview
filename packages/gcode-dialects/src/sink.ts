@@ -5,18 +5,26 @@
  * exist until `finish()`), then applied to the finished IR in one validated
  * pass. Bounds are clamped, budgets enforced, and the sink physically cannot
  * reach geometry — it only ever touches `feature`, `object`, header
- * capabilities/warnings, and the metadata object beside the IR.
+ * capabilities/warnings, the metadata object beside the IR, and (DD-016 §4.2)
+ * an ADDITIVE allow-listed move-kind bit (`Wipe`/`Seam`) that never clears or
+ * reclassifies a move.
  */
-import type {
-  Confidence,
-  DialectMetadata,
-  FilamentInfo,
-  MachineGeometry,
-  ThumbnailData,
-  ToolpathIR,
-  Warning
+import {
+  MoveKind,
+  type Confidence,
+  type DialectMetadata,
+  type FilamentInfo,
+  type FilamentUsage,
+  type MachineGeometry,
+  type PrintEstimate,
+  type ThumbnailData,
+  type ToolpathIR,
+  type Warning
 } from '@chestnutlabs/toolpath-core';
 import type { AnnotationSink } from './contracts.js';
+
+/** The only move-kind bits an adapter may add (DD-016 §4.2/D6) — additive annotation kinds, never motion. */
+const ALLOWED_ANNOTATION_KINDS = MoveKind.Wipe | MoveKind.Seam;
 
 const MAX_RANGE_OPS = 1_000_000;
 const MAX_OBJECTS = 10_000;
@@ -25,13 +33,15 @@ const MAX_RAW_VALUE = 4_096;
 const MAX_WARNINGS = 100;
 const MAX_THUMBNAILS = 8;
 
-type RangeOp = { channel: 'feature' | 'object'; start: number; end: number; value: number };
+type RangeOp = { channel: 'feature' | 'object' | 'kind'; start: number; end: number; value: number };
 
 export class BufferedAnnotationSink implements AnnotationSink {
   private ops: RangeOp[] = [];
   private objects = new Map<number, string>();
   private machine: MachineGeometry | null = null;
   private filaments: FilamentInfo[] = [];
+  private filamentUsage: FilamentUsage | null = null;
+  private printEstimate: PrintEstimate | null = null;
   private toolInfos = new Map<number, { material?: string; colorHex?: string }>();
   private thumbnails: ThumbnailData[] = [];
   private raw = new Map<string, string>();
@@ -61,6 +71,20 @@ export class BufferedAnnotationSink implements AnnotationSink {
     this.pushOp({ channel: 'object', start: segStart, end: segEnd, value: objectId >>> 0 });
   }
 
+  addMoveKind(segStart: number, segEnd: number, kindBits: number): void {
+    // Allow-list guard (DD-016 D6): only additive Wipe/Seam bits; anything else is a contract
+    // violation, dropped with a bounded warning rather than corrupting the kind channel.
+    const bits = kindBits & ALLOWED_ANNOTATION_KINDS;
+    if (bits === 0 || (kindBits & ~ALLOWED_ANNOTATION_KINDS) !== 0) {
+      this.warn(
+        'dialect-kind-not-allowlisted',
+        `adapter '${this.adapterId}' tried to set non-allow-listed move-kind bits 0x${(kindBits >>> 0).toString(16)}`
+      );
+      return;
+    }
+    this.pushOp({ channel: 'kind', start: segStart, end: segEnd, value: bits });
+  }
+
   defineObject(id: number, name: string): void {
     if (this.objects.size < MAX_OBJECTS) this.objects.set(id, name.slice(0, 256));
   }
@@ -71,6 +95,22 @@ export class BufferedAnnotationSink implements AnnotationSink {
 
   setFilament(info: FilamentInfo): void {
     if (this.filaments.length < 64) this.filaments.push(info);
+  }
+
+  setFilamentUsage(usage: FilamentUsage): void {
+    // Merge non-undefined fields (a slicer emits length/volume/weight on separate comment lines).
+    const prev = this.filamentUsage;
+    this.filamentUsage = {
+      lengthMm: usage.lengthMm ?? prev?.lengthMm,
+      volumeCm3: usage.volumeCm3 ?? prev?.volumeCm3,
+      weightG: usage.weightG ?? prev?.weightG,
+      source: prev?.source ?? usage.source
+    };
+  }
+
+  setPrintEstimate(estimate: PrintEstimate): void {
+    // First estimate wins (adapters send the default/'normal' mode first; ignore later silent-mode).
+    if (this.printEstimate === null) this.printEstimate = estimate;
   }
 
   setToolInfo(tool: number, info: { material?: string; colorHex?: string }): void {
@@ -111,6 +151,12 @@ export class BufferedAnnotationSink implements AnnotationSink {
       const start = Math.min(op.start, count);
       const end = Math.min(op.end + 1, count);
       if (end <= start) continue;
+      if (op.channel === 'kind') {
+        // DD-016: additive OR — preserve the base Extrude/Travel classification, never overwrite it.
+        const kind = ir.segments.kind;
+        for (let i = start; i < end; i++) kind[i] |= op.value;
+        continue;
+      }
       ir.segments[op.channel].fill(op.value, start, end);
       touched[op.channel] = true;
     }
@@ -152,6 +198,12 @@ export class BufferedAnnotationSink implements AnnotationSink {
     }
     if (this.filaments.length > 0) {
       metadata.filaments = [...(metadata.filaments ?? []), ...this.filaments];
+    }
+    if (this.filamentUsage !== null && metadata.filamentUsage === undefined) {
+      metadata.filamentUsage = this.filamentUsage;
+    }
+    if (this.printEstimate !== null && metadata.printEstimate === undefined) {
+      metadata.printEstimate = this.printEstimate;
     }
     if (this.thumbnails.length > 0) {
       metadata.thumbnails = [...(metadata.thumbnails ?? []), ...this.thumbnails];

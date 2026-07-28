@@ -32,6 +32,7 @@ import {
   useGcodePreview,
   type GcodePreviewHandle,
   type PreviewEvent,
+  type RendererMode,
   type UseGcodePreviewOptions
 } from './use-gcode-preview.js';
 
@@ -41,6 +42,13 @@ export interface GcodePreviewProps {
   /** The one prop needed in practice: bytes/File to parse. Changing it re-parses. */
   source?: GcodePreviewSource;
   parseOptions?: WireParseOptions;
+  /**
+   * DD-014 D5: which renderer backs the preview — `'3d'` (default, Three.js) or `'2d'` (the
+   * low-resource Canvas layer view). Three.js is loaded on demand, so `'2d'` never ships it.
+   */
+  renderer?: RendererMode;
+  /** 2D only (`renderer="2d"`): preceding "ghost" layers beneath the active one (default 1, floor 0). */
+  adjacentLayers?: number;
   /** Consumer-configured volume — wins over file-discovered geometry (DD-005 precedence). */
   buildVolume?: BuildVolumeDef | MachineGeometry;
   quality?: QualityMode | 'auto';
@@ -54,7 +62,11 @@ export interface GcodePreviewProps {
   layerRange?: [number, number] | null;
   /** Scrub cut (IR segment index); null shows everything up to the layer range. */
   scrub?: number | null;
+  /** Time-based scrub cut in ms of print time (#181); null clears it. */
+  scrubTime?: number | null;
   showTravel?: boolean;
+  /** DD-016 (#182): show slicer wipe moves. Default true; set false to hide the wipe chunk. */
+  showWipe?: boolean;
   /** DD-009 D1 (#148): opt-in retraction/deretraction markers. */
   showRetractions?: boolean;
   /** DD-006 live progress observation; null hides the overlay. */
@@ -84,12 +96,14 @@ function GcodePreviewImpl(props: GcodePreviewProps, ref: ForwardedRef<GcodePrevi
   const preview = useGcodePreview({
     createWorker: props.createWorker,
     renderer: {
+      mode: props.renderer,
       buildVolume: isMachine ? undefined : (props.buildVolume as BuildVolumeDef | undefined),
       quality: props.quality ?? 'auto',
       cameraMode: props.cameraMode ?? 'perspective',
       theme: props.theme,
       colorMode: props.colorMode,
       tube: props.tube,
+      adjacentLayers: props.adjacentLayers,
       ...props.rendererOptions
     },
     parseDefaults: props.parseOptions
@@ -145,7 +159,9 @@ function GcodePreviewImpl(props: GcodePreviewProps, ref: ForwardedRef<GcodePrevi
     source,
     layerRange,
     scrub,
+    scrubTime,
     showTravel,
+    showWipe,
     showRetractions,
     colorMode,
     quality,
@@ -165,8 +181,14 @@ function GcodePreviewImpl(props: GcodePreviewProps, ref: ForwardedRef<GcodePrevi
     preview.controls.setScrubPosition(scrub ?? null);
   }, [scrub]);
   useEffect(() => {
+    preview.controls.setScrubTime(scrubTime ?? null);
+  }, [scrubTime]);
+  useEffect(() => {
     preview.controls.setKindVisible('travel', showTravel ?? true);
   }, [showTravel]);
+  useEffect(() => {
+    preview.controls.setKindVisible('wipe', showWipe ?? true);
+  }, [showWipe]);
   useEffect(() => {
     preview.controls.setShowRetractions(showRetractions ?? false);
   }, [showRetractions]);

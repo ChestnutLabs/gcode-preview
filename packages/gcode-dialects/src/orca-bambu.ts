@@ -10,13 +10,17 @@
  */
 import { FeatureRole, type ToolpathIR } from '@chestnutlabs/toolpath-core';
 import type { AnnotationSink, DialectAdapter } from './contracts.js';
+import { parseFilamentTotals, parseHmsToSeconds } from './prusaslicer.js';
 import {
   ThumbnailCollector,
   applyMarkerRanges,
+  applyWipeRanges,
   bedFromPoints,
+  matchWipeComment,
   parseAreaPoints,
   parseKeyValue,
-  type RangeMarker
+  type RangeMarker,
+  type WipeMark
 } from './annotate.js';
 
 /** Orca/Bambu `; FEATURE:` names → DD-001 FeatureRole. */
@@ -43,6 +47,7 @@ const FEATURE_MAP: Record<string, number> = {
 interface OrcaState {
   features: RangeMarker[];
   objects: RangeMarker[];
+  wipes: WipeMark[];
   objectNames: Map<number, string>;
   bedPoints: string | null;
   bedSrcByte?: number;
@@ -58,7 +63,14 @@ const state = new WeakMap<AnnotationSink, OrcaState>();
 function stateFor(sink: AnnotationSink): OrcaState {
   let s = state.get(sink);
   if (s === undefined) {
-    s = { features: [], objects: [], objectNames: new Map(), bedPoints: null, thumbs: new ThumbnailCollector() };
+    s = {
+      features: [],
+      objects: [],
+      wipes: [],
+      objectNames: new Map(),
+      bedPoints: null,
+      thumbs: new ThumbnailCollector()
+    };
     state.set(sink, s);
   }
   return s;
@@ -103,10 +115,28 @@ export function orcaBambu(): DialectAdapter {
         s.objects.push({ srcByte, value: 0 }); // range terminator
         return;
       }
+      const wipe = matchWipeComment(comment);
+      if (wipe !== null) {
+        s.wipes.push({ srcByte, open: wipe === 'start' });
+        return;
+      }
       if (s.thumbs.isActive || trimmed.toLowerCase().startsWith('thumbnail')) {
         s.thumbs.feed(comment, sink);
         return;
       }
+      // Orca/Bambu print-time comments are colon-separated (`; total estimated time: 1h 2m 3s`).
+      const timeMatch = /^(?:total estimated time|model printing time)\s*:\s*(.+)$/i.exec(trimmed);
+      if (timeMatch !== null) {
+        const sec = parseHmsToSeconds(timeMatch[1]);
+        if (sec !== null) {
+          sink.setPrintEstimate({
+            seconds: sec,
+            source: { adapterId: 'orca-bambu', evidence: `; ${trimmed}`, srcByte }
+          });
+        }
+        return;
+      }
+      if (parseFilamentTotals(comment, srcByte, 'orca-bambu', sink)) return;
       const kv = parseKeyValue(comment);
       if (kv === null) return;
       if (kv.key === 'printable_area') {
@@ -132,6 +162,7 @@ export function orcaBambu(): DialectAdapter {
         for (const [value, name] of s.objectNames) sink.defineObject(value, name);
         sink.upgradeCapability('objects', 'known');
       }
+      if (applyWipeRanges(ir, s.wipes, sink) > 0) sink.upgradeCapability('wipeMoves', 'known');
       if (s.bedPoints !== null) {
         const points = parseAreaPoints(s.bedPoints);
         if (points !== null) {

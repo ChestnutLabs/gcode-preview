@@ -1,0 +1,23 @@
+{
+  "$schema": "https://typedoc.org/schema.json",
+  "entryPoints": ["manual-entry.ts"],
+  "tsconfig": "tsconfig.manual.json",
+  "readme": "../../docs/manual/index.md",
+  "projectDocuments": [
+    "../../docs/manual/adapters.md",
+    "../../docs/manual/recipes.md",
+    "../../docs/manual/concept-ir-capabilities.md",
+    "../../docs/manual/concept-workers.md",
+    "../../docs/manual/concept-dialects-containers.md",
+    "../../docs/manual/concept-progress-motion.md"
+  ],
+  "out": "../../docs-site",
+  "name": "Chestnut Labs G-code Preview",
+  "hideGenerator": true,
+  "highlightLanguages": ["typescript", "javascript", "tsx", "jsx", "json", "bash", "sh", "html", "css", "vue", "svelte"],
+  "navigationLinks": {
+    "API reference": "https://chestnutlabs.github.io/gcode-preview/api/",
+    "npm": "https://www.npmjs.com/package/@chestnutlabs/gcode-preview-element",
+    "GitHub": "https://github.com/ChestnutLabs/gcode-preview"
+  }
+}

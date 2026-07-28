@@ -25,7 +25,7 @@ export interface ChunkBuildOptions {
 }
 
 export interface GeometryChunk {
-  kind: 'extrude' | 'travel';
+  kind: 'extrude' | 'travel' | 'wipe';
   /** Inclusive layer range covered by this chunk. */
   layerStart: number;
   layerEnd: number;
@@ -94,13 +94,15 @@ export function buildChunks(ir: ToolpathIR, opts: ChunkBuildOptions = {}): Chunk
   // layer boundaries once the target is exceeded (layer-aligned chunking, §4.3).
   let pendingExtrude: number[] = [];
   let pendingTravel: number[] = [];
+  let pendingWipe: number[] = [];
   let chunkLayerStart = 0;
   let kept = 0;
 
   const flush = (layerEnd: number): void => {
     for (const [kind, list] of [
       ['extrude', pendingExtrude],
-      ['travel', pendingTravel]
+      ['travel', pendingTravel],
+      ['wipe', pendingWipe]
     ] as const) {
       if (list.length === 0) continue;
       const positions = new Float32Array(list.length * 6);
@@ -121,6 +123,7 @@ export function buildChunks(ir: ToolpathIR, opts: ChunkBuildOptions = {}): Chunk
     }
     pendingExtrude = [];
     pendingTravel = [];
+    pendingWipe = [];
     kept = 0;
   };
 
@@ -139,6 +142,12 @@ export function buildChunks(ir: ToolpathIR, opts: ChunkBuildOptions = {}): Chunk
           pendingExtrude.push(i);
           kept++;
         }
+      } else if ((seg.kind[i] & MoveKind.Wipe) !== 0) {
+        // Wipe moves (DD-016, #182) are their own toggleable chunk. Always kept — they're sparse
+        // (a few per bracket) and the whole point is to be able to SEE them, so they are not
+        // subject to travel decimation.
+        pendingWipe.push(i);
+        kept++;
       } else if (!travelHidden) {
         pendingTravel.push(i);
         kept++;

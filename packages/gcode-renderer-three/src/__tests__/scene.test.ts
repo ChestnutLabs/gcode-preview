@@ -7,7 +7,7 @@
  * incremental build, context-loss recovery, and disposal are all deterministic.
  */
 import { describe, expect, it } from 'vitest';
-import { Mesh, MeshLambertMaterial, type LineSegments } from 'three';
+import { Mesh, MeshBasicMaterial, MeshLambertMaterial, type LineLoop, type LineSegments } from 'three';
 import { MoveKind, ToolpathIRBuilder, type Confidence, type ToolpathIR } from '@chestnutlabs/toolpath-core';
 import {
   buildChunks,
@@ -260,6 +260,30 @@ describe('ToolpathRenderer clipping/scrub/visibility/coloring (phase 3)', () => 
     expect(travel.every((m) => m.visible)).toBe(true);
   });
 
+  it('setKindVisible(wipe) toggles only the wipe chunk, leaving extrude + travel (DD-016, #182)', () => {
+    const h = makeHarness();
+    const b = new ToolpathIRBuilder({ parserVersion: 'test', units: 'mm', unitsSource: 'known' });
+    const base = { x0: 0, y0: 0, z0: 0.2, x1: 1, y1: 0, z1: 0.2, tool: 0, layer: 0 };
+    b.addSegment({ ...base, e: 1, kind: MoveKind.Extrude, srcByte: 0 });
+    b.addSegment({ ...base, kind: MoveKind.Travel, srcByte: 10 });
+    b.addSegment({ ...base, kind: MoveKind.Travel | MoveKind.Wipe, srcByte: 20 });
+    h.renderer.setIR(b.finalize());
+    h.runTicks();
+
+    const byKind = (k: string) =>
+      h.renderer.chunkMeshes.filter((m) => (m.userData.chunk as { kind: string }).kind === k);
+    expect(byKind('wipe').length).toBeGreaterThan(0);
+    expect(byKind('extrude').length).toBeGreaterThan(0);
+
+    h.renderer.setKindVisible('wipe', false);
+    expect(byKind('wipe').every((m) => !m.visible)).toBe(true);
+    expect(byKind('extrude').every((m) => m.visible)).toBe(true);
+    expect(byKind('travel').every((m) => m.visible)).toBe(true);
+
+    h.renderer.setKindVisible('wipe', true);
+    expect(byKind('wipe').every((m) => m.visible)).toBe(true);
+  });
+
   it('clipping set during an in-flight incremental build applies to later-built chunks', () => {
     const h = makeHarness({ chunksPerTick: 1 });
     const ir = makeIR(6, 4, { travelPerLayer: 2 }); // extrude + travel chunks
@@ -332,6 +356,50 @@ describe('ToolpathRenderer clipping/scrub/visibility/coloring (phase 3)', () => 
     expect(minY).toBe(0);
     expect(maxX).toBe(220);
     expect(maxY).toBe(220);
+  });
+
+  it('bedSurface:solid adds a filled plate under the grid; default adds none (#185)', () => {
+    const bare = createBuildVolume({ x: 200, y: 200, z: 250 });
+    expect(bare.children.find((c) => c.name === 'bedSurface')).toBeUndefined();
+
+    const plated = createBuildVolume({ x: 200, y: 200, z: 250 }, { bedSurface: { mode: 'solid', color: 0x123456 } });
+    const plate = plated.children.find((c) => c.name === 'bedSurface') as Mesh | undefined;
+    expect(plate).toBeDefined();
+    // Unlit backdrop: never write depth (so a first layer at z≈0 is never occluded) and drawn first.
+    const mat = (plate as Mesh).material as MeshBasicMaterial;
+    expect(mat.depthWrite).toBe(false);
+    expect((plate as Mesh).renderOrder).toBe(-1);
+    // Plate spans the bed, seated just below z=0.
+    (plate as Mesh).geometry.computeBoundingBox();
+    const bb = (plate as Mesh).geometry.boundingBox!;
+    expect(bb.min.x).toBeCloseTo(0);
+    expect(bb.max.x).toBeCloseTo(200);
+    expect(bb.min.z).toBeLessThan(0);
+  });
+
+  it('excludedRegions render keep-out outlines above the plate (#185)', () => {
+    const volume = createBuildVolume(
+      {
+        x: 200,
+        y: 200,
+        z: 250,
+        excludedRegions: [
+          {
+            kind: 'rect',
+            points: [
+              { x: 10, y: 10 },
+              { x: 40, y: 40 }
+            ]
+          }
+        ]
+      },
+      { bedSurface: { mode: 'solid' } }
+    );
+    const zones = volume.children.filter((c) => c.name === 'excludedRegion');
+    expect(zones).toHaveLength(1);
+    // A rect keep-out expands to 4 corner vertices (a closed LineLoop).
+    const pos = (zones[0] as LineLoop).geometry.getAttribute('position');
+    expect(pos.count).toBe(4);
   });
 
   it('range + scrub updates stay within the 16 ms interaction budget at 100k segments', () => {

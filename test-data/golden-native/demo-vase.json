@@ -15,7 +15,13 @@
     "featureRoles": "unavailable",
     "objects": "unavailable",
     "retractions": "known",
-    "colorChanges": "unavailable"
+    "colorChanges": "unavailable",
+    "wipeMoves": "unavailable",
+    "seamMoves": "unavailable",
+    "extrusionMode": "known",
+    "positioningMode": "known",
+    "arcPlanes": "inferred",
+    "coordinateSystem": "inferred"
   },
   "warningCodes": [
     "layers-cleared-non-planar",

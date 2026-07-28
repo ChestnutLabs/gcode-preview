@@ -16,7 +16,8 @@ import {
   type GcodePreviewState,
   type ParseOutcome,
   type PreviewController,
-  type PreviewEvent
+  type PreviewEvent,
+  type RendererMode
 } from '@chestnutlabs/gcode-preview-core';
 import type { BuildVolumeDef, CameraMode, ColorMode, Theme, TubeOptions } from '@chestnutlabs/gcode-renderer-three';
 import type { MachineGeometry, MappedProgress, ProgressObservation } from '@chestnutlabs/toolpath-core';
@@ -32,7 +33,16 @@ export type ElementRendererOptions = Omit<
 type PreviewControllerRenderer = NonNullable<Parameters<typeof createPreviewController>[0]>['renderer'];
 
 /** Observed scalar/boolean/number attributes; rich options are property-only. */
-const OBSERVED = ['quality', 'camera-mode', 'show-travel', 'show-retractions', 'scrub', 'layer-range'] as const;
+const OBSERVED = [
+  'quality',
+  'camera-mode',
+  'show-travel',
+  'show-wipe',
+  'show-retractions',
+  'scrub',
+  'scrub-time',
+  'layer-range'
+] as const;
 
 /** The default tag name (DD-009 §4.5). */
 export const DEFAULT_TAG = 'gcode-preview';
@@ -137,6 +147,13 @@ export class GcodePreviewElement extends HTMLElement {
   set showTravel(v: boolean) {
     this.setAttribute('show-travel', v ? 'true' : 'false');
   }
+  /** DD-016 (#182): default true; only `show-wipe="false"` hides slicer wipe moves. */
+  get showWipe(): boolean {
+    return this.getAttribute('show-wipe') !== 'false';
+  }
+  set showWipe(v: boolean) {
+    this.setAttribute('show-wipe', v ? 'true' : 'false');
+  }
   /** Default false; only `show-retractions="true"` shows markers. */
   get showRetractions(): boolean {
     return this.getAttribute('show-retractions') === 'true';
@@ -150,6 +167,14 @@ export class GcodePreviewElement extends HTMLElement {
   }
   set scrub(v: number | null) {
     this.reflect('scrub', v);
+  }
+  /** Time-based scrub cut in ms of print time (#181). */
+  get scrubTime(): number | null {
+    const a = this.getAttribute('scrub-time');
+    return a === null ? null : Number(a);
+  }
+  set scrubTime(v: number | null) {
+    this.reflect('scrub-time', v);
   }
   get layerRange(): [number, number] | null {
     return parseLayerRange(this.getAttribute('layer-range'));
@@ -200,12 +225,15 @@ export class GcodePreviewElement extends HTMLElement {
     this.controller = createPreviewController({
       createWorker: this._createWorker,
       renderer: {
+        // DD-014 D5: construction-time renderer selection (mode switching post-mount is out of scope).
+        mode: (this.getAttribute('renderer') as RendererMode | null) ?? undefined,
         buildVolume: isMachine ? undefined : (this._buildVolume as BuildVolumeDef | undefined),
         quality: (this.getAttribute('quality') as 'auto' | 'lines' | 'tubes' | null) ?? 'auto',
         cameraMode: (this.getAttribute('camera-mode') as CameraMode | null) ?? undefined,
         colorMode: this._colorMode,
         tube: this._tube,
         theme: this._theme,
+        adjacentLayers: this.hasAttribute('adjacent-layers') ? Number(this.getAttribute('adjacent-layers')) : undefined,
         ...this._rendererOptions
       },
       parseDefaults: this._parseOptions
@@ -237,11 +265,17 @@ export class GcodePreviewElement extends HTMLElement {
       case 'show-travel':
         c.setKindVisible('travel', value !== 'false');
         break;
+      case 'show-wipe':
+        c.setKindVisible('wipe', value !== 'false');
+        break;
       case 'show-retractions':
         c.setShowRetractions(value === 'true');
         break;
       case 'scrub':
         c.setScrubPosition(value === null ? null : Number(value));
+        break;
+      case 'scrub-time':
+        c.setScrubTime(value === null ? null : Number(value));
         break;
       case 'layer-range': {
         const r = parseLayerRange(value);
@@ -259,11 +293,13 @@ export class GcodePreviewElement extends HTMLElement {
   private applyRuntimeState(): void {
     const c = this.requireController().controls;
     c.setKindVisible('travel', this.showTravel);
+    c.setKindVisible('wipe', this.showWipe);
     c.setShowRetractions(this.showRetractions);
     const r = this.layerRange;
     if (r === null) c.setLayerRange(0, Number.POSITIVE_INFINITY);
     else c.setLayerRange(r[0], r[1]);
     c.setScrubPosition(this.scrub);
+    c.setScrubTime(this.scrubTime);
     this.applyProgress();
   }
 

@@ -18,33 +18,36 @@ import {
   type SessionOptions,
   type WireParseOptions
 } from '@chestnutlabs/gcode-parser';
-import {
-  ToolpathRenderer,
-  type BuildVolumeDef,
-  type CameraMode,
-  type ColorMode,
-  type GLRendererLike,
-  type ProgressPresentationMode,
-  type QualityMode,
-  type RenderTargetCanvas,
-  type RendererEvent,
-  type Theme,
-  type TubeOptions
+import type {
+  BuildVolumeDef,
+  CameraMode,
+  ColorMode,
+  GLRendererLike,
+  ProgressPresentationMode,
+  QualityMode,
+  RenderTargetCanvas,
+  Theme,
+  TubeOptions
 } from '@chestnutlabs/gcode-renderer-three';
+import { LayerView2DRenderer } from './renderer-2d-adapter.js';
+import type { MoveKindToggle, PreviewRenderer, PreviewRendererEvent, RendererMode } from './renderer-interface.js';
 import {
   createProgressMapper,
+  computeToolpathTime,
+  segmentsCompletedAtTime,
   type Confidence,
   type DialectMetadata,
   type MachineGeometry,
   type MappedProgress,
   type ProgressMapper,
   type ProgressObservation,
-  type ToolpathIR
+  type ToolpathIR,
+  type ToolpathTime
 } from '@chestnutlabs/toolpath-core';
 
 /** Session/renderer events, re-emitted, plus the controller's own lifecycle events. */
 export type PreviewEvent =
-  | RendererEvent
+  | PreviewRendererEvent
   | { type: 'parse-started'; bytes: number }
   | { type: 'parse-progress'; progress: ParseProgress }
   | { type: 'parse-complete'; segments: number; layers: number; complete: boolean }
@@ -61,15 +64,25 @@ export interface PreviewControllerOptions {
   /** Custom worker factory (DD-005 slim/custom entries). Default: the batteries worker. */
   createWorker?: SessionOptions['worker'];
   renderer?: {
+    /**
+     * Renderer implementation (DD-014 D5): `'3d'` (default) is the Three.js renderer; `'2d'` is the
+     * low-resource Canvas 2D layer view. The 3D renderer is loaded on demand, so a `'2d'` consumer's
+     * bundle never pulls Three.js. 3D-only options below are ignored (and disclosed) in `'2d'`.
+     */
+    mode?: RendererMode;
     buildVolume?: BuildVolumeDef;
     quality?: QualityMode | 'auto';
-    /** Camera projection (#150, DD-009 D3); default 'perspective'. */
+    /** Camera projection (#150, DD-009 D3); default 'perspective'. 3D only. */
     cameraMode?: CameraMode;
     colorMode?: ColorMode;
     tube?: TubeOptions;
-    /** Bounded declarative theme (#153, DD-009 D4). */
+    /** Bounded declarative theme (#153, DD-009 D4). 3D only. */
     theme?: Theme;
-    /** Advanced/test injectables — pass-throughs of the renderer's own contract. */
+    /** 2D only: preceding "ghost" layers drawn beneath the active one (default 1, floor 0). */
+    adjacentLayers?: number;
+    /** 2D only: ghost-layer opacity (default 0.25). */
+    ghostOpacity?: number;
+    /** Advanced/test injectables — pass-throughs of the renderer's own contract (3D only). */
     createRenderer?: (canvas: RenderTargetCanvas) => GLRendererLike;
     scheduleFrame?: (cb: () => void) => void;
     chunksPerTick?: number;
@@ -103,13 +116,25 @@ export interface GcodePreviewState {
   segmentCount: number;
   /** User-presentable decimation/travel disclosure (empty when rendering everything). */
   disclosure: string;
+  /**
+   * Estimated total print time in ms (#181), or null before a parse. `timeEstimateSource` says whether
+   * it's the slicer's own estimate (`'slicer'`, trustworthy) or a kinematic approximation
+   * (`'kinematic'`, constant-velocity, slightly low — disclose when shown).
+   */
+  totalTimeMs: number | null;
+  timeEstimateSource: 'slicer' | 'kinematic' | null;
   error: { code: string; message: string } | null;
 }
 
 export interface GcodePreviewControls {
   setLayerRange(startLayer: number, endLayer: number): void;
   setScrubPosition(segIndex: number | null): void;
-  setKindVisible(kind: 'extrude' | 'travel', visible: boolean): void;
+  /**
+   * Time-based scrub (#181): cut the toolpath at print time `ms` (kinematic axis). null clears the
+   * cut. Resolves to a segment-index scrub; no-op before a successful parse.
+   */
+  setScrubTime(ms: number | null): void;
+  setKindVisible(kind: MoveKindToggle, visible: boolean): void;
   /** Opt-in retraction/deretraction markers (DD-009 D1, #148). Off by default. */
   setShowRetractions(visible: boolean): void;
   setColorMode(mode: ColorMode): boolean;
@@ -138,8 +163,12 @@ export interface PreviewController {
   /** Subscribe to snapshot replacements. Returns the unsubscriber. */
   onStateChange(cb: (state: GcodePreviewState) => void): () => void;
   controls: GcodePreviewControls;
-  /** Escape hatches — the neutral objects themselves (advanced use). */
-  raw: { session: GcodeParseSession; renderer: () => ToolpathRenderer | null };
+  /**
+   * Escape hatches — the neutral objects themselves (advanced use). `renderer()` returns the active
+   * {@link PreviewRenderer} (the 3D `ToolpathRenderer` or the 2D `LayerView2DRenderer`), or null
+   * before bind / during the 3D renderer's on-demand load.
+   */
+  raw: { session: GcodeParseSession; renderer: () => PreviewRenderer | null };
   onEvent(cb: (e: PreviewEvent) => void): () => void;
   dispose(): void;
 }
@@ -154,6 +183,8 @@ const INITIAL_STATE: GcodePreviewState = {
   layerCount: 0,
   segmentCount: 0,
   disclosure: '',
+  totalTimeMs: null,
+  timeEstimateSource: null,
   error: null
 };
 
@@ -171,9 +202,10 @@ export function createPreviewController(options: PreviewControllerOptions = {}):
 
   const session = new GcodeParseSession(options.createWorker === undefined ? {} : { worker: options.createWorker });
   // Non-reactive engine state: plain lets — snapshots carry summaries only.
-  let renderer: ToolpathRenderer | null = null;
+  let renderer: PreviewRenderer | null = null;
   let unbindRendererEvents: (() => void) | null = null;
   let lastIR: ToolpathIR | null = null;
+  let timeAxis: ToolpathTime | null = null;
   let lastMachine: MachineGeometry | undefined;
   let mapper: ProgressMapper | null = null;
   let consumerVolumeSet = options.renderer?.buildVolume !== undefined;
@@ -181,13 +213,22 @@ export function createPreviewController(options: PreviewControllerOptions = {}):
   let resizeObserver: { disconnect(): void } | null = null;
   let windowResize: (() => void) | null = null;
   let disposed = false;
+  // The 3D renderer is loaded on demand (DD-014: a 2D-only bundle never pulls Three.js), so binding
+  // can resolve asynchronously. `bindGen` invalidates a slow load superseded by rebind/dispose;
+  // `pendingOps` replays control calls made before the renderer is ready.
+  let bindGen = 0;
+  const pendingOps: Array<(r: PreviewRenderer) => void> = [];
+  const withRenderer = (fn: (r: PreviewRenderer) => void): void => {
+    if (renderer !== null) fn(renderer);
+    else pendingOps.push(fn);
+  };
 
   const listeners = new Set<(e: PreviewEvent) => void>();
   const emit = (e: PreviewEvent): void => {
     for (const cb of listeners) cb(e);
   };
 
-  function onRendererEvent(e: RendererEvent): void {
+  function onRendererEvent(e: PreviewRendererEvent): void {
     if (e.type === 'buildComplete') {
       mutate({
         activeQuality: e.quality,
@@ -226,27 +267,10 @@ export function createPreviewController(options: PreviewControllerOptions = {}):
     renderer?.resize(w, h);
   }
 
-  function bindCanvas(canvas: HTMLCanvasElement | null): void {
-    if (disposed) return;
-    if (canvas === null) {
-      disposeRenderer();
-      return;
-    }
-    disposeRenderer();
-    const r = options.renderer ?? {};
-    renderer = new ToolpathRenderer({
-      canvas,
-      buildVolume: r.buildVolume,
-      quality: r.quality ?? 'auto',
-      cameraMode: r.cameraMode,
-      colorMode: r.colorMode,
-      tube: r.tube,
-      theme: r.theme,
-      createRenderer: r.createRenderer,
-      scheduleFrame: r.scheduleFrame,
-      chunksPerTick: r.chunksPerTick
-    });
-    unbindRendererEvents = renderer.onEvent(onRendererEvent);
+  /** Wire a freshly-constructed renderer: events, sizing, replay of IR + queued control ops. */
+  function applyRendererReady(canvas: HTMLCanvasElement, r: PreviewRenderer): void {
+    renderer = r;
+    unbindRendererEvents = r.onEvent(onRendererEvent);
     // Sizing (§4.2): explicit initial fit; ResizeObserver where available; window-resize
     // fallback because observers may never fire in embedded panes.
     fitToCanvas(canvas);
@@ -260,9 +284,58 @@ export function createPreviewController(options: PreviewControllerOptions = {}):
       window.addEventListener('resize', windowResize);
     }
     if (lastIR !== null) {
-      renderer.setIR(lastIR);
-      mutate({ layerCount: renderer.layerCount, segmentCount: renderer.segmentCount });
+      r.setIR(lastIR);
+      // DD-005 consumer-wins: only auto-apply file geometry when the consumer set no volume.
+      if (lastMachine !== undefined && !consumerVolumeSet) r.setBuildVolume(lastMachine);
     }
+    // Replay control calls made during the (async) load, in order.
+    for (const op of pendingOps) op(r);
+    pendingOps.length = 0;
+    if (lastIR !== null) mutate({ layerCount: r.layerCount, segmentCount: r.segmentCount });
+  }
+
+  function bindCanvas(canvas: HTMLCanvasElement | null): void {
+    if (disposed) return;
+    disposeRenderer();
+    if (canvas === null) return;
+    const gen = ++bindGen;
+    const r = options.renderer ?? {};
+    if ((r.mode ?? '3d') === '2d') {
+      // The 2D renderer is a static (three-free) import — construct synchronously.
+      applyRendererReady(
+        canvas,
+        new LayerView2DRenderer(canvas, {
+          colorMode: r.colorMode,
+          adjacentLayers: r.adjacentLayers,
+          ghostOpacity: r.ghostOpacity
+        })
+      );
+      return;
+    }
+    // 3D: load Three.js on demand so a 2D-only bundle never ships it (DD-014 D4).
+    import('@chestnutlabs/gcode-renderer-three')
+      .then((mod) => {
+        if (disposed || gen !== bindGen) return; // superseded by a rebind/dispose during the load
+        const r3d: PreviewRenderer = new mod.ToolpathRenderer({
+          canvas,
+          buildVolume: r.buildVolume,
+          quality: r.quality ?? 'auto',
+          cameraMode: r.cameraMode,
+          colorMode: r.colorMode,
+          tube: r.tube,
+          theme: r.theme,
+          createRenderer: r.createRenderer,
+          scheduleFrame: r.scheduleFrame,
+          chunksPerTick: r.chunksPerTick
+        });
+        applyRendererReady(canvas, r3d);
+      })
+      .catch((err: unknown) => {
+        if (disposed || gen !== bindGen) return;
+        const message = err instanceof Error ? err.message : String(err);
+        mutate({ error: { code: 'E_RENDERER_LOAD', message } });
+        emit({ type: 'error', code: 'E_RENDERER_LOAD', message });
+      });
   }
 
   const offProgress = session.onProgress((p) => {
@@ -294,6 +367,12 @@ export function createPreviewController(options: PreviewControllerOptions = {}):
       lastIR = result.ir;
       lastMachine = result.metadata?.machine;
       mapper = createProgressMapper(result.ir, { fileSizeBytes: bytes });
+      // Time axis (#181): prefer the slicer's own estimate (#183) for the total; the kinematic axis
+      // always backs time-scrub. `hasUnknownFeedrate` means the kinematic total is a lower bound.
+      timeAxis = computeToolpathTime(result.ir);
+      const slicerSeconds = result.metadata?.printEstimate?.seconds;
+      const totalTimeMs = slicerSeconds !== undefined ? slicerSeconds * 1000 : timeAxis.totalMs;
+      const timeEstimateSource: 'slicer' | 'kinematic' = slicerSeconds !== undefined ? 'slicer' : 'kinematic';
       const counts =
         renderer !== null
           ? { layerCount: renderer.layerCount, segmentCount: renderer.segmentCount }
@@ -310,6 +389,8 @@ export function createPreviewController(options: PreviewControllerOptions = {}):
         },
         metadata: result.metadata,
         presentation: 'hidden',
+        totalTimeMs,
+        timeEstimateSource,
         ...(renderer !== null ? { layerCount: renderer.layerCount, segmentCount: renderer.segmentCount } : counts)
       });
       // DD-005 consumer-wins precedence: a consumer-configured volume blocks auto-apply.
@@ -341,19 +422,31 @@ export function createPreviewController(options: PreviewControllerOptions = {}):
   }
 
   const controls: GcodePreviewControls = {
-    setLayerRange: (a, b) => renderer?.setLayerRange(a, b),
-    setScrubPosition: (s) => renderer?.setScrubPosition(s),
-    setKindVisible: (k, v) => renderer?.setKindVisible(k, v),
-    setShowRetractions: (v) => renderer?.setShowRetractions(v),
-    setColorMode: (m) => renderer?.setColorMode(m) ?? false,
-    setQuality: (q) => renderer?.setQuality(q),
-    setCameraMode: (m) => renderer?.setCameraMode(m),
-    setTheme: (t) => renderer?.setTheme(t),
+    // Controls queue when the (async) renderer isn't ready yet, then replay in order on bind.
+    setLayerRange: (a, b) => withRenderer((r) => r.setLayerRange(a, b)),
+    setScrubPosition: (s) => withRenderer((r) => r.setScrubPosition(s)),
+    setScrubTime: (ms) => {
+      // Resolve a print time to a segment-index scrub cut via the kinematic axis (#181).
+      const seg = ms === null || timeAxis === null ? null : segmentsCompletedAtTime(timeAxis.cumulativeMs, ms);
+      withRenderer((r) => r.setScrubPosition(seg));
+    },
+    setKindVisible: (k, v) => withRenderer((r) => r.setKindVisible(k, v)),
+    setShowRetractions: (v) => withRenderer((r) => r.setShowRetractions(v)),
+    // Availability is IR/renderer-dependent; before the renderer is ready we optimistically queue
+    // and report true (the mode applies once bound). Callers can re-check after `parse-complete`.
+    setColorMode: (m) => {
+      if (renderer !== null) return renderer.setColorMode(m);
+      pendingOps.push((r) => r.setColorMode(m));
+      return true;
+    },
+    setQuality: (q) => withRenderer((r) => r.setQuality(q)),
+    setCameraMode: (m) => withRenderer((r) => r.setCameraMode(m)),
+    setTheme: (t) => withRenderer((r) => r.setTheme(t)),
     setBuildVolume: (def) => {
       consumerVolumeSet = true;
-      renderer?.setBuildVolume(def);
+      withRenderer((r) => r.setBuildVolume(def));
     },
-    frame: () => renderer?.frame()
+    frame: () => withRenderer((r) => r.frame())
   };
 
   function dispose(): void {
@@ -364,7 +457,9 @@ export function createPreviewController(options: PreviewControllerOptions = {}):
     offPartial();
     session.dispose();
     disposeRenderer();
+    pendingOps.length = 0;
     lastIR = null;
+    timeAxis = null;
     mapper = null;
     listeners.clear();
     stateListeners.clear();

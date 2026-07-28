@@ -1,6 +1,6 @@
 {
   "name": "@chestnutlabs/gcode-containers",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Safe, bounded, in-memory container extraction for sliced G-code (.gcode.3mf) — DD-005 §4.4/§7. Never writes files, never fetches, zero dependencies.",
   "keywords": [
     "gcode",
@@ -42,6 +42,6 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@chestnutlabs/toolpath-core": "0.2.0"
+    "@chestnutlabs/toolpath-core": "0.3.0"
   }
 }

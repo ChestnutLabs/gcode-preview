@@ -37,8 +37,10 @@ import {
   PerspectiveCamera,
   Points,
   PointsMaterial,
+  Raycaster,
   Scene,
   SphereGeometry,
+  Vector2,
   Vector3,
   WebGLRenderer
 } from 'three';
@@ -139,8 +141,15 @@ const DEFAULT_COLOR: ColorMode = { mode: 'single', color: [0.9, 0.4, 0.7] };
 /** Discovered machine geometry → renderable volume (bounding volume for circular/polygon beds, v1). */
 export function machineToVolume(m: MachineGeometry): BuildVolumeDef {
   const bed = m.bed;
+  const excludedRegions = m.excludedRegions;
   if (bed.kind === 'rect') {
-    return { x: bed.max.x - bed.min.x, y: bed.max.y - bed.min.y, z: m.heightMm ?? 250, min: { ...bed.min } };
+    return {
+      x: bed.max.x - bed.min.x,
+      y: bed.max.y - bed.min.y,
+      z: m.heightMm ?? 250,
+      min: { ...bed.min },
+      excludedRegions
+    };
   }
   if (bed.kind === 'circular') {
     const r = bed.diameter / 2;
@@ -148,7 +157,8 @@ export function machineToVolume(m: MachineGeometry): BuildVolumeDef {
       x: bed.diameter,
       y: bed.diameter,
       z: m.heightMm ?? 250,
-      min: { x: bed.center.x - r, y: bed.center.y - r }
+      min: { x: bed.center.x - r, y: bed.center.y - r },
+      excludedRegions
     };
   }
   let minX = Infinity;
@@ -161,7 +171,7 @@ export function machineToVolume(m: MachineGeometry): BuildVolumeDef {
     maxX = Math.max(maxX, p.x);
     maxY = Math.max(maxY, p.y);
   }
-  return { x: maxX - minX, y: maxY - minY, z: m.heightMm ?? 250, min: { x: minX, y: minY } };
+  return { x: maxX - minX, y: maxY - minY, z: m.heightMm ?? 250, min: { x: minX, y: minY }, excludedRegions };
 }
 
 /** True for a real DOM canvas (has DOM-only members OffscreenCanvas lacks). */
@@ -173,6 +183,21 @@ function isHtmlCanvas(c: RenderTargetCanvas): c is HTMLCanvasElement {
 const TICK_BUDGET_MS = 8;
 /** Tubes chunk target: ~2k segments keeps a single tube-chunk build under the stall budget. */
 const TUBES_CHUNK_TARGET = 2048;
+
+/**
+ * Map a raycast hit on a toolpath chunk mesh — identified by its hit vertex index — back to the IR
+ * segment index (#184, the "click a segment → source line" half). Lines mode has 2 vertices per
+ * segment; tube meshes carry a `vertexSegment` table (vertex → in-chunk segment). Returns null when
+ * the mesh isn't a pickable chunk or the index is out of range. Pure — testable without a GL context.
+ */
+export function resolveHitSegment(mesh: LineSegments | Mesh, vertexIndex: number): number | null {
+  const chunk = mesh.userData.chunk as GeometryChunk | undefined;
+  if (chunk === undefined) return null;
+  const vertexSegment = mesh.userData.vertexSegment as Uint32Array | undefined;
+  const inChunk = vertexSegment !== undefined ? vertexSegment[vertexIndex] : Math.floor(vertexIndex / 2);
+  if (inChunk === undefined || inChunk < 0 || inChunk >= chunk.count) return null;
+  return chunk.segIndices[inChunk];
+}
 
 export class ToolpathRenderer {
   private readonly canvas: RenderTargetCanvas;
@@ -204,6 +229,8 @@ export class ToolpathRenderer {
   private controls: OrbitControls | null = null;
 
   private ir: ToolpathIR | null = null;
+  private readonly raycaster = new Raycaster();
+  private readonly pointer = new Vector2();
   private buildResult: ChunkBuildResult | null = null;
   private pendingChunks: GeometryChunk[] = [];
   private builtCount = 0;
@@ -219,7 +246,7 @@ export class ToolpathRenderer {
   private startLayer = 0;
   private endLayer = Infinity;
   private scrubSegIndex: number | null = null;
-  private kindVisible: Record<GeometryChunk['kind'], boolean> = { extrude: true, travel: true };
+  private kindVisible: Record<GeometryChunk['kind'], boolean> = { extrude: true, travel: true, wipe: true };
   // Live-progress overlay state (DD-006 §4.5, phase 3): completed cut + ghost + marker/band.
   private progress: MappedProgress | null = null;
   private presentationMode: ProgressPresentationMode = 'hidden';
@@ -622,6 +649,33 @@ export class ToolpathRenderer {
   }
 
   /**
+   * Pick the IR segment under a pointer, or null (#184 — click a segment → its G-code source line via
+   * `sourceLineOfSegment` in `@chestnutlabs/toolpath-core`). `ndcX`/`ndcY` are normalized device coords (each in [-1, 1]); a
+   * consumer converts a canvas click with `(x/w)*2-1`, `-(y/h)*2+1`. `threshold` is the world-space
+   * line hit radius — auto-derived from the model size when omitted. Lines mode; tube meshes resolve
+   * when they carry a vertex→segment table.
+   */
+  pickSegment(ndcX: number, ndcY: number, threshold?: number): number | null {
+    if (this.chunkMeshes.length === 0) return null;
+    this.pointer.set(ndcX, ndcY);
+    this.raycaster.setFromCamera(this.pointer, this.activeCamera);
+    this.raycaster.params.Line.threshold = threshold ?? this.pickThreshold();
+    for (const hit of this.raycaster.intersectObjects(this.chunkMeshes, false)) {
+      if (hit.index === undefined) continue;
+      const seg = resolveHitSegment(hit.object as LineSegments, hit.index);
+      if (seg !== null) return seg;
+    }
+    return null;
+  }
+
+  /** Forgiving click radius (~0.5% of the model diagonal) that scales with model size. */
+  private pickThreshold(): number {
+    const b = this.ir?.bounds;
+    if (b === undefined) return 0.5;
+    return Math.max(0.2, 0.005 * Math.hypot(b.max.x - b.min.x, b.max.y - b.min.y, b.max.z - b.min.z));
+  }
+
+  /**
    * Clip rendering to an inclusive layer range (§4.5). Draw-range trims on the
    * existing chunk geometry only — no rebuild, no new allocations.
    */
@@ -750,6 +804,23 @@ export class ToolpathRenderer {
     }
     if (mode === 'colorChange') {
       const conf = this.ir?.header.capabilities['colorChanges'];
+      return conf !== undefined && conf !== 'unavailable';
+    }
+    if (mode === 'object') {
+      // Color-by-object needs the object channel populated (#178) — M486/EXCLUDE_OBJECT files.
+      const conf = this.ir?.header.capabilities['objects'];
+      return conf !== undefined && conf !== 'unavailable';
+    }
+    if (mode === 'feedrate') {
+      // Color-by-speed needs known feedrates (#177) — always populated by the parser, but honor a
+      // consumer/adapter that reports it unavailable rather than fabricating a speed heatmap.
+      const conf = this.ir?.header.capabilities['feedrate'];
+      return conf !== 'unavailable';
+    }
+    if (mode === 'layerHeight') {
+      // Color-by-layer-height needs a real planar layer table (#179); a non-planar/CNC IR
+      // (`layers: 'unavailable'`) collapses every segment to one layer, so the mode is not meaningful.
+      const conf = this.ir?.header.capabilities['layers'];
       return conf !== undefined && conf !== 'unavailable';
     }
     return true;
@@ -1025,7 +1096,7 @@ export class ToolpathRenderer {
       this.emit({
         type: 'error',
         code: 'E_COLOR_MODE_UNAVAILABLE',
-        message: `color mode '${mode.mode}' is unavailable: IR capability featureRoles is missing or 'unavailable'`
+        message: `color mode '${mode.mode}' is unavailable: the IR does not carry the required capability ('unavailable' or missing)`
       });
       return false;
     }
@@ -1055,7 +1126,13 @@ export class ToolpathRenderer {
   /** Grid/box styling for the build volume from the current theme (#153). */
   private volumeStyle(): BuildVolumeStyle {
     const t = this.resolvedTheme;
-    return { gridColor: t.gridColor, gridOpacity: t.gridOpacity, boxColor: t.bedColor, boxOpacity: t.bedOpacity };
+    return {
+      gridColor: t.gridColor,
+      gridOpacity: t.gridOpacity,
+      boxColor: t.bedColor,
+      boxOpacity: t.bedOpacity,
+      bedSurface: t.bedSurface
+    };
   }
 
   /** Set (or clear) the scene background from the theme. Null leaves three's default. */

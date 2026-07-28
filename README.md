@@ -1,14 +1,16 @@
 # Chestnut Labs G-code Preview
 
-A worker-based, cross-vendor **G-code toolpath stack** for the browser: parse `.gcode` and
-`.gcode.3mf` off the main thread, normalize them into a versioned intermediate representation
-(`ToolpathIR`), and render an interactive Three.js preview — with first-class **Vue, React, and
-Svelte** integrations that are thin adapters over one shared, framework-neutral engine.
+A worker-based, cross-vendor **G-code toolpath stack** for the browser: parse `.gcode`,
+`.gcode.3mf`, and Prusa binary `.bgcode` off the main thread, normalize them into a versioned
+intermediate representation (`ToolpathIR`), and render an interactive Three.js (or low-resource
+Canvas 2D) preview — with first-class **Vue, React, and Svelte** integrations that are thin adapters
+over one shared, framework-neutral engine.
 
-> **Status: pre-release.** The stack is complete and consumable (E0–E6 of the
-> [master plan](docs/00_PROJECT_MASTER_PLAN.md) are closed); the first published line, `v0.1.0`,
-> ships at the end of the current release epic. Until then, consume via `npm pack` tarballs — see
-> *Consuming before the first release* below.
+> **Status: published.** Thirteen `@chestnutlabs/*` packages are on npm (latest **`v0.3.0`**,
+> lockstep-versioned with npm provenance). E0–E11 of the
+> [master plan](docs/00_PROJECT_MASTER_PLAN.md) are closed; `v0.3.0` adds the low-resource Canvas 2D
+> renderer, expanded color modes, wipe/seam visibility, time-based scrub, and binary G-code
+> (`.bgcode`) decode. Install from npm — see *Quick start* below.
 
 ![3DBenchy rendered as tubes with feature coloring in the showcase viewer](docs/media/viewer-benchy-tubes.png)
 
@@ -22,11 +24,19 @@ Svelte** integrations that are thin adapters over one shared, framework-neutral 
   fabricate what it cannot know.
 - **`.gcode.3mf` container support** — zero-dependency, bounded ZIP extraction with multi-plate
   selection, hardened against adversarial archives.
+- **Binary G-code (`.bgcode`) decode** — Prusa's binary container (heatshrink / DEFLATE / MeatPack
+  codecs) decoded to plain G-code through the same pipeline, byte-for-byte equivalent to the
+  `.gcode` original.
 - **A versioned neutral IR** (`ToolpathIR`) — structure-of-arrays geometry + metadata + source
   index; the seam between parsing and everything else.
 - **A Three.js renderer** — layer chunks with decimation disclosure, layer-range clip and
   segment-level scrub, tube or line geometry with automatic quality fallback, per-file build
   plates, WebGL context-loss recovery.
+- **A low-resource Canvas 2D renderer** — an optional `renderer: '2d'` layer view for constrained
+  environments, with adjacent "ghost" layers and its own progress mapping (no WebGL required).
+- **Rich toolpath coloring** — by feature type, move speed, object, or per-layer height, plus
+  toggleable wipe/seam moves; time-based scrub with a print-time estimate; and a source-line ↔
+  segment debugger mapping.
 - **Honest live progress** (for printer telemetry) — a normalized `ProgressObservation` contract
   mapped onto the toolpath with tiered confidence: a precise cut + marker when the source position
   is known, an uncertainty band when it is approximated, stale-signal handling, and user scrub
@@ -48,7 +58,10 @@ Svelte** integrations that are thin adapters over one shared, framework-neutral 
 | [`@chestnutlabs/gcode-parser`](packages/gcode-parser) | Worker parse core + session client (streaming, limits, workers) |
 | [`@chestnutlabs/gcode-dialects`](packages/gcode-dialects) | Slicer/firmware dialect annotators |
 | [`@chestnutlabs/gcode-containers`](packages/gcode-containers) | `.gcode.3mf` / ZIP container adapters |
+| [`@chestnutlabs/gcode-bgcode`](packages/gcode-bgcode) | Prusa binary G-code (`.bgcode`) decode container adapter |
 | [`@chestnutlabs/gcode-renderer-three`](packages/gcode-renderer-three) | Three.js toolpath renderer (peer: `three`) |
+| [`@chestnutlabs/gcode-renderer-2d`](packages/gcode-renderer-2d) | Low-resource Canvas 2D layer renderer (no WebGL) |
+| [`@chestnutlabs/gcode-colors`](packages/gcode-colors) | Shared color models (feature / speed / object / layer-height) |
 | [`@chestnutlabs/gcode-preview-core`](packages/gcode-preview-core) | Framework-neutral preview controller + portable behavioral suite |
 | [`@chestnutlabs/gcode-preview-vue`](packages/gcode-preview-vue) | Vue 3 component + `useGcodePreview()` composable |
 | [`@chestnutlabs/gcode-preview-react`](packages/gcode-preview-react) | React component + `useGcodePreview()` hook |
@@ -142,8 +155,9 @@ thin path; the full viewer is reachable without switching APIs.
   `parseOptions.plate`).
 - **Dialects:** PrusaSlicer, OrcaSlicer/Bambu, Cura, Klipper, Marlin, RepRap-flavor — see the
   evidence-dated [compatibility matrix](docs/compatibility/dialects-and-containers.md).
-- **Motion commands:** which position-affecting G/M-codes are honored (and the known
-  inherited gaps, e.g. `M82` absolute extrusion) — see
+- **Motion commands:** which position-affecting G/M-codes are honored — absolute/relative
+  positioning (`G90`/`G91`), extruder mode (`M82`/`M83`), and the `G92` E-datum are modeled
+  (E10 phase 1); arc planes (`G17`–`G19`) and work-coordinate systems are still in progress — see
   [G-code motion coverage](docs/compatibility/gcode-motion-coverage.md).
 - **Build volume:** per-file discovered bed geometry with consumer-wins precedence (your
   configured plate is never silently overridden; discovery is emitted instead).
@@ -165,20 +179,16 @@ thin path; the full viewer is reachable without switching APIs.
 - `tools/example-react`, `tools/example-svelte` — complete Vite apps per framework, run the same
   way. All three apps consume the packages exactly as an external consumer would.
 
-## Consuming before the first release
-
-Until `v0.1.0` is on npm, consume via tarballs: build dependency-ordered, `npm pack` each package,
-and install with `file:` references — `tools/consumer-vue/run.mjs` is a working, CI-exercised
-implementation of exactly that recipe.
-
 ## Project status & governance
 
 Docs-first: every architecture-sensitive epic passes a Design Document gate before
 implementation. The [master plan](docs/00_PROJECT_MASTER_PLAN.md) controls direction; the
 [docs index](docs/README.md) tracks epic status; accepted designs live in
-[`docs/design/`](docs/design). Current state: E0–E6 closed and accepted (parser, dialects,
-containers, renderer, live progress, multi-framework integration); E7 (release) is in progress —
-versioning, publication, container fuzzing, and a headless still-render entry point land there.
+[`docs/design/`](docs/design). Current state: E0–E9 closed and accepted (parser, dialects,
+containers, renderer, live progress, multi-framework integration, the `v0.1.0` release, and
+`v0.2.0`'s toolpath annotations + renderer options); E10 (motion-model correctness) is in
+progress — its phase 1 (`M82`/`M83`, `G90`/`G91`, the `G92` E-datum) has shipped, with arc
+planes and coordinate systems to follow.
 
 Contributions: see [CONTRIBUTING.md](CONTRIBUTING.md) ·
 security policy: [SECURITY.md](SECURITY.md).

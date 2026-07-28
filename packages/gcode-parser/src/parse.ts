@@ -79,6 +79,13 @@ export interface ParseOptions {
   /** Layer-detection tolerance (inherited default 0.05). */
   minLayerThreshold?: number;
   /**
+   * Firmware hint (DD-010 D2): does `G90`/`G91` also set the *extruder* mode? Marlin/Klipper —
+   * `true`; RepRapFirmware treats E independently — `false`. Default `false` (RRF/unknown-conservative).
+   * Only consulted while no `M82`/`M83` has latched the E-mode; supplied by the dialect layer / caller
+   * that has confidently classified the firmware. The byte-exact engine never sniffs firmware itself.
+   */
+  extruderFollowsPositioning?: boolean;
+  /**
    * DD-005 §4.3 read-only hooks: observe comments/commands during the parse.
    * Inert when unset (one branch per line); they cannot alter lexing, dispatch,
    * or machine state — the golden-gated semantics are untouched.
@@ -260,6 +267,69 @@ export function createEngine(input: string | Uint8Array, opts: ParseOptions): En
   let unitsSeen = false;
   let modalFeed = NaN;
 
+  // Motion-model modal state (DD-010 E10 phase 1). `xyzAbsolute` (G90/G91) and the extruder mode
+  // resolve the effective per-move E delta and the extrude/travel classification. Defaults are the
+  // firmware power-on convention: absolute XYZ, absolute E. `eModeExplicit` is set only by M82/M83;
+  // `lastE` is the running absolute-E datum (also reset by `G92 E`).
+  let xyzAbsolute = true;
+  let positioningSeen = false; // any G90/G91 observed → positioningMode 'known'
+  let eModeExplicit: 'absolute' | 'relative' | null = null; // M82/M83; null = infer
+  let lastE = 0;
+  const extruderFollowsPositioning = opts.extruderFollowsPositioning === true;
+
+  // Arc-plane modal state (DD-010 D3, #157, E10 phase 2). G17=XY (default, power-on),
+  // G18=XZ, G19=YZ. Arc flattening runs in the active plane; the through axis ramps linearly.
+  let arcPlane: 'xy' | 'xz' | 'yz' = 'xy';
+  let arcPlaneSeen = false; // any G17/G18/G19 observed → arcPlanes 'known'
+
+  // Coordinate systems (DD-010 D4, #158, E10 phase 3). The IR stays in the logical/work frame
+  // (Option A): the emitted position is `commanded + activeWcsOffset + g92off`. FDM slicer files use
+  // the identity WCS with no G92, so every offset is 0 → the corpus is byte-identical. G54–G59 select
+  // a per-system offset (settable via G10 L2/L20); G92 X/Y/Z shifts the datum without motion; G53 is a
+  // one-shot machine-coordinate bypass for the following move.
+  let activeWcs = 0; // 0..5 → G54..G59; G54 (identity) is the power-on default
+  const wcsOffsets = Array.from({ length: 6 }, () => ({ x: 0, y: 0, z: 0 }));
+  let g92x = 0;
+  let g92y = 0;
+  let g92z = 0;
+  let coordSystemSeen = false; // any G53/G54–G59/G92-XYZ/G10 → coordinateSystem 'known'
+  let g53OneShot = false; // next move ignores the work offset (machine coordinates)
+
+  // Per-axis position certainty (DD-010 D4 amendment, #158). A G31 probe endpoint is reached at
+  // RUNTIME (workpiece contact), not the commanded value, so it marks the probed axes uncertain. A
+  // following G92 then RESYNCS the logical frame at the datum (rather than datum-shifting a stale
+  // position); an absolute move re-establishes certainty. Independent of the work offsets above.
+  let certainX = true;
+  let certainY = true;
+  let certainZ = true;
+  const offX = (): number => (g53OneShot ? 0 : wcsOffsets[activeWcs].x + g92x);
+  const offY = (): number => (g53OneShot ? 0 : wcsOffsets[activeWcs].y + g92y);
+  const offZ = (): number => (g53OneShot ? 0 : wcsOffsets[activeWcs].z + g92z);
+
+  /**
+   * Effective per-move E delta from the modal extruder mode (DD-010 D1/D2 precedence:
+   * explicit M82/M83 → firmware-conditioned G90/G91 → absolute default). Updates `lastE`.
+   * For relative E the delta is the raw word (byte-identical to the pre-E10 engine for the
+   * M83 corpus); for absolute E it is `eParam − lastE`.
+   */
+  const resolveEDelta = (eParam: number | undefined): number => {
+    if (eParam === undefined) return 0;
+    const absolute =
+      eModeExplicit !== null ? eModeExplicit === 'absolute' : extruderFollowsPositioning ? xyzAbsolute : true; // firmware-neutral default: absolute, disclosed 'inferred'
+    const delta = absolute ? eParam - lastE : eParam;
+    lastE = absolute ? eParam : lastE + eParam;
+    return delta;
+  };
+
+  /**
+   * Logical (work-frame) target for one axis given the positioning mode (G90/G91) and the active
+   * work offset (DD-010 D4). Absolute: `word + off`; relative: `cur + word` (the offset is already
+   * baked into `cur`); an absent word holds the current logical position. With `off === 0` (the
+   * identity WCS + no G92) this reduces to the pre-#158 `word ?? cur`, so the corpus is byte-identical.
+   */
+  const nextAxis = (cur: number, word: number | undefined, off = 0): number =>
+    xyzAbsolute ? (word !== undefined ? word + off : cur) : cur + (word ?? 0);
+
   // Floating origin (DD-001 §4.6): fixed at the first emitted segment's start.
   let originSet = false;
   let ox = 0;
@@ -429,16 +499,19 @@ export function createEngine(input: string | Uint8Array, opts: ParseOptions): En
 
   const g0 = (p: Record<string, number>): boolean => {
     const { x, y, z, e, f } = p;
+    // Classify on the true per-move delta, not the raw E word (DD-010 D1). For the M83/relative
+    // corpus the delta equals the word, so output is byte-identical to the pre-E10 engine.
+    const eDelta = resolveEDelta(e);
     if (x === undefined && y === undefined && z === undefined) {
-      if (e > 0) stats.retractions++;
-      else if (e < 0) stats.deretractions++;
+      if (eDelta > 0) stats.retractions++;
+      else if (eDelta < 0) stats.deretractions++;
       else if (f !== undefined) stats.feedrateChanges++;
-      if (e !== undefined && e !== 0) {
+      if (e !== undefined && eDelta !== 0) {
         retractionEvents.push({
           x: sx,
           y: sy,
           z: sz,
-          kind: e < 0 ? 'retract' : 'unretract',
+          kind: eDelta < 0 ? 'retract' : 'unretract',
           srcByte: currentSrcByte,
           segIndex: writer.count
         });
@@ -448,46 +521,74 @@ export function createEngine(input: string | Uint8Array, opts: ParseOptions): En
     }
     stats.points++;
     if (f !== undefined) modalFeed = f;
-    const pathType = e > 0 ? 'extrusion' : 'travel';
+    const pathType = eDelta > 0 ? 'extrusion' : 'travel';
     if (path === null || path.type !== pathType) {
       breakPath(pathType);
     }
-    if (e > 0) stats.extrusionDistance += e;
-    sx = x ?? sx;
-    sy = y ?? sy;
-    sz = z ?? sz;
-    return emitSegment(sx, sy, sz, e ?? 0, pathType === 'extrusion' ? MoveKind.Extrude : MoveKind.Travel);
+    if (eDelta > 0) stats.extrusionDistance += eDelta;
+    sx = nextAxis(sx, x, offX());
+    sy = nextAxis(sy, y, offY());
+    sz = nextAxis(sz, z, offZ());
+    // An absolute commanded move re-establishes certainty for the axes it names (#158).
+    if (xyzAbsolute) {
+      if (x !== undefined) certainX = true;
+      if (y !== undefined) certainY = true;
+      if (z !== undefined) certainZ = true;
+    }
+    g53OneShot = false; // one-shot machine-coordinate bypass consumed by this move
+    return emitSegment(sx, sy, sz, eDelta, pathType === 'extrusion' ? MoveKind.Extrude : MoveKind.Travel);
   };
 
   const g2 = (p: Record<string, number>, cw: boolean): boolean => {
-    const { x, y, z, e, f } = p;
-    let { i, j, r } = p;
+    const { e, f } = p;
+    let { r } = p;
     if (f !== undefined) modalFeed = f;
-    const pathType = e ? 'extrusion' : 'travel';
+    // E is delta-based (DD-010 D1) so M82 arcs classify correctly and `lastE` stays consistent with g0.
+    const eDelta = resolveEDelta(e);
+    const pathType = eDelta ? 'extrusion' : 'travel';
     if (path === null || path.type !== pathType) {
       breakPath(pathType);
     }
-    if (e > 0) stats.extrusionDistance += e;
+    if (eDelta > 0) stats.extrusionDistance += eDelta;
 
+    // Absolute targets, honoring G90/G91 (DD-010 D2 — the deferred G91-arc geometry lands here, #157)
+    // and the active work offset (DD-010 D4, #158). I/J/K are ALWAYS current-relative center offsets.
+    const tx = nextAxis(sx, p.x, offX());
+    const ty = nextAxis(sy, p.y, offY());
+    const tz = nextAxis(sz, p.z, offZ());
+    g53OneShot = false; // one-shot machine-coordinate bypass consumed by this move
+
+    // Select the active arc plane (DD-010 D3): (sa,sb)→(ta,tb) is the in-plane arc with center offsets
+    // (oa,ob); sc→tc is the through axis (linear ramp). XY reproduces the pre-#157 math exactly, so the
+    // XY-arc corpus stays byte-identical; only G18/G19 arcs newly flatten in the correct plane.
+    const [sa, sb, sc, ta, tb, tc, oa, ob] =
+      arcPlane === 'xz'
+        ? [sx, sz, sy, tx, tz, ty, p.i, p.k]
+        : arcPlane === 'yz'
+          ? [sy, sz, sx, ty, tz, tx, p.j, p.k]
+          : [sx, sy, sz, tx, ty, tz, p.i, p.j];
+
+    let ia = oa;
+    let ib = ob;
     if (r) {
-      const deltaX = x - sx; // assume abs mode (inherited)
-      const deltaY = y - sy;
-      const minR = Math.sqrt(Math.pow(deltaX / 2, 2) + Math.pow(deltaY / 2, 2));
+      const deltaA = ta - sa;
+      const deltaB = tb - sb;
+      const minR = Math.sqrt(Math.pow(deltaA / 2, 2) + Math.pow(deltaB / 2, 2));
       r = Math.max(r, minR);
-      const dSquared = Math.pow(deltaX, 2) + Math.pow(deltaY, 2);
+      const dSquared = Math.pow(deltaA, 2) + Math.pow(deltaB, 2);
       const hSquared = Math.pow(r, 2) - dSquared / 4;
       let hDivD = Math.sqrt(hSquared / dSquared);
       if ((cw && r < 0.0) || (!cw && r > 0.0)) hDivD = -hDivD;
-      i = deltaX / 2 + deltaY * hDivD;
-      j = deltaY / 2 - deltaX * hDivD;
+      ia = deltaA / 2 + deltaB * hDivD;
+      ib = deltaB / 2 - deltaA * hDivD;
     }
 
-    const wholeCircle = sx == x && sy == y;
-    const centerX = sx + i;
-    const centerY = sy + j;
-    const arcRadius = Math.sqrt(i * i + j * j);
-    const arcCurrentAngle = Math.atan2(-j, -i);
-    const finalTheta = Math.atan2(y - centerY, x - centerX);
+    const wholeCircle = sa == ta && sb == tb;
+    const centerA = sa + ia;
+    const centerB = sb + ib;
+    const arcRadius = Math.sqrt(ia * ia + ib * ib);
+    const arcCurrentAngle = Math.atan2(-ib, -ia);
+    const finalTheta = Math.atan2(tb - centerB, ta - centerA);
 
     let totalArc;
     if (wholeCircle) {
@@ -502,27 +603,32 @@ export function createEngine(input: string | Uint8Array, opts: ParseOptions): En
     let arcAngleIncrement = totalArc / totalSegments;
     arcAngleIncrement *= cw ? -1 : 1;
 
-    const zDist = sz - (z || sz);
-    const zStep = zDist / totalSegments;
+    // Through-axis linear ramp — preserves the inherited step (byte-identical for planar XY arcs,
+    // where the through axis is unchanged so the ramp is flat).
+    const cStep = (sc - tc) / totalSegments;
 
     const kind = (pathType === 'extrusion' ? MoveKind.Extrude : MoveKind.Travel) | MoveKind.ArcSegment;
-    const eachE = e !== undefined ? e / Math.max(1, Math.ceil(totalSegments)) : 0;
+    const eachE = e !== undefined ? eDelta / Math.max(1, Math.ceil(totalSegments)) : 0;
 
-    let px;
-    let py;
-    let pz = sz;
+    // Map an in-plane point (pa,pb) + through-axis pc back to (x,y,z) for the active plane.
+    const emitArc = (pa: number, pb: number, pcv: number): boolean => {
+      const [px, py, pz] = arcPlane === 'xz' ? [pa, pcv, pb] : arcPlane === 'yz' ? [pcv, pa, pb] : [pa, pb, pcv];
+      return emitSegment(px, py, pz, eachE, kind);
+    };
+
+    let pc = sc;
     let currentAngle = arcCurrentAngle;
     for (let moveIdx = 0; moveIdx < totalSegments - 1; moveIdx++) {
       currentAngle += arcAngleIncrement;
-      px = centerX + arcRadius * Math.cos(currentAngle);
-      py = centerY + arcRadius * Math.sin(currentAngle);
-      pz += zStep;
-      if (!emitSegment(px, py, pz, eachE, kind)) return false;
+      const pa = centerA + arcRadius * Math.cos(currentAngle);
+      const pb = centerB + arcRadius * Math.sin(currentAngle);
+      pc += cStep;
+      if (!emitArc(pa, pb, pc)) return false;
     }
-    sx = x || sx;
-    sy = y || sy;
-    sz = z || sz;
-    return emitSegment(sx, sy, sz, eachE, kind);
+    sx = tx;
+    sy = ty;
+    sz = tz;
+    return emitArc(ta, tb, tc);
   };
 
   const onComment = opts.onComment;
@@ -588,6 +694,136 @@ export function createEngine(input: string | Uint8Array, opts: ParseOptions): En
         // next segment index (slot boundary), and the active tool for provenance.
         colorChangeEvents.push({ x: sx, y: sy, z: sz, segIndex: writer.count, srcByte: offset, tool });
         break;
+      // Motion-model modal commands (DD-010 E10 phase 1).
+      case 'g90':
+        xyzAbsolute = true;
+        positioningSeen = true;
+        break;
+      case 'g91':
+        xyzAbsolute = false;
+        positioningSeen = true;
+        break;
+      // Arc-plane selection (DD-010 D3, #157, E10 phase 2).
+      case 'g17':
+        arcPlane = 'xy';
+        arcPlaneSeen = true;
+        break;
+      case 'g18':
+        arcPlane = 'xz';
+        arcPlaneSeen = true;
+        break;
+      case 'g19':
+        arcPlane = 'yz';
+        arcPlaneSeen = true;
+        break;
+      case 'm82':
+        eModeExplicit = 'absolute';
+        break;
+      case 'm83':
+        eModeExplicit = 'relative';
+        break;
+      // Coordinate systems (DD-010 D4, #158, E10 phase 3).
+      case 'g53':
+        // One-shot: the following move is in machine coordinates (ignores the work offset).
+        g53OneShot = true;
+        coordSystemSeen = true;
+        break;
+      case 'g54':
+      case 'g55':
+      case 'g56':
+      case 'g57':
+      case 'g58':
+      case 'g59':
+        activeWcs = Number(cmd.gcode.slice(1)) - 54; // g54→0 … g59→5
+        coordSystemSeen = true;
+        break;
+      case 'g10': {
+        // Set a work-coordinate offset. L2 P<n>: set the offset directly. L20 P<n>: set it so the
+        // current position reads the given value in WCS n. P1→G54 … P6→G59 (default: active system).
+        const l = cmd.params.l;
+        const idx = cmd.params.p !== undefined ? Math.round(cmd.params.p) - 1 : activeWcs;
+        if (idx >= 0 && idx < 6 && (l === 2 || l === 20)) {
+          const w = wcsOffsets[idx];
+          const setAxis = (word: number | undefined, cur: number, axis: 'x' | 'y' | 'z') => {
+            if (word === undefined) return;
+            w[axis] = l === 2 ? word : cur - word; // L20: offset = current logical − desired reading
+          };
+          setAxis(cmd.params.x, sx, 'x');
+          setAxis(cmd.params.y, sy, 'y');
+          setAxis(cmd.params.z, sz, 'z');
+          coordSystemSeen = true;
+        }
+        break;
+      }
+      case 'g31': {
+        // Probe move (DD-010 D4 amendment, #158): the endpoint is reached at RUNTIME (workpiece
+        // contact), NOT the commanded value. Do not advance the position or draw a fabricated probe
+        // move; mark the probed axes runtime-dependent so a following G92 resyncs the logical frame.
+        let probed = false;
+        if (cmd.params.x !== undefined) {
+          certainX = false;
+          probed = true;
+        }
+        if (cmd.params.y !== undefined) {
+          certainY = false;
+          probed = true;
+        }
+        if (cmd.params.z !== undefined) {
+          certainZ = false;
+          probed = true;
+        }
+        if (probed) {
+          warn(
+            'probe-position-runtime-dependent',
+            'G31 probe endpoint is determined at runtime; the probed axis is runtime-dependent until re-established (G92 or an absolute move).',
+            offset
+          );
+        }
+        break;
+      }
+      case 'g92': {
+        // Datum WITHOUT motion (DD-010 D4 + probe amendment, #158). `G92 E<v>` rebases the absolute-E
+        // origin (also used in phase 1). For X/Y/Z, when the position is KNOWN it is a datum SHIFT (the
+        // work offset is set so the current logical position reads <v>, preserving continuity). When the
+        // axis is runtime-dependent (post-probe) it is a logical RESYNC: the current logical position is
+        // declared to be <v>, the offset is reset, certainty is restored, and the current path is
+        // finalized so the next move starts a NEW frame at the datum — no fabricated move is drawn
+        // across the unknown probe result.
+        if (cmd.params.e !== undefined) lastE = cmd.params.e;
+        let resync = false;
+        if (cmd.params.x !== undefined) {
+          if (certainX) g92x = sx - cmd.params.x - wcsOffsets[activeWcs].x;
+          else {
+            sx = cmd.params.x + wcsOffsets[activeWcs].x;
+            g92x = 0;
+            certainX = true;
+            resync = true;
+          }
+          coordSystemSeen = true;
+        }
+        if (cmd.params.y !== undefined) {
+          if (certainY) g92y = sy - cmd.params.y - wcsOffsets[activeWcs].y;
+          else {
+            sy = cmd.params.y + wcsOffsets[activeWcs].y;
+            g92y = 0;
+            certainY = true;
+            resync = true;
+          }
+          coordSystemSeen = true;
+        }
+        if (cmd.params.z !== undefined) {
+          if (certainZ) g92z = sz - cmd.params.z - wcsOffsets[activeWcs].z;
+          else {
+            sz = cmd.params.z + wcsOffsets[activeWcs].z;
+            g92z = 0;
+            certainZ = true;
+            resync = true;
+          }
+          coordSystemSeen = true;
+        }
+        if (resync) finishPath(); // start a new frame at the datum; no move connects across the probe
+        break;
+      }
       default:
         warn('unsupported-command', `unsupported command '${cmd.gcode}' preserved as metadata`, offset);
     }
@@ -639,7 +875,21 @@ export function createEngine(input: string | Uint8Array, opts: ParseOptions): En
       featureRoles: 'unavailable',
       objects: 'unavailable',
       retractions: retractionEvents.length > 0 ? 'known' : 'unavailable',
-      colorChanges: colorChangeEvents.length > 0 ? 'known' : 'unavailable'
+      colorChanges: colorChangeEvents.length > 0 ? 'known' : 'unavailable',
+      // Annotation-derived move kinds (DD-016, #182). The parser never sets these — they come from a
+      // slicer adapter's WIPE_START/END brackets (upgraded to 'known' via the sink). Seam has no
+      // per-move G-code signal and stays 'unavailable' (a future geometry-heuristic DD may change it).
+      wipeMoves: 'unavailable',
+      seamMoves: 'unavailable',
+      // Motion-model modes (DD-010 E10 phase 1). 'known' when the governing command was seen
+      // (M82/M83, or a firmware-known G90/G91 for E); 'inferred' when defaulted (absolute).
+      extrusionMode: eModeExplicit !== null || (extruderFollowsPositioning && positioningSeen) ? 'known' : 'inferred',
+      positioningMode: positioningSeen ? 'known' : 'inferred',
+      // Arc plane (DD-010 D3, #157): 'known' once a G17/G18/G19 was seen, else 'inferred' (XY assumed).
+      arcPlanes: arcPlaneSeen ? 'known' : 'inferred',
+      // Coordinate system (DD-010 D4, #158): 'known' once a G53/G54–G59/G92-XYZ/G10 was seen, else
+      // 'inferred' (identity WCS / no offset assumed — the FDM-slicer default).
+      coordinateSystem: coordSystemSeen ? 'known' : 'inferred'
     };
 
     if (layersCapability === 'unavailable') {
@@ -742,7 +992,13 @@ export function createEngine(input: string | Uint8Array, opts: ParseOptions): En
           featureRoles: 'unavailable',
           objects: 'unavailable',
           retractions: 'unavailable', // markers resolve on the final IR, not on preview slices
-          colorChanges: 'unavailable' // color-change boundaries resolve on the final IR
+          colorChanges: 'unavailable', // color-change boundaries resolve on the final IR
+          wipeMoves: 'unavailable', // annotation move kinds resolve on the final IR (DD-016)
+          seamMoves: 'unavailable',
+          extrusionMode: 'inferred', // motion modes resolve fully on the final IR (E10)
+          positioningMode: 'inferred',
+          arcPlanes: 'inferred',
+          coordinateSystem: 'inferred'
         }
       },
       segments: channels,

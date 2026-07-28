@@ -30,13 +30,21 @@
   export let layerRange = null;
   /** Scrub cut (IR segment index); null shows everything up to the layer range. */
   export let scrub = null;
+  /** Time-based scrub cut in ms of print time (#181); null clears it. */
+  export let scrubTime = null;
   export let showTravel = true;
+  /** DD-016 (#182): show slicer wipe moves. Default true. */
+  export let showWipe = true;
   /** DD-009 D1 (#148): opt-in retraction/deretraction markers. */
   export let showRetractions = false;
   /** DD-006 live progress observation; null hides the overlay. */
   export let progress = null;
   /** Worker factory escape hatch (DD-005 slim/custom entries; D2). */
   export let createWorker = undefined;
+  /** DD-014 D5: '3d' (default, Three.js — loaded on demand) or '2d' (low-resource Canvas view). */
+  export let renderer = undefined;
+  /** 2D only (renderer="2d"): preceding "ghost" layers beneath the active one (default 1, floor 0). */
+  export let adjacentLayers = undefined;
   /** Advanced/test renderer injectables (pass-throughs of the renderer contract). */
   export let rendererOptions = undefined;
 
@@ -47,12 +55,14 @@
   export const preview = createGcodePreview({
     createWorker,
     renderer: {
+      mode: renderer,
       buildVolume: isMachine ? undefined : buildVolume,
       quality,
       cameraMode,
       theme,
       colorMode,
       tube,
+      adjacentLayers,
       ...rendererOptions
     },
     parseDefaults: parseOptions
@@ -105,7 +115,9 @@
   $: if (layerRange === null || layerRange === undefined) preview.controls.setLayerRange(0, Number.POSITIVE_INFINITY);
   else preview.controls.setLayerRange(layerRange[0], layerRange[1]);
   $: preview.controls.setScrubPosition(scrub ?? null);
+  $: preview.controls.setScrubTime(scrubTime ?? null);
   $: preview.controls.setKindVisible('travel', showTravel);
+  $: preview.controls.setKindVisible('wipe', showWipe);
   $: preview.controls.setShowRetractions(showRetractions);
   $: if (colorMode !== undefined) preview.controls.setColorMode(colorMode);
   $: preview.controls.setQuality(quality);

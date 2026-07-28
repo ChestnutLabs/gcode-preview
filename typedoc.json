@@ -1,14 +1,40 @@
 {
   "$schema": "https://typedoc.org/schema.json",
+  "entryPointStrategy": "packages",
   "entryPoints": [
-    "src/*.ts", "src/helpers/*.ts"
+    "packages/toolpath-core",
+    "packages/gcode-colors",
+    "packages/gcode-parser",
+    "packages/gcode-dialects",
+    "packages/gcode-containers",
+    "packages/gcode-bgcode",
+    "packages/gcode-renderer-three",
+    "packages/gcode-renderer-2d",
+    "packages/gcode-preview-core",
+    "packages/gcode-preview-vue",
+    "packages/gcode-preview-react",
+    "packages/gcode-preview-svelte",
+    "packages/gcode-preview-element"
   ],
-  "out": "docs-api",
-  "includeVersion": true,
-  "excludeInternal": true,
-  "excludeExternals": true,
-  "customCss": "typedoc.css",
+  "packageOptions": {
+    "entryPoints": ["src/index.ts"],
+    "excludeInternal": true,
+    "excludeExternals": true,
+    "suppressCommentWarningsInDeclarationFiles": true,
+    "validation": {
+      "notExported": false,
+      "invalidLink": true,
+      "rewrittenLink": true
+    }
+  },
+  "out": "docs-site/api",
+  "name": "G-code Preview — API Reference",
+  "hideGenerator": true,
+  "suppressCommentWarningsInDeclarationFiles": true,
+  "highlightLanguages": ["typescript", "javascript", "tsx", "jsx", "json", "bash", "sh", "html", "css", "vue", "svelte"],
   "navigationLinks": {
-    "Demo": "/"
+    "Guide": "https://chestnutlabs.github.io/gcode-preview/",
+    "npm": "https://www.npmjs.com/package/@chestnutlabs/gcode-preview-element",
+    "GitHub": "https://github.com/ChestnutLabs/gcode-preview"
   }
 }

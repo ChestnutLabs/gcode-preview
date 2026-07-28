@@ -68,6 +68,26 @@ describe('buildChunks (§4.3/§4.4)', () => {
     }
   });
 
+  it('routes MoveKind.Wipe segments into their own chunk, separate from travel (DD-016, #182)', () => {
+    const b = new ToolpathIRBuilder({ parserVersion: 'test', units: 'mm', unitsSource: 'known' });
+    const common = { x0: 0, y0: 0, z0: 0.2, x1: 1, y1: 0, z1: 0.2, tool: 0, layer: 0 };
+    b.addSegment({ ...common, e: 1, kind: MoveKind.Extrude, srcByte: 0 });
+    b.addSegment({ ...common, kind: MoveKind.Travel, srcByte: 10 });
+    // A wipe move: base Travel + the additive Wipe bit (as a slicer adapter would set it).
+    b.addSegment({ ...common, kind: MoveKind.Travel | MoveKind.Wipe, srcByte: 20 });
+    b.addSegment({ ...common, kind: MoveKind.Travel | MoveKind.Wipe, srcByte: 30 });
+    const ir = b.finalize();
+
+    const { chunks } = buildChunks(ir);
+    const wipe = chunks.filter((c) => c.kind === 'wipe');
+    const travel = chunks.filter((c) => c.kind === 'travel');
+    expect(wipe.reduce((a, c) => a + c.count, 0)).toBe(2); // the two wipe moves
+    expect(travel.reduce((a, c) => a + c.count, 0)).toBe(1); // the plain travel, NOT the wipe moves
+    // The wipe chunk's segments really are the wipe-bit segments.
+    const wipeIdx = wipe.flatMap((c) => Array.from(c.segIndices));
+    for (const i of wipeIdx) expect(ir.segments.kind[i] & MoveKind.Wipe).toBe(MoveKind.Wipe);
+  });
+
   it('splits chunks at layer boundaries around the target size', () => {
     const ir = makeIR(10, 100);
     const { chunks } = buildChunks(ir, { targetSegmentsPerChunk: 250 });

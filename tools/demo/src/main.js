@@ -17,7 +17,9 @@ const CORPUS = [
   ['gcodes/plant-sign.gcode', 'Plant sign'],
   ['gcodes/easel.gcode', 'Easel (19 KB)'],
   ['gcodes/mach3.gcode', 'Mach3 (CNC-style)'],
-  ['fixtures/containers/mini-project.gcode.3mf', 'mini-project.gcode.3mf (container)']
+  ['fixtures/containers/mini-project.gcode.3mf', 'mini-project.gcode.3mf (container)'],
+  ['fixtures/annotations/wipe-brackets.gcode', 'Wipe brackets (#182 demo)'],
+  ['fixtures/annotations/variable-layers.gcode', 'Variable layer height (#179 demo)']
 ];
 
 const TOOL_PALETTE = [
@@ -34,6 +36,14 @@ const FEATURE_PALETTE = [
   [0.8, 0.5, 0.95]
 ];
 
+// Color-by-layer-height ramp (#179): thin → thick as blue → green → yellow → red.
+const HEIGHT_RAMP = [
+  [0.15, 0.4, 0.9],
+  [0.2, 0.85, 0.45],
+  [0.95, 0.85, 0.2],
+  [0.9, 0.3, 0.2]
+];
+
 // Named scene themes (#153, DD-009 D4): each is a bounded declarative Theme.
 // Unspecified fields fall back to the default look (replace semantics).
 const THEMES = {
@@ -45,6 +55,14 @@ const THEMES = {
     bedColor: '#bcccdc',
     hemisphereIntensity: 2.4,
     directionalIntensity: 1.4
+  },
+  // #185: a filled build-plate surface under the toolpath (off in every other theme).
+  bedplate: {
+    background: '#10141b',
+    gridColor: '#3a4658',
+    bedColor: '#556173',
+    hemisphereIntensity: 2.0,
+    bedSurface: { mode: 'solid', color: '#20242c', opacity: 1 }
   }
 };
 
@@ -67,6 +85,7 @@ const els = {
   endLayerVal: $('endLayerVal'),
   scrubVal: $('scrubVal'),
   travel: $('travel'),
+  wipe: $('wipe'),
   retractions: $('retractions'),
   colorMode: $('colorMode'),
   quality: $('quality'),
@@ -110,6 +129,7 @@ function colorModeFor(kind) {
   if (kind === 'tool') return { mode: 'tool', palette: TOOL_PALETTE, fallback: [0.7, 0.7, 0.7] };
   if (kind === 'feature') return { mode: 'feature', palette: FEATURE_PALETTE, fallback: [0.55, 0.55, 0.55] };
   if (kind === 'colorChange') return { mode: 'colorChange', palette: TOOL_PALETTE, fallback: [0.55, 0.55, 0.55] };
+  if (kind === 'layerHeight') return { mode: 'layerHeight', ramp: HEIGHT_RAMP, fallback: [0.6, 0.6, 0.6] };
   return { mode: 'single', color: [0.9, 0.4, 0.7] };
 }
 
@@ -169,6 +189,16 @@ function enableControls(ir) {
   if (!ccOk && els.colorMode.value === 'colorChange') {
     els.colorMode.value = 'single';
   }
+  // Layer-height coloring (#179): only meaningful with a real planar layer table.
+  const lhOpt = els.colorMode.querySelector('option[value="layerHeight"]');
+  const lhOk = renderer.isColorModeAvailable('layerHeight');
+  lhOpt.disabled = !lhOk;
+  lhOpt.textContent = lhOk
+    ? 'By layer height'
+    : `By layer height (unavailable: layers = ${ir.header.capabilities.layers ?? 'unknown'})`;
+  if (!lhOk && els.colorMode.value === 'layerHeight') {
+    els.colorMode.value = 'single';
+  }
   renderer.setColorMode(colorModeFor(els.colorMode.value));
 }
 
@@ -177,6 +207,10 @@ renderer.onEvent((e) => {
     travelAvailable = !e.travelHidden;
     els.travel.disabled = !travelAvailable;
     els.travel.checked = travelAvailable ? els.travel.checked : false;
+    // Wipe toggle: enable only when the IR actually carries wipe moves (DD-016, #182) — honest.
+    const hasWipe = renderer.ir?.header.capabilities?.wipeMoves === 'known';
+    els.wipe.disabled = !hasWipe;
+    if (!hasWipe) els.wipe.checked = false;
     // Retraction markers: enable only when the IR actually carries events (#148).
     els.retractions.disabled = !renderer.hasRetractions;
     if (!renderer.hasRetractions) els.retractions.checked = false;
@@ -379,6 +413,7 @@ els.startLayer.addEventListener('input', applyLayerRange);
 els.endLayer.addEventListener('input', applyLayerRange);
 els.scrub.addEventListener('input', applyScrub);
 els.travel.addEventListener('change', () => renderer.setKindVisible('travel', els.travel.checked));
+els.wipe.addEventListener('change', () => renderer.setKindVisible('wipe', els.wipe.checked));
 els.retractions.addEventListener('change', () => renderer.setShowRetractions(els.retractions.checked));
 els.colorMode.addEventListener('change', () => {
   if (!renderer.setColorMode(colorModeFor(els.colorMode.value))) {

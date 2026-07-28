@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>gcode-renderer-2d — §8 low-resource benchmark harness (E8/DD-014)</title>
+    <style>
+      html,
+      body {
+        margin: 0;
+        background: #0e1416;
+      }
+      #c {
+        display: block;
+      }
+    </style>
+  </head>
+  <body>
+    <!--
+      Measurement harness for the DD-014 §8 low-resource budget. Loads a real gcode through the worker
+      parser into LayerView2D and exposes window.__bench / __memProbe so a headless driver (e.g. the
+      puppeteer recipe in tools/benchmark/results/e8-2d-lowresource-benchmark-*.md) can measure
+      per-layer redraw time and JS-heap growth on a real browser + device.
+    -->
+    <canvas id="c" width="1000" height="1000"></canvas>
+    <script type="module" src="./src/bench.js"></script>
+  </body>
+</html>

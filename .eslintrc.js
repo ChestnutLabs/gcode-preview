@@ -6,14 +6,24 @@ module.exports = {
   extends: ['eslint:recommended', 'plugin:@typescript-eslint/recommended'],
   rules: {
     'no-unused-vars': 'off',
-    '@typescript-eslint/no-unused-vars': ['error'],
+    // `_`-prefixed args/vars are intentionally unused — the convention for satisfying a wide
+    // interface whose members a given implementation ignores (e.g. the 2D renderer's 3D-only ops).
+    '@typescript-eslint/no-unused-vars': ['error', { argsIgnorePattern: '^_', varsIgnorePattern: '^_' }],
     '@typescript-eslint/no-unsafe-declaration-merging': 'off'
   },
-  ignorePatterns: ['dist'],
+  ignorePatterns: ['dist', 'docs-site', 'docs-api'],
   env: {
     browser: true
   },
   overrides: [
+    // TSDoc syntax on the public package surface (E11 phase 4, DD-013 D5). WARN-only for now —
+    // it baselines the current gaps; the docs accuracy gate (typedoc warning budget in
+    // tools/docs/build-api.mjs) is the enforcing check. Flip to 'error' once the gaps are closed.
+    {
+      files: ['packages/*/src/**/*.ts', 'packages/*/src/**/*.tsx'],
+      plugins: ['eslint-plugin-tsdoc'],
+      rules: { 'tsdoc/syntax': 'warn' }
+    },
     // Electron consumer-smoke main process is intentionally CommonJS (Electron default).
     {
       files: ['tools/consumer-smoke/electron-app/**/*.js'],
@@ -143,7 +153,47 @@ module.exports = {
       }
     },
     {
-      files: ['packages/gcode-containers/src/__tests__/**/*.ts', 'packages/gcode-dialects/src/__tests__/**/*.ts'],
+      files: ['packages/gcode-bgcode/**/*.ts', 'packages/gcode-bgcode/**/*.mts'],
+      rules: {
+        'no-restricted-imports': [
+          'error',
+          {
+            patterns: [
+              { group: ['three', 'three/*'], message: 'gcode-bgcode must not depend on three (DD-002 §4).' },
+              { group: ['vue', 'vue/*'], message: 'gcode-bgcode must not depend on Vue (DD-002 §4).' },
+              {
+                group: [
+                  '@chestnutlabs/gcode-parser*',
+                  '@chestnutlabs/gcode-dialects*',
+                  '@chestnutlabs/gcode-renderer*',
+                  '@chestnutlabs/gcode-preview*',
+                  '@chestnutlabs/gcode-colors*'
+                ],
+                message: 'gcode-bgcode depends only on toolpath-core + gcode-containers (DD-011 D1).'
+              },
+              {
+                group: ['node:fs*', 'fs', 'node:child_process', 'child_process', 'node:net', 'node:http*'],
+                message: 'gcode-bgcode is in-memory only — no filesystem, process, or network access (DD-011 §7).'
+              },
+              {
+                group: ['*anybridge*', '*AnyBridge*'],
+                message: 'No reusable package may import AnyBridge (DD-002 §4 core rule).'
+              },
+              {
+                group: ['../../../*'],
+                message: 'gcode-bgcode must not reach outside its package (DD-002 §4).'
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      files: [
+        'packages/gcode-containers/src/__tests__/**/*.ts',
+        'packages/gcode-dialects/src/__tests__/**/*.ts',
+        'packages/gcode-bgcode/src/__tests__/**/*.ts'
+      ],
       rules: {
         // Tests read committed fixtures and drive the real parser to produce IRs;
         // the shipped libraries keep the full restrictions above.
@@ -383,6 +433,84 @@ module.exports = {
               {
                 group: ['../../../*'],
                 message: 'gcode-renderer-three must not reach outside its package (DD-002 §4).'
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      // The shared color subsystem (DD-014 D3/D4): renderer-agnostic, depends ONLY on toolpath-core.
+      files: ['packages/gcode-colors/**/*.ts', 'packages/gcode-colors/**/*.mts'],
+      rules: {
+        'no-restricted-imports': [
+          'error',
+          {
+            patterns: [
+              {
+                group: ['three', 'three/*'],
+                message: 'gcode-colors is renderer-agnostic — it must not depend on three (DD-014 D3/D4).'
+              },
+              {
+                group: ['vue', 'vue/*', 'react', 'react/*', 'react-dom*', 'svelte', 'svelte/*'],
+                message: 'gcode-colors must not depend on any framework (DD-002 §4).'
+              },
+              { group: ['lil-gui'], message: 'gcode-colors must not depend on UI libraries (DD-002 §4).' },
+              {
+                group: ['@chestnutlabs/gcode-*'],
+                message:
+                  'gcode-colors depends only on toolpath-core (DD-014 D4) — never the parser, renderers, or viewer.'
+              },
+              {
+                group: ['*anybridge*', '*AnyBridge*'],
+                message: 'No reusable package may import AnyBridge (DD-002 §4 core rule).'
+              },
+              {
+                group: ['../../../*'],
+                message: 'gcode-colors must not reach outside its package (DD-002 §4).'
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      // The low-resource 2D renderer (DD-014): Canvas 2D only — NO three/WebGL, no framework.
+      // Consumes ToolpathIR + the shared gcode-colors module; never the parser or the 3D renderer.
+      files: ['packages/gcode-renderer-2d/**/*.ts', 'packages/gcode-renderer-2d/**/*.mts'],
+      rules: {
+        'no-restricted-imports': [
+          'error',
+          {
+            patterns: [
+              {
+                group: ['three', 'three/*'],
+                message:
+                  'gcode-renderer-2d is the low-resource, WebGL-free view — it must not depend on three (DD-014 D1/D4).'
+              },
+              {
+                group: ['vue', 'vue/*', 'react', 'react/*', 'react-dom*', 'svelte', 'svelte/*'],
+                message: 'gcode-renderer-2d must not depend on any framework (DD-002 §4).'
+              },
+              { group: ['lil-gui'], message: 'gcode-renderer-2d must not depend on UI libraries (DD-002 §4).' },
+              {
+                group: [
+                  '@chestnutlabs/gcode-parser*',
+                  '@chestnutlabs/gcode-dialects*',
+                  '@chestnutlabs/gcode-containers*',
+                  '@chestnutlabs/gcode-renderer-three*',
+                  '@chestnutlabs/gcode-preview*'
+                ],
+                message:
+                  'gcode-renderer-2d consumes ToolpathIR + gcode-colors only — never the parser, 3D renderer, or viewer (DD-014 D4).'
+              },
+              {
+                group: ['*anybridge*', '*AnyBridge*'],
+                message: 'No reusable package may import AnyBridge (DD-002 §4 core rule).'
+              },
+              {
+                group: ['../../../*'],
+                message: 'gcode-renderer-2d must not reach outside its package (DD-002 §4).'
               }
             ]
           }

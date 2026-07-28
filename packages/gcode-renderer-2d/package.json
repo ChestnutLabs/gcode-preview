@@ -1,0 +1,55 @@
+{
+  "name": "@chestnutlabs/gcode-renderer-2d",
+  "version": "0.3.0",
+  "description": "Low-resource Canvas 2D layer renderer for the Chestnut Labs G-code viewer (DD-014 / E8): an opt-in current/adjacent-layer 2D view over the existing ToolpathIR for low-GPU/low-memory/WebGL-blocked devices. No three, no framework.",
+  "keywords": [
+    "gcode",
+    "3d-printing",
+    "toolpath",
+    "cnc",
+    "chestnutlabs",
+    "canvas",
+    "canvas2d",
+    "low-resource",
+    "layer-view",
+    "renderer"
+  ],
+  "author": "Chestnut Labs",
+  "homepage": "https://github.com/ChestnutLabs/gcode-preview#readme",
+  "bugs": "https://github.com/ChestnutLabs/gcode-preview/issues",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ChestnutLabs/gcode-preview.git",
+    "directory": "packages/gcode-renderer-2d"
+  },
+  "license": "MIT",
+  "engines": {
+    "node": ">=22"
+  },
+  "type": "module",
+  "sideEffects": false,
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@chestnutlabs/gcode-colors": "0.3.0",
+    "@chestnutlabs/toolpath-core": "0.3.0"
+  }
+}
