@@ -1,5 +1,12 @@
 # @chestnutlabs/gcode-containers
 
+## 0.3.0
+
+### Patch Changes
+
+- Updated dependencies [[`39348de`](https://github.com/ChestnutLabs/gcode-preview/commit/39348de9ce68717e71516f9acaccd475139983ba), [`d161e80`](https://github.com/ChestnutLabs/gcode-preview/commit/d161e802e36cc87fa27848ceef9d68cd45628760), [`82bd7ae`](https://github.com/ChestnutLabs/gcode-preview/commit/82bd7ae7f76e742767719d8efa11173a6548fc03)]:
+  - @chestnutlabs/toolpath-core@0.3.0
+
 ## 0.2.0
 
 ### Patch Changes
