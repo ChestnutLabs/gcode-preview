@@ -29,7 +29,7 @@ both attributions preserved in their source files. This package is MIT.
 | Compression: heatshrink 11/12 | ✅ phase 3 |
 | DEFLATE zlib-flavor fix + golden-equivalence killer test (real Prusa files) | ✅ phase 4 |
 | Container adapter + batteries-worker registration + metadata/thumbnail surfacing | ✅ phase 4c |
-| Adversarial corpus + §7.3 security review + benchmark | ⏳ phase 5 |
+| Adversarial fuzz corpus + §7 security review + decode benchmark | ✅ phase 5 |
 
 ## Usage
 
