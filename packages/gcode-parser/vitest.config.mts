@@ -9,7 +9,8 @@ export default defineConfig({
       // alphabetical order, not dependency order).
       '@chestnutlabs/toolpath-core': fileURLToPath(new URL('../toolpath-core/src/index.ts', import.meta.url)),
       '@chestnutlabs/gcode-dialects': fileURLToPath(new URL('../gcode-dialects/src/index.ts', import.meta.url)),
-      '@chestnutlabs/gcode-containers': fileURLToPath(new URL('../gcode-containers/src/index.ts', import.meta.url))
+      '@chestnutlabs/gcode-containers': fileURLToPath(new URL('../gcode-containers/src/index.ts', import.meta.url)),
+      '@chestnutlabs/gcode-bgcode': fileURLToPath(new URL('../gcode-bgcode/src/index.ts', import.meta.url))
     }
   },
   test: {

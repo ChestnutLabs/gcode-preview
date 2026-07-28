@@ -86,6 +86,9 @@
   ],
   "gcode-bgcode": [
     "README.md",
+    "dist/adapter.d.ts",
+    "dist/adapter.d.ts.map",
+    "dist/adapter.js",
     "dist/bgcode.d.ts",
     "dist/bgcode.d.ts.map",
     "dist/bgcode.js",
