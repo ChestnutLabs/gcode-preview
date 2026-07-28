@@ -1,5 +1,110 @@
 # @chestnutlabs/gcode-parser
 
+## 0.3.0
+
+### Minor Changes
+
+- [#238](https://github.com/ChestnutLabs/gcode-preview/pull/238) [`75f9f2b`](https://github.com/ChestnutLabs/gcode-preview/commit/75f9f2b2c758ef15b26a4b0f8dd955c89c9c5fb1) Thanks [@sobechestnut-dev](https://github.com/sobechestnut-dev)! - Register `.bgcode` as a **container adapter** so it flows through the existing parser pipeline
+  (DD-011 phase 4c, [#188](https://github.com/ChestnutLabs/gcode-preview/issues/188)). A `.bgcode` file now "just works" through `GcodeParseSession` with
+  `containers: 'auto'` — sniffed by magic, decoded to plain G-code, and parsed to the same IR as the
+  plain `.gcode` (proven by the golden-equivalence test).
+  - `gcode-bgcode`: `openBgcodeContainer(bytes)` implements the DD-005 §4.4 `{ id, sniff, open }` shape
+    (single plate; `openPlate(0)` streams the decoded G-code). `openBgcode(bytes, { metadata: true })`
+    now also decodes the metadata (INI) and thumbnail blocks, so the adapter surfaces **machine geometry
+    from `bed_shape`**, whitelisted slicer settings (feeding dialect detection + provenance), and
+    thumbnails.
+  - `gcode-parser`: the batteries worker registers the `bgcode` adapter beside `gcode-3mf`.
+
+  Verified end-to-end: a real Prusa XL cube `.bgcode` parses through the session to 11,417 segments with
+  a 360×360 bed and `printer_model` metadata.
+
+- [#193](https://github.com/ChestnutLabs/gcode-preview/pull/193) [`5f3b16a`](https://github.com/ChestnutLabs/gcode-preview/commit/5f3b16a7aa8dfcce451d74f0cebece5f0eaaecef) Thanks [@sobechestnut-dev](https://github.com/sobechestnut-dev)! - Motion-model correctness — E10 phase 1 ([#156](https://github.com/ChestnutLabs/gcode-preview/issues/156)/[#155](https://github.com/ChestnutLabs/gcode-preview/issues/155), DD-010 D1/D2 + G92 E-datum).
+
+  The interpreter now models the **extruder mode** (`M82`/`M83`) and **positioning mode** (`G90`/`G91`)
+  and classifies extrude-vs-travel from the true per-move **E delta**, not the raw E word:
+  - **M82 (absolute E)** — an E-unchanged move is now correctly `Travel` (was mis-classified as extrude),
+    and `stats.extrusionDistance` is delta-summed (was inflated by the cumulative E). This is the audit's
+    highest-impact gap ([#156](https://github.com/ChestnutLabs/gcode-preview/issues/156)).
+  - **M83 (relative E)** and the common slicer shape (`G90` + `M83`) are byte-identical to before.
+  - **G90/G91** set the XYZ positioning mode; relative moves accumulate. `G92 E<v>` resets the extruder
+    datum. `G92 X/Y/Z` is disclosed as unhandled (`g92-xyz-unhandled` warning) — deferred to phase 3.
+  - The `G90`/`G91`↔E interaction is **firmware-conditioned** (DD-010 D2): Marlin/Klipper let G90/G91
+    steer E; RepRapFirmware keeps E independent. Supplied via the new `parseOptions.extruderFollowsPositioning`
+    hint (default `false`); the byte-exact engine never sniffs firmware. When unspecified, the E mode
+    defaults to **absolute** (the firmware power-on convention), disclosed `inferred`.
+  - New capabilities `extrusionMode` and `positioningMode` (`'known'` when the governing command was seen,
+    else `'inferred'`).
+
+  **Output change (documented):** all segment **positions, `kind`, `tool`, `layer`, and `srcByte` are
+  byte-identical** across the corpus. Seven hand-crafted dialect fixtures use _absolute_ E without an
+  `M82`/`M83`; their per-segment extrusion delta and `extrusionDistance` are now **corrected** (previously
+  inflated by the raw-E-as-delta assumption). No renderer/adapter API change.
+
+- [#208](https://github.com/ChestnutLabs/gcode-preview/pull/208) [`dc1c535`](https://github.com/ChestnutLabs/gcode-preview/commit/dc1c5350ce545ae01e13c0782fed30d5d318f010) Thanks [@sobechestnut-dev](https://github.com/sobechestnut-dev)! - Motion-model correctness — E10 phase 2: arc-plane selection ([#157](https://github.com/ChestnutLabs/gcode-preview/issues/157), DD-010 D3).
+
+  Arc flattening (`G2`/`G3`) now runs in the **active plane** selected by `G17` (XY, default), `G18`
+  (XZ), or `G19` (YZ), instead of always assuming XY:
+  - The arc math is plane-parameterized: the in-plane pair uses the two relevant center offsets
+    (`I`/`J` for XY, `I`/`K` for XZ, `J`/`K` for YZ) and the through axis ramps linearly. `G17`
+    reproduces the previous XY math **exactly** — the whole XY-arc corpus is byte-identical.
+  - `G18`/`G19` arcs (mainly CNC) previously mis-flattened onto XY (I/J interpretation, `K` ignored);
+    they now render in the correct plane.
+  - The deferred **G91-arc geometry** lands here too: arc endpoints honor the positioning mode
+    (`G90` absolute / `G91` relative); `I`/`J`/`K` remain current-relative center offsets in both.
+  - New capability `arcPlanes` (`'known'` once a plane word is seen, else `'inferred'` = XY assumed).
+
+  **Output change (documented):** all corpus segment positions/kinds/extrusion stay **byte-identical**
+  (the only golden change is the additive `arcPlanes` capability key); non-XY arcs are new output only
+  for files that use `G18`/`G19`. No renderer/adapter API change.
+
+- [#208](https://github.com/ChestnutLabs/gcode-preview/pull/208) [`dc1c535`](https://github.com/ChestnutLabs/gcode-preview/commit/dc1c5350ce545ae01e13c0782fed30d5d318f010) Thanks [@sobechestnut-dev](https://github.com/sobechestnut-dev)! - Motion-model correctness — E10 phase 3: coordinate systems + probe-aware datum ([#158](https://github.com/ChestnutLabs/gcode-preview/issues/158), DD-010 D4).
+
+  The interpreter now honors work-coordinate systems and `G92` X/Y/Z, keeping the IR in the logical
+  (work) frame so identity-WCS files stay byte-identical:
+  - **`G54`–`G59`** select an active work offset (settable via `G10 L2`/`L20`); **`G53`** is a one-shot
+    machine-coordinate bypass for the next move.
+  - **`G92` X/Y/Z** is a datum **shift** when the current position is known (continuity preserved — e.g.
+    `G92 X0` at X50 then `G1 X10` → X60).
+  - **Probe awareness (DD-010 D4 amendment):** `G31` reaches its endpoint at runtime, so it marks the
+    probed axes uncertain and is disclosed via a new `probe-position-runtime-dependent` warning (never
+    advanced to the un-reached commanded value). A `G92` after a probe is a logical **resync** — the
+    current logical position is declared to be the given value and a new frame starts at the datum, so no
+    fabricated move is drawn across the unknown probe result. The `mach3` fixture's post-probe path now
+    renders in its authored logical range instead of a stale-position shift.
+  - New capability `coordinateSystem` (`'known'` once any G53/G54–G59/G92-XYZ/G10 is seen, else
+    `'inferred'` = identity WCS).
+
+  **Output change (documented):** the identity-WCS corpus stays **byte-identical** (the only golden
+  change is the additive `coordinateSystem` key). The `mach3` fixture intentionally diverges from the
+  inherited engine (which ignored `G31` and `G92 Z`) — a documented semantic correction, pinned by its
+  native golden and excluded from strict adapter-equivalence. No renderer/adapter API change.
+
+- [#228](https://github.com/ChestnutLabs/gcode-preview/pull/228) [`2d2b32b`](https://github.com/ChestnutLabs/gcode-preview/commit/2d2b32b836b296f2fac460073df10a7796596e9f) Thanks [@sobechestnut-dev](https://github.com/sobechestnut-dev)! - Populate the `MoveKind.Wipe` bit from slicer wipe brackets (DD-016 phase 1, [#182](https://github.com/ChestnutLabs/gcode-preview/issues/182)).
+
+  The `Wipe`/`Seam` kind bits were reserved but never set. Wipe's only reliable signal is a
+  slicer comment (`;WIPE_START`/`;WIPE_END`), which the DD-005 sink invariant bars the annotation
+  layer from turning into `kind`. DD-016 resolves this with a **narrow, additive** sink amendment:
+  - `AnnotationSink.addMoveKind(segStart, segEnd, kindBits)` — allow-listed to `Wipe`/`Seam` only,
+    additive (ORs the bit, never clears or reclassifies a move); non-allow-listed bits are dropped
+    with a bounded warning.
+  - The PrusaSlicer and Orca/Bambu adapters detect `;WIPE_START`/`;WIPE_END` and mark the bracketed
+    segments as `Wipe`.
+  - New capabilities: `wipeMoves` (`known` when a bracket was parsed, else `unavailable` — never
+    fabricated) and `seamMoves` (always `unavailable`; seam has no per-move G-code signal).
+
+  Golden-safe: the base Extrude/Travel classification is unchanged, so the golden-equivalence gate
+  (kind masked to `Extrude|Travel`) is byte-identical; only the additive `wipeMoves`/`seamMoves`
+  capability lines were regenerated in the native goldens. No IR schema change, no new dependency.
+  Renderer visibility for wipe moves lands in phase 2.
+
+### Patch Changes
+
+- Updated dependencies [[`75f9f2b`](https://github.com/ChestnutLabs/gcode-preview/commit/75f9f2b2c758ef15b26a4b0f8dd955c89c9c5fb1), [`83f0336`](https://github.com/ChestnutLabs/gcode-preview/commit/83f033676522620ef9d57010a44d044f5f75c99d), [`852db93`](https://github.com/ChestnutLabs/gcode-preview/commit/852db9315ac3983c337508460575b4299ddacdfa), [`f2e79e4`](https://github.com/ChestnutLabs/gcode-preview/commit/f2e79e4da2bff2d6fb8222a94f04669128efc5d8), [`bb3085a`](https://github.com/ChestnutLabs/gcode-preview/commit/bb3085a03a4ce60b12789d0339c5c1a7bb8c7d5a), [`8c0ee6e`](https://github.com/ChestnutLabs/gcode-preview/commit/8c0ee6e2d5aec4d3b9c835ae92aa032ae619da34), [`b0ef69f`](https://github.com/ChestnutLabs/gcode-preview/commit/b0ef69f9ac2184c697f4df04c4c4c22ac709d0ee), [`39348de`](https://github.com/ChestnutLabs/gcode-preview/commit/39348de9ce68717e71516f9acaccd475139983ba), [`d161e80`](https://github.com/ChestnutLabs/gcode-preview/commit/d161e802e36cc87fa27848ceef9d68cd45628760), [`82bd7ae`](https://github.com/ChestnutLabs/gcode-preview/commit/82bd7ae7f76e742767719d8efa11173a6548fc03), [`2d2b32b`](https://github.com/ChestnutLabs/gcode-preview/commit/2d2b32b836b296f2fac460073df10a7796596e9f)]:
+  - @chestnutlabs/gcode-bgcode@0.3.0
+  - @chestnutlabs/toolpath-core@0.3.0
+  - @chestnutlabs/gcode-dialects@0.3.0
+  - @chestnutlabs/gcode-containers@0.3.0
+
 ## 0.2.0
 
 ### Minor Changes

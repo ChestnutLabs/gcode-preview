@@ -1,5 +1,42 @@
 # @chestnutlabs/toolpath-core
 
+## 0.3.0
+
+### Minor Changes
+
+- [#222](https://github.com/ChestnutLabs/gcode-preview/pull/222) [`39348de`](https://github.com/ChestnutLabs/gcode-preview/commit/39348de9ce68717e71516f9acaccd475139983ba) Thanks [@sobechestnut-dev](https://github.com/sobechestnut-dev)! - Extract **filament used + the slicer's print-time estimate** into `DialectMetadata` ([#183](https://github.com/ChestnutLabs/gcode-preview/issues/183)). Two new
+  optional, capability-honest fields (absent when the slicer doesn't emit them):
+  - `filamentUsage` — total filament `lengthMm` / `volumeCm3` / `weightG`.
+  - `printEstimate` — the slicer's own print-time `seconds` (+ `mode` label), the trustworthy figure for
+    a time readout / time scrub versus a kinematic estimate.
+
+  Parsed per-slicer from G-code comments: **PrusaSlicer** (`filament used [mm|cm3]`,
+  `total filament used [g]`, `estimated printing time (normal mode)`), **Orca/Bambu** (same filament
+  totals + `total estimated time:` / `model printing time:`), and **Cura** (`;Filament used: <m>m`,
+  `;TIME:<seconds>`). Additive; no IR/geometry change.
+
+- [#224](https://github.com/ChestnutLabs/gcode-preview/pull/224) [`d161e80`](https://github.com/ChestnutLabs/gcode-preview/commit/d161e802e36cc87fa27848ceef9d68cd45628760) Thanks [@sobechestnut-dev](https://github.com/sobechestnut-dev)! - Source-line ↔ segment mapping ([#184](https://github.com/ChestnutLabs/gcode-preview/issues/184)) — the "G-code debugger" surface. Additive; no IR/geometry change.
+  - `toolpath-core`: framework-free primitives over `segments.srcByte` + `sourceIndex`: build a line
+    index (`buildSourceLineIndex`), then `lineAtByte` / `byteRangeOfLine` / `sourceLineOfSegment`
+    (segment → its 1-based source line) / `segmentAtSourceLine` (line → segment, -1 when the line
+    produced none). Both directions, O(log n).
+  - `gcode-renderer-three`: `ToolpathRenderer.pickSegment(ndcX, ndcY, threshold?)` raycasts the
+    toolpath and returns the IR segment under a pointer (or null) — click a segment → its source line.
+    The pure index-mapping helper `resolveHitSegment(mesh, vertexIndex)` is exported and unit-tested.
+  - `gcode-preview-core`: `PreviewRenderer.pickSegment` (the 2D renderer returns null — no picking yet),
+    reachable via `raw.renderer()`.
+
+- [#223](https://github.com/ChestnutLabs/gcode-preview/pull/223) [`82bd7ae`](https://github.com/ChestnutLabs/gcode-preview/commit/82bd7ae7f76e742767719d8efa11173a6548fc03) Thanks [@sobechestnut-dev](https://github.com/sobechestnut-dev)! - Time-based scrub + a print-time estimate ([#181](https://github.com/ChestnutLabs/gcode-preview/issues/181)). Additive; no IR/geometry change.
+  - `toolpath-core`: `computeToolpathTime(ir)` builds a cumulative **kinematic** time axis (per-segment
+    length ÷ feedrate; constant-velocity, not accel-aware — a slight *under*estimate) plus
+    `segmentsCompletedAtTime(cumulativeMs, ms)`. Unknown feedrates contribute 0 and flag the estimate
+    approximate (`hasUnknownFeedrate`) — never a fabricated duration.
+  - `gcode-preview-core`: state gains `totalTimeMs` + `timeEstimateSource` — **prefers the slicer's own
+    estimate** (`DialectMetadata.printEstimate`, [#183](https://github.com/ChestnutLabs/gcode-preview/issues/183)) when present (`'slicer'`), else the kinematic
+    total (`'kinematic'`). New `controls.setScrubTime(ms)` cuts the toolpath at a print time (resolves to
+    a segment-index scrub).
+  - Adapters (Vue/React/Svelte/Element): a `scrubTime` prop → `setScrubTime`.
+
 ## 0.2.0
 
 ### Minor Changes

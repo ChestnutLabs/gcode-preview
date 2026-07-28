@@ -1,5 +1,95 @@
 # @chestnutlabs/gcode-renderer-three
 
+## 0.3.0
+
+### Minor Changes
+
+- [#225](https://github.com/ChestnutLabs/gcode-preview/pull/225) [`83f7db4`](https://github.com/ChestnutLabs/gcode-preview/commit/83f7db46be38477c4ff4127e250c6d6147c302ed) Thanks [@sobechestnut-dev](https://github.com/sobechestnut-dev)! - Add an optional **filled build-plate surface** to the 3D renderer ([#185](https://github.com/ChestnutLabs/gcode-preview/issues/185)). The bare wireframe grid
+  gains a themeable, self-drawn plate underneath it so a print reads against a bed rather than empty
+  space — off by default (`bedSurface: { mode: 'none' }`), so the existing look is unchanged.
+  - `Theme.bedSurface` (`BedSurface`): `mode: 'none' | 'solid'`, optional `color`, `opacity`, and a
+    consumer-supplied `texture` (`ImageBitmap | HTMLCanvasElement` — never a URL, so it stays CSP-safe
+    and synchronous for `renderStill`). No bundled vendor plate art (trademark + bloat).
+  - The plate is an unlit plane spanning the bed, seated just below `z=0` with `depthWrite: false` so it
+    never occludes the toolpath.
+  - Keep-out zones from `MachineGeometry.excludedRegions` now render as amber outlines on the plate.
+
+  Additive; no IR/geometry change and no new runtime dependency.
+
+- [#230](https://github.com/ChestnutLabs/gcode-preview/pull/230) [`e8f889b`](https://github.com/ChestnutLabs/gcode-preview/commit/e8f889b576ee06da4181a048724c880ae38fedee) Thanks [@sobechestnut-dev](https://github.com/sobechestnut-dev)! - Add a **color-by-layer-height** mode ([#179](https://github.com/ChestnutLabs/gcode-preview/issues/179)) — the Orca/Bambu view that reveals variable-layer-height
+  prints.
+  - `gcode-colors`: new `ColorMode` variant `{ mode: 'layerHeight'; ramp; range?; fallback }`, plus
+    `layerHeights(ir)` (per-layer Z-delta; layer 0 is its thickness from the bed; negative deltas clamp
+    to 0) and `layerHeightRange(ir)` (the auto-range). Each segment is colored by its layer's height
+    mapped onto the ramp. Derived purely from `ir.layers` — no new parsing.
+  - `gcode-renderer-three`: re-exports `layerHeightRange`, and `isColorModeAvailable('layerHeight')` is
+    **capability-gated on `layers`** — a non-planar/CNC IR (`layers: 'unavailable'`) reports the mode
+    unavailable rather than collapsing every segment to one flat color.
+
+  Additive; works through the existing rich `colorMode` prop on every adapter with no adapter change.
+
+- [#217](https://github.com/ChestnutLabs/gcode-preview/pull/217) [`17e9951`](https://github.com/ChestnutLabs/gcode-preview/commit/17e995123fa68274d508527261161741955b0647) Thanks [@sobechestnut-dev](https://github.com/sobechestnut-dev)! - E8 phase 1 ([#212](https://github.com/ChestnutLabs/gcode-preview/issues/212), DD-014): the low-resource 2D renderer's foundation — two new lockstep packages and
+  a boundary-preserving refactor. Additive; no IR/parser change, no change to the default (`'3d'`)
+  behavior or any existing public API.
+  - **`@chestnutlabs/gcode-colors`** (new): the renderer-agnostic home for the whole color subsystem
+    (DD-014 D3). Exports the `ColorMode` union (`single`/`tool`/`feature`/`colorChange`/`feedrate`/
+    `object`), `createSegmentColorer(ir, mode)` / `segmentColor`, `feedrateRange`, `rampColor`, and
+    `RGB`. Depends only on `@chestnutlabs/toolpath-core` — no `three`, no framework. Every mode degrades
+    unknown channel values to its fallback, never a fabricated color.
+  - **`@chestnutlabs/gcode-renderer-2d`** (new): an opt-in Canvas 2D current-layer renderer over the
+    existing `ToolpathIR` for low-GPU / low-memory / WebGL-blocked devices (DD-014 D1/D4). `LayerView2D`
+    plus the pure `drawLayer` / `computeLayerFit` / `layerBounds2D` / `rgbToCss` core. Depends only on
+    `toolpath-core` + `gcode-colors` — no `three`, no framework. Memory is bounded to the active layer.
+  - **`@chestnutlabs/gcode-renderer-three`**: the per-segment color logic moved to `gcode-colors`;
+    `colors.ts` now re-exports `ColorMode`/`RGB`/`feedrateRange` and `buildChunkColors` maps the shared
+    colorer onto the Three.js vertex buffer. Public API and behavior unchanged (parity test).
+
+- [#209](https://github.com/ChestnutLabs/gcode-preview/pull/209) [`4cd453f`](https://github.com/ChestnutLabs/gcode-preview/commit/4cd453f88f3dcb012af67ee8ff30159e371fd91a) Thanks [@sobechestnut-dev](https://github.com/sobechestnut-dev)! - Two additive color modes ([#177](https://github.com/ChestnutLabs/gcode-preview/issues/177), [#178](https://github.com/ChestnutLabs/gcode-preview/issues/178)) over channels the IR already parses, following the DD-009
+  capability-gated `colors.ts` pattern:
+  - **color-by-speed** (`{ mode: 'feedrate'; ramp; range?; fallback }`, [#177](https://github.com/ChestnutLabs/gcode-preview/issues/177)): maps each segment's
+    `feedrate` onto a color ramp — auto-ranged from the IR (pass `range` to keep the scale stable across
+    files). NaN feedrate (before the first `F`) → fallback. Exposes `feedrateRange(ir)`. Gated on the
+    `feedrate` capability.
+  - **color-by-object** (`{ mode: 'object'; palette; fallback; only? }`, [#178](https://github.com/ChestnutLabs/gcode-preview/issues/178)): shades by `seg.object`
+    (1-based; 0 = none → fallback) from the E4 `M486`/`EXCLUDE_OBJECT` work; `only` isolates one object
+    (others dimmed to fallback). Gated on the `objects` capability.
+
+  Both degrade honestly to the fallback rather than fabricating a color, and are reachable through the
+  existing `colorMode` prop on every adapter with no API change.
+
+- [#224](https://github.com/ChestnutLabs/gcode-preview/pull/224) [`d161e80`](https://github.com/ChestnutLabs/gcode-preview/commit/d161e802e36cc87fa27848ceef9d68cd45628760) Thanks [@sobechestnut-dev](https://github.com/sobechestnut-dev)! - Source-line ↔ segment mapping ([#184](https://github.com/ChestnutLabs/gcode-preview/issues/184)) — the "G-code debugger" surface. Additive; no IR/geometry change.
+  - `toolpath-core`: framework-free primitives over `segments.srcByte` + `sourceIndex`: build a line
+    index (`buildSourceLineIndex`), then `lineAtByte` / `byteRangeOfLine` / `sourceLineOfSegment`
+    (segment → its 1-based source line) / `segmentAtSourceLine` (line → segment, -1 when the line
+    produced none). Both directions, O(log n).
+  - `gcode-renderer-three`: `ToolpathRenderer.pickSegment(ndcX, ndcY, threshold?)` raycasts the
+    toolpath and returns the IR segment under a pointer (or null) — click a segment → its source line.
+    The pure index-mapping helper `resolveHitSegment(mesh, vertexIndex)` is exported and unit-tested.
+  - `gcode-preview-core`: `PreviewRenderer.pickSegment` (the 2D renderer returns null — no picking yet),
+    reachable via `raw.renderer()`.
+
+- [#229](https://github.com/ChestnutLabs/gcode-preview/pull/229) [`be72283`](https://github.com/ChestnutLabs/gcode-preview/commit/be72283b20215450e8bf91b9a4eee730e98b423e) Thanks [@sobechestnut-dev](https://github.com/sobechestnut-dev)! - Render slicer wipe moves as an independently toggleable layer (DD-016 phase 2, [#182](https://github.com/ChestnutLabs/gcode-preview/issues/182)).
+
+  Phase 1 populated `MoveKind.Wipe` from `;WIPE_START`/`;WIPE_END`; this makes those moves visible
+  and toggleable:
+  - **renderer-three**: wipe segments build into their own `'wipe'` geometry chunk (separate from
+    travel), and `setKindVisible('wipe', …)` shows/hides them. Default visible — nothing disappears
+    until a consumer opts out. Wipe geometry is exempt from travel decimation (it is sparse and the
+    point is to see it).
+  - **core**: `setKindVisible` widens to `'extrude' | 'travel' | 'wipe'` (new `MoveKindToggle` type).
+    The 2D renderer treats `'wipe'` as a documented no-op (the flat view has no distinct wipe form).
+  - **adapters** (Vue/React/Svelte/Element): a `showWipe` prop / `show-wipe` attribute (default true)
+    mirrors `showTravel`.
+
+  Additive and backward-compatible; existing callers passing `'extrude'`/`'travel'` are unaffected.
+  Completes [#182](https://github.com/ChestnutLabs/gcode-preview/issues/182).
+
+### Patch Changes
+
+- Updated dependencies [[`e8f889b`](https://github.com/ChestnutLabs/gcode-preview/commit/e8f889b576ee06da4181a048724c880ae38fedee), [`39348de`](https://github.com/ChestnutLabs/gcode-preview/commit/39348de9ce68717e71516f9acaccd475139983ba), [`17e9951`](https://github.com/ChestnutLabs/gcode-preview/commit/17e995123fa68274d508527261161741955b0647), [`d161e80`](https://github.com/ChestnutLabs/gcode-preview/commit/d161e802e36cc87fa27848ceef9d68cd45628760), [`82bd7ae`](https://github.com/ChestnutLabs/gcode-preview/commit/82bd7ae7f76e742767719d8efa11173a6548fc03)]:
+  - @chestnutlabs/gcode-colors@0.3.0
+  - @chestnutlabs/toolpath-core@0.3.0
+
 ## 0.2.0
 
 ### Minor Changes
