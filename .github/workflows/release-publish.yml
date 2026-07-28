@@ -9,6 +9,10 @@ name: Release / publish
 on:
   release:
     types: [published]
+  # Manual recovery trigger (DD-008 §6): re-run the idempotent publish against
+  # `main` to complete a partially-published line — publish.mjs skips every
+  # name@version already on the registry and uploads only the missing remainder.
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -17,7 +21,7 @@ permissions:
 jobs:
   publish:
     runs-on: ubuntu-latest
-    if: startsWith(github.event.release.tag_name, 'v')
+    if: startsWith(github.event.release.tag_name, 'v') || github.event_name == 'workflow_dispatch'
     steps:
       - uses: actions/checkout@v4
       - name: Refuse to publish from anywhere but main
@@ -44,7 +48,7 @@ jobs:
       - run: npm run test:consumer-vue
       - run: npm run pack:check
       - run: npm run release:sync-check
-      - name: Publish ×9 with provenance (dependency order)
+      - name: Publish with provenance (dependency order, idempotent)
         run: npm run release:publish
         env:
           RELEASE_CONFIRM: publish
