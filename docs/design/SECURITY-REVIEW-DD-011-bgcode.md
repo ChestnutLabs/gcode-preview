@@ -1,9 +1,9 @@
 # Security Review Record — DD-011 §7 Binary G-code (`.bgcode`) Decode
 
 **Scope:** `@chestnutlabs/gcode-bgcode` v1 (`.bgcode` decode, epic #188)
-**Status:** **PREPARED — awaiting maintainer sign-off** (DD-011 §15 gate; the maintainer grants sign-off
-as part of the epic acceptance, as was done for DD-005 §7.3).
-**Prepared:** 2026-07-27 · **Preparer:** Chestnut Labs
+**Status:** **SIGNED OFF** (2026-07-28) — granted by the maintainer as part of the epic #188
+acceptance (DD-011 §15 gate; epic closed 2026-07-28), as was done for DD-005 §7.3.
+**Prepared:** 2026-07-27 · **Preparer:** Chestnut Labs · **Signed off:** 2026-07-28
 
 Untrusted **binary** input is the entire threat model: a `.bgcode` file is attacker-controlled bytes
 that must decode to G-code without a crash, an unbounded read/allocation, a hang, or any code /
@@ -35,4 +35,4 @@ in `bgcode.test.ts`, and the real-file golden-equivalence (`golden-equivalence.t
 - Real-file validation is done: a 21 MB Prusa XL ColorMix file (856 blocks, all CRC32 verified) and a
   cube golden pair (`decoded-.bgcode IR == plain-.gcode IR`, byte-identical) — see the epic PRs.
 
-**Sign-off:** _pending_ — to be granted by the maintainer with the #188 epic acceptance (DD-011 §15).
+**Sign-off:** **Granted 2026-07-28** by the maintainer with the #188 epic acceptance (DD-011 §15); epic #188 closed.
