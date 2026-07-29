@@ -324,6 +324,7 @@ export function createEngine(input: string | Uint8Array, opts: ParseOptions): En
   let toolEngaged = false;
   let toolStateSeen = false; // any M3/M4/M5 observed → cutMoves capability 'known'
   let modalS = NaN; // current modal spindle/laser S value (power / RPM); NaN until first seen (#189)
+  let modalMotion: 'g0' | 'g1' | 'g2' | 'g3' | null = null; // last G0–G3 mode for modal-motion lines (#189)
 
   // Per-axis position certainty (DD-010 D4 amendment, #158). A G31 probe endpoint is reached at
   // RUNTIME (workpiece contact), not the commanded value, so it marks the probed axes uncertain. A
@@ -691,6 +692,16 @@ export function createEngine(input: string | Uint8Array, opts: ParseOptions): En
     if (onCommand !== undefined) {
       onCommand({ gcode: cmd.gcode, params: cmd.params, rawLine, srcByte: offset, segIndex: writer.count });
     }
+    // Modal motion continuation (#189, DD-012 phase 2): a line whose leading word is a coordinate
+    // axis (no G/M/T command) repeats the last G0–G3 motion mode — common in CNC/LinuxCNC output.
+    // FDM slicers always emit the G word, so this never triggers for FDM (byte-identical). The lexer
+    // packs the leading axis value into `cmd.gcode`; rewrite the line into a synthetic copy of the
+    // active motion command so the dispatch switch handles it unchanged.
+    const lead = cmd.gcode[0];
+    if (modalMotion !== null && (lead === 'x' || lead === 'y' || lead === 'z')) {
+      cmd.params[lead] = Number(cmd.gcode.slice(1));
+      cmd.gcode = modalMotion;
+    }
     // Modal S (spindle/laser power/RPM) latches until changed — set on M3/M4 lines and inline on
     // motion lines (GRBL laser mode `G1 X.. S..`). Captured only when a caller requested toolPower.
     if (wantToolPower && cmd.params.s !== undefined) modalS = cmd.params.s;
@@ -698,12 +709,15 @@ export function createEngine(input: string | Uint8Array, opts: ParseOptions): En
     switch (cmd.gcode) {
       case 'g0':
       case 'g1':
+        modalMotion = cmd.gcode as 'g0' | 'g1';
         ok = g0(cmd.params);
         break;
       case 'g2':
+        modalMotion = 'g2';
         ok = g2(cmd.params, true);
         break;
       case 'g3':
+        modalMotion = 'g3';
         ok = g2(cmd.params, false);
         break;
       case 'g20':
