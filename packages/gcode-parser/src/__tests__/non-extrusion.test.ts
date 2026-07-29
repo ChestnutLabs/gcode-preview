@@ -135,3 +135,52 @@ describe('DD-012 phase 2 — modal motion continuation (#189)', () => {
     expect(ir.segments.count).toBe(1); // the pre-mode coordinate line is dropped; only the G1 emits
   });
 });
+
+describe('DD-012 phase 2 — canned drilling cycles (#189)', () => {
+  const minZ1 = (ir: { segments: { count: number; z1: Float32Array } }): number => {
+    let m = Infinity;
+    for (let i = 0; i < ir.segments.count; i++) m = Math.min(m, ir.segments.z1[i]);
+    return m;
+  };
+
+  it('G81 expands to rapid/plunge/retract, with a Cut plunge to depth', () => {
+    const { ir } = parseGcodeToIR('G0 X0 Y0 Z5\nG81 X10 Y10 Z-5 R2 F100\nG80\n', {});
+    expect(ir.header.capabilities.cannedCycles).toBe('known');
+    let sawCut = false;
+    for (let i = 0; i < ir.segments.count; i++) if (cut(ir.segments.kind[i])) sawCut = true;
+    expect(sawCut).toBe(true);
+    expect(minZ1(ir)).toBeCloseTo(-5); // the plunge reaches Z-5
+  });
+
+  it('modal repeat: a bare X/Y line drills another hole (4 more sub-moves)', () => {
+    const one = parseGcodeToIR('G0 X0 Y0 Z5\nG81 X10 Y10 Z-5 R2 F100\nG80\n', {}).ir.segments.count;
+    const two = parseGcodeToIR('G0 X0 Y0 Z5\nG81 X10 Y10 Z-5 R2 F100\nX20 Y10\nG80\n', {}).ir.segments.count;
+    expect(two).toBe(one + 4);
+  });
+
+  it('retract plane: G98 → initial Z, G99 → R plane', () => {
+    const g98 = parseGcodeToIR('G0 X0 Y0 Z5\nG98\nG81 X10 Y10 Z-5 R2\nG80\n', {}).ir.segments;
+    const g99 = parseGcodeToIR('G0 X0 Y0 Z5\nG99\nG81 X10 Y10 Z-5 R2\nG80\n', {}).ir.segments;
+    expect(g98.z1[g98.count - 1]).toBeCloseTo(5); // retract to the initial plane
+    expect(g99.z1[g99.count - 1]).toBeCloseTo(2); // retract to the R plane
+  });
+
+  it('G83 peck drilling produces multiple Cut plunges reaching depth', () => {
+    const { ir } = parseGcodeToIR('G0 X0 Y0 Z5\nG83 X0 Y0 Z-6 R2 Q2 F100\nG80\n', {});
+    let cutCount = 0;
+    for (let i = 0; i < ir.segments.count; i++) if (cut(ir.segments.kind[i])) cutCount++;
+    expect(cutCount).toBeGreaterThan(1); // one Cut per peck
+    expect(minZ1(ir)).toBeCloseTo(-6);
+  });
+
+  it('G80 cancels: a following bare coordinate line drills nothing', () => {
+    const active = parseGcodeToIR('G0 X0 Y0 Z5\nG81 X10 Y10 Z-5 R2\nX20 Y10\n', {}).ir.segments.count;
+    const cancelled = parseGcodeToIR('G0 X0 Y0 Z5\nG81 X10 Y10 Z-5 R2\nG80\nX20 Y10\n', {}).ir.segments.count;
+    expect(active).toBe(cancelled + 4); // the post-G80 line adds no hole
+  });
+
+  it('FDM regression: no canned cycles ⇒ cannedCycles unavailable', () => {
+    const { ir } = parseGcodeToIR('M82\nG1 X0 Y0 E0\nG1 X10 E5\n', {});
+    expect(ir.header.capabilities.cannedCycles).toBe('unavailable');
+  });
+});

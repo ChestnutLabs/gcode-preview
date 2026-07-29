@@ -325,6 +325,15 @@ export function createEngine(input: string | Uint8Array, opts: ParseOptions): En
   let toolStateSeen = false; // any M3/M4/M5 observed → cutMoves capability 'known'
   let modalS = NaN; // current modal spindle/laser S value (power / RPM); NaN until first seen (#189)
   let modalMotion: 'g0' | 'g1' | 'g2' | 'g3' | null = null; // last G0–G3 mode for modal-motion lines (#189)
+  // Canned drilling cycle state (DD-012 phase 2, #189). Z/R/Q/initial-plane are captured when the
+  // cycle is defined and retained across modal (bare X/Y) repeats until G80 or a G0–G3 cancels it.
+  let cannedCycle: 'g81' | 'g82' | 'g83' | null = null;
+  let cannedZ = 0; // final drill depth (absolute)
+  let cannedR = 0; // retract / reference plane (absolute Z)
+  let cannedQ = 0; // peck increment (G83)
+  let cannedInitialZ = 0; // Z when the cycle activated — the G98 retract plane
+  let cannedRetractInitial = true; // G98 (retract to initial Z) vs G99 (retract to R); modal, default G98
+  let cannedCyclesSeen = false; // any G81/G82/G83 expanded → cannedCycles capability 'known'
 
   // Per-axis position certainty (DD-010 D4 amendment, #158). A G31 probe endpoint is reached at
   // RUNTIME (workpiece contact), not the commanded value, so it marks the probed axes uncertain. A
@@ -670,6 +679,40 @@ export function createEngine(input: string | Uint8Array, opts: ParseOptions): En
     return emitArc(ta, tb, tc);
   };
 
+  // Canned drilling cycle (DD-012 phase 2, #189): expand G81/G82/G83 into explicit sub-moves so the
+  // holes are real geometry (today they emit nothing). Rapids are Travel; the plunge(s) are Cut. Z/R/Q
+  // and the initial plane are captured when the cycle is defined and retained across modal repeats.
+  const runCannedCycle = (p: Record<string, number>): boolean => {
+    // 1. Rapid to the hole XY at the current Z.
+    sx = nextAxis(sx, p.x, offX());
+    sy = nextAxis(sy, p.y, offY());
+    g53OneShot = false;
+    if (!emitSegment(sx, sy, sz, 0, MoveKind.Travel)) return false;
+    // 2. Rapid Z down to the R (reference) plane.
+    sz = cannedR;
+    if (!emitSegment(sx, sy, sz, 0, MoveKind.Travel)) return false;
+    // 3. Feed to depth — one plunge (G81/G82) or a peck loop (G83). Productive → Cut.
+    if (cannedCycle === 'g83' && cannedQ > 0 && cannedR > cannedZ) {
+      let depth = cannedR;
+      while (depth > cannedZ) {
+        depth = Math.max(cannedZ, depth - cannedQ);
+        sz = depth;
+        if (!emitSegment(sx, sy, sz, 0, MoveKind.Cut)) return false; // feed down one peck
+        if (depth > cannedZ) {
+          sz = cannedR;
+          if (!emitSegment(sx, sy, sz, 0, MoveKind.Travel)) return false; // rapid retract to R between pecks
+        }
+      }
+    } else {
+      sz = cannedZ;
+      if (!emitSegment(sx, sy, sz, 0, MoveKind.Cut)) return false; // single plunge
+    }
+    // 4. Retract (rapid) to the initial plane (G98) or the R plane (G99).
+    sz = cannedRetractInitial ? cannedInitialZ : cannedR;
+    if (!emitSegment(sx, sy, sz, 0, MoveKind.Travel)) return false;
+    return true;
+  };
+
   const onComment = opts.onComment;
   const onCommand = opts.onCommand;
 
@@ -698,9 +741,16 @@ export function createEngine(input: string | Uint8Array, opts: ParseOptions): En
     // packs the leading axis value into `cmd.gcode`; rewrite the line into a synthetic copy of the
     // active motion command so the dispatch switch handles it unchanged.
     const lead = cmd.gcode[0];
-    if (modalMotion !== null && (lead === 'x' || lead === 'y' || lead === 'z')) {
+    let cannedRepeat = false;
+    if ((lead === 'x' || lead === 'y' || lead === 'z') && (cannedCycle !== null || modalMotion !== null)) {
       cmd.params[lead] = Number(cmd.gcode.slice(1));
-      cmd.gcode = modalMotion;
+      if (cannedCycle !== null) {
+        // An active canned cycle owns the modal group: a bare X/Y line drills another hole.
+        cmd.gcode = cannedCycle;
+        cannedRepeat = true;
+      } else {
+        cmd.gcode = modalMotion as 'g0' | 'g1' | 'g2' | 'g3';
+      }
     }
     // Modal S (spindle/laser power/RPM) latches until changed — set on M3/M4 lines and inline on
     // motion lines (GRBL laser mode `G1 X.. S..`). Captured only when a caller requested toolPower.
@@ -710,15 +760,45 @@ export function createEngine(input: string | Uint8Array, opts: ParseOptions): En
       case 'g0':
       case 'g1':
         modalMotion = cmd.gcode as 'g0' | 'g1';
+        cannedCycle = null; // a G0–G3 motion command cancels the canned-cycle modal group
         ok = g0(cmd.params);
         break;
       case 'g2':
         modalMotion = 'g2';
+        cannedCycle = null;
         ok = g2(cmd.params, true);
         break;
       case 'g3':
         modalMotion = 'g3';
+        cannedCycle = null;
         ok = g2(cmd.params, false);
+        break;
+      // Canned drilling cycles (DD-012 phase 2, #189). A fresh G81/G82/G83 captures Z/R/Q + the
+      // initial plane and drills the first hole; bare X/Y lines (cannedRepeat) drill more, retaining
+      // that state; G80 cancels; G98/G99 set the retract plane.
+      case 'g81':
+      case 'g82':
+      case 'g83':
+        cannedCyclesSeen = true;
+        if (!cannedRepeat) {
+          cannedCycle = cmd.gcode as 'g81' | 'g82' | 'g83';
+          cannedInitialZ = sz;
+          if (cmd.params.z !== undefined) cannedZ = nextAxis(sz, cmd.params.z, offZ());
+          if (cmd.params.r !== undefined) cannedR = nextAxis(sz, cmd.params.r, offZ());
+          if (cmd.params.q !== undefined) cannedQ = Math.abs(cmd.params.q);
+          if (cmd.params.f !== undefined) modalFeed = cmd.params.f;
+          modalMotion = null;
+        }
+        ok = runCannedCycle(cmd.params);
+        break;
+      case 'g80':
+        cannedCycle = null;
+        break;
+      case 'g98':
+        cannedRetractInitial = true;
+        break;
+      case 'g99':
+        cannedRetractInitial = false;
         break;
       case 'g20':
         units = 'in';
@@ -952,6 +1032,9 @@ export function createEngine(input: string | Uint8Array, opts: ParseOptions): En
       // was seen — i.e. this is a CNC/laser/plotter file whose Cut moves are meaningful; 'unavailable'
       // for FDM (no tool-state), where every move is Extrude/Travel and Cut is never set.
       cutMoves: toolStateSeen ? 'known' : 'unavailable',
+      // Canned drilling cycles expanded to geometry (DD-012 phase 2, #189). 'known' once a G81/G82/G83
+      // was seen (holes are real segments), else 'unavailable' (no cycles / FDM).
+      cannedCycles: cannedCyclesSeen ? 'known' : 'unavailable',
       // Motion-model modes (DD-010 E10 phase 1). 'known' when the governing command was seen
       // (M82/M83, or a firmware-known G90/G91 for E); 'inferred' when defaulted (absolute).
       extrusionMode: eModeExplicit !== null || (extruderFollowsPositioning && positioningSeen) ? 'known' : 'inferred',
@@ -1070,6 +1153,7 @@ export function createEngine(input: string | Uint8Array, opts: ParseOptions): En
           wipeMoves: 'unavailable', // annotation move kinds resolve on the final IR (DD-016)
           seamMoves: 'unavailable',
           cutMoves: 'unavailable', // non-extrusion classification resolves on the final IR (DD-012)
+          cannedCycles: 'unavailable', // canned-cycle expansion resolves on the final IR (DD-012)
           extrusionMode: 'inferred', // motion modes resolve fully on the final IR (E10)
           positioningMode: 'inferred',
           arcPlanes: 'inferred',

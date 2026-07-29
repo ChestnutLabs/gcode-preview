@@ -19,6 +19,7 @@
     "wipeMoves": "unavailable",
     "seamMoves": "unavailable",
     "cutMoves": "known",
+    "cannedCycles": "unavailable",
     "extrusionMode": "inferred",
     "positioningMode": "known",
     "arcPlanes": "inferred",
