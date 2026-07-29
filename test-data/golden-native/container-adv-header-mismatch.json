@@ -26,8 +26,7 @@
     "coordinateSystem": "inferred"
   },
   "warningCodes": [
-    "layers-unavailable",
-    "unsupported-command"
+    "layers-unavailable"
   ],
   "bufferDigests": {
     "x0": "811c9dc5",

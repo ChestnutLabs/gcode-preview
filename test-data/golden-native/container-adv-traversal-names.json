@@ -1,8 +1,8 @@
 {
-  "segmentCount": 0,
-  "layerCount": 0,
-  "toolCount": 0,
-  "points": 0,
+  "segmentCount": 3,
+  "layerCount": 1,
+  "toolCount": 1,
+  "points": 3,
   "extrusionDistance": 0,
   "capabilities": {
     "geometry": "known",
@@ -26,21 +26,20 @@
     "coordinateSystem": "inferred"
   },
   "warningCodes": [
-    "layers-unavailable",
-    "unsupported-command"
+    "layers-unavailable"
   ],
   "bufferDigests": {
-    "x0": "811c9dc5",
-    "y0": "811c9dc5",
-    "z0": "811c9dc5",
-    "x1": "811c9dc5",
-    "y1": "811c9dc5",
-    "z1": "811c9dc5",
-    "e": "811c9dc5",
-    "feedrate": "811c9dc5",
-    "kind": "811c9dc5",
-    "tool": "811c9dc5",
-    "layer": "811c9dc5",
-    "srcByte": "811c9dc5"
+    "x0": "4c0deeb5",
+    "y0": "0666a885",
+    "z0": "e23c62b5",
+    "x1": "ca9b1375",
+    "y1": "f0976b05",
+    "z1": "e23c62b5",
+    "e": "e23c62b5",
+    "feedrate": "a51f5f48",
+    "kind": "16835645",
+    "tool": "7f77879d",
+    "layer": "e23c62b5",
+    "srcByte": "74134621"
   }
 }

@@ -48,7 +48,13 @@ const equivalenceFixtures = manifest.fixtures.filter((f) => f.sizeTier !== 'adve
  * inherited adapter (which knew only Extrude|Travel) called them Travel. Positions are unchanged; only
  * the masked-kind digest diverges, so it too is excluded here and pinned by its native golden.
  */
-const INTENTIONAL_MOTION_CORRECTION = new Set(['demo-mach3', 'demo-easel']);
+// container-adv-traversal-names is an ADVERSARIAL BINARY container (a malicious ZIP) — never real
+// G-code. The #189 multi-command lexer (which reads every G/M word on a line, not just the first)
+// finds a few coincidental `G<digit>` byte patterns in the ZIP bytes, so a raw-text parse of it yields
+// a handful of bounded segments where the inherited first-word lexer yielded zero. Bounded and
+// harmless (the real path decodes the container first); excluded from strict adapter-equivalence and
+// pinned by its native golden, like the CNC motion corrections above.
+const INTENTIONAL_MOTION_CORRECTION = new Set(['demo-mach3', 'demo-easel', 'container-adv-traversal-names']);
 
 function fnv1a(view: ArrayBufferView): string {
   const bytes = new Uint8Array(view.buffer, view.byteOffset, view.byteLength);
