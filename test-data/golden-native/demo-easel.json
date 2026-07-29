@@ -18,6 +18,7 @@
     "colorChanges": "unavailable",
     "wipeMoves": "unavailable",
     "seamMoves": "unavailable",
+    "cutMoves": "known",
     "extrusionMode": "inferred",
     "positioningMode": "known",
     "arcPlanes": "inferred",
@@ -36,7 +37,7 @@
     "z1": "922f59d5",
     "e": "b2ea2aa5",
     "feedrate": "55cd1315",
-    "kind": "201c43c5",
+    "kind": "3258dd1d",
     "tool": "b92addb5",
     "layer": "b2ea2aa5",
     "srcByte": "66a09cf5"
