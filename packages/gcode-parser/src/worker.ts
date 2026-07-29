@@ -13,7 +13,10 @@
 import {
   createDialectRunner,
   cura,
+  grblLaser,
+  grblMill,
   klipper,
+  linuxCnc,
   marlin,
   orcaBambu,
   prusaSlicer,
@@ -31,7 +34,11 @@ const BUILTIN_ADAPTERS: Parameters<typeof createDialectRunner>[0] = [
   cura(),
   klipper(),
   marlin(),
-  repRap()
+  repRap(),
+  // Non-extrusion controllers (DD-012 phase 3, #189) — all EXPERIMENTAL tier until hardware-validated.
+  grblLaser(),
+  grblMill(),
+  linuxCnc()
 ];
 
 /** Built-in container adapters (DD-005 §4.4): .gcode.3mf and Prusa binary G-code (.bgcode, #188). */
