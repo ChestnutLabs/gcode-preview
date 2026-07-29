@@ -86,6 +86,14 @@ export interface ParseOptions {
    */
   extruderFollowsPositioning?: boolean;
   /**
+   * Opt-in modal channels to capture per segment (DD-012 D3, #189). Each requested id adds one
+   * Float32 column to the IR (`segments.modal[id]`); a default parse requests none and pays nothing,
+   * so FDM output is unchanged. Supported id: `'toolPower'` — the modal spindle/laser `S` value while
+   * a tool is engaged (`M3`/`M4`), NaN when the tool is off. Presentation (Watts vs RPM) is a dialect
+   * label, not a separate channel (DD-012 D4). Fan/temp/accel etc. (#180) reuse the same mechanism.
+   */
+  modalChannels?: readonly string[];
+  /**
    * DD-005 §4.3 read-only hooks: observe comments/commands during the parse.
    * Inert when unset (one branch per line); they cannot alter lexing, dispatch,
    * or machine state — the golden-gated semantics are untouched.
@@ -156,6 +164,11 @@ export interface AsyncParseResult extends ParseResult {
 
 const LAYER_TOLERANCE = 0.05;
 const UNRESOLVED_LAYER = 0xffffffff;
+
+/** Opt-in modal channels this engine can capture (DD-012 D3, #189). Requested via
+ *  `ParseOptions.modalChannels`; unknown ids are ignored with a warning. Extend as later phases
+ *  (spindle/laser already covered by `toolPower`; #180's fan/temp/accel land here next). */
+const SUPPORTED_MODAL_CHANNELS = new Set(['toolPower']);
 
 interface Cmd {
   gcode: string;
@@ -256,7 +269,17 @@ export function createEngine(input: string | Uint8Array, opts: ParseOptions): En
     }
   };
 
-  const writer = new SegmentWriter(limits.maxBufferBytes);
+  // Opt-in modal channels (DD-012 D3): dedupe, keep supported, warn (once) on any unknown id.
+  const requestedModal: string[] = [];
+  for (const id of opts.modalChannels ?? []) {
+    if (!SUPPORTED_MODAL_CHANNELS.has(id)) {
+      warn('modal-channel-unsupported', `Ignoring unsupported modal channel '${id}'.`);
+    } else if (!requestedModal.includes(id)) {
+      requestedModal.push(id);
+    }
+  }
+  const wantToolPower = requestedModal.includes('toolPower');
+  const writer = new SegmentWriter(limits.maxBufferBytes, requestedModal);
 
   // Machine state (port of State.initial + Interpreter fields).
   let sx = 0;
@@ -300,6 +323,7 @@ export function createEngine(input: string | Uint8Array, opts: ParseOptions): En
   // slices never issue M3/M4, so toolEngaged stays false and their classification is byte-identical.
   let toolEngaged = false;
   let toolStateSeen = false; // any M3/M4/M5 observed → cutMoves capability 'known'
+  let modalS = NaN; // current modal spindle/laser S value (power / RPM); NaN until first seen (#189)
 
   // Per-axis position certainty (DD-010 D4 amendment, #158). A G31 probe endpoint is reached at
   // RUNTIME (workpiece contact), not the commanded value, so it marks the probed axes uncertain. A
@@ -412,7 +436,10 @@ export function createEngine(input: string | Uint8Array, opts: ParseOptions): En
         kind,
         tool: path?.tool ?? tool,
         layer: UNRESOLVED_LAYER,
-        srcByte: currentSrcByte
+        srcByte: currentSrcByte,
+        // toolPower is the modal S while a tool is engaged; NaN when off (M5 / never engaged) — an
+        // honest "no cutting power here", not a fabricated 0. Only built when requested (DD-012 D3).
+        modal: wantToolPower ? { toolPower: toolEngaged ? modalS : NaN } : undefined
       });
     } catch (err) {
       if (err instanceof BudgetExceededError) {
@@ -664,6 +691,9 @@ export function createEngine(input: string | Uint8Array, opts: ParseOptions): En
     if (onCommand !== undefined) {
       onCommand({ gcode: cmd.gcode, params: cmd.params, rawLine, srcByte: offset, segIndex: writer.count });
     }
+    // Modal S (spindle/laser power/RPM) latches until changed — set on M3/M4 lines and inline on
+    // motion lines (GRBL laser mode `G1 X.. S..`). Captured only when a caller requested toolPower.
+    if (wantToolPower && cmd.params.s !== undefined) modalS = cmd.params.s;
     let ok = true;
     switch (cmd.gcode) {
       case 'g0':
@@ -918,6 +948,9 @@ export function createEngine(input: string | Uint8Array, opts: ParseOptions): En
       // 'inferred' (identity WCS / no offset assumed — the FDM-slicer default).
       coordinateSystem: coordSystemSeen ? 'known' : 'inferred'
     };
+    // Opt-in modal channels (DD-012 D3): only surfaced when requested. 'known' once its controlling
+    // signal was seen (toolPower ← a tool-state modal), else 'unavailable' — never a fabricated value.
+    if (wantToolPower) capabilities.toolPower = toolStateSeen ? 'known' : 'unavailable';
 
     if (layersCapability === 'unavailable') {
       warn('layers-unavailable', 'No planar layer index; all segments assigned to layer 0.');

@@ -122,6 +122,11 @@ export interface ToolpathSegments {
   object: Uint32Array;
   /** Byte offset in the source of the command that produced this segment. */
   srcByte: Uint32Array;
+  /** Opt-in modal channels (DD-012 D3), keyed by channel id — present only when the parse was asked
+   *  to capture them (`ParseOptions.modalChannels`). Each is a Float32 column of length `count`; an
+   *  unset value is `NaN` (an honest "no value here"), never a fabricated 0. E.g. `modal.toolPower`
+   *  is the spindle/laser `S` value while a tool is engaged. FDM parses carry no `modal`. */
+  modal?: Readonly<Record<string, Float32Array>>;
 }
 
 export interface ToolpathLayer {
