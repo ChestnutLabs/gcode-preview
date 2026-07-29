@@ -28,6 +28,28 @@ annotation) · **unsupported** (generic parse only — geometry always works; me
 | Marlin | **full** (`;FLAVOR:Marlin`; `gcode_flavor` tail) | **full** (`M486 S<idx>`/`S-1` → `objects: known`) | composes (proven: Cura+Marlin) | `dialect-cura-style` | 2026-07-23 |
 | RepRap-style | **full** (`;FLAVOR:RepRap`; `gcode_flavor` tail) | — | detection-only | `dialect-reprap-style` | 2026-07-23 |
 
+## Dialects (non-extrusion — CNC / laser / plotter, DD-012 #189)
+
+Non-extrusion controllers. Each declares a **validation tier** (DD-012 D6): until a controller is
+confirmed on real hardware, its non-extrusion claims are reported **`inferred`** (experimental), never
+`known` — the tier *is* the honesty mechanism. Geometry (positions, arcs, drilled holes) always parses
+regardless of tier; the tier governs only how much to trust the *semantic* classification. The
+underlying capabilities are in [Cross-cutting coverage](#cross-cutting-coverage) below.
+
+| Controller | Detection | Machine class | Validation tier | Non-extrusion claims | Fixtures | Evidence date |
+|---|---|---|---|---|---|---|
+| GRBL laser | LightBurn header / `$32=1` laser mode / `M4`+`S`, no extrusion | laser | **experimental** | `cutMoves` · `toolPower` (laser power) · `cannedCycles` — reported **`inferred`** until hardware-validated | synthetic | 2026-07-28 |
+| GRBL mill | `Grbl` banner + `M3` spindle, no extrusion | mill | **experimental** | `cutMoves` · `toolPower` (spindle RPM) · `cannedCycles` — **`inferred`** | synthetic | 2026-07-28 |
+| LinuxCNC / EMC | `LinuxCNC`/`EMC` header / `%`-program + `M3` | mill | **experimental** | as above — **`inferred`** | synthetic | 2026-07-28 |
+| Marlin-laser / Mach / Smoothieware | _reserved_ | laser/mill | _pending_ | generic parse only until added | — | — |
+| Pen plotters (servo `M280` / Z-lift) | _reserved_ | plotter | _pending_ | generic parse only until added | — | — |
+
+Each dialect adds provenance to `metadata.raw` (`cnc.controller`, `cnc.machineClass`,
+`cnc.toolPowerLabel`, `cnc.validationTier`) and emits a `cnc-dialect-experimental` disclosure warning.
+A one-line `tier: 'validated'` flip per controller promotes its claims to `known` once a real-hardware
+run confirms them (DD-012 §8/§15). **DSP lasers (`.rd`) and galvo (`.ezd`) are out of scope** — those
+are proprietary binary formats, not G-code.
+
 ## Containers
 
 | Container | Discovery | Plates | Machine metadata | Integrity checks | Security review | Fixtures | Evidence date |
@@ -42,6 +64,10 @@ annotation) · **unsupported** (generic parse only — geometry always works; me
 | Multi-tool / AMS / IDEX | core `tool` channel (T commands) + adapter `filament_type/colour` → `ir.tools` material/color | **full** (`dialect-multitool-ams`, 2026-07-23) |
 | Arc moves (G2/G3) | core parser (golden-gated) | **full** since E2 |
 | Per-file build plate in the viewer | `metadata.machine` → `setBuildVolume` (DD-005 §4.2) | mechanism shipped (phase 1); data arrives phases 2–3 |
+| Non-extrusion move classification (`Cut`) | core parser: a no-`E` move while a tool is engaged (`M3`/`M4`, `M5` off) → `MoveKind.Cut` (DD-012 D2, #189) | **full** mechanism (`cutMoves: 'known'`); a per-dialect experimental tier reports it `inferred` |
+| Tool-power channel (`toolPower`) | opt-in `ModalChannel` — the modal `S` while engaged, requested via `ParseOptions.modalChannels` (DD-012 D3) | **full** mechanism; `NaN` when the tool is off, never a fabricated 0; consumed by the `power` color mode |
+| Canned drilling cycles | parser expands `G81`/`G82`/`G83` (+ `G80`, `G98`/`G99`, and modal bare-`X`/`Y` repeat) to real geometry (DD-012 D5) | **full** for `G81`/`G82`/`G83` incl. `G83` peck; `G84`–`G89` `unavailable` (disclosed) |
+| Modal motion continuation | a coordinate-only line repeats the last `G0`–`G3` motion mode — the CNC/LinuxCNC form (DD-012 phase 2) | **full** since #189; FDM unaffected (slicers always emit the `G` word) |
 
 ## Live progress tiers (DD-006, E5)
 

@@ -34,9 +34,13 @@ over one shared, framework-neutral engine.
   plates, WebGL context-loss recovery.
 - **A low-resource Canvas 2D renderer** — an optional `renderer: '2d'` layer view for constrained
   environments, with adjacent "ghost" layers and its own progress mapping (no WebGL required).
-- **Rich toolpath coloring** — by feature type, move speed, object, or per-layer height, plus
-  toggleable wipe/seam moves; time-based scrub with a print-time estimate; and a source-line ↔
-  segment debugger mapping.
+- **Rich toolpath coloring** — by feature type, move speed, object, per-layer height, or (for
+  non-extrusion) tool power and cut-vs-rapid, plus toggleable wipe/seam moves; time-based scrub with a
+  print-time estimate; and a source-line ↔ segment debugger mapping.
+- **Non-extrusion toolpaths — CNC / laser / plotter** *(experimental)* — cut/burn/draw moves classified
+  as `Cut`, a modal `toolPower` (laser power / spindle RPM) channel, canned drilling-cycle expansion
+  (`G81`/`G82`/`G83`), and controller recognition (GRBL laser/mill, LinuxCNC) — all honesty-**tiered**:
+  reported `inferred` until confirmed on real hardware, never fabricated.
 - **Honest live progress** (for printer telemetry) — a normalized `ProgressObservation` contract
   mapped onto the toolpath with tiered confidence: a precise cut + marker when the source position
   is known, an uncertainty band when it is approximated, stale-signal handling, and user scrub
