@@ -6,7 +6,15 @@
  */
 import { describe, expect, it } from 'vitest';
 import { MoveKind, ToolpathIRBuilder, type ToolpathIR } from '@chestnutlabs/toolpath-core';
-import { createSegmentColorer, segmentColor, feedrateRange, layerHeightRange, rampColor, type RGB } from '../index.js';
+import {
+  createSegmentColorer,
+  segmentColor,
+  feedrateRange,
+  toolPowerRange,
+  layerHeightRange,
+  rampColor,
+  type RGB
+} from '../index.js';
 
 const A: RGB = [1, 0, 0];
 const B: RGB = [0, 1, 0];
@@ -17,12 +25,15 @@ interface SegChannels {
   tool?: number;
   feature?: number;
   object?: number;
+  kind?: number;
+  toolPower?: number;
 }
 
 /** N segments, each carrying the given optional channels. */
 function makeIR(segs: SegChannels[], colorChangeAt: number[] = []): ToolpathIR {
   const b = new ToolpathIRBuilder({ parserVersion: 'test', units: 'mm', unitsSource: 'known' });
   for (let s = 0; s < segs.length; s++) {
+    const { toolPower: _tp, ...seg } = segs[s];
     b.addSegment({
       x0: s,
       y0: 0,
@@ -34,13 +45,21 @@ function makeIR(segs: SegChannels[], colorChangeAt: number[] = []): ToolpathIR {
       kind: MoveKind.Extrude,
       layer: 0,
       srcByte: s * 10,
-      ...segs[s]
+      ...seg
     });
   }
   for (const segIndex of colorChangeAt) {
     b.addColorChange({ x: segIndex, y: 0, z: 0.2, segIndex, srcByte: segIndex * 10, tool: 0 });
   }
-  return b.finalize();
+  const ir = b.finalize();
+  // The builder has no modal-channel input; attach the opt-in toolPower column directly (as the parser
+  // does when `modalChannels: ['toolPower']` is requested) so the color-by-power mode can be tested.
+  if (segs.some((s) => s.toolPower !== undefined)) {
+    (ir.segments as { modal?: Record<string, Float32Array> }).modal = {
+      toolPower: Float32Array.from(segs, (s) => s.toolPower ?? NaN)
+    };
+  }
+  return ir;
 }
 
 describe('single / tool / feature', () => {
@@ -173,5 +192,46 @@ describe('rampColor', () => {
     expect(rampColor([A, B], -1)).toEqual([1, 0, 0]);
     expect(rampColor([A, B], 2)).toEqual([0, 1, 0]);
     expect(rampColor([A], 0.5)).toEqual([1, 0, 0]);
+  });
+});
+
+describe('power / moveKind (#189, DD-012 D7)', () => {
+  it('power ramps the toolPower channel; NaN (tool off) → fallback', () => {
+    const ir = makeIR([{ toolPower: 0 }, { toolPower: 128 }, { toolPower: 255 }, { toolPower: NaN }]);
+    const c = createSegmentColorer(ir, { mode: 'power', ramp: [A, B], range: [0, 255], fallback: F });
+    expect(c(0)).toEqual(A); // 0 → ramp start
+    expect(c(2)).toEqual(B); // 255 → ramp end
+    expect(c(3)).toEqual(F); // NaN → fallback, never a fabricated power color
+  });
+
+  it('power with no toolPower channel captured → every segment is fallback', () => {
+    const ir = makeIR([{}, {}]); // no modal channel
+    const c = createSegmentColorer(ir, { mode: 'power', ramp: [A, B], fallback: F });
+    expect(c(0)).toEqual(F);
+    expect(c(1)).toEqual(F);
+  });
+
+  it('toolPowerRange ignores NaN; [0,0] when the channel is absent', () => {
+    expect(toolPowerRange(makeIR([{ toolPower: 50 }, { toolPower: NaN }, { toolPower: 200 }]))).toEqual([50, 200]);
+    expect(toolPowerRange(makeIR([{}, {}]))).toEqual([0, 0]);
+  });
+
+  it('moveKind: productive (Extrude/Cut) vs rapid (Travel), else fallback', () => {
+    const ir = makeIR([
+      { kind: MoveKind.Extrude },
+      { kind: MoveKind.Cut },
+      { kind: MoveKind.Travel },
+      { kind: MoveKind.None }
+    ]);
+    const c = createSegmentColorer(ir, { mode: 'moveKind', cut: A, travel: B, fallback: F });
+    expect(c(0)).toEqual(A); // Extrude → productive
+    expect(c(1)).toEqual(A); // Cut → productive
+    expect(c(2)).toEqual(B); // Travel → rapid
+    expect(c(3)).toEqual(F); // None → fallback
+  });
+
+  it('segmentColor one-off works for the new modes', () => {
+    const ir = makeIR([{ kind: MoveKind.Cut }]);
+    expect(segmentColor(ir, { mode: 'moveKind', cut: A, travel: B, fallback: F }, 0)).toEqual(A);
   });
 });

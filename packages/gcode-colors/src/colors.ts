@@ -12,7 +12,7 @@
  * that read an optional channel (`feature`, `object`, `feedrate`) must be
  * capability-gated by the caller before use — the IR is told, not shown nonsense.
  */
-import type { ToolpathIR } from '@chestnutlabs/toolpath-core';
+import { MoveKind, type ToolpathIR } from '@chestnutlabs/toolpath-core';
 
 export type RGB = [number, number, number];
 
@@ -32,7 +32,15 @@ export type ColorMode =
   // onto a ramp — the Orca/Bambu view that reveals variable-layer-height prints. Auto-ranged from the
   // IR when `range` is omitted. Derived purely from `ir.layers` Z; capability-gated by the caller on
   // `layers` (a non-planar IR collapses every segment to layer 0 → a single height).
-  | { mode: 'layerHeight'; ramp: RGB[]; range?: [number, number]; fallback: RGB };
+  | { mode: 'layerHeight'; ramp: RGB[]; range?: [number, number]; fallback: RGB }
+  // Color-by-tool-power (#189, DD-012 D7): map each segment's modal `toolPower` (laser power / spindle
+  // RPM — the S value) onto a ramp. Requires the parse to have captured the `toolPower` modal channel
+  // (`ParseOptions.modalChannels`); capability-gated by the caller on `toolPower`. NaN (tool off) or a
+  // file parsed without the channel → fallback, never a fabricated power color.
+  | { mode: 'power'; ramp: RGB[]; range?: [number, number]; fallback: RGB }
+  // Cut-vs-rapid (#189, DD-012 D7): productive moves (Extrude or Cut) vs rapids (Travel) — the CNC/laser
+  // read of "where the tool is actually working." Capability-gated on `cutMoves` for non-extrusion files.
+  | { mode: 'moveKind'; cut: RGB; travel: RGB; fallback: RGB };
 
 /** Neutral color used when a mode has no palette / the channel value is unknown. */
 export const DEFAULT_FALLBACK: RGB = [0.7, 0.7, 0.7];
@@ -44,6 +52,22 @@ export function feedrateRange(ir: ToolpathIR): [number, number] {
   let max = -Infinity;
   for (let i = 0; i < f.length; i++) {
     const v = f[i];
+    if (Number.isNaN(v)) continue;
+    if (v < min) min = v;
+    if (v > max) max = v;
+  }
+  return min <= max ? [min, max] : [0, 0];
+}
+
+/** Min/max of the IR's captured (non-NaN) tool-power values — the auto-range for color-by-power
+ *  (#189). Returns `[0, 0]` when the `toolPower` modal channel was not captured. */
+export function toolPowerRange(ir: ToolpathIR): [number, number] {
+  const p = ir.segments.modal?.toolPower;
+  if (p === undefined) return [0, 0];
+  let min = Infinity;
+  let max = -Infinity;
+  for (let i = 0; i < p.length; i++) {
+    const v = p[i];
     if (Number.isNaN(v)) continue;
     if (v < min) min = v;
     if (v > max) max = v;
@@ -162,6 +186,29 @@ export function createSegmentColorer(ir: ToolpathIR, mode: ColorMode): SegmentCo
       const li = seg.layer[i];
       if (li < 0 || li >= heights.length) return mode.fallback;
       return rampColor(mode.ramp, span > 0 ? (heights[li] - lo) / span : 0);
+    };
+  }
+  if (mode.mode === 'power') {
+    const power = seg.modal?.toolPower;
+    // The channel wasn't captured (parse didn't request toolPower) → everything is fallback.
+    if (power === undefined) {
+      const fb = mode.fallback;
+      return () => fb;
+    }
+    const [lo, hi] = mode.range ?? toolPowerRange(ir);
+    const span = hi - lo;
+    // NaN (tool off / never engaged) → fallback, never a fabricated power color.
+    return (i) => {
+      const v = power[i];
+      return Number.isNaN(v) ? mode.fallback : rampColor(mode.ramp, span > 0 ? (v - lo) / span : 0);
+    };
+  }
+  if (mode.mode === 'moveKind') {
+    return (i) => {
+      const k = seg.kind[i];
+      if ((k & (MoveKind.Extrude | MoveKind.Cut)) !== 0) return mode.cut; // productive move
+      if ((k & MoveKind.Travel) !== 0) return mode.travel; // rapid
+      return mode.fallback;
     };
   }
   // object mode: object 0 = none/unknown → fallback; `only` isolates one object, dimming the rest (#178).
