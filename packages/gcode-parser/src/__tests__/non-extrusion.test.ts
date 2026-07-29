@@ -103,3 +103,35 @@ describe('DD-012 phase 1 — opt-in modal tool-power channel (ModalChannel, #189
     expect(stats.warningsByCode['modal-channel-unsupported']).toBeGreaterThan(0);
   });
 });
+
+describe('DD-012 phase 2 — modal motion continuation (#189)', () => {
+  it('a bare coordinate line repeats the last G1 motion (was dropped entirely)', () => {
+    const { ir } = parseGcodeToIR('G1 X0 Y0 F600\nX10 Y0\nX20 Y0\n', {});
+    expect(ir.segments.count).toBe(3); // was 1 before modal-motion support
+    expect(ir.segments.x1[2]).toBeCloseTo(20);
+  });
+
+  it('bare coordinate line repeats G0 rapids too', () => {
+    const { ir } = parseGcodeToIR('G0 X0 Y0\nX5 Y0\nX10 Y0\n', {});
+    expect(ir.segments.count).toBe(3);
+    expect(travel(ir.segments.kind[2])).toBe(true);
+  });
+
+  it('modal continuation preserves Cut classification when engaged', () => {
+    const { ir } = parseGcodeToIR('M4 S255\nG1 X0 Y0 F600\nX10 Y0\nX10 Y10\n', {});
+    expect(ir.segments.count).toBe(3);
+    for (let i = 0; i < ir.segments.count; i++) expect(cut(ir.segments.kind[i])).toBe(true);
+  });
+
+  it('inline S on a modal-continuation line latches toolPower', () => {
+    const { ir } = parseGcodeToIR('M4 S255\nG1 X0 Y0\nX10 Y0 S100\n', { modalChannels: ['toolPower'] });
+    const tp = ir.segments.modal!.toolPower;
+    expect(tp[0]).toBe(255);
+    expect(tp[1]).toBe(100);
+  });
+
+  it('inert before any motion mode: a leading coordinate line emits nothing', () => {
+    const { ir } = parseGcodeToIR('X10 Y0\nG1 X20 Y0\n', {});
+    expect(ir.segments.count).toBe(1); // the pre-mode coordinate line is dropped; only the G1 emits
+  });
+});
