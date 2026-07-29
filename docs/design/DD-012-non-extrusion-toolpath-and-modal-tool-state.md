@@ -1,8 +1,9 @@
 # DD-012 — Non-extrusion toolpath (CNC / laser / plotter) & modal tool-state channels
 
-**Status:** **Proposed** <!-- Draft | Proposed | Accepted | Superseded | Rejected -->
+**Status:** **Accepted** <!-- Draft | Proposed | Accepted | Superseded | Rejected -->
 **Authors/Owners:** Nathaniel Chestnut
 **Date:** 2026-07-28 · **Last revised:** 2026-07-28
+**Accepted:** 2026-07-28 — **D1–D8 as recommended.** `MoveKind.Cut` naming (D2); the **single shared `ModalChannel` mechanism** (D3) is owned here and #180/RR-002 consume it, so **DD-015 is retired**. Implementation unblocked per §14.
 **Owning Epic:** #189 (non-extrusion toolpath coverage) · **Milestone:** Future
 **Supersedes / Superseded by:** none
 **Related:** [RR-004](../research/RR-004-non-extrusion-toolpath-coverage.md) (scope decision + audit — the gate this DD answers), [RR-002](../research/RR-002-modal-state-color-channels.md) + #180 (advanced modal color modes — **consumers** of the channel mechanism defined here; candidate DD-015 collapses into this), DD-001 (capability model + `MoveKind`), DD-010 (motion model this extends), DD-005 (dialect/adapter contracts), DD-016 (additive `MoveKind` bits precedent — `Wipe`/`Seam`), DD-014/E8 (2D rendering overlap), DD-003 (parser resource limits). Reserved number: DD-012 (#189).
@@ -254,7 +255,7 @@ were requested vs populated.
 
 ## 15. Acceptance criteria
 
-- [ ] D1–D8 decided by the maintainer; DD marked Accepted.
+- [x] D1–D8 decided by the maintainer (2026-07-28, as recommended); DD marked Accepted.
 - [ ] FDM corpus IR **byte-identical** vs pre-DD (regression gate green).
 - [ ] `MoveKind.Cut` + the fallback classifier correctly classify the launch fixtures; validated on real
       hardware for the **Validated** dialects.
@@ -271,3 +272,4 @@ were requested vs populated.
 | Date | Decision | By |
 |---|---|---|
 | 2026-07-28 | DD-012 drafted as **Proposed**; decision menu D1–D8 open. Follows RR-004 (scope IN, validated by real hardware) and unifies the modal-channel mechanism with RR-002/#180. | Chestnut Labs |
+| 2026-07-28 | **Accepted — D1–D8 as recommended.** D1 no new package; D2 `MoveKind.Cut` bit; **D3 one shared opt-in `ModalChannel` mechanism owned here, #180/RR-002 consume it → DD-015 retired**; D4 tool-state-driven with machine-class an `inferred` hint; D5 canned-cycle MVP (`G81`/`G82`/`G83` + `G80` + `G98`/`G99`); D6 validation-tiered dialects; D7 reuse renderer + ramped colorers; D8 synthetic fixtures + FDM byte-identical gate + real-machine acceptance. | Maintainer |
