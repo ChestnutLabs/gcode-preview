@@ -11,6 +11,7 @@ export type { RGB, ColorMode, SegmentColorer } from './colors.js';
 export {
   DEFAULT_FALLBACK,
   feedrateRange,
+  toolPowerRange,
   layerHeights,
   layerHeightRange,
   rampColor,
