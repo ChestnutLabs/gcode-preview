@@ -188,7 +188,7 @@ function lexLine(line: string): Cmd {
 }
 
 interface PathState {
-  type: 'extrusion' | 'travel';
+  type: 'extrusion' | 'cut' | 'travel';
   tool: number;
   segStart: number;
   startZ: number;
@@ -294,6 +294,12 @@ export function createEngine(input: string | Uint8Array, opts: ParseOptions): En
   let g92z = 0;
   let coordSystemSeen = false; // any G53/G54–G59/G92-XYZ/G10 → coordinateSystem 'known'
   let g53OneShot = false; // next move ignores the work offset (machine coordinates)
+
+  // Tool-state modal (DD-012 D2/D4, #189). Spindle/laser on (M3/M4) engages the tool; M5 disengages.
+  // A move with no extrusion E while the tool is engaged is a Cut (productive), not a Travel. FDM
+  // slices never issue M3/M4, so toolEngaged stays false and their classification is byte-identical.
+  let toolEngaged = false;
+  let toolStateSeen = false; // any M3/M4/M5 observed → cutMoves capability 'known'
 
   // Per-axis position certainty (DD-010 D4 amendment, #158). A G31 probe endpoint is reached at
   // RUNTIME (workpiece contact), not the commanded value, so it marks the probed axes uncertain. A
@@ -481,7 +487,7 @@ export function createEngine(input: string | Uint8Array, opts: ParseOptions): En
     path = null;
   };
 
-  const breakPath = (type: 'extrusion' | 'travel'): void => {
+  const breakPath = (type: 'extrusion' | 'cut' | 'travel'): void => {
     finishPath();
     path = {
       type,
@@ -496,6 +502,11 @@ export function createEngine(input: string | Uint8Array, opts: ParseOptions): En
     prevY = sy;
     prevZ = sz;
   };
+
+  // Map a resolved path type to its MoveKind bit (DD-012 D2). `cut` only ever arises when the tool
+  // is engaged and E is absent, so FDM (never `cut`) is byte-identical.
+  const kindForPath = (t: 'extrusion' | 'cut' | 'travel'): number =>
+    t === 'extrusion' ? MoveKind.Extrude : t === 'cut' ? MoveKind.Cut : MoveKind.Travel;
 
   const g0 = (p: Record<string, number>): boolean => {
     const { x, y, z, e, f } = p;
@@ -521,7 +532,7 @@ export function createEngine(input: string | Uint8Array, opts: ParseOptions): En
     }
     stats.points++;
     if (f !== undefined) modalFeed = f;
-    const pathType = eDelta > 0 ? 'extrusion' : 'travel';
+    const pathType = eDelta > 0 ? 'extrusion' : toolEngaged ? 'cut' : 'travel';
     if (path === null || path.type !== pathType) {
       breakPath(pathType);
     }
@@ -536,7 +547,7 @@ export function createEngine(input: string | Uint8Array, opts: ParseOptions): En
       if (z !== undefined) certainZ = true;
     }
     g53OneShot = false; // one-shot machine-coordinate bypass consumed by this move
-    return emitSegment(sx, sy, sz, eDelta, pathType === 'extrusion' ? MoveKind.Extrude : MoveKind.Travel);
+    return emitSegment(sx, sy, sz, eDelta, kindForPath(pathType));
   };
 
   const g2 = (p: Record<string, number>, cw: boolean): boolean => {
@@ -545,7 +556,7 @@ export function createEngine(input: string | Uint8Array, opts: ParseOptions): En
     if (f !== undefined) modalFeed = f;
     // E is delta-based (DD-010 D1) so M82 arcs classify correctly and `lastE` stays consistent with g0.
     const eDelta = resolveEDelta(e);
-    const pathType = eDelta ? 'extrusion' : 'travel';
+    const pathType = eDelta ? 'extrusion' : toolEngaged ? 'cut' : 'travel';
     if (path === null || path.type !== pathType) {
       breakPath(pathType);
     }
@@ -607,7 +618,7 @@ export function createEngine(input: string | Uint8Array, opts: ParseOptions): En
     // where the through axis is unchanged so the ramp is flat).
     const cStep = (sc - tc) / totalSegments;
 
-    const kind = (pathType === 'extrusion' ? MoveKind.Extrude : MoveKind.Travel) | MoveKind.ArcSegment;
+    const kind = kindForPath(pathType) | MoveKind.ArcSegment;
     const eachE = e !== undefined ? eDelta / Math.max(1, Math.ceil(totalSegments)) : 0;
 
     // Map an in-plane point (pa,pb) + through-axis pc back to (x,y,z) for the active plane.
@@ -721,6 +732,18 @@ export function createEngine(input: string | Uint8Array, opts: ParseOptions): En
         break;
       case 'm83':
         eModeExplicit = 'relative';
+        break;
+      // Tool-state modal (DD-012 D2/D4, #189). M3 (CW) / M4 (CCW) engage the spindle/laser;
+      // M5 disengages. Drives Cut-vs-Travel classification for non-extrusion moves. The `S` word
+      // (power/RPM) is a modal channel handled in a later phase; here we track only engagement.
+      case 'm3':
+      case 'm4':
+        toolEngaged = true;
+        toolStateSeen = true;
+        break;
+      case 'm5':
+        toolEngaged = false;
+        toolStateSeen = true;
         break;
       // Coordinate systems (DD-010 D4, #158, E10 phase 3).
       case 'g53':
@@ -881,6 +904,10 @@ export function createEngine(input: string | Uint8Array, opts: ParseOptions): En
       // per-move G-code signal and stays 'unavailable' (a future geometry-heuristic DD may change it).
       wipeMoves: 'unavailable',
       seamMoves: 'unavailable',
+      // Non-extrusion productive moves (DD-012 D2, #189). 'known' once a tool-state modal (M3/M4/M5)
+      // was seen — i.e. this is a CNC/laser/plotter file whose Cut moves are meaningful; 'unavailable'
+      // for FDM (no tool-state), where every move is Extrude/Travel and Cut is never set.
+      cutMoves: toolStateSeen ? 'known' : 'unavailable',
       // Motion-model modes (DD-010 E10 phase 1). 'known' when the governing command was seen
       // (M82/M83, or a firmware-known G90/G91 for E); 'inferred' when defaulted (absolute).
       extrusionMode: eModeExplicit !== null || (extruderFollowsPositioning && positioningSeen) ? 'known' : 'inferred',
@@ -995,6 +1022,7 @@ export function createEngine(input: string | Uint8Array, opts: ParseOptions): En
           colorChanges: 'unavailable', // color-change boundaries resolve on the final IR
           wipeMoves: 'unavailable', // annotation move kinds resolve on the final IR (DD-016)
           seamMoves: 'unavailable',
+          cutMoves: 'unavailable', // non-extrusion classification resolves on the final IR (DD-012)
           extrusionMode: 'inferred', // motion modes resolve fully on the final IR (E10)
           positioningMode: 'inferred',
           arcPlanes: 'inferred',

@@ -38,7 +38,12 @@ export const MoveKind = {
   Unretract: 1 << 3,
   Wipe: 1 << 4,
   ArcSegment: 1 << 5,
-  Seam: 1 << 6
+  Seam: 1 << 6,
+  /** Tool-engaged productive move (cut / burn / draw) when no extrusion E is present —
+   *  a CNC/laser/plotter counterpart to `Extrude` (DD-012 D2). Set by the parser only when a
+   *  tool-state modal (spindle/laser on) holds and the move has no E delta, so an FDM slice
+   *  never sets it. Composes with `ArcSegment` like the other kinds. */
+  Cut: 1 << 7
 } as const;
 export type MoveKindName = keyof typeof MoveKind;
 
