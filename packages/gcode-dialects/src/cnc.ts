@@ -23,6 +23,52 @@ export type MachineClass = 'laser' | 'mill' | 'plotter';
 /** Non-extrusion capability claims whose confidence the validation tier governs (DD-012 D6). */
 const NON_EXTRUSION_CAPS = ['cutMoves', 'toolPower', 'cannedCycles'] as const;
 
+/**
+ * Evidence markers scored from the head text (DD-012 phase 3, #189). Real controller output usually
+ * carries NO generator header (a raw LaserGRBL/CAM job is just motion + M-codes), so process detection
+ * scores behavioral markers, not just banners. Extrusion evidence short-circuits everything — an FDM
+ * file is never a CNC/laser candidate. Comment bodies are stripped first so `(M3)` in a comment or a
+ * `; LinuxCNC` note does not create a false marker (body-vs-metadata separation, per the corpus brief).
+ */
+interface Evidence {
+  extrusion: boolean; // E on a motion line, or M82/M83 — an FDM signal
+  m3: boolean; // spindle/laser on, constant (or generic tool-on)
+  m4: boolean; // spindle CCW / dynamic-power laser
+  power: boolean; // an S value on a motion line or a bare S line
+  plunge: boolean; // a move to negative Z — cutting into material (a mill signal, not a laser one)
+  lightBurn: boolean;
+  laserMode: boolean; // GRBL `$32=1`
+  linuxCnc: boolean; // explicit LinuxCNC/EMC header
+  grblBanner: boolean; // a `Grbl` startup banner
+  oWord: boolean; // RS274NGC O-word subroutine/flow (LinuxCNC family)
+}
+
+function scoreEvidence(head: string): Evidence {
+  // Strip line comments (';…' and LinuxCNC/RS274 '(…)') so words inside them never score as markers.
+  const code = head
+    .split('\n')
+    .map((l) => l.split(';')[0].replace(/\([^)]*\)/g, ''))
+    .join('\n');
+  const has = (re: RegExp): boolean => re.test(code);
+  // G-code words run together without spaces (`G1M3`, `g1z-.1`), so a LEADING word-boundary fails.
+  // Match the command by its number + a trailing NON-digit lookahead: `M0*3(?!\d)` matches `M3`/`M03`
+  // (incl. mid-line `s3400 m3` and concatenated `G1M3`) but not `M30`/`M300`.
+  return {
+    // Extrusion = an `E` value on a G0–G3 MOTION line — NOT bare `E` (LinuxCNC laser uses `M67 E0 Q…`
+    // for analog power, which must not be mistaken for FDM extrusion).
+    extrusion: has(/G0*[0-3](?!\d)[^\n;]*E-?[.\d]/i) || has(/M8[23](?!\d)/i),
+    m3: has(/M0*3(?!\d)/i),
+    m4: has(/M0*4(?!\d)/i),
+    power: has(/S\d/i),
+    plunge: has(/Z\s*-\s*[.\d]/i), // negative Z incl. leading-dot decimals (`Z-.1`)
+    lightBurn: /LightBurn/i.test(head), // header-only marker; keep the raw head (comments allowed)
+    laserMode: /\$32\s*=\s*1/.test(code),
+    linuxCnc: /\b(?:LinuxCNC|EMC2?)\b/i.test(head),
+    grblBanner: /\bGrbl\s*[0-9]/i.test(head),
+    oWord: has(/[oO][\s<]*\w*\s*(?:sub|call|if|while|do|repeat|return|endsub)\b/im)
+  };
+}
+
 interface CncSpec {
   id: string;
   displayName: string;
@@ -81,12 +127,15 @@ export function grblLaser(): DialectAdapter {
     toolPowerLabel: 'laser power (S)',
     tier: 'experimental', // → 'validated' after a real GRBL-laser run (DD-012 §8)
     detect(input) {
-      const t = input.headText;
-      if (/LightBurn/i.test(t)) return { evidence: 'LightBurn header', confidence: 'known' };
-      if (/\$32\s*=\s*1/.test(t)) return { evidence: 'GRBL $32=1 (laser mode)', confidence: 'inferred' };
-      // M4 dynamic power + S with no extrusion is the GRBL-laser fingerprint.
-      if (/^\s*M0?4\b/im.test(t) && /\bS\d/i.test(t) && !/\bE-?\d/i.test(t)) {
-        return { evidence: 'M4 dynamic power + S, no extrusion', confidence: 'inferred' };
+      const e = scoreEvidence(input.headText);
+      if (e.extrusion || e.linuxCnc) return null;
+      if (e.lightBurn) return { evidence: 'LightBurn header', confidence: 'known' };
+      if (e.laserMode) return { evidence: 'GRBL $32=1 (laser mode)', confidence: 'inferred' };
+      // No-header GRBL laser (the common LaserGRBL case): a tool-on command with power, and NO Z
+      // plunging — lasers are planar; a mill would cut down into Z. Works whether the file uses M3
+      // (constant power) or M4 (dynamic).
+      if ((e.m3 || e.m4) && e.power && !e.plunge) {
+        return { evidence: `${e.m4 ? 'M4 dynamic' : 'M3'} + S power, planar (no Z plunge)`, confidence: 'inferred' };
       }
       return null;
     }
@@ -102,11 +151,14 @@ export function grblMill(): DialectAdapter {
     toolPowerLabel: 'spindle RPM (S)',
     tier: 'experimental', // → 'validated' after a real GRBL-mill run (DD-012 §8)
     detect(input) {
-      const t = input.headText;
-      if (/LightBurn/i.test(t) || /\$32\s*=\s*1/.test(t)) return null; // that's a laser, not a mill
-      // A GRBL banner / settings dump plus a constant-power spindle (M3) and no extrusion.
-      if (/\bGrbl\b/.test(t) && /^\s*M0?3\b/im.test(t) && !/\bE-?\d/i.test(t)) {
-        return { evidence: 'Grbl banner + M3 spindle, no extrusion', confidence: 'inferred' };
+      const e = scoreEvidence(input.headText);
+      if (e.extrusion || e.lightBurn || e.laserMode || e.linuxCnc) return null;
+      // A spindle (M3) that plunges into the material (negative Z) with no extrusion — a milling
+      // fingerprint that distinguishes it from a planar laser. GRBL/family-level, so a banner is a
+      // stronger signal but not required (most CAM output has no banner).
+      if (e.m3 && e.plunge) {
+        const ev = e.grblBanner ? 'Grbl banner + M3 + Z-plunge' : 'M3 spindle + Z-plunge, no extrusion';
+        return { evidence: ev, confidence: 'inferred' };
       }
       return null;
     }
@@ -122,10 +174,15 @@ export function linuxCnc(): DialectAdapter {
     toolPowerLabel: 'spindle RPM (S)',
     tier: 'experimental', // → 'validated' after a real LinuxCNC run (DD-012 §8)
     detect(input) {
-      const t = input.headText;
-      if (/\b(LinuxCNC|EMC2?)\b/i.test(t)) return { evidence: 'LinuxCNC/EMC header', confidence: 'known' };
-      // A `%` program envelope with a constant-power spindle (M3) and no extrusion is the common form.
-      if (/^\s*%/m.test(t) && /^\s*M0?3\b/im.test(t) && !/\bE-?\d/i.test(t)) {
+      const e = scoreEvidence(input.headText);
+      if (e.extrusion) return null;
+      if (e.linuxCnc) return { evidence: 'LinuxCNC/EMC header', confidence: 'known' };
+      // RS274NGC O-word subroutines / flow control (`O100 sub`, `o<name> call`) are the LinuxCNC
+      // family's distinguishing dialect feature — GRBL/TinyG do not have them.
+      if (e.oWord) return { evidence: 'RS274NGC O-word subroutine/flow', confidence: 'inferred' };
+      // A `%` program envelope with a spindle and no extrusion (also common in Fanuc-style output;
+      // reported family-level, not as a specific controller).
+      if (/^\s*%/m.test(input.headText) && e.m3) {
         return { evidence: '%-program envelope + M3 spindle, no extrusion', confidence: 'inferred' };
       }
       return null;

@@ -84,3 +84,35 @@ describe('DD-012 phase 3 — non-extrusion dialects (#189)', () => {
     expect(ir.header.capabilities.cutMoves).toBe('unavailable'); // no M3/M4 → stays unavailable, not fabricated
   });
 });
+
+// Evidence-based detection distilled from real public samples (LaserGRBL, LinuxCNC, GRBL CAM output).
+// Fixtures are MIT-clean re-creations of the real *fingerprints*, not copied third-party files.
+describe('DD-012 phase 3 — evidence-based detection of header-less real files (#189)', () => {
+  it('no-header GRBL laser: M3 + S power, planar (the raw LaserGRBL form)', () => {
+    const { ir, metadata } = cncParse('M3 S0\nG1 X100 F1200 S1000\nS0\nM5\n');
+    expect(ir.header.dialects.some((d) => d.id === 'grbl-laser')).toBe(true);
+    expect((metadata.raw as Record<string, string>)['cnc.machineClass']).toBe('laser');
+  });
+
+  it('mill from mid-line spindle + Z-plunge, no header, concatenated words (g1z-.1, s3400 m3)', () => {
+    const { ir, metadata } = cncParse('g20 g64\ns3400 m3\ng0z1\ng1z-.1f24\ng1x10y0\nm5\n');
+    expect(ir.header.dialects.some((d) => d.id === 'grbl-mill')).toBe(true);
+    expect((metadata.raw as Record<string, string>)['cnc.machineClass']).toBe('mill');
+  });
+
+  it('LinuxCNC from an O-word subroutine (RS274NGC)', () => {
+    const { ir } = cncParse('o100 sub\ng1 x10 f100\no100 endsub\no100 call\n');
+    expect(ir.header.dialects.some((d) => d.id === 'linuxcnc')).toBe(true);
+  });
+
+  it('LinuxCNC M67 analog laser power is NOT mistaken for FDM extrusion', () => {
+    const { detected } = cncParse('M3\nG1 X10 F600 S255\nM67 E0 Q128\nG1 X20\nM5\n');
+    expect(detected).toBe(true); // recognized as non-extrusion, not rejected as FDM by the bare `E`
+  });
+
+  it('a commented-out spindle (`(M3)`) is not treated as tool-on', () => {
+    // TinyG posts sometimes note `(M3)` in a comment with no active spindle — no tool-state to infer.
+    const { detected } = cncParse('N1 T1M6\nN2 (M3)\nN3 G1 X10 Y0 F100\nN4 X20\n');
+    expect(detected).toBe(false); // honest: no real spindle/laser command → not a confident CNC call
+  });
+});
