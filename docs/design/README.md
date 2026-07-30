@@ -28,6 +28,7 @@ boundary. Architecture-sensitive work is **blocked until its DD is Accepted** (g
 | [DD-013](DD-013-documentation-sdk-reference-and-published-manual.md) | Documentation, SDK Reference & Published Manual | E11 | Future | **Accepted** 2026-07-25 (D1–D7 as recommended) (#197) |
 | [DD-014](DD-014-low-resource-layer-renderer.md) | Low-Resource Layer Mode (2D/adjacent-layer renderer over IR) | E8 (#9) | Future | **Accepted** 2026-07-26 (D1–D5 as recommended; D6 build-now on the AnyBridge evidence artifact) |
 | [DD-016](DD-016-annotation-derived-move-kinds.md) | Annotation-Derived Move Kinds (Wipe & Seam) | E9 (#182) | Future | **Accepted** 2026-07-27 (D1–D6 as recommended; D2 = narrow additive DD-005 sink amendment so a slicer-comment signal can set `Wipe`; seam a non-goal) |
+| [DD-017](DD-017-rs274ngc-parametric-programs.md) | RS274NGC Parametric Programs (parameters, expressions & O-word flow) | #189 phase 7 | Future | **Proposed** 2026-07-29 (D1–D8 open) — spec-derivable RS274NGC programming layer: on-demand interpreter engaged only on `#`/`[`/O-words (FDM byte-identical), bounded iteration/recursion limits; per [RR-004](../research/RR-004-non-extrusion-toolpath-coverage.md) §9 |
 
 > **Reserved:** DD-015 was the candidate number for a standalone modal-state color-channels DD
 > ([RR-002](../research/RR-002-modal-state-color-channels.md), #180). It is now **likely unnecessary**:
