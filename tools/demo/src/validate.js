@@ -74,13 +74,16 @@ function analyze(text, fileName) {
     else if (k & MoveKind.Travel) rapid++;
   }
 
-  // Tool-power range over engaged (non-NaN) samples.
+  // Tool-power range over CUTTING moves only — that's the power actually delivered to the work. A
+  // rapid can still carry a latched S (M4 not yet cancelled) but the beam is off, so counting it would
+  // over-report the "engaged" tally. Range collapses to lo===hi for a constant-power job.
   let pLo = Infinity;
   let pHi = -Infinity;
   let pSamples = 0;
   const power = seg.modal && seg.modal.toolPower;
   if (power) {
     for (let i = 0; i < seg.count; i++) {
+      if (!(seg.kind[i] & MoveKind.Cut)) continue;
       const v = power[i];
       if (Number.isNaN(v)) continue;
       pSamples++;
@@ -168,20 +171,10 @@ function draw() {
   const px = (x) => ox + (x - minX) * s;
   const py = (y) => canvas.height - (oy + (y - minY) * s);
 
-  let pLo = 0,
-    pHi = 1;
+  // Reuse the Cut-only range from analyze() so the drawing and the legend always agree.
   const power = seg.modal && seg.modal.toolPower;
-  if (viewMode === 'power' && power) {
-    pLo = Infinity;
-    pHi = -Infinity;
-    for (let i = 0; i < seg.count; i++) {
-      const v = power[i];
-      if (Number.isNaN(v)) continue;
-      if (v < pLo) pLo = v;
-      if (v > pHi) pHi = v;
-    }
-    if (!(pHi > pLo)) pHi = pLo + 1;
-  }
+  const pRange = current.power; // { lo, hi } over cutting moves, or null
+  const constantPower = pRange && pRange.hi - pRange.lo < 1e-6;
 
   ctx.lineWidth = 1.1;
   ctx.lineCap = 'round';
@@ -194,9 +187,14 @@ function draw() {
       if (pass === 'productive' && !isProductive) continue;
 
       let color;
-      if (viewMode === 'power' && power && isProductive) {
+      if (viewMode === 'power' && pRange && isProductive) {
         const v = power[i];
-        color = Number.isNaN(v) ? COLORS.cut : powerColor((v - pLo) / (pHi - pLo));
+        // Constant-power job: one flat mid-hot tone (there's no range to map); else cold→hot.
+        color = Number.isNaN(v)
+          ? COLORS.cut
+          : constantPower
+            ? powerColor(0.7)
+            : powerColor((v - pRange.lo) / (pRange.hi - pRange.lo));
       } else if (isProductive) {
         color = k & MoveKind.Extrude ? COLORS.extrude : COLORS.cut;
       } else {
@@ -306,15 +304,17 @@ function renderReport(a) {
   );
 
   if (power) {
-    html += claim(
-      'power',
-      `${escapeHtml(powerLabel)} ranges <b>${fmt(power.lo)}</b>–<b>${fmt(
-        power.hi
-      )}</b> across ${power.samples.toLocaleString()} engaged moves. Switch to the <b>Power</b> view — does the intensity ramp track how the ${
-        machineClass === 'mill' ? 'spindle' : 'laser'
-      } actually behaved?`,
-      ''
-    );
+    const source = machineClass === 'mill' ? 'spindle' : 'laser';
+    const constant = power.hi - power.lo < 1e-6;
+    const desc = constant
+      ? `Constant <b>${escapeHtml(powerLabel)} ${fmt(power.lo)}</b> across all
+         ${power.samples.toLocaleString()} cutting moves — the ${source} was set once and never modulated
+         (so the Power view is a single flat color; there's no ramp to show). Was it a single-power job?`
+      : `${escapeHtml(powerLabel)} ranges <b>${fmt(power.lo)}</b>–<b>${fmt(
+          power.hi
+        )}</b> across ${power.samples.toLocaleString()} cutting moves. Switch to the <b>Power</b> view (colors
+         run cold→hot) — does the intensity track how the ${source} actually behaved?`;
+    html += claim('power', desc, '');
   } else {
     html += `<div class="claim"><div class="q muted">No modal tool-power (S while engaged) seen — power claim n/a for this file.</div></div>`;
   }
@@ -447,7 +447,12 @@ function exportReport(a, dest) {
     `- Detected: **${raw['cnc.machineClass'] || 'NOT DETECTED'}** / ${raw['cnc.controller'] || '—'} (tier: ${tier})`
   );
   lines.push(`- Moves: ${counts.cut} cut, ${counts.rapid} rapid, ${counts.total} total`);
-  if (power) lines.push(`- Tool power: ${fmt(power.lo)}–${fmt(power.hi)} over ${power.samples} engaged moves`);
+  if (power)
+    lines.push(
+      power.hi - power.lo < 1e-6
+        ? `- Tool power: constant ${fmt(power.lo)} over ${power.samples} cutting moves`
+        : `- Tool power: ${fmt(power.lo)}–${fmt(power.hi)} over ${power.samples} cutting moves`
+    );
   if (canned) lines.push(`- Canned cycles: ${canned}`);
   const b = ir.boundsWithTravel;
   lines.push(
@@ -508,11 +513,52 @@ async function loadFile(file) {
   const text = await file.text();
   marks.clear();
   const a = analyze(text, file.name);
-  current = { ir: a.ir, viewMode: tgPower.classList.contains('on') ? 'power' : 'kind' };
+  current = {
+    ir: a.ir,
+    viewMode: tgPower.classList.contains('on') ? 'power' : 'kind',
+    power: a.power,
+    powerLabel: a.raw['cnc.toolPowerLabel'] || 'tool power (S)',
+    hasExtrude: a.counts.extrude > 0
+  };
   dropHint.classList.add('hide');
-  badges.style.display = a.power ? 'flex' : 'flex';
+  updateBadges();
   fitView();
   renderReport(a);
+}
+
+/** The view legend, keyed to the active color mode — cut/rapid swatches, or a cold→hot power scale
+ *  with the real min/max (or a "constant" note when the job never modulates power). */
+function updateBadges() {
+  if (!current) {
+    badges.style.display = 'none';
+    return;
+  }
+  badges.style.display = 'flex';
+  if (current.viewMode === 'power') {
+    const p = current.power;
+    if (!p) {
+      badges.innerHTML = `<span class="muted">No tool-power (S) recorded — nothing to color by power.</span>`;
+      return;
+    }
+    if (p.hi - p.lo < 1e-6) {
+      badges.innerHTML = `<span><span class="swatch" style="background:${powerColor(
+        0.7
+      )}"></span>constant ${escapeHtml(current.powerLabel)} <b>${fmt(p.lo)}</b> (no variation)</span>`;
+      return;
+    }
+    const bar = 'linear-gradient(to right,' + [0, 0.33, 0.66, 1].map((t) => powerColor(t)).join(',') + ')';
+    badges.innerHTML =
+      `<span class="muted">${escapeHtml(current.powerLabel)}</span>` +
+      `<span style="font-variant-numeric:tabular-nums">${fmt(p.lo)}</span>` +
+      `<span style="display:inline-block;width:120px;height:11px;border-radius:2px;background:${bar}"></span>` +
+      `<span style="font-variant-numeric:tabular-nums">${fmt(p.hi)}</span>` +
+      `<span class="muted">cold → hot · rapids faded</span>`;
+    return;
+  }
+  badges.innerHTML =
+    `<span><span class="swatch" style="background:var(--cut)"></span>${
+      current.hasExtrude ? 'cut / extrude' : 'cut / burn'
+    }</span>` + `<span><span class="swatch" style="background:var(--rapid)"></span>rapid / travel</span>`;
 }
 
 fileInput.addEventListener('change', () => {
@@ -555,6 +601,7 @@ tgKind.addEventListener('click', () => {
   tgPower.classList.remove('on');
   if (current) {
     current.viewMode = 'kind';
+    updateBadges();
     draw();
   }
 });
@@ -563,6 +610,7 @@ tgPower.addEventListener('click', () => {
   tgKind.classList.remove('on');
   if (current) {
     current.viewMode = 'power';
+    updateBadges();
     draw();
   }
 });
