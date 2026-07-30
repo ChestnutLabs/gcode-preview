@@ -1,8 +1,10 @@
 /**
  * Non-extrusion dialect families (DD-012 phase 3, #189): GRBL-laser / GRBL-mill / LinuxCNC.
- * Detection + the validation-tier honesty mechanism. All launch dialects are EXPERIMENTAL, so their
- * non-extrusion claims are reported `inferred` (never `known`) until hardware-validated. Fixtures are
- * synthetic.
+ * Detection + the validation-tier honesty mechanism. GRBL-laser is hardware-VALIDATED (2026-07-29,
+ * DD-012 §16 log) → its claims report `known`; GRBL-mill and LinuxCNC remain EXPERIMENTAL → their
+ * claims are downgraded to `inferred` until a real CNC run. The flip is per-controller (evidence in
+ * docs/design/DD-012-hardware-validation-log.md). Fixtures are synthetic (MIT-clean fingerprints,
+ * not copied third-party files).
  */
 import { describe, expect, it } from 'vitest';
 import { parseGcodeToIR, type ParseOptions } from '../../../gcode-parser/src/parse';
@@ -44,17 +46,18 @@ const GRBLMILL =
   ['Grbl 1.1', 'G21 G90', 'M3 S10000', 'G0 X0 Y0 Z5', 'G1 Z-1 F100', 'G1 X10 Y0', 'M5'].join('\n') + '\n';
 
 describe('DD-012 phase 3 — non-extrusion dialects (#189)', () => {
-  it('detects GRBL laser (LightBurn) and reports it EXPERIMENTAL (claims inferred)', () => {
+  it('detects GRBL laser (LightBurn), hardware-VALIDATED → claims known, no experimental warning', () => {
     const { ir, metadata } = cncParse(LASER, { modalChannels: ['toolPower'] });
     expect(ir.header.dialects.some((d) => d.id === 'grbl-laser')).toBe(true);
     const raw = metadata.raw as Record<string, string>;
     expect(raw['cnc.machineClass']).toBe('laser');
-    expect(raw['cnc.validationTier']).toBe('experimental');
+    expect(raw['cnc.validationTier']).toBe('validated');
     expect(raw['cnc.toolPowerLabel']).toMatch(/laser/i);
-    // Tier downgrade: mechanically-detected claims are reported inferred until hardware-validated.
-    expect(ir.header.capabilities.cutMoves).toBe('inferred');
-    expect(ir.header.capabilities.toolPower).toBe('inferred');
-    expect(ir.header.warnings.some((w) => w.code === 'cnc-dialect-experimental')).toBe(true);
+    // Validated (2026-07-29 real GRBL/LightBurn run, DD-012 D8): no downgrade — the claims the file
+    // actually makes stay `known`, and the experimental disclosure is not emitted.
+    expect(ir.header.capabilities.cutMoves).toBe('known');
+    expect(ir.header.capabilities.toolPower).toBe('known');
+    expect(ir.header.warnings.some((w) => w.code === 'cnc-dialect-experimental')).toBe(false);
   });
 
   it('detects LinuxCNC mill and downgrades the canned-cycle claim to inferred', () => {
@@ -65,11 +68,17 @@ describe('DD-012 phase 3 — non-extrusion dialects (#189)', () => {
     expect(ir.header.capabilities.cutMoves).toBe('inferred');
   });
 
-  it('detects GRBL mill (Grbl banner + M3 spindle)', () => {
+  it('detects GRBL mill (Grbl banner + M3 spindle) — still EXPERIMENTAL (claims inferred)', () => {
     const { ir, metadata } = cncParse(GRBLMILL);
+    const raw = metadata.raw as Record<string, string>;
     expect(ir.header.dialects.some((d) => d.id === 'grbl-mill')).toBe(true);
-    expect((metadata.raw as Record<string, string>)['cnc.machineClass']).toBe('mill');
-    expect((metadata.raw as Record<string, string>)['cnc.toolPowerLabel']).toMatch(/RPM/i);
+    expect(raw['cnc.machineClass']).toBe('mill');
+    expect(raw['cnc.toolPowerLabel']).toMatch(/RPM/i);
+    // The laser flip is per-controller: mill/linuxcnc are NOT yet hardware-validated, so they still
+    // downgrade to `inferred` with the experimental disclosure.
+    expect(raw['cnc.validationTier']).toBe('experimental');
+    expect(ir.header.capabilities.cutMoves).toBe('inferred');
+    expect(ir.header.warnings.some((w) => w.code === 'cnc-dialect-experimental')).toBe(true);
   });
 
   it('does not misdetect an FDM file as CNC', () => {
@@ -77,9 +86,9 @@ describe('DD-012 phase 3 — non-extrusion dialects (#189)', () => {
     expect(detected).toBe(false);
   });
 
-  it('a validated dialect would keep claims known (tier is the only difference)', () => {
-    // Guard the tier mechanism itself: the experimental downgrade is conditional on tier, and only
-    // touches claims the file actually made — it never fabricates a claim for an unused feature.
+  it('a validated dialect still never fabricates a claim for an unused feature', () => {
+    // grbl-laser is validated, but the tier only governs how a *made* claim is reported — it never
+    // invents one. A laser file that never engages the tool has no cut moves to claim.
     const { ir } = cncParse('; LightBurn\nG90\nG0 X0 Y0\nG1 X10 Y0\n'); // laser header but tool never engaged
     expect(ir.header.capabilities.cutMoves).toBe('unavailable'); // no M3/M4 → stays unavailable, not fabricated
   });
