@@ -125,7 +125,11 @@ export function grblLaser(): DialectAdapter {
     displayName: 'GRBL laser (LightBurn)',
     machineClass: 'laser',
     toolPowerLabel: 'laser power (S)',
-    tier: 'experimental', // → 'validated' after a real GRBL-laser run (DD-012 §8)
+    // Hardware-validated 2026-07-29 (DD-012 D8; see docs/design/DD-012-hardware-validation-log.md):
+    // a real GRBL/LightBurn laser run — 6161 moves incl. fill + offset-fill, full 0–1000 S power ramp —
+    // confirmed machine-class detection, Cut-vs-rapid classification, and the toolPower channel against
+    // the physical cut. Claims report `known`, not `inferred`. (Mill/LinuxCNC remain experimental.)
+    tier: 'validated',
     detect(input) {
       const e = scoreEvidence(input.headText);
       if (e.extrusion || e.linuxCnc) return null;
