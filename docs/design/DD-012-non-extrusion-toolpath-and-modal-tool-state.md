@@ -267,9 +267,40 @@ were requested vs populated.
 - [ ] Compatibility matrix + support-policy updated with dated, evidenced tiers.
 - [ ] Synthetic redistributable fixtures only; real-machine runs recorded as acceptance evidence.
 
+## 16. Reference specifications & parity sources
+
+There is **no single specification for "CNC/laser G-code"** — it is a forked standard whose authorities
+are unevenly distributed across the two machine classes. That distribution is not trivia; it decides
+**what D5/D6 can derive from a spec versus what only hardware can confirm** (RR-004 §9 records the full
+survey). Cited as **behavioral parity targets** and pointers to *where a behavior is defined* — never as
+text to copy (ISO 6983 is copyrighted; the LinuxCNC reference is GPL/GFDL; this project is MIT).
+
+| Domain | Authority | Anchors |
+| --- | --- | --- |
+| CNC milling (core) | **RS274NGC — NIST IR 6556** (Kramer/Proctor/Messina, 2000; free) | Motion modes, `G81`–`G89` (D5), `G54`–`G59`, `#params`, `[expr]`, O-words |
+| CNC milling (formal) | **ISO 6983-1** (paywalled) | Address-word grammar |
+| CNC milling (executable) | **LinuxCNC G-code reference** (free; GPL/GFDL) | RS274NGC as-implemented — home of the phase-7 gap list |
+| Lasers | **GRBL source + wiki** (`$32`, `M3`/`M4`) — no standard | The GRBL-laser power model (D4) |
+| Lasers (emitter) | **LightBurn docs** — observed output only | Post-processor fingerprints (D4/D6) |
+| FDM cross-ref | **RepRap G-code wiki** — community, not a standard | E-stack parity |
+
+**The split that governs the validation tier (D6):**
+
+- **CNC is spec-anchored.** D5 canned cycles, coordinate systems, and the phase-7 gaps (O-word
+  execution, `#params`, `[expressions]`, `L`-repeat) are documented in RS274NGC / LinuxCNC — build them
+  **to the spec**, with hardware as the *check*. A spec-derived-but-unverified controller is still
+  `Experimental`/`inferred` (D6) until a real run confirms it.
+- **Lasers are not spec-anchored.** GRBL-laser and LightBurn are source/observed only, so **the machine
+  is the source of truth** — this is where the hardware-validation moat (D8) does the real work.
+- **Vendor extensions escape every spec.** E.g. the `mach3` plasma sample overloads bare `S` for
+  torch-height control (not spindle speed); nothing in RS274NGC covers it, so it is `inferred` by
+  construction. D4's rule — drive behavior off the tool-state channel + `Cut` bit, never off machine
+  class — is what keeps such cases from producing wrong geometry.
+
 ## Decision log
 
 | Date | Decision | By |
 |---|---|---|
 | 2026-07-28 | DD-012 drafted as **Proposed**; decision menu D1–D8 open. Follows RR-004 (scope IN, validated by real hardware) and unifies the modal-channel mechanism with RR-002/#180. | Chestnut Labs |
 | 2026-07-28 | **Accepted — D1–D8 as recommended.** D1 no new package; D2 `MoveKind.Cut` bit; **D3 one shared opt-in `ModalChannel` mechanism owned here, #180/RR-002 consume it → DD-015 retired**; D4 tool-state-driven with machine-class an `inferred` hint; D5 canned-cycle MVP (`G81`/`G82`/`G83` + `G80` + `G98`/`G99`); D6 validation-tiered dialects; D7 reuse renderer + ramped colorers; D8 synthetic fixtures + FDM byte-identical gate + real-machine acceptance. | Maintainer |
+| 2026-07-29 | **Editorial (no decision change):** added §16 reference specifications & parity sources (RS274NGC/NIST IR 6556, ISO 6983, LinuxCNC, GRBL, LightBurn, RepRap) making the **spec-anchored CNC vs. observed-only laser** split explicit — it grounds D5/phase-7 in RS274NGC and reaffirms why lasers stay hardware-gated under D6/D8. Full survey in RR-004 §9. Provenance: parity targets only, no spec text copied. | Chestnut Labs |

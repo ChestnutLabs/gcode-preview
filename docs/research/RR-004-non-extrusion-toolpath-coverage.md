@@ -124,3 +124,38 @@ Capture from the real machines, then commit **synthetic, redistributable** disti
 - `feat(dialects): GRBL-laser + GRBL/LinuxCNC mill + pen-plotter families, validation-tiered`.
 - `feat(colors): color-by-power / feed-vs-rapid` (consumer).
 - Reconcile #180 / RR-002 as consumers of the DD-012 modal mechanism.
+
+## 9. Reference specifications & parity sources
+
+There is **no single specification for "CNC/laser G-code."** It is a forked standard: a small
+standardized core that every controller extends incompatibly — which is why *dialect* is the correct
+framing and why the honesty tier (§8), not a spec conformance claim, is the safety mechanism. The
+authorities are **very unevenly distributed** across the two machine classes, and that distribution
+directly determines what is spec-derivable versus hardware-only:
+
+| Domain | Authority | Status | What it anchors |
+| --- | --- | --- | --- |
+| **CNC milling (core)** | **RS274NGC** — *NIST IR 6556, "The NIST RS274NGC Interpreter — Version 3"* (Kramer, Proctor, Messina, 2000) | Free NIST technical report | Motion modes, `G81`–`G89` canned cycles, coordinate systems (`G54`–`G59`), parameters `#`, expressions `[]`, O-word flow — the interpreter LinuxCNC implements |
+| **CNC milling (formal)** | **ISO 6983-1** (NC program format & address words) | Paywalled (ISO); thinner than IR 6556 | The formal address-word grammar |
+| **CNC milling (open, executable)** | **LinuxCNC G-code reference** | Free, online; **GPL/GFDL text** | RS274NGC as-implemented — the exact home of our gap list (O-words, `#params`, `[expr]`, `L`-repeat) |
+| **Lasers** | **GRBL source + wiki** (`$32` laser mode, `M3` constant vs `M4` dynamic power) | Source/wiki only — **no standard** | The GRBL-laser power model |
+| **Lasers (emitter)** | **LightBurn documentation** | No public spec | Observed post-processor output only |
+| **Firmware / FDM cross-ref** | **RepRap G-code wiki** (Marlin/RRF/Klipper/Smoothie) | Community-maintained; not a standard | FDM parity (already the E-stack's reference) |
+
+**Spec-derived vs. observed — the split that governs the tier (§8):**
+
+- **CNC is spec-anchored.** The milling motion model, canned cycles, coordinate systems, parameters,
+  and expressions are all defined in RS274NGC (IR 6556) and the LinuxCNC reference. Phase-7 gaps
+  (O-word execution, `#params`, `[expressions]`, canned-cycle `L`-repeat) are documented features we
+  have not yet implemented — **build them against the spec; hardware is the *check*, not the source.**
+- **Lasers are not spec-anchored.** GRBL-laser is defined only by its source/wiki and LightBurn only by
+  observed output. There is no authority to conform to, so **the machine *is* the source of truth** —
+  this is where the hardware-validation moat (§8) does the real work.
+- **Vendor extensions escape every spec.** Observed directly: the `mach3` plasma sample uses bare
+  `S`-words for torch-height control (DTHC), where `S` is **not** spindle speed — nothing in RS274NGC
+  covers this. Such cases are `inferred`/experimental by construction until a real machine confirms them.
+
+**Provenance discipline (ties to §6):** these are cited as **behavioral parity targets** and as
+pointers for *where a behavior is defined* — **not** as text to copy. ISO 6983 is copyrighted and the
+LinuxCNC reference is GPL/GFDL, whereas this project is MIT; we implement *to the documented behavior*
+and express it in our own code and words. No specification prose is incorporated.
