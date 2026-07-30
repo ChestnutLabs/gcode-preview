@@ -1,7 +1,8 @@
 /*
- * Non-extrusion toolpath classification — DD-012 phase 1, #189. A move with no extrusion E while a
- * tool-state modal (M3/M4 spindle/laser on) holds is a Cut (productive), not a Travel; M5 disengages.
- * FDM files (no M3/M4) are byte-identical — Cut is never set and cutMoves is 'unavailable'.
+ * Non-extrusion toolpath classification — DD-012 phase 1, #189. A FEED move (G1/G2/G3) with no
+ * extrusion E while a tool-state modal (M3/M4 spindle/laser on) holds is a Cut (productive); a rapid
+ * (G0) stays Travel even while engaged (refined #189); M5 disengages. FDM files (no M3/M4) are
+ * byte-identical — Cut is never set and cutMoves is 'unavailable'.
  */
 import { describe, expect, it } from 'vitest';
 import { MoveKind } from '@chestnutlabs/toolpath-core';
@@ -23,6 +24,22 @@ describe('DD-012 phase 1 — non-extrusion Cut classification (#189)', () => {
     expect(extrude(ir.segments.kind[0])).toBe(false);
     // A cut move carries no extrusion — the FDM extrusion tally must not count it.
     expect(stats.extrusionDistance).toBe(0);
+  });
+
+  it('rapid (G0) is Travel even while the tool is engaged; the G1 feed between rapids is Cut', () => {
+    // A router keeps its spindle on across rapids and a GRBL-laser gates the beam off during G0, so a
+    // rapid is a non-cutting traverse regardless of tool state (DD-012 D2, refined #189). Only the feed
+    // move is productive. Mirrors the real GRBL-laser fingerprint (G0 reposition → G1 burn → G0 away).
+    const gc = ['M4 S255', 'G0 X10 Y0', 'G1 X20 Y0 F600', 'G0 X30 Y0'].join('\n') + '\n';
+    const { ir } = parseGcodeToIR(gc, {});
+    expect(travel(ir.segments.kind[0])).toBe(true); // G0 reposition — engaged but not cutting
+    expect(cut(ir.segments.kind[0])).toBe(false);
+    expect(cut(ir.segments.kind[1])).toBe(true); // G1 feed — the actual burn
+    expect(travel(ir.segments.kind[2])).toBe(true); // G0 away — engaged but not cutting
+    // Modal-motion continuation keeps the rapid classification: a bare-coord line after G0 is a rapid.
+    const modal = parseGcodeToIR(['M3 S1000', 'G0 X0 Y0', 'X10 Y0', 'G1 X20 Y0', 'X30 Y0'].join('\n') + '\n', {});
+    expect(travel(modal.ir.segments.kind[1])).toBe(true); // bare X/Y under G0 modal → still rapid
+    expect(cut(modal.ir.segments.kind[3])).toBe(true); // bare X/Y under G1 modal → cut
   });
 
   it('M5 disengages the tool: the next no-E move is Travel again', () => {

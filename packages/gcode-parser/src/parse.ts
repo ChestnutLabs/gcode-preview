@@ -345,8 +345,9 @@ export function createEngine(input: string | Uint8Array, opts: ParseOptions): En
   let g53OneShot = false; // next move ignores the work offset (machine coordinates)
 
   // Tool-state modal (DD-012 D2/D4, #189). Spindle/laser on (M3/M4) engages the tool; M5 disengages.
-  // A move with no extrusion E while the tool is engaged is a Cut (productive), not a Travel. FDM
-  // slices never issue M3/M4, so toolEngaged stays false and their classification is byte-identical.
+  // A FEED move (G1/G2/G3) with no extrusion E while the tool is engaged is a Cut (productive); a
+  // rapid (G0) stays Travel even with the tool engaged (refined #189). FDM slices never issue M3/M4,
+  // so toolEngaged stays false and their classification is byte-identical.
   let toolEngaged = false;
   let toolStateSeen = false; // any M3/M4/M5 observed → cutMoves capability 'known'
   let modalS = NaN; // current modal spindle/laser S value (power / RPM); NaN until first seen (#189)
@@ -566,12 +567,12 @@ export function createEngine(input: string | Uint8Array, opts: ParseOptions): En
     prevZ = sz;
   };
 
-  // Map a resolved path type to its MoveKind bit (DD-012 D2). `cut` only ever arises when the tool
-  // is engaged and E is absent, so FDM (never `cut`) is byte-identical.
+  // Map a resolved path type to its MoveKind bit (DD-012 D2). `cut` only ever arises on a feed move
+  // when the tool is engaged and E is absent, so FDM (never `cut`) is byte-identical.
   const kindForPath = (t: 'extrusion' | 'cut' | 'travel'): number =>
     t === 'extrusion' ? MoveKind.Extrude : t === 'cut' ? MoveKind.Cut : MoveKind.Travel;
 
-  const g0 = (p: Record<string, number>): boolean => {
+  const g0 = (p: Record<string, number>, rapid: boolean): boolean => {
     const { x, y, z, e, f } = p;
     // Classify on the true per-move delta, not the raw E word (DD-010 D1). For the M83/relative
     // corpus the delta equals the word, so output is byte-identical to the pre-E10 engine.
@@ -595,7 +596,10 @@ export function createEngine(input: string | Uint8Array, opts: ParseOptions): En
     }
     stats.points++;
     if (f !== undefined) modalFeed = f;
-    const pathType = eDelta > 0 ? 'extrusion' : toolEngaged ? 'cut' : 'travel';
+    // A rapid (G0) is a non-cutting positioning traverse — Travel even while the tool is engaged
+    // (a router keeps its spindle on during rapids; a GRBL-laser gates the beam off during G0). Only
+    // a FEED move (G1/G2/G3) with the tool engaged and no extrusion is a Cut (DD-012 D2, refined #189).
+    const pathType = eDelta > 0 ? 'extrusion' : toolEngaged && !rapid ? 'cut' : 'travel';
     if (path === null || path.type !== pathType) {
       breakPath(pathType);
     }
@@ -780,7 +784,7 @@ export function createEngine(input: string | Uint8Array, opts: ParseOptions): En
       if (cmd.params.x !== undefined || cmd.params.y !== undefined || cmd.params.z !== undefined) {
         if (cannedCycle !== null) ok = runCannedCycle(cmd.params);
         else if (modalMotion === 'g2' || modalMotion === 'g3') ok = g2(cmd.params, modalMotion === 'g2');
-        else if (modalMotion === 'g0' || modalMotion === 'g1') ok = g0(cmd.params);
+        else if (modalMotion === 'g0' || modalMotion === 'g1') ok = g0(cmd.params, modalMotion === 'g0');
       }
     } else
       for (const gcode of cmd.codes) {
@@ -792,7 +796,7 @@ export function createEngine(input: string | Uint8Array, opts: ParseOptions): En
           case 'g1':
             modalMotion = gcode as 'g0' | 'g1';
             cannedCycle = null; // a G0–G3 motion command cancels the canned-cycle modal group
-            ok = g0(cmd.params);
+            ok = g0(cmd.params, gcode === 'g0');
             break;
           case 'g2':
             modalMotion = 'g2';
