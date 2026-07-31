@@ -1,5 +1,64 @@
 # @chestnutlabs/gcode-dialects
 
+## 0.4.0
+
+### Minor Changes
+
+- [#258](https://github.com/ChestnutLabs/gcode-preview/pull/258) [`3f06e5b`](https://github.com/ChestnutLabs/gcode-preview/commit/3f06e5b7b6926daaad4290b29c577a380c9e10df) Thanks [@sobechestnut-dev](https://github.com/sobechestnut-dev)! - feat: evidence-based non-extrusion detection — recognize header-less real CNC/laser files ([#189](https://github.com/ChestnutLabs/gcode-preview/issues/189))
+
+  The phase-3 CNC/laser detectors were tuned on synthetic fixtures and matched **none** of the real
+  public samples (LaserGRBL, LinuxCNC, GRBL CAM output) — real controller output usually has **no
+  generator header** and writes commands **mid-line** and **concatenated** (`s3400 m3`, `g1z-.1`).
+
+  Detection is now **evidence-scored**, not banner-only:
+  - A shared `scoreEvidence` extractor strips comments (so `(M3)` / `; LinuxCNC` in a comment can't
+    create a false marker) and matches commands as words anywhere on a line.
+  - **GRBL laser** — LightBurn / `$32=1`, **or** the header-less form: a tool-on command (`M3`/`M4`) with
+    `S` power and **no Z-plunge** (lasers are planar).
+  - **GRBL / generic mill** — `M3` spindle that **plunges into negative Z** with no extrusion (a milling
+    fingerprint that separates it from a planar laser); banner optional.
+  - **LinuxCNC** — explicit header, **or** RS274NGC **O-word** subroutines/flow (`o100 sub`).
+  - Extrusion detection tightened to `E` on a **motion line**, so LinuxCNC `M67 E0 Q…` analog laser power
+    is no longer mistaken for FDM.
+
+  Real-file result: **0/6 → 3/6 detected, each with the correct machine class** (laser→laser, mill→mill,
+  LinuxCNC→linuxcnc); the misses are honest — files with a commented-out or absent spindle carry no
+  tool-state to infer. Still **experimental tier** (claims reported `inferred`) — detection working on
+  real files is one input; semantic ground truth (does our `Cut` = actual cutting, `S` scale) still wants
+  a real machine or a trusted reference.
+
+- [#253](https://github.com/ChestnutLabs/gcode-preview/pull/253) [`13fd5c6`](https://github.com/ChestnutLabs/gcode-preview/commit/13fd5c61d730428a7f7e73c28cf3cc9c48e68c19) Thanks [@sobechestnut-dev](https://github.com/sobechestnut-dev)! - feat: non-extrusion dialect families + validation tiers (DD-012 phase 3, [#189](https://github.com/ChestnutLabs/gcode-preview/issues/189))
+
+  Adds controller detection and the **validation-tier honesty mechanism** for CNC/laser toolpaths:
+  - New dialects (`@chestnutlabs/gcode-dialects`): **GRBL laser** (LightBurn / `$32` laser mode / `M4`+`S`),
+    **GRBL mill** and **LinuxCNC** (`M3` spindle, `%`/banner envelopes). Registered in the batteries worker.
+  - Each dialect adds provenance (`cnc.controller`, `cnc.machineClass`, `cnc.toolPowerLabel`) and a
+    **validation tier** (`cnc.validationTier`). Per DD-012 D6: an **experimental** dialect reports its
+    non-extrusion claims (`cutMoves` / `toolPower` / `cannedCycles`) as **`inferred`** (never `known`),
+    with a `cnc-dialect-experimental` disclosure — and only for claims the file actually made (an unused
+    feature is never fabricated).
+  - **All launch dialects ship `experimental`** (synthetic fixtures only). A single `tier: 'validated'`
+    flip per controller promotes its claims to `known` once confirmed on real hardware (DD-012 §8/§15).
+
+  Geometry is untouched (dialects only annotate/label). FDM detection is unaffected — CNC dialects do
+  not match FDM output.
+
+- [#262](https://github.com/ChestnutLabs/gcode-preview/pull/262) [`3e244ae`](https://github.com/ChestnutLabs/gcode-preview/commit/3e244aee86463f2a8c030b3793d3bb2dd462e3a9) Thanks [@sobechestnut-dev](https://github.com/sobechestnut-dev)! - feat(dialects): promote grbl-laser experimental → validated on hardware evidence ([#189](https://github.com/ChestnutLabs/gcode-preview/issues/189))
+
+  First hardware-validation pass (DD-012 D8): a real GRBL/LightBurn diode-laser run — 6161 moves incl.
+  fill + offset-fill, full 0–1000 `S` power ramp — confirmed machine-class detection, the Cut-vs-rapid
+  split, and the `toolPower` channel against the physical cut (all claims ✓). `grbl-laser` is flipped
+  `experimental → validated`: for laser files its `cutMoves`/`toolPower` claims now report **`known`**
+  instead of `inferred`, and the `cnc-dialect-experimental` warning is no longer emitted.
+
+  Scope is per-controller: `grbl-mill` and `linuxcnc` remain `experimental` (claims stay `inferred`)
+  until a run on real CNC hardware. Evidence recorded in `docs/design/DD-012-hardware-validation-log.md`.
+
+### Patch Changes
+
+- Updated dependencies [[`1029580`](https://github.com/ChestnutLabs/gcode-preview/commit/10295803839816adaed224c48eba1f74374c0c2a), [`8fec7c3`](https://github.com/ChestnutLabs/gcode-preview/commit/8fec7c3622cd2a6d6d57b43d7866cfea1cb71e09)]:
+  - @chestnutlabs/toolpath-core@0.4.0
+
 ## 0.3.0
 
 ### Minor Changes

@@ -1,6 +1,6 @@
 {
   "name": "@chestnutlabs/gcode-renderer-2d",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Low-resource Canvas 2D layer renderer for the Chestnut Labs G-code viewer (DD-014 / E8): an opt-in current/adjacent-layer 2D view over the existing ToolpathIR for low-GPU/low-memory/WebGL-blocked devices. No three, no framework.",
   "keywords": [
     "gcode",
@@ -49,7 +49,7 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@chestnutlabs/gcode-colors": "0.3.0",
-    "@chestnutlabs/toolpath-core": "0.3.0"
+    "@chestnutlabs/gcode-colors": "0.4.0",
+    "@chestnutlabs/toolpath-core": "0.4.0"
   }
 }
