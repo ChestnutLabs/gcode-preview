@@ -823,6 +823,13 @@ export class ToolpathRenderer {
       const conf = this.ir?.header.capabilities['layers'];
       return conf !== undefined && conf !== 'unavailable';
     }
+    if (mode === 'power') {
+      // Color-by-power needs the `toolPower` modal channel captured (#189) — present only when the parse
+      // requested it and a tool-state was seen (or a CNC dialect reported it). Absent → not available.
+      const conf = this.ir?.header.capabilities['toolPower'];
+      return conf !== undefined && conf !== 'unavailable';
+    }
+    // 'moveKind' (cut-vs-rapid) reads the always-present kind channel → always available, like single/tool.
     return true;
   }
 

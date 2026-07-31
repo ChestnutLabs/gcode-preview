@@ -18,8 +18,10 @@
     "colorChanges": "unavailable",
     "wipeMoves": "unavailable",
     "seamMoves": "unavailable",
+    "cutMoves": "known",
+    "cannedCycles": "unavailable",
     "extrusionMode": "inferred",
-    "positioningMode": "inferred",
+    "positioningMode": "known",
     "arcPlanes": "inferred",
     "coordinateSystem": "known"
   },
@@ -36,8 +38,8 @@
     "y1": "f0ad3a03",
     "z1": "5cde1254",
     "e": "54b90035",
-    "feedrate": "3e3b6563",
-    "kind": "4a13bc65",
+    "feedrate": "f4a1a463",
+    "kind": "9319ff9f",
     "tool": "dc53945d",
     "layer": "54b90035",
     "srcByte": "07d9628b"

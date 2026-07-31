@@ -1,5 +1,45 @@
 # @chestnutlabs/toolpath-core
 
+## 0.4.0
+
+### Minor Changes
+
+- [#248](https://github.com/ChestnutLabs/gcode-preview/pull/248) [`1029580`](https://github.com/ChestnutLabs/gcode-preview/commit/10295803839816adaed224c48eba1f74374c0c2a) Thanks [@sobechestnut-dev](https://github.com/sobechestnut-dev)! - feat: non-extrusion `Cut` move classification + tool-state modal (DD-012 phase 1, [#189](https://github.com/ChestnutLabs/gcode-preview/issues/189))
+
+  Non-extrusion toolpaths (CNC / laser / plotter) no longer collapse their productive moves into
+  `Travel`. The parser now tracks a tool-engaged modal state — `M3`/`M4` (spindle/laser on, incl. the
+  `M03`/`M04` leading-zero form) engage it, `M5` disengages — and classifies a move with **no extrusion
+  `E`** while the tool is engaged as the new **`MoveKind.Cut`** bit (a CNC/laser/plotter counterpart to
+  `Extrude`, composing with `ArcSegment` like the other kinds).
+  - New IR move kind `MoveKind.Cut = 1 << 7` (`@chestnutlabs/toolpath-core`).
+  - New capability **`cutMoves`**: `known` once a tool-state modal is seen (a CNC/laser/plotter file),
+    `unavailable` for FDM.
+  - **FDM is byte-identical**: FDM slices never issue `M3`/`M4`, so `Cut` is never set and every move
+    stays `Extrude`/`Travel` exactly as before (verified against the native-golden corpus; the CNC
+    fixtures `demo-easel`/`demo-mach3` are documented intentional adapter-divergences).
+
+  Modal tool-state _value_ channels (laser power / spindle RPM via `S`), canned-cycle expansion, and
+  dialect families follow in later DD-012 phases.
+
+- [#250](https://github.com/ChestnutLabs/gcode-preview/pull/250) [`8fec7c3`](https://github.com/ChestnutLabs/gcode-preview/commit/8fec7c3622cd2a6d6d57b43d7866cfea1cb71e09) Thanks [@sobechestnut-dev](https://github.com/sobechestnut-dev)! - feat: opt-in modal tool-power channel (DD-012 phase 1 — the `ModalChannel` mechanism, [#189](https://github.com/ChestnutLabs/gcode-preview/issues/189))
+
+  Adds the shared, opt-in **`ModalChannel`** mechanism DD-012 D3 is built around, and its first channel:
+  **`toolPower`** — the modal spindle/laser `S` value while a tool is engaged.
+  - `ParseOptions.modalChannels?: readonly string[]` — request per-segment modal channels by id.
+    Supported id: `'toolPower'`. Unknown ids are ignored with a `modal-channel-unsupported` warning.
+  - `ToolpathSegments.modal?: Readonly<Record<string, Float32Array>>` — one Float32 column per requested
+    channel, present **only** when requested. An unset value is `NaN` (an honest "no value here"), never
+    a fabricated `0`. `toolPower` is the modal `S` (set on `M3`/`M4` and inline on GRBL-laser motion
+    lines) while engaged, `NaN` when the tool is off (`M5`).
+  - New capability **`toolPower`**: surfaced only when the channel is requested — `known` once a
+    tool-state modal is seen, else `unavailable`.
+  - **Default parse pays nothing**: no `modalChannels` ⇒ no `modal` on the IR, no extra columns, FDM
+    output unchanged. The budget-aware SoA writer (DD-003) grows the opt-in columns in lockstep and
+    accounts their bytes.
+
+  Presentation (Watts vs RPM) is a dialect label, not a separate channel (DD-012 D4); [#180](https://github.com/ChestnutLabs/gcode-preview/issues/180)'s
+  fan/temp/accel color channels reuse this same mechanism in a later phase.
+
 ## 0.3.0
 
 ### Minor Changes

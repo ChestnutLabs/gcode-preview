@@ -86,6 +86,14 @@ export interface ParseOptions {
    */
   extruderFollowsPositioning?: boolean;
   /**
+   * Opt-in modal channels to capture per segment (DD-012 D3, #189). Each requested id adds one
+   * Float32 column to the IR (`segments.modal[id]`); a default parse requests none and pays nothing,
+   * so FDM output is unchanged. Supported id: `'toolPower'` — the modal spindle/laser `S` value while
+   * a tool is engaged (`M3`/`M4`), NaN when the tool is off. Presentation (Watts vs RPM) is a dialect
+   * label, not a separate channel (DD-012 D4). Fan/temp/accel etc. (#180) reuse the same mechanism.
+   */
+  modalChannels?: readonly string[];
+  /**
    * DD-005 §4.3 read-only hooks: observe comments/commands during the parse.
    * Inert when unset (one branch per line); they cannot alter lexing, dispatch,
    * or machine state — the golden-gated semantics are untouched.
@@ -157,38 +165,69 @@ export interface AsyncParseResult extends ParseResult {
 const LAYER_TOLERANCE = 0.05;
 const UNRESOLVED_LAYER = 0xffffffff;
 
+/** Opt-in modal channels this engine can capture (DD-012 D3, #189). Requested via
+ *  `ParseOptions.modalChannels`; unknown ids are ignored with a warning. Extend as later phases
+ *  (spindle/laser already covered by `toolPower`; #180's fan/temp/accel land here next). */
+const SUPPORTED_MODAL_CHANNELS = new Set(['toolPower']);
+
 interface Cmd {
-  gcode: string;
+  /** All G/M/T command words on the line, in source order (real CNC posts multiple per line, e.g.
+   *  `G20 G17 G90`, `G91 G81 …`, `S3400 M3`). FDM slicers emit exactly one → `codes.length === 1`. */
+  codes: string[];
   params: Record<string, number>;
 }
 
 const SPLIT_LETTERS = /([a-zA-Z])/g;
 
-/** Port of the inherited lexer: trim, comment split on ';', letter/value pairs. */
+/**
+ * Lex a line into its G/M/T command words plus the axis/param words. Real CNC G-code routinely puts
+ * several commands on one line and prefixes lines with `N` line numbers; both are handled here.
+ * `N`-words (line numbers) are dropped, and non-command letters become params. FDM lines have a single
+ * command word, so `codes = [thatCommand]` and behavior is byte-identical to the inherited lexer.
+ */
 function lexLine(line: string): Cmd {
-  const input = line.trim();
-  const cmd = input.split(';')[0];
-  const parts = cmd
+  const body = line.trim().split(';')[0];
+  const parts = body
     .split(SPLIT_LETTERS)
     .slice(1)
     .map((s) => s.trim());
-  const gcode = !parts.length ? '' : `${parts[0]?.toLowerCase()}${Number(parts[1])}`;
-  // Faithful replication of the inherited parseParams reduce (odd indices are values):
+  const codes: string[] = [];
   const params: Record<string, number> = {};
-  const rest = parts.slice(2);
-  for (let idx = 0; idx < rest.length; idx++) {
-    if (idx % 2 === 0) continue;
-    const key = rest[idx - 1].toLowerCase();
-    const code = key.charCodeAt(0);
-    if ((code >= 97 && code <= 122) || (code >= 65 && code <= 90)) {
-      params[key] = parseFloat(rest[idx]);
+  let sawCommand = false;
+  for (let i = 0; i + 1 < parts.length; i += 2) {
+    const key = parts[i].toLowerCase();
+    const cc = key.charCodeAt(0);
+    if (cc < 97 || cc > 122) continue; // not a letter
+    const value = parts[i + 1];
+    // A real G-code word is a letter followed by a NUMBER. This guard rejects letters embedded in
+    // extended-command words (Klipper `EXCLUDE_OBJECT … POLYGON=…`, `CENTER=`, `NAME=`) where a letter
+    // is followed by another letter or `=…` — the inherited lexer skipped these by only reading the
+    // first word; scanning every letter must not resurrect them as commands/params.
+    const num = value.trim() === '' ? NaN : Number(value);
+    if (key === 'g' || key === 'm') {
+      if (Number.isFinite(num)) {
+        codes.push(`${key}${num}`); // e.g. 'g1', 'm3' — leading zeros normalized
+        sawCommand = true;
+      }
+    } else if (key === 't' && !sawCommand) {
+      // `T` is a tool-select command only as the LEADING command word (`T1 M6`). After an M-code it is
+      // that code's parameter, NOT a tool change — e.g. Marlin `M486 T<count>`, `M104 T<tool> S<temp>`.
+      if (Number.isFinite(num)) {
+        codes.push(`t${num}`);
+        sawCommand = true;
+      }
+    } else if (key === 'n') {
+      // Line number — not a command, not a motion word. Ignored (fixes Fanuc/Mach/TinyG files).
+    } else {
+      const p = parseFloat(value);
+      if (Number.isFinite(p)) params[key] = p;
     }
   }
-  return { gcode, params };
+  return { codes, params };
 }
 
 interface PathState {
-  type: 'extrusion' | 'travel';
+  type: 'extrusion' | 'cut' | 'travel';
   tool: number;
   segStart: number;
   startZ: number;
@@ -256,7 +295,17 @@ export function createEngine(input: string | Uint8Array, opts: ParseOptions): En
     }
   };
 
-  const writer = new SegmentWriter(limits.maxBufferBytes);
+  // Opt-in modal channels (DD-012 D3): dedupe, keep supported, warn (once) on any unknown id.
+  const requestedModal: string[] = [];
+  for (const id of opts.modalChannels ?? []) {
+    if (!SUPPORTED_MODAL_CHANNELS.has(id)) {
+      warn('modal-channel-unsupported', `Ignoring unsupported modal channel '${id}'.`);
+    } else if (!requestedModal.includes(id)) {
+      requestedModal.push(id);
+    }
+  }
+  const wantToolPower = requestedModal.includes('toolPower');
+  const writer = new SegmentWriter(limits.maxBufferBytes, requestedModal);
 
   // Machine state (port of State.initial + Interpreter fields).
   let sx = 0;
@@ -294,6 +343,24 @@ export function createEngine(input: string | Uint8Array, opts: ParseOptions): En
   let g92z = 0;
   let coordSystemSeen = false; // any G53/G54–G59/G92-XYZ/G10 → coordinateSystem 'known'
   let g53OneShot = false; // next move ignores the work offset (machine coordinates)
+
+  // Tool-state modal (DD-012 D2/D4, #189). Spindle/laser on (M3/M4) engages the tool; M5 disengages.
+  // A FEED move (G1/G2/G3) with no extrusion E while the tool is engaged is a Cut (productive); a
+  // rapid (G0) stays Travel even with the tool engaged (refined #189). FDM slices never issue M3/M4,
+  // so toolEngaged stays false and their classification is byte-identical.
+  let toolEngaged = false;
+  let toolStateSeen = false; // any M3/M4/M5 observed → cutMoves capability 'known'
+  let modalS = NaN; // current modal spindle/laser S value (power / RPM); NaN until first seen (#189)
+  let modalMotion: 'g0' | 'g1' | 'g2' | 'g3' | null = null; // last G0–G3 mode for modal-motion lines (#189)
+  // Canned drilling cycle state (DD-012 phase 2, #189). Z/R/Q/initial-plane are captured when the
+  // cycle is defined and retained across modal (bare X/Y) repeats until G80 or a G0–G3 cancels it.
+  let cannedCycle: 'g81' | 'g82' | 'g83' | null = null;
+  let cannedZ = 0; // final drill depth (absolute)
+  let cannedR = 0; // retract / reference plane (absolute Z)
+  let cannedQ = 0; // peck increment (G83)
+  let cannedInitialZ = 0; // Z when the cycle activated — the G98 retract plane
+  let cannedRetractInitial = true; // G98 (retract to initial Z) vs G99 (retract to R); modal, default G98
+  let cannedCyclesSeen = false; // any G81/G82/G83 expanded → cannedCycles capability 'known'
 
   // Per-axis position certainty (DD-010 D4 amendment, #158). A G31 probe endpoint is reached at
   // RUNTIME (workpiece contact), not the commanded value, so it marks the probed axes uncertain. A
@@ -406,7 +473,10 @@ export function createEngine(input: string | Uint8Array, opts: ParseOptions): En
         kind,
         tool: path?.tool ?? tool,
         layer: UNRESOLVED_LAYER,
-        srcByte: currentSrcByte
+        srcByte: currentSrcByte,
+        // toolPower is the modal S while a tool is engaged; NaN when off (M5 / never engaged) — an
+        // honest "no cutting power here", not a fabricated 0. Only built when requested (DD-012 D3).
+        modal: wantToolPower ? { toolPower: toolEngaged ? modalS : NaN } : undefined
       });
     } catch (err) {
       if (err instanceof BudgetExceededError) {
@@ -481,7 +551,7 @@ export function createEngine(input: string | Uint8Array, opts: ParseOptions): En
     path = null;
   };
 
-  const breakPath = (type: 'extrusion' | 'travel'): void => {
+  const breakPath = (type: 'extrusion' | 'cut' | 'travel'): void => {
     finishPath();
     path = {
       type,
@@ -497,7 +567,12 @@ export function createEngine(input: string | Uint8Array, opts: ParseOptions): En
     prevZ = sz;
   };
 
-  const g0 = (p: Record<string, number>): boolean => {
+  // Map a resolved path type to its MoveKind bit (DD-012 D2). `cut` only ever arises on a feed move
+  // when the tool is engaged and E is absent, so FDM (never `cut`) is byte-identical.
+  const kindForPath = (t: 'extrusion' | 'cut' | 'travel'): number =>
+    t === 'extrusion' ? MoveKind.Extrude : t === 'cut' ? MoveKind.Cut : MoveKind.Travel;
+
+  const g0 = (p: Record<string, number>, rapid: boolean): boolean => {
     const { x, y, z, e, f } = p;
     // Classify on the true per-move delta, not the raw E word (DD-010 D1). For the M83/relative
     // corpus the delta equals the word, so output is byte-identical to the pre-E10 engine.
@@ -521,7 +596,10 @@ export function createEngine(input: string | Uint8Array, opts: ParseOptions): En
     }
     stats.points++;
     if (f !== undefined) modalFeed = f;
-    const pathType = eDelta > 0 ? 'extrusion' : 'travel';
+    // A rapid (G0) is a non-cutting positioning traverse — Travel even while the tool is engaged
+    // (a router keeps its spindle on during rapids; a GRBL-laser gates the beam off during G0). Only
+    // a FEED move (G1/G2/G3) with the tool engaged and no extrusion is a Cut (DD-012 D2, refined #189).
+    const pathType = eDelta > 0 ? 'extrusion' : toolEngaged && !rapid ? 'cut' : 'travel';
     if (path === null || path.type !== pathType) {
       breakPath(pathType);
     }
@@ -536,7 +614,7 @@ export function createEngine(input: string | Uint8Array, opts: ParseOptions): En
       if (z !== undefined) certainZ = true;
     }
     g53OneShot = false; // one-shot machine-coordinate bypass consumed by this move
-    return emitSegment(sx, sy, sz, eDelta, pathType === 'extrusion' ? MoveKind.Extrude : MoveKind.Travel);
+    return emitSegment(sx, sy, sz, eDelta, kindForPath(pathType));
   };
 
   const g2 = (p: Record<string, number>, cw: boolean): boolean => {
@@ -545,7 +623,7 @@ export function createEngine(input: string | Uint8Array, opts: ParseOptions): En
     if (f !== undefined) modalFeed = f;
     // E is delta-based (DD-010 D1) so M82 arcs classify correctly and `lastE` stays consistent with g0.
     const eDelta = resolveEDelta(e);
-    const pathType = eDelta ? 'extrusion' : 'travel';
+    const pathType = eDelta ? 'extrusion' : toolEngaged ? 'cut' : 'travel';
     if (path === null || path.type !== pathType) {
       breakPath(pathType);
     }
@@ -607,7 +685,7 @@ export function createEngine(input: string | Uint8Array, opts: ParseOptions): En
     // where the through axis is unchanged so the ramp is flat).
     const cStep = (sc - tc) / totalSegments;
 
-    const kind = (pathType === 'extrusion' ? MoveKind.Extrude : MoveKind.Travel) | MoveKind.ArcSegment;
+    const kind = kindForPath(pathType) | MoveKind.ArcSegment;
     const eachE = e !== undefined ? eDelta / Math.max(1, Math.ceil(totalSegments)) : 0;
 
     // Map an in-plane point (pa,pb) + through-axis pc back to (x,y,z) for the active plane.
@@ -631,6 +709,40 @@ export function createEngine(input: string | Uint8Array, opts: ParseOptions): En
     return emitArc(ta, tb, tc);
   };
 
+  // Canned drilling cycle (DD-012 phase 2, #189): expand G81/G82/G83 into explicit sub-moves so the
+  // holes are real geometry (today they emit nothing). Rapids are Travel; the plunge(s) are Cut. Z/R/Q
+  // and the initial plane are captured when the cycle is defined and retained across modal repeats.
+  const runCannedCycle = (p: Record<string, number>): boolean => {
+    // 1. Rapid to the hole XY at the current Z.
+    sx = nextAxis(sx, p.x, offX());
+    sy = nextAxis(sy, p.y, offY());
+    g53OneShot = false;
+    if (!emitSegment(sx, sy, sz, 0, MoveKind.Travel)) return false;
+    // 2. Rapid Z down to the R (reference) plane.
+    sz = cannedR;
+    if (!emitSegment(sx, sy, sz, 0, MoveKind.Travel)) return false;
+    // 3. Feed to depth — one plunge (G81/G82) or a peck loop (G83). Productive → Cut.
+    if (cannedCycle === 'g83' && cannedQ > 0 && cannedR > cannedZ) {
+      let depth = cannedR;
+      while (depth > cannedZ) {
+        depth = Math.max(cannedZ, depth - cannedQ);
+        sz = depth;
+        if (!emitSegment(sx, sy, sz, 0, MoveKind.Cut)) return false; // feed down one peck
+        if (depth > cannedZ) {
+          sz = cannedR;
+          if (!emitSegment(sx, sy, sz, 0, MoveKind.Travel)) return false; // rapid retract to R between pecks
+        }
+      }
+    } else {
+      sz = cannedZ;
+      if (!emitSegment(sx, sy, sz, 0, MoveKind.Cut)) return false; // single plunge
+    }
+    // 4. Retract (rapid) to the initial plane (G98) or the R plane (G99).
+    sz = cannedRetractInitial ? cannedInitialZ : cannedR;
+    if (!emitSegment(sx, sy, sz, 0, MoveKind.Travel)) return false;
+    return true;
+  };
+
   const onComment = opts.onComment;
   const onCommand = opts.onCommand;
 
@@ -648,185 +760,254 @@ export function createEngine(input: string | Uint8Array, opts: ParseOptions): En
       if (ci !== -1) onComment(rawLine.slice(ci + 1), offset);
     }
     const cmd = lexLine(rawLine);
-    if (cmd.gcode === '') return;
+    // Skip only genuinely empty lines. A line with no lexable words but real content (a dialect
+    // extended command like `EXCLUDE_OBJECT_START NAME=cube`, a macro) must NOT be dropped — the
+    // observer below still forwards its raw line. The body split runs only when there are no words.
+    if (cmd.codes.length === 0 && Object.keys(cmd.params).length === 0 && rawLine.split(';')[0].trim() === '') {
+      return; // blank or comment-only line
+    }
     stats.commands++;
-    if (onCommand !== undefined) {
-      onCommand({ gcode: cmd.gcode, params: cmd.params, rawLine, srcByte: offset, segIndex: writer.count });
-    }
+    // Modal S/F latch from params on ANY line — including bare `S1000` / `F600` lines that carry no
+    // command word (common in GRBL-laser output). S is captured for toolPower only when requested.
+    if (wantToolPower && cmd.params.s !== undefined) modalS = cmd.params.s;
+    if (cmd.params.f !== undefined) modalFeed = cmd.params.f;
     let ok = true;
-    switch (cmd.gcode) {
-      case 'g0':
-      case 'g1':
-        ok = g0(cmd.params);
-        break;
-      case 'g2':
-        ok = g2(cmd.params, true);
-        break;
-      case 'g3':
-        ok = g2(cmd.params, false);
-        break;
-      case 'g20':
-        units = 'in';
-        unitsSeen = true;
-        break;
-      case 'g21':
-        units = 'mm';
-        unitsSeen = true;
-        break;
-      case 'g28':
-        sx = 0;
-        sy = 0;
-        sz = 0;
-        break;
-      case 't0':
-      case 't1':
-      case 't2':
-      case 't3':
-      case 't4':
-      case 't5':
-      case 't6':
-      case 't7':
-        tool = Number(cmd.gcode.slice(1));
-        break;
-      case 'm600':
-        // Manual filament swap = color boundary (#147). A marker, not motion — do
-        // NOT break/finish the current path; record position (current head), the
-        // next segment index (slot boundary), and the active tool for provenance.
-        colorChangeEvents.push({ x: sx, y: sy, z: sz, segIndex: writer.count, srcByte: offset, tool });
-        break;
-      // Motion-model modal commands (DD-010 E10 phase 1).
-      case 'g90':
-        xyzAbsolute = true;
-        positioningSeen = true;
-        break;
-      case 'g91':
-        xyzAbsolute = false;
-        positioningSeen = true;
-        break;
-      // Arc-plane selection (DD-010 D3, #157, E10 phase 2).
-      case 'g17':
-        arcPlane = 'xy';
-        arcPlaneSeen = true;
-        break;
-      case 'g18':
-        arcPlane = 'xz';
-        arcPlaneSeen = true;
-        break;
-      case 'g19':
-        arcPlane = 'yz';
-        arcPlaneSeen = true;
-        break;
-      case 'm82':
-        eModeExplicit = 'absolute';
-        break;
-      case 'm83':
-        eModeExplicit = 'relative';
-        break;
-      // Coordinate systems (DD-010 D4, #158, E10 phase 3).
-      case 'g53':
-        // One-shot: the following move is in machine coordinates (ignores the work offset).
-        g53OneShot = true;
-        coordSystemSeen = true;
-        break;
-      case 'g54':
-      case 'g55':
-      case 'g56':
-      case 'g57':
-      case 'g58':
-      case 'g59':
-        activeWcs = Number(cmd.gcode.slice(1)) - 54; // g54→0 … g59→5
-        coordSystemSeen = true;
-        break;
-      case 'g10': {
-        // Set a work-coordinate offset. L2 P<n>: set the offset directly. L20 P<n>: set it so the
-        // current position reads the given value in WCS n. P1→G54 … P6→G59 (default: active system).
-        const l = cmd.params.l;
-        const idx = cmd.params.p !== undefined ? Math.round(cmd.params.p) - 1 : activeWcs;
-        if (idx >= 0 && idx < 6 && (l === 2 || l === 20)) {
-          const w = wcsOffsets[idx];
-          const setAxis = (word: number | undefined, cur: number, axis: 'x' | 'y' | 'z') => {
-            if (word === undefined) return;
-            w[axis] = l === 2 ? word : cur - word; // L20: offset = current logical − desired reading
-          };
-          setAxis(cmd.params.x, sx, 'x');
-          setAxis(cmd.params.y, sy, 'y');
-          setAxis(cmd.params.z, sz, 'z');
-          coordSystemSeen = true;
-        }
-        break;
+    if (cmd.codes.length === 0) {
+      // No G/M/T command word. This is either a dialect extended command (EXCLUDE_OBJECT_*, macros —
+      // matched on the raw line, DD-005) or a bare motion/param line. Forward the raw line to the
+      // observer so dialects still see it, then continue the active modal motion group if the line
+      // carries motion axes (the CNC/LinuxCNC modal form; FDM always emits the G word, so this never
+      // runs for FDM — byte-identical).
+      if (onCommand !== undefined) {
+        onCommand({ gcode: '', params: cmd.params, rawLine, srcByte: offset, segIndex: writer.count });
       }
-      case 'g31': {
-        // Probe move (DD-010 D4 amendment, #158): the endpoint is reached at RUNTIME (workpiece
-        // contact), NOT the commanded value. Do not advance the position or draw a fabricated probe
-        // move; mark the probed axes runtime-dependent so a following G92 resyncs the logical frame.
-        let probed = false;
-        if (cmd.params.x !== undefined) {
-          certainX = false;
-          probed = true;
-        }
-        if (cmd.params.y !== undefined) {
-          certainY = false;
-          probed = true;
-        }
-        if (cmd.params.z !== undefined) {
-          certainZ = false;
-          probed = true;
-        }
-        if (probed) {
-          warn(
-            'probe-position-runtime-dependent',
-            'G31 probe endpoint is determined at runtime; the probed axis is runtime-dependent until re-established (G92 or an absolute move).',
-            offset
-          );
-        }
-        break;
+      if (cmd.params.x !== undefined || cmd.params.y !== undefined || cmd.params.z !== undefined) {
+        if (cannedCycle !== null) ok = runCannedCycle(cmd.params);
+        else if (modalMotion === 'g2' || modalMotion === 'g3') ok = g2(cmd.params, modalMotion === 'g2');
+        else if (modalMotion === 'g0' || modalMotion === 'g1') ok = g0(cmd.params, modalMotion === 'g0');
       }
-      case 'g92': {
-        // Datum WITHOUT motion (DD-010 D4 + probe amendment, #158). `G92 E<v>` rebases the absolute-E
-        // origin (also used in phase 1). For X/Y/Z, when the position is KNOWN it is a datum SHIFT (the
-        // work offset is set so the current logical position reads <v>, preserving continuity). When the
-        // axis is runtime-dependent (post-probe) it is a logical RESYNC: the current logical position is
-        // declared to be <v>, the offset is reset, certainty is restored, and the current path is
-        // finalized so the next move starts a NEW frame at the datum — no fabricated move is drawn
-        // across the unknown probe result.
-        if (cmd.params.e !== undefined) lastE = cmd.params.e;
-        let resync = false;
-        if (cmd.params.x !== undefined) {
-          if (certainX) g92x = sx - cmd.params.x - wcsOffsets[activeWcs].x;
-          else {
-            sx = cmd.params.x + wcsOffsets[activeWcs].x;
-            g92x = 0;
-            certainX = true;
-            resync = true;
-          }
-          coordSystemSeen = true;
+    } else
+      for (const gcode of cmd.codes) {
+        if (onCommand !== undefined) {
+          onCommand({ gcode, params: cmd.params, rawLine, srcByte: offset, segIndex: writer.count });
         }
-        if (cmd.params.y !== undefined) {
-          if (certainY) g92y = sy - cmd.params.y - wcsOffsets[activeWcs].y;
-          else {
-            sy = cmd.params.y + wcsOffsets[activeWcs].y;
-            g92y = 0;
-            certainY = true;
-            resync = true;
+        switch (gcode) {
+          case 'g0':
+          case 'g1':
+            modalMotion = gcode as 'g0' | 'g1';
+            cannedCycle = null; // a G0–G3 motion command cancels the canned-cycle modal group
+            ok = g0(cmd.params, gcode === 'g0');
+            break;
+          case 'g2':
+            modalMotion = 'g2';
+            cannedCycle = null;
+            ok = g2(cmd.params, true);
+            break;
+          case 'g3':
+            modalMotion = 'g3';
+            cannedCycle = null;
+            ok = g2(cmd.params, false);
+            break;
+          // Canned drilling cycles (DD-012 phase 2, #189). A fresh G81/G82/G83 captures Z/R/Q + the
+          // initial plane and drills the first hole; bare X/Y lines (cannedRepeat) drill more, retaining
+          // that state; G80 cancels; G98/G99 set the retract plane.
+          case 'g81':
+          case 'g82':
+          case 'g83':
+            cannedCyclesSeen = true;
+            cannedCycle = gcode as 'g81' | 'g82' | 'g83';
+            cannedInitialZ = sz;
+            if (cmd.params.z !== undefined) cannedZ = nextAxis(sz, cmd.params.z, offZ());
+            if (cmd.params.r !== undefined) cannedR = nextAxis(sz, cmd.params.r, offZ());
+            if (cmd.params.q !== undefined) cannedQ = Math.abs(cmd.params.q);
+            modalMotion = null;
+            ok = runCannedCycle(cmd.params);
+            break;
+          case 'g80':
+            cannedCycle = null;
+            break;
+          case 'g98':
+            cannedRetractInitial = true;
+            break;
+          case 'g99':
+            cannedRetractInitial = false;
+            break;
+          case 'g20':
+            units = 'in';
+            unitsSeen = true;
+            break;
+          case 'g21':
+            units = 'mm';
+            unitsSeen = true;
+            break;
+          case 'g28':
+            sx = 0;
+            sy = 0;
+            sz = 0;
+            break;
+          case 't0':
+          case 't1':
+          case 't2':
+          case 't3':
+          case 't4':
+          case 't5':
+          case 't6':
+          case 't7':
+            tool = Number(gcode.slice(1));
+            break;
+          case 'm600':
+            // Manual filament swap = color boundary (#147). A marker, not motion — do
+            // NOT break/finish the current path; record position (current head), the
+            // next segment index (slot boundary), and the active tool for provenance.
+            colorChangeEvents.push({ x: sx, y: sy, z: sz, segIndex: writer.count, srcByte: offset, tool });
+            break;
+          // Motion-model modal commands (DD-010 E10 phase 1).
+          case 'g90':
+            xyzAbsolute = true;
+            positioningSeen = true;
+            break;
+          case 'g91':
+            xyzAbsolute = false;
+            positioningSeen = true;
+            break;
+          // Arc-plane selection (DD-010 D3, #157, E10 phase 2).
+          case 'g17':
+            arcPlane = 'xy';
+            arcPlaneSeen = true;
+            break;
+          case 'g18':
+            arcPlane = 'xz';
+            arcPlaneSeen = true;
+            break;
+          case 'g19':
+            arcPlane = 'yz';
+            arcPlaneSeen = true;
+            break;
+          case 'm82':
+            eModeExplicit = 'absolute';
+            break;
+          case 'm83':
+            eModeExplicit = 'relative';
+            break;
+          // Tool-state modal (DD-012 D2/D4, #189). M3 (CW) / M4 (CCW) engage the spindle/laser;
+          // M5 disengages. Drives Cut-vs-Travel classification for non-extrusion moves. The `S` word
+          // (power/RPM) is a modal channel handled in a later phase; here we track only engagement.
+          case 'm3':
+          case 'm4':
+            toolEngaged = true;
+            toolStateSeen = true;
+            break;
+          case 'm5':
+            toolEngaged = false;
+            toolStateSeen = true;
+            break;
+          // Coordinate systems (DD-010 D4, #158, E10 phase 3).
+          case 'g53':
+            // One-shot: the following move is in machine coordinates (ignores the work offset).
+            g53OneShot = true;
+            coordSystemSeen = true;
+            break;
+          case 'g54':
+          case 'g55':
+          case 'g56':
+          case 'g57':
+          case 'g58':
+          case 'g59':
+            activeWcs = Number(gcode.slice(1)) - 54; // g54→0 … g59→5
+            coordSystemSeen = true;
+            break;
+          case 'g10': {
+            // Set a work-coordinate offset. L2 P<n>: set the offset directly. L20 P<n>: set it so the
+            // current position reads the given value in WCS n. P1→G54 … P6→G59 (default: active system).
+            const l = cmd.params.l;
+            const idx = cmd.params.p !== undefined ? Math.round(cmd.params.p) - 1 : activeWcs;
+            if (idx >= 0 && idx < 6 && (l === 2 || l === 20)) {
+              const w = wcsOffsets[idx];
+              const setAxis = (word: number | undefined, cur: number, axis: 'x' | 'y' | 'z') => {
+                if (word === undefined) return;
+                w[axis] = l === 2 ? word : cur - word; // L20: offset = current logical − desired reading
+              };
+              setAxis(cmd.params.x, sx, 'x');
+              setAxis(cmd.params.y, sy, 'y');
+              setAxis(cmd.params.z, sz, 'z');
+              coordSystemSeen = true;
+            }
+            break;
           }
-          coordSystemSeen = true;
-        }
-        if (cmd.params.z !== undefined) {
-          if (certainZ) g92z = sz - cmd.params.z - wcsOffsets[activeWcs].z;
-          else {
-            sz = cmd.params.z + wcsOffsets[activeWcs].z;
-            g92z = 0;
-            certainZ = true;
-            resync = true;
+          case 'g31': {
+            // Probe move (DD-010 D4 amendment, #158): the endpoint is reached at RUNTIME (workpiece
+            // contact), NOT the commanded value. Do not advance the position or draw a fabricated probe
+            // move; mark the probed axes runtime-dependent so a following G92 resyncs the logical frame.
+            let probed = false;
+            if (cmd.params.x !== undefined) {
+              certainX = false;
+              probed = true;
+            }
+            if (cmd.params.y !== undefined) {
+              certainY = false;
+              probed = true;
+            }
+            if (cmd.params.z !== undefined) {
+              certainZ = false;
+              probed = true;
+            }
+            if (probed) {
+              warn(
+                'probe-position-runtime-dependent',
+                'G31 probe endpoint is determined at runtime; the probed axis is runtime-dependent until re-established (G92 or an absolute move).',
+                offset
+              );
+            }
+            break;
           }
-          coordSystemSeen = true;
+          case 'g92': {
+            // Datum WITHOUT motion (DD-010 D4 + probe amendment, #158). `G92 E<v>` rebases the absolute-E
+            // origin (also used in phase 1). For X/Y/Z, when the position is KNOWN it is a datum SHIFT (the
+            // work offset is set so the current logical position reads <v>, preserving continuity). When the
+            // axis is runtime-dependent (post-probe) it is a logical RESYNC: the current logical position is
+            // declared to be <v>, the offset is reset, certainty is restored, and the current path is
+            // finalized so the next move starts a NEW frame at the datum — no fabricated move is drawn
+            // across the unknown probe result.
+            if (cmd.params.e !== undefined) lastE = cmd.params.e;
+            let resync = false;
+            if (cmd.params.x !== undefined) {
+              if (certainX) g92x = sx - cmd.params.x - wcsOffsets[activeWcs].x;
+              else {
+                sx = cmd.params.x + wcsOffsets[activeWcs].x;
+                g92x = 0;
+                certainX = true;
+                resync = true;
+              }
+              coordSystemSeen = true;
+            }
+            if (cmd.params.y !== undefined) {
+              if (certainY) g92y = sy - cmd.params.y - wcsOffsets[activeWcs].y;
+              else {
+                sy = cmd.params.y + wcsOffsets[activeWcs].y;
+                g92y = 0;
+                certainY = true;
+                resync = true;
+              }
+              coordSystemSeen = true;
+            }
+            if (cmd.params.z !== undefined) {
+              if (certainZ) g92z = sz - cmd.params.z - wcsOffsets[activeWcs].z;
+              else {
+                sz = cmd.params.z + wcsOffsets[activeWcs].z;
+                g92z = 0;
+                certainZ = true;
+                resync = true;
+              }
+              coordSystemSeen = true;
+            }
+            if (resync) finishPath(); // start a new frame at the datum; no move connects across the probe
+            break;
+          }
+          default:
+            warn('unsupported-command', `unsupported command '${gcode}' preserved as metadata`, offset);
         }
-        if (resync) finishPath(); // start a new frame at the datum; no move connects across the probe
-        break;
+        if (!ok) break;
       }
-      default:
-        warn('unsupported-command', `unsupported command '${cmd.gcode}' preserved as metadata`, offset);
-    }
     if (!ok) {
       truncatedAtByte = offset;
     }
@@ -881,6 +1062,13 @@ export function createEngine(input: string | Uint8Array, opts: ParseOptions): En
       // per-move G-code signal and stays 'unavailable' (a future geometry-heuristic DD may change it).
       wipeMoves: 'unavailable',
       seamMoves: 'unavailable',
+      // Non-extrusion productive moves (DD-012 D2, #189). 'known' once a tool-state modal (M3/M4/M5)
+      // was seen — i.e. this is a CNC/laser/plotter file whose Cut moves are meaningful; 'unavailable'
+      // for FDM (no tool-state), where every move is Extrude/Travel and Cut is never set.
+      cutMoves: toolStateSeen ? 'known' : 'unavailable',
+      // Canned drilling cycles expanded to geometry (DD-012 phase 2, #189). 'known' once a G81/G82/G83
+      // was seen (holes are real segments), else 'unavailable' (no cycles / FDM).
+      cannedCycles: cannedCyclesSeen ? 'known' : 'unavailable',
       // Motion-model modes (DD-010 E10 phase 1). 'known' when the governing command was seen
       // (M82/M83, or a firmware-known G90/G91 for E); 'inferred' when defaulted (absolute).
       extrusionMode: eModeExplicit !== null || (extruderFollowsPositioning && positioningSeen) ? 'known' : 'inferred',
@@ -891,6 +1079,9 @@ export function createEngine(input: string | Uint8Array, opts: ParseOptions): En
       // 'inferred' (identity WCS / no offset assumed — the FDM-slicer default).
       coordinateSystem: coordSystemSeen ? 'known' : 'inferred'
     };
+    // Opt-in modal channels (DD-012 D3): only surfaced when requested. 'known' once its controlling
+    // signal was seen (toolPower ← a tool-state modal), else 'unavailable' — never a fabricated value.
+    if (wantToolPower) capabilities.toolPower = toolStateSeen ? 'known' : 'unavailable';
 
     if (layersCapability === 'unavailable') {
       warn('layers-unavailable', 'No planar layer index; all segments assigned to layer 0.');
@@ -995,6 +1186,8 @@ export function createEngine(input: string | Uint8Array, opts: ParseOptions): En
           colorChanges: 'unavailable', // color-change boundaries resolve on the final IR
           wipeMoves: 'unavailable', // annotation move kinds resolve on the final IR (DD-016)
           seamMoves: 'unavailable',
+          cutMoves: 'unavailable', // non-extrusion classification resolves on the final IR (DD-012)
+          cannedCycles: 'unavailable', // canned-cycle expansion resolves on the final IR (DD-012)
           extrusionMode: 'inferred', // motion modes resolve fully on the final IR (E10)
           positioningMode: 'inferred',
           arcPlanes: 'inferred',

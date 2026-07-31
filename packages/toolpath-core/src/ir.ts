@@ -38,7 +38,12 @@ export const MoveKind = {
   Unretract: 1 << 3,
   Wipe: 1 << 4,
   ArcSegment: 1 << 5,
-  Seam: 1 << 6
+  Seam: 1 << 6,
+  /** Tool-engaged productive move (cut / burn / draw) when no extrusion E is present —
+   *  a CNC/laser/plotter counterpart to `Extrude` (DD-012 D2). Set by the parser only when a
+   *  tool-state modal (spindle/laser on) holds and the move has no E delta, so an FDM slice
+   *  never sets it. Composes with `ArcSegment` like the other kinds. */
+  Cut: 1 << 7
 } as const;
 export type MoveKindName = keyof typeof MoveKind;
 
@@ -117,6 +122,11 @@ export interface ToolpathSegments {
   object: Uint32Array;
   /** Byte offset in the source of the command that produced this segment. */
   srcByte: Uint32Array;
+  /** Opt-in modal channels (DD-012 D3), keyed by channel id — present only when the parse was asked
+   *  to capture them (`ParseOptions.modalChannels`). Each is a Float32 column of length `count`; an
+   *  unset value is `NaN` (an honest "no value here"), never a fabricated 0. E.g. `modal.toolPower`
+   *  is the spindle/laser `S` value while a tool is engaged. FDM parses carry no `modal`. */
+  modal?: Readonly<Record<string, Float32Array>>;
 }
 
 export interface ToolpathLayer {

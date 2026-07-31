@@ -45,3 +45,18 @@ dialect provides them, so a preview can reflect per-object and per-tool structur
 Which position-affecting G/M-codes are honored — and the remaining gaps — is tracked in the
 [G-code motion coverage matrix](https://github.com/ChestnutLabs/gcode-preview/blob/dev/docs/compatibility/gcode-motion-coverage.md).
 The modeling itself is described in [Live progress & motion model](concept-progress-motion.md).
+
+## Non-extrusion — CNC / laser / plotter (experimental)
+
+Beyond FDM, the stack understands **non-extrusion** toolpaths. Where there is no extrusion `E` to key
+on, a move made while a tool is engaged (spindle/laser on via `M3`/`M4`) is classified `MoveKind.Cut`
+rather than `Travel`; the modal `S` value rides an opt-in **`toolPower`** channel
+(`parseOptions.modalChannels: ['toolPower']`), colorable with the `power` mode; and canned drilling
+cycles (`G81`/`G82`/`G83`, incl. `G83` peck) expand to real geometry. Controllers (GRBL laser/mill,
+LinuxCNC) are recognized as dialects.
+
+This is honesty-**tiered** (DD-012): until a controller is confirmed on real hardware, its
+non-extrusion classification is reported **`inferred`** (experimental), never `known`, with a
+disclosure warning. Geometry always parses regardless. See the
+[compatibility matrix](https://github.com/ChestnutLabs/gcode-preview/blob/dev/docs/compatibility/dialects-and-containers.md)
+for the per-controller tier.

@@ -57,6 +57,19 @@ See the living references (each with its own evidence):
 - Live-progress signal contract: [`docs/reference/progress-signal-contract.md`](progress-signal-contract.md)
 - Progress consumer notes: [`docs/reference/progress-consumer-notes.md`](progress-consumer-notes.md)
 
+### Non-extrusion (CNC / laser / plotter) — **experimental** (DD-012, #189)
+
+Beyond FDM, the stack parses and classifies non-extrusion toolpaths — CNC milling, diode/CO₂ lasers,
+and pen plotters. **Geometry is fully supported** (positions, arcs, and expanded `G81`/`G82`/`G83`
+drilling cycles always render). The **semantic** layer — cut-vs-rapid classification (`MoveKind.Cut`),
+the `toolPower` channel, and controller recognition (GRBL laser/mill, LinuxCNC) — currently ships at
+the **experimental** validation tier: these claims are reported **`inferred`**, not `known`, with a
+`cnc-dialect-experimental` disclosure, until confirmed on real hardware. A controller is promoted to
+**validated** (`known`) per DD-012 §8/§15 once a real-machine run confirms its classification. DSP
+lasers (`.rd`) and galvo (`.ezd`) are out of scope (proprietary binary, not G-code). See the
+[compatibility matrix](../compatibility/dialects-and-containers.md#dialects-non-extrusion--cnc--laser--plotter-dd-012-189)
+for the per-controller tier.
+
 ## How this document changes
 
 The window definitions are policy (DD-008-gated); the **dated pins** are audit data, refreshed at

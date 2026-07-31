@@ -18,14 +18,15 @@
     "colorChanges": "unavailable",
     "wipeMoves": "unavailable",
     "seamMoves": "unavailable",
+    "cutMoves": "unavailable",
+    "cannedCycles": "unavailable",
     "extrusionMode": "inferred",
     "positioningMode": "inferred",
     "arcPlanes": "inferred",
     "coordinateSystem": "inferred"
   },
   "warningCodes": [
-    "layers-partially-inferred",
-    "unsupported-command"
+    "layers-partially-inferred"
   ],
   "bufferDigests": {
     "x0": "63aaf591",

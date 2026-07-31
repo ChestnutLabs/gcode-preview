@@ -7,6 +7,7 @@
 import { GcodeParseSession, CancelledError } from '@chestnutlabs/gcode-parser';
 import { ToolpathRenderer } from '@chestnutlabs/gcode-renderer-three';
 import { createProgressMapper } from '@chestnutlabs/toolpath-core';
+import { downloadToolpathStl } from './stl-export.js';
 
 // Inherited MIT demo corpus (see test-data/manifest.json), served by Vite's publicDir.
 const CORPUS = [
@@ -94,6 +95,7 @@ const els = {
   material: $('material'),
   qualityNote: $('qualityNote'),
   frame: $('frame'),
+  exportStl: $('exportStl'),
   disclosure: $('disclosure'),
   stats: $('stats'),
   progressTier: $('progressTier'),
@@ -167,7 +169,8 @@ function enableControls(ir) {
   els.scrub.max = String(renderer.segmentCount);
   els.scrub.value = String(renderer.segmentCount);
   els.scrubVal.textContent = 'all';
-  for (const el of [els.startLayer, els.endLayer, els.scrub, els.colorMode, els.frame]) el.disabled = false;
+  for (const el of [els.startLayer, els.endLayer, els.scrub, els.colorMode, els.frame, els.exportStl])
+    el.disabled = false;
 
   // Capability-honest color modes (§4.6): never offer fabricated feature colors.
   const featureOpt = els.colorMode.querySelector('option[value="feature"]');
@@ -427,6 +430,16 @@ const applyTheme = () => renderer.setTheme(themeFor(els.theme.value, els.materia
 els.theme.addEventListener('change', applyTheme);
 els.material.addEventListener('change', applyTheme);
 els.frame.addEventListener('click', () => renderer.frame());
+els.exportStl.addEventListener('click', () => {
+  const ir = renderer.ir;
+  if (!ir) return;
+  const { segments, emitted, triangles } = downloadToolpathStl(ir, 'toolpath.stl');
+  const note =
+    emitted < segments
+      ? `Exported STL: ${triangles.toLocaleString()} triangles from ${emitted.toLocaleString()} of ${segments.toLocaleString()} productive segments (strided to the triangle budget).`
+      : `Exported STL: ${triangles.toLocaleString()} triangles from ${segments.toLocaleString()} productive segments.`;
+  setStatus(note);
+});
 
 // App-level keyboard shortcuts (master plan §9.5); every control is also plain
 // tab-reachable, and the sliders take arrow/page keys natively.

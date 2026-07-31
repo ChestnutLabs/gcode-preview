@@ -42,8 +42,19 @@ const equivalenceFixtures = manifest.fixtures.filter((f) => f.sizeTier !== 'adve
  * the logical frame; the native core honors that (position stays in the authored logical range and no
  * fabricated move is drawn across the probe), where the inherited engine ignored both. These fixtures
  * are excluded from strict adapter-position equivalence and pinned instead by their native goldens.
+ *
+ * DD-012 (#189): demo-easel is a CNC file (`M3 S12000` … `M5`). The native core now classifies its
+ * spindle-engaged no-E moves as `MoveKind.Cut` — a documented semantic correction — where the
+ * inherited adapter (which knew only Extrude|Travel) called them Travel. Positions are unchanged; only
+ * the masked-kind digest diverges, so it too is excluded here and pinned by its native golden.
  */
-const INTENTIONAL_MOTION_CORRECTION = new Set(['demo-mach3']);
+// container-adv-traversal-names is an ADVERSARIAL BINARY container (a malicious ZIP) — never real
+// G-code. The #189 multi-command lexer (which reads every G/M word on a line, not just the first)
+// finds a few coincidental `G<digit>` byte patterns in the ZIP bytes, so a raw-text parse of it yields
+// a handful of bounded segments where the inherited first-word lexer yielded zero. Bounded and
+// harmless (the real path decodes the container first); excluded from strict adapter-equivalence and
+// pinned by its native golden, like the CNC motion corrections above.
+const INTENTIONAL_MOTION_CORRECTION = new Set(['demo-mach3', 'demo-easel', 'container-adv-traversal-names']);
 
 function fnv1a(view: ArrayBufferView): string {
   const bytes = new Uint8Array(view.buffer, view.byteOffset, view.byteLength);

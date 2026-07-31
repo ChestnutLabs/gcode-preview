@@ -42,7 +42,8 @@ const CHANNELS: ChannelSpec[] = [
   { name: 'srcByte', bytesPerElement: 4 }
 ];
 
-const BYTES_PER_SEGMENT = CHANNELS.reduce((a, c) => a + c.bytesPerElement, 0); // 40 B core set
+const CORE_BYTES_PER_SEGMENT = CHANNELS.reduce((a, c) => a + c.bytesPerElement, 0); // 40 B core set
+const MODAL_BYTES_PER_ELEMENT = 4; // each opt-in modal channel is one Float32 column
 
 export interface SegmentRecord {
   x0: number;
@@ -57,6 +58,9 @@ export interface SegmentRecord {
   tool: number;
   layer: number;
   srcByte: number;
+  /** Current value of each requested opt-in modal channel (DD-012 D3), keyed by channel id.
+   *  Missing/undefined entries store NaN — an honest "no value here", never a fabricated 0. */
+  modal?: Record<string, number>;
 }
 
 export interface FinalChannels {
@@ -75,6 +79,9 @@ export interface FinalChannels {
   feature: Uint8Array;
   object: Uint32Array;
   srcByte: Uint32Array;
+  /** Opt-in modal channels (DD-012 D3), present only when requested at construction. Each is a
+   *  Float32 column of length `count`; an unset value is NaN, never a fabricated 0. */
+  modal?: Record<string, Float32Array>;
 }
 
 const INITIAL_CAPACITY = 4096;
@@ -103,7 +110,19 @@ export class SegmentWriter {
   /** Extra live bytes the caller wants included in the budget (line buffer, warnings). */
   private externalBytes = 0;
 
-  constructor(private readonly maxBufferBytes: number) {
+  /** Opt-in modal channel ids (DD-012 D3), stable order; empty for a default parse. */
+  private readonly modalNames: readonly string[];
+  /** Growable Float32 columns, parallel to `modalNames`. */
+  private modalArrays: Float32Array[] = [];
+  /** Bytes per segment across the core set plus any requested modal columns. */
+  private readonly bytesPerSegment: number;
+
+  constructor(
+    private readonly maxBufferBytes: number,
+    modalChannels: readonly string[] = []
+  ) {
+    this.modalNames = modalChannels;
+    this.bytesPerSegment = CORE_BYTES_PER_SEGMENT + MODAL_BYTES_PER_ELEMENT * modalChannels.length;
     this.allocate(INITIAL_CAPACITY);
   }
 
@@ -129,7 +148,7 @@ export class SegmentWriter {
 
   private allocate(newCapacity: number): void {
     // During a grow/compact, old and new capacity coexist until copies complete.
-    const newBytes = newCapacity * BYTES_PER_SEGMENT;
+    const newBytes = newCapacity * this.bytesPerSegment;
     this.ensureBudget(newBytes);
 
     const nx0 = new Float32Array(newCapacity);
@@ -146,6 +165,12 @@ export class SegmentWriter {
     const nfeature = new Uint8Array(newCapacity);
     const nobject = new Uint32Array(newCapacity);
     const nsrc = new Uint32Array(newCapacity);
+    // Opt-in modal columns grow in lockstep with the core set.
+    const nmodal = this.modalNames.map((_, k) => {
+      const a = new Float32Array(newCapacity);
+      if (this.capacity > 0) a.set(this.modalArrays[k].subarray(0, this._count));
+      return a;
+    });
 
     if (this.capacity > 0) {
       nx0.set(this.x0.subarray(0, this._count));
@@ -164,7 +189,8 @@ export class SegmentWriter {
       nsrc.set(this.srcByte.subarray(0, this._count));
     }
 
-    const oldBytes = this.capacity * BYTES_PER_SEGMENT;
+    const oldBytes = this.capacity * this.bytesPerSegment;
+    this.modalArrays = nmodal;
     this.x0 = nx0;
     this.y0 = ny0;
     this.z0 = nz0;
@@ -203,6 +229,10 @@ export class SegmentWriter {
     this.feature[i] = 0;
     this.object[i] = 0;
     this.srcByte[i] = s.srcByte;
+    for (let k = 0; k < this.modalNames.length; k++) {
+      const v = s.modal?.[this.modalNames[k]];
+      this.modalArrays[k][i] = v === undefined ? NaN : v;
+    }
     this._count++;
   }
 
@@ -216,6 +246,15 @@ export class SegmentWriter {
     this.layer.fill(0, 0, this._count);
   }
 
+  /** Build the optional `modal` output record (DD-012 D3), or `{}` when no channels were requested
+   *  so a default parse yields no `modal` key at all. `view` slices/subarrays each column to count. */
+  private modalOutput(view: (a: Float32Array) => Float32Array): { modal?: Record<string, Float32Array> } {
+    if (this.modalNames.length === 0) return {};
+    const modal: Record<string, Float32Array> = {};
+    for (let k = 0; k < this.modalNames.length; k++) modal[this.modalNames[k]] = view(this.modalArrays[k]);
+    return { modal };
+  }
+
   /**
    * Copy a segment range into fresh right-sized arrays (progressive-preview
    * snapshots, DD-004 §5.4 / issue #60). Budget-checked: the copies coexist with
@@ -225,9 +264,10 @@ export class SegmentWriter {
    */
   snapshotRange(start: number, end: number): FinalChannels {
     const count = Math.max(0, end - start);
-    this.ensureBudget(count * BYTES_PER_SEGMENT);
+    this.ensureBudget(count * this.bytesPerSegment);
     return {
       count,
+      ...this.modalOutput((a) => a.slice(start, end)),
       x0: this.x0.slice(start, end),
       y0: this.y0.slice(start, end),
       z0: this.z0.slice(start, end),
@@ -252,6 +292,7 @@ export class SegmentWriter {
     }
     return {
       count: this._count,
+      ...this.modalOutput((a) => a.subarray(0, this._count)),
       x0: this.x0.subarray(0, this._count),
       y0: this.y0.subarray(0, this._count),
       z0: this.z0.subarray(0, this._count),
