@@ -1,5 +1,131 @@
 # @chestnutlabs/gcode-parser
 
+## 0.4.0
+
+### Minor Changes
+
+- [#252](https://github.com/ChestnutLabs/gcode-preview/pull/252) [`b2053be`](https://github.com/ChestnutLabs/gcode-preview/commit/b2053be4b8e71250bc6077f60ef996fe601b6f3e) Thanks [@sobechestnut-dev](https://github.com/sobechestnut-dev)! - feat: canned drilling cycle expansion — G81/G82/G83 (DD-012 phase 2, [#189](https://github.com/ChestnutLabs/gcode-preview/issues/189))
+
+  CNC canned drilling cycles previously produced **zero geometry** — holes vanished. They now expand to
+  explicit sub-moves so the drilling is real, classified toolpath:
+  - **G81/G82** (drill / drill-with-dwell): rapid to the hole XY, rapid down to the R plane, **feed to
+    depth (`Cut`)**, rapid retract.
+  - **G83** (peck): the plunge is a peck loop — feed down by `Q`, rapid-retract to R between pecks, until
+    reaching depth; each down-feed is a `Cut`.
+  - **G98/G99** set the retract plane (initial Z vs R); **G80** cancels; a `G0`–`G3` motion also cancels.
+  - **Modal repeat**: with a cycle active, a bare `X`/`Y` line drills another hole (retaining Z/R/Q and
+    the initial plane) — the common CNC hole-pattern form.
+  - Rapids are `Travel`, plunges are `Cut`; new capability **`cannedCycles`** (`known` once a cycle is
+    seen, else `unavailable`).
+
+  FDM output is unchanged (no canned cycles in FDM); the native-golden corpus gains only the additive
+  `cannedCycles` capability, with no geometry change.
+
+- [#253](https://github.com/ChestnutLabs/gcode-preview/pull/253) [`13fd5c6`](https://github.com/ChestnutLabs/gcode-preview/commit/13fd5c61d730428a7f7e73c28cf3cc9c48e68c19) Thanks [@sobechestnut-dev](https://github.com/sobechestnut-dev)! - feat: non-extrusion dialect families + validation tiers (DD-012 phase 3, [#189](https://github.com/ChestnutLabs/gcode-preview/issues/189))
+
+  Adds controller detection and the **validation-tier honesty mechanism** for CNC/laser toolpaths:
+  - New dialects (`@chestnutlabs/gcode-dialects`): **GRBL laser** (LightBurn / `$32` laser mode / `M4`+`S`),
+    **GRBL mill** and **LinuxCNC** (`M3` spindle, `%`/banner envelopes). Registered in the batteries worker.
+  - Each dialect adds provenance (`cnc.controller`, `cnc.machineClass`, `cnc.toolPowerLabel`) and a
+    **validation tier** (`cnc.validationTier`). Per DD-012 D6: an **experimental** dialect reports its
+    non-extrusion claims (`cutMoves` / `toolPower` / `cannedCycles`) as **`inferred`** (never `known`),
+    with a `cnc-dialect-experimental` disclosure — and only for claims the file actually made (an unused
+    feature is never fabricated).
+  - **All launch dialects ship `experimental`** (synthetic fixtures only). A single `tier: 'validated'`
+    flip per controller promotes its claims to `known` once confirmed on real hardware (DD-012 §8/§15).
+
+  Geometry is untouched (dialects only annotate/label). FDM detection is unaffected — CNC dialects do
+  not match FDM output.
+
+- [#248](https://github.com/ChestnutLabs/gcode-preview/pull/248) [`1029580`](https://github.com/ChestnutLabs/gcode-preview/commit/10295803839816adaed224c48eba1f74374c0c2a) Thanks [@sobechestnut-dev](https://github.com/sobechestnut-dev)! - feat: non-extrusion `Cut` move classification + tool-state modal (DD-012 phase 1, [#189](https://github.com/ChestnutLabs/gcode-preview/issues/189))
+
+  Non-extrusion toolpaths (CNC / laser / plotter) no longer collapse their productive moves into
+  `Travel`. The parser now tracks a tool-engaged modal state — `M3`/`M4` (spindle/laser on, incl. the
+  `M03`/`M04` leading-zero form) engage it, `M5` disengages — and classifies a move with **no extrusion
+  `E`** while the tool is engaged as the new **`MoveKind.Cut`** bit (a CNC/laser/plotter counterpart to
+  `Extrude`, composing with `ArcSegment` like the other kinds).
+  - New IR move kind `MoveKind.Cut = 1 << 7` (`@chestnutlabs/toolpath-core`).
+  - New capability **`cutMoves`**: `known` once a tool-state modal is seen (a CNC/laser/plotter file),
+    `unavailable` for FDM.
+  - **FDM is byte-identical**: FDM slices never issue `M3`/`M4`, so `Cut` is never set and every move
+    stays `Extrude`/`Travel` exactly as before (verified against the native-golden corpus; the CNC
+    fixtures `demo-easel`/`demo-mach3` are documented intentional adapter-divergences).
+
+  Modal tool-state _value_ channels (laser power / spindle RPM via `S`), canned-cycle expansion, and
+  dialect families follow in later DD-012 phases.
+
+- [#251](https://github.com/ChestnutLabs/gcode-preview/pull/251) [`11f317d`](https://github.com/ChestnutLabs/gcode-preview/commit/11f317de2d6cb963d2a7fb0c894c89d3d5adc86d) Thanks [@sobechestnut-dev](https://github.com/sobechestnut-dev)! - feat: modal motion continuation — bare coordinate lines repeat the last G0–G3 (DD-012 phase 2, [#189](https://github.com/ChestnutLabs/gcode-preview/issues/189))
+
+  CNC/LinuxCNC-style G-code frequently omits the `G` word on repeated moves (`G1 X0 Y0` then bare
+  `X10 Y0` / `X20 Y0`). The parser previously **dropped** those lines entirely — a three-move path
+  produced a single segment. It now tracks the active `G0`–`G3` motion mode and treats a line whose
+  leading word is a coordinate axis (`X`/`Y`/`Z`, with no `G`/`M`/`T` command) as a continuation of
+  that mode, so the full toolpath is emitted and classified/colored consistently (incl. inline `S`
+  for `toolPower`).
+
+  FDM output is **byte-identical** — slicers always emit the `G` word, so the continuation path never
+  triggers (the native-golden corpus is unchanged). This unblocks canned-cycle repeat (next phase).
+
+- [#250](https://github.com/ChestnutLabs/gcode-preview/pull/250) [`8fec7c3`](https://github.com/ChestnutLabs/gcode-preview/commit/8fec7c3622cd2a6d6d57b43d7866cfea1cb71e09) Thanks [@sobechestnut-dev](https://github.com/sobechestnut-dev)! - feat: opt-in modal tool-power channel (DD-012 phase 1 — the `ModalChannel` mechanism, [#189](https://github.com/ChestnutLabs/gcode-preview/issues/189))
+
+  Adds the shared, opt-in **`ModalChannel`** mechanism DD-012 D3 is built around, and its first channel:
+  **`toolPower`** — the modal spindle/laser `S` value while a tool is engaged.
+  - `ParseOptions.modalChannels?: readonly string[]` — request per-segment modal channels by id.
+    Supported id: `'toolPower'`. Unknown ids are ignored with a `modal-channel-unsupported` warning.
+  - `ToolpathSegments.modal?: Readonly<Record<string, Float32Array>>` — one Float32 column per requested
+    channel, present **only** when requested. An unset value is `NaN` (an honest "no value here"), never
+    a fabricated `0`. `toolPower` is the modal `S` (set on `M3`/`M4` and inline on GRBL-laser motion
+    lines) while engaged, `NaN` when the tool is off (`M5`).
+  - New capability **`toolPower`**: surfaced only when the channel is requested — `known` once a
+    tool-state modal is seen, else `unavailable`.
+  - **Default parse pays nothing**: no `modalChannels` ⇒ no `modal` on the IR, no extra columns, FDM
+    output unchanged. The budget-aware SoA writer (DD-003) grows the opt-in columns in lockstep and
+    accounts their bytes.
+
+  Presentation (Watts vs RPM) is a dialect label, not a separate channel (DD-012 D4); [#180](https://github.com/ChestnutLabs/gcode-preview/issues/180)'s
+  fan/temp/accel color channels reuse this same mechanism in a later phase.
+
+- [#256](https://github.com/ChestnutLabs/gcode-preview/pull/256) [`b84bea9`](https://github.com/ChestnutLabs/gcode-preview/commit/b84bea959b7aae24d148e6bcc488a9ed254a54f0) Thanks [@sobechestnut-dev](https://github.com/sobechestnut-dev)! - feat: lexer handles multi-command lines, N-word line numbers, and bare S/F ([#189](https://github.com/ChestnutLabs/gcode-preview/issues/189))
+
+  Real CNC/laser G-code (GRBL, LinuxCNC, TinyG, Mach3, Fanuc) is written very differently from FDM
+  slicer output, and the inherited first-word lexer silently dropped most of it. The lexer now:
+  - **Reads every G/M/T command word on a line**, not just the first — `G20 G17 G90`, `G91 G81 …`,
+    `S3400 M3` now all apply. This was the biggest gap: `M3` spindle-on and `G81` canned cycles were
+    being dropped as params, so mills showed no `Cut` moves and drilled holes vanished.
+  - **Strips `N`-word line numbers** (`N10 G1 X…`) — Fanuc/Mach/TinyG number every line, which
+    previously reduced whole files to zero geometry.
+  - **Latches bare `S` / `F` lines** (standalone `S1000` / `F600`) into modal power/feed — common in
+    GRBL-laser output.
+  - Guards against **letters embedded in extended-command words** (`EXCLUDE_OBJECT … POLYGON=…`): a
+    command/param is only taken when a real number follows the letter, so `T` in `M486 T<count>` /
+    `M104 T<tool>` stays a parameter (not a tool select), and the `G` in `POLYGON` never becomes a move.
+
+  Validated against real public sample files: a LinuxCNC arc-spiral went from 16 → 5,506 parsed
+  segments, a TinyG program from 0 → 344. **FDM output is byte-identical** — slicers emit one clean
+  command per line, so the multi-command path never runs for them (the real-G-code native-golden corpus
+  is unchanged except for fewer spurious `unsupported-command` warnings; `demo-mach3` and one adversarial
+  binary fixture are documented intentional divergences).
+
+### Patch Changes
+
+- [#260](https://github.com/ChestnutLabs/gcode-preview/pull/260) [`879b60a`](https://github.com/ChestnutLabs/gcode-preview/commit/879b60ae0fca87ca8187791603a1bc7f54e61c4c) Thanks [@sobechestnut-dev](https://github.com/sobechestnut-dev)! - fix: G0 rapids classify as Travel, not Cut, even while the tool is engaged ([#189](https://github.com/ChestnutLabs/gcode-preview/issues/189))
+
+  The non-extrusion `Cut`/`Travel` classifier keyed only on tool-state (`M3`/`M4` latched), so on a
+  router — where the spindle stays on across rapids — every `G0` reposition was counted as a cutting
+  move. DD-012 D2 §4.2 already specifies that rapids stay `Travel`; this brings the implementation in
+  line: only a **feed** move (`G1`/`G2`/`G3`) with the tool engaged and no `E` delta is `Cut`; a `G0`
+  rapid is `Travel` regardless of tool state (a GRBL-laser also gates the beam off during `G0`).
+
+  Surfaced by the CNC/laser validation harness on real files — e.g. the `easel` router fixture went
+  from 742 cut / 0 rapids to a correct 737 cut / 5 rapids (its 5 `G0` moves). Geometry is unchanged
+  (only the `kind` column shifts); FDM output is byte-identical since `Cut` is never evaluated there.
+
+- Updated dependencies [[`3f06e5b`](https://github.com/ChestnutLabs/gcode-preview/commit/3f06e5b7b6926daaad4290b29c577a380c9e10df), [`13fd5c6`](https://github.com/ChestnutLabs/gcode-preview/commit/13fd5c61d730428a7f7e73c28cf3cc9c48e68c19), [`1029580`](https://github.com/ChestnutLabs/gcode-preview/commit/10295803839816adaed224c48eba1f74374c0c2a), [`8fec7c3`](https://github.com/ChestnutLabs/gcode-preview/commit/8fec7c3622cd2a6d6d57b43d7866cfea1cb71e09), [`3e244ae`](https://github.com/ChestnutLabs/gcode-preview/commit/3e244aee86463f2a8c030b3793d3bb2dd462e3a9)]:
+  - @chestnutlabs/gcode-dialects@0.4.0
+  - @chestnutlabs/toolpath-core@0.4.0
+  - @chestnutlabs/gcode-bgcode@0.4.0
+  - @chestnutlabs/gcode-containers@0.4.0
+
 ## 0.3.0
 
 ### Minor Changes

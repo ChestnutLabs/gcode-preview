@@ -1,5 +1,13 @@
 # @chestnutlabs/gcode-bgcode
 
+## 0.4.0
+
+### Patch Changes
+
+- Updated dependencies [[`1029580`](https://github.com/ChestnutLabs/gcode-preview/commit/10295803839816adaed224c48eba1f74374c0c2a), [`8fec7c3`](https://github.com/ChestnutLabs/gcode-preview/commit/8fec7c3622cd2a6d6d57b43d7866cfea1cb71e09)]:
+  - @chestnutlabs/toolpath-core@0.4.0
+  - @chestnutlabs/gcode-containers@0.4.0
+
 ## 0.3.0
 
 ### Minor Changes

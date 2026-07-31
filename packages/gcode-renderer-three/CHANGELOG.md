@@ -1,5 +1,29 @@
 # @chestnutlabs/gcode-renderer-three
 
+## 0.4.0
+
+### Minor Changes
+
+- [#254](https://github.com/ChestnutLabs/gcode-preview/pull/254) [`5f59b77`](https://github.com/ChestnutLabs/gcode-preview/commit/5f59b7788bbb14cacfe21aaf3d7134c6ba8dcd86) Thanks [@sobechestnut-dev](https://github.com/sobechestnut-dev)! - feat: non-extrusion color modes — color-by-power + cut-vs-rapid (DD-012 phase 4, [#189](https://github.com/ChestnutLabs/gcode-preview/issues/189))
+
+  Two new `ColorMode`s consuming the [#189](https://github.com/ChestnutLabs/gcode-preview/issues/189) channels (DD-012 D7):
+  - **`power`** — ramps each segment's modal `toolPower` (laser power / spindle RPM, the `S` value) onto
+    a color ramp, the CNC/laser counterpart to color-by-speed. Auto-ranged (`toolPowerRange`) or explicit;
+    `NaN` (tool off) or a file parsed without the `toolPower` channel → fallback, never a fabricated color.
+    Capability-gated on `toolPower` (the Three renderer's `isColorModeAvailable` gates it).
+  - **`moveKind`** — cut-vs-rapid: productive moves (`Extrude` or `Cut`) vs rapids (`Travel`) — the
+    "where the tool is actually working" view. Reads the always-present `kind` channel, so it is always
+    available.
+
+  Both flow through `createSegmentColorer`, so the Three and Canvas-2D renderers get them for free. FDM
+  coloring is unchanged.
+
+### Patch Changes
+
+- Updated dependencies [[`5f59b77`](https://github.com/ChestnutLabs/gcode-preview/commit/5f59b7788bbb14cacfe21aaf3d7134c6ba8dcd86), [`1029580`](https://github.com/ChestnutLabs/gcode-preview/commit/10295803839816adaed224c48eba1f74374c0c2a), [`8fec7c3`](https://github.com/ChestnutLabs/gcode-preview/commit/8fec7c3622cd2a6d6d57b43d7866cfea1cb71e09)]:
+  - @chestnutlabs/gcode-colors@0.4.0
+  - @chestnutlabs/toolpath-core@0.4.0
+
 ## 0.3.0
 
 ### Minor Changes
