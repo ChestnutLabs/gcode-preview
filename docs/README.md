@@ -39,7 +39,7 @@ See also [`../PROJECT_SETUP.md`](../PROJECT_SETUP.md) for the local environment 
 Provenance of inherited vs. Chestnut code, the exact founding baseline, and the branch mapping are
 tracked in [`UPSTREAM_PROVENANCE.md`](UPSTREAM_PROVENANCE.md).
 
-## Current state (updated 2026-07-29 — v0.3.0 shipped to npm; v0.4.0 in prep; #188 bgcode closed; #189 CNC/laser phases 1–5 built + real-file lexer/detection; #152 STL export done)
+## Current state (updated 2026-07-29 — **v0.4.0 shipped to npm** (13 lockstep pkgs); #188 bgcode closed; #189 CNC/laser phases 1–5 + real-file lexer/detection, G0-rapid fix, GRBL-laser hardware-validated, #152 STL export done; DD-017 RS274NGC parametric programs proposed)
 
 | Epic | Status | Gate |
 |---|---|---|
@@ -65,7 +65,7 @@ Shipped so far: `packages/toolpath-core` (SoA `ToolpathIR`, capability model), `
 `packages/gcode-renderer-three` (geometry builders + scene/lifecycle), the IR adapter (`src/ir-adapter.ts`),
 golden/native fixtures + manifest with CI validation, boundary lint, license CI gate, and Vite/Electron
 consumer smoke harnesses, plus the five framework adapters (`gcode-preview-core`/`-vue`/`-react`/
-`-svelte`/`-element`). CI (`build`) is a required check on `main`/`dev`. **All ten `@chestnutlabs/*`
-packages are published to npm at `v0.2.0`** (lockstep, npm provenance); `main` is the release branch,
-publishing from tagged GitHub Releases (`v0.1.0` E7/DD-008, `v0.2.0` E9/DD-009). An E10-phase-1
-changeset accumulates on `dev` for the next release (`0.3.0`).
+`-svelte`/`-element`). CI (`build`) is a required check on `main`/`dev`. **All thirteen `@chestnutlabs/*`
+packages are published to npm at `v0.4.0`** (lockstep, npm provenance); `main` is the release branch,
+publishing from tagged GitHub Releases (`v0.1.0` E7/DD-008, `v0.2.0` E9/DD-009, `v0.3.0` E8/#188,
+`v0.4.0` #189 non-extrusion). Changesets accumulate on `dev` for the next release.
