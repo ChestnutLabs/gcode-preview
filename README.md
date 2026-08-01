@@ -6,11 +6,14 @@ intermediate representation (`ToolpathIR`), and render an interactive Three.js (
 Canvas 2D) preview — with first-class **Vue, React, and Svelte** integrations that are thin adapters
 over one shared, framework-neutral engine.
 
-> **Status: published.** Thirteen `@chestnutlabs/*` packages are on npm (latest **`v0.3.0`**,
+> **Status: published.** Thirteen `@chestnutlabs/*` packages are on npm (latest **`v0.4.0`**,
 > lockstep-versioned with npm provenance). E0–E11 of the
-> [master plan](docs/00_PROJECT_MASTER_PLAN.md) are closed; `v0.3.0` adds the low-resource Canvas 2D
-> renderer, expanded color modes, wipe/seam visibility, time-based scrub, and binary G-code
-> (`.bgcode`) decode. Install from npm — see *Quick start* below.
+> [master plan](docs/00_PROJECT_MASTER_PLAN.md) are closed; **`v0.4.0` adds non-extrusion toolpaths —
+> CNC / laser / plotter**: `MoveKind.Cut` classification, an opt-in modal `toolPower` (laser power /
+> spindle RPM) channel, canned drilling-cycle expansion (`G81`/`G82`/`G83`), evidence-based controller
+> recognition (GRBL laser/mill, LinuxCNC) with **validation tiers** (GRBL-laser hardware-validated),
+> power / cut-vs-rapid color modes, and toolpath STL export — all honesty-tiered, with FDM output
+> byte-identical. Install from npm — see *Quick start* below.
 
 ![3DBenchy rendered as tubes with feature coloring in the showcase viewer](docs/media/viewer-benchy-tubes.png)
 
@@ -37,10 +40,11 @@ over one shared, framework-neutral engine.
 - **Rich toolpath coloring** — by feature type, move speed, object, per-layer height, or (for
   non-extrusion) tool power and cut-vs-rapid, plus toggleable wipe/seam moves; time-based scrub with a
   print-time estimate; and a source-line ↔ segment debugger mapping.
-- **Non-extrusion toolpaths — CNC / laser / plotter** *(experimental)* — cut/burn/draw moves classified
+- **Non-extrusion toolpaths — CNC / laser / plotter** *(honesty-tiered)* — cut/burn/draw moves classified
   as `Cut`, a modal `toolPower` (laser power / spindle RPM) channel, canned drilling-cycle expansion
-  (`G81`/`G82`/`G83`), and controller recognition (GRBL laser/mill, LinuxCNC) — all honesty-**tiered**:
-  reported `inferred` until confirmed on real hardware, never fabricated.
+  (`G81`/`G82`/`G83`), and evidence-based controller recognition (GRBL laser/mill, LinuxCNC) — each
+  carrying a **validation tier**: reported `inferred` until confirmed on real hardware, then `known`.
+  **GRBL-laser is hardware-validated**; GRBL-mill and LinuxCNC remain experimental. Never fabricated.
 - **Honest live progress** (for printer telemetry) — a normalized `ProgressObservation` contract
   mapped onto the toolpath with tiered confidence: a precise cut + marker when the source position
   is known, an uncertainty band when it is approximated, stale-signal handling, and user scrub
