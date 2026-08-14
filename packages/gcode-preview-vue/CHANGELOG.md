@@ -1,5 +1,54 @@
 # @chestnutlabs/gcode-preview-vue
 
+## 0.5.0
+
+### Minor Changes
+
+- [#283](https://github.com/ChestnutLabs/gcode-preview/pull/283) [`804cafb`](https://github.com/ChestnutLabs/gcode-preview/commit/804cafb33f8f8be2617585156babf1221a856941) Thanks [@sobechestnut-dev](https://github.com/sobechestnut-dev)! - Adapter surface: capabilities/warnings on `ready` + declarative `view`/`cameraState` ([#275](https://github.com/ChestnutLabs/gcode-preview/issues/275) M3+M6)
+
+  **M3** — the `parse-complete` / `ready` event now carries `capabilities` (the per-field confidence
+  map) and `warnings` alongside `{ segments, layers, complete }`, so consumers can gate their own UI on
+  capability-honesty without reaching for the raw handle.
+
+  **M6** — the `setView`/`getCameraState`/`setCameraState` methods ([#268](https://github.com/ChestnutLabs/gcode-preview/issues/268)) get first-class declarative
+  props on all four adapters: a `view` prop (preset orientation) and a `cameraState` prop (restore),
+  paired with a new **`camera-changed`** event (renderer → controller → adapters, emitted when a user
+  camera interaction settles) so a `cameraState` binding round-trips. The 2D renderer keeps disclosing
+  via `renderer-unsupported` rather than fabricating a pose. Behavioral-suite coverage added for the
+  capabilities/warnings payload across all four adapters.
+
+- [#270](https://github.com/ChestnutLabs/gcode-preview/pull/270) [`bb2af7a`](https://github.com/ChestnutLabs/gcode-preview/commit/bb2af7a4b9c433ef8caf59ecb5ece51f39a8eb9e) Thanks [@sobechestnut-dev](https://github.com/sobechestnut-dev)! - Preset camera views + serializable camera state ([#268](https://github.com/ChestnutLabs/gcode-preview/issues/268))
+
+  Adds three imperative camera methods, threaded from the renderer through `PreviewRenderer` and the
+  `controls` handle into all four adapters:
+  - `setView(view)` — snap to a preset orientation (`top`/`bottom`/`front`/`back`/`left`/`right`/`iso`),
+    instant, preserving the active projection.
+  - `getCameraState()` — read the current camera as a serializable `CameraState`
+    (`{ position, target, zoom, cameraMode }`, scene coordinates); a stable contract a dashboard can
+    persist.
+  - `setCameraState(state)` — restore a snapshot verbatim (no re-fit to the current model).
+
+  New public types `CameraView` and `CameraState`. No new dependency, no IR/schema change, no animation
+  (snapping is instant). The low-resource 2D renderer has no 3D pose, so it honors these as documented
+  disclosures (`getCameraState()` → `null`; `setView`/`setCameraState` → `renderer-unsupported`) rather
+  than fabricating a pose. Covered across all four adapters by the portable behavioral suite.
+
+### Patch Changes
+
+- [#282](https://github.com/ChestnutLabs/gcode-preview/pull/282) [`54b54fe`](https://github.com/ChestnutLabs/gcode-preview/commit/54b54fe240e5ef7edae0e03e351127de531c5069) Thanks [@sobechestnut-dev](https://github.com/sobechestnut-dev)! - Keyboard-operable camera for embedded viewers (DD-004 a11y) ([#275](https://github.com/ChestnutLabs/gcode-preview/issues/275)/M4)
+
+  The embedded adapter canvases had `aria-label` but no `tabindex`, so they weren't focusable, and the
+  renderer never enabled OrbitControls key events — only the standalone demo page was keyboard-usable.
+  Now every adapter canvas is focusable (`tabindex="0"`) and the renderer enables OrbitControls keyboard
+  events scoped to the canvas (arrow keys pan the view when it's focused, without hijacking the page's
+  arrow keys). Keyboard operability is satisfied for embedders, not just the demo.
+
+- Updated dependencies [[`804cafb`](https://github.com/ChestnutLabs/gcode-preview/commit/804cafb33f8f8be2617585156babf1221a856941), [`b671d02`](https://github.com/ChestnutLabs/gcode-preview/commit/b671d02179ba6cf30ce9888fa4b851328852e0f1), [`54b54fe`](https://github.com/ChestnutLabs/gcode-preview/commit/54b54fe240e5ef7edae0e03e351127de531c5069), [`bb2af7a`](https://github.com/ChestnutLabs/gcode-preview/commit/bb2af7a4b9c433ef8caf59ecb5ece51f39a8eb9e)]:
+  - @chestnutlabs/gcode-renderer-three@0.5.0
+  - @chestnutlabs/gcode-preview-core@0.5.0
+  - @chestnutlabs/gcode-parser@0.5.0
+  - @chestnutlabs/toolpath-core@0.5.0
+
 ## 0.4.0
 
 ### Patch Changes

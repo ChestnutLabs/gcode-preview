@@ -1,6 +1,6 @@
 {
   "name": "@chestnutlabs/gcode-renderer-three",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "description": "Three.js toolpath renderer consuming ToolpathIR (DD-004). Phases 1-2: geometry builders + scene/lifecycle.",
   "keywords": [
     "gcode",
@@ -49,8 +49,8 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@chestnutlabs/gcode-colors": "0.4.0",
-    "@chestnutlabs/toolpath-core": "0.4.0"
+    "@chestnutlabs/gcode-colors": "0.5.0",
+    "@chestnutlabs/toolpath-core": "0.5.0"
   },
   "devDependencies": {
     "@types/three": "0.178.0"
