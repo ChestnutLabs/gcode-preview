@@ -215,6 +215,7 @@ function GcodePreviewImpl(props: GcodePreviewProps, ref: ForwardedRef<GcodePrevi
   return createElement('canvas', {
     ref: preview.canvasRef,
     style: { width: '100%', height: '100%', display: 'block', touchAction: 'none' },
+    tabIndex: 0, // focusable → keyboard camera (DD-004 a11y, #275/M4)
     'aria-label': '3D G-code toolpath preview'
   });
 }

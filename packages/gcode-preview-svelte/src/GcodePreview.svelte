@@ -131,8 +131,10 @@
   onDestroy(() => preview.dispose());
 </script>
 
+<!-- tabindex makes the canvas focusable → keyboard camera (DD-004 a11y, #275/M4) -->
 <canvas
   use:preview.canvas
+  tabindex="0"
   style="width: 100%; height: 100%; display: block; touch-action: none;"
   aria-label="3D G-code toolpath preview"
 ></canvas>

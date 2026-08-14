@@ -218,6 +218,7 @@ export class GcodePreviewElement extends HTMLElement {
     style.textContent = ':host{display:block;width:100%;height:100%}canvas{display:block;width:100%;height:100%}';
     const canvas = document.createElement('canvas');
     canvas.setAttribute('aria-label', '3D G-code toolpath preview');
+    canvas.setAttribute('tabindex', '0'); // focusable → keyboard camera (DD-004 a11y, #275/M4)
     root.append(style, canvas);
     this.canvasEl = canvas;
 
