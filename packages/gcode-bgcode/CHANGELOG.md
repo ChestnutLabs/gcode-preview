@@ -1,5 +1,13 @@
 # @chestnutlabs/gcode-bgcode
 
+## 0.5.0
+
+### Patch Changes
+
+- Updated dependencies []:
+  - @chestnutlabs/gcode-containers@0.5.0
+  - @chestnutlabs/toolpath-core@0.5.0
+
 ## 0.4.0
 
 ### Patch Changes
