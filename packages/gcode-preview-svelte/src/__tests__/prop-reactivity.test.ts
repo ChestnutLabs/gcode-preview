@@ -2,16 +2,14 @@
  * Prop-reactivity invariant for the Svelte shell (#274). `buildVolume` shipped as a one-time init
  * call with no `$:` statement, so post-mount changes were a silent no-op — a parity break vs Vue's
  * `watch` and React's `useEffect`. The portable behavioral suite drives `createGcodePreview` (the
- * store), not the `.svelte` component, and the package has no component-mount test harness (its
- * vitest runs in `node` with no Svelte compiler plugin), so this static invariant is the enforceable
- * guard: **every writable prop must be wired into a reactive `$:` block** (or be a documented
- * init-only renderer option that genuinely cannot change after mount).
+ * store), not the `.svelte` component, and this package is browser-only (DD-007 §7 — no Node imports)
+ * with no component-mount harness, so this static invariant is the enforceable guard: **every writable
+ * prop must be wired into a reactive `$:` block** (or be a documented init-only renderer option that
+ * genuinely cannot change after mount). The component source is read via a Vite `?raw` import (no Node
+ * `fs`), keeping the package browser-clean.
  */
-import { readFileSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-
-const SOURCE = readFileSync(fileURLToPath(new URL('../GcodePreview.svelte', import.meta.url)), 'utf8');
+import SOURCE from '../GcodePreview.svelte?raw';
 
 /**
  * Props fixed at construction (passed into `createGcodePreview` / renderer options) — they cannot be
