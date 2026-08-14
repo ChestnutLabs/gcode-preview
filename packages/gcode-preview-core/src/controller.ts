@@ -21,6 +21,8 @@ import {
 import type {
   BuildVolumeDef,
   CameraMode,
+  CameraState,
+  CameraView,
   ColorMode,
   GLRendererLike,
   ProgressPresentationMode,
@@ -42,7 +44,8 @@ import {
   type ProgressMapper,
   type ProgressObservation,
   type ToolpathIR,
-  type ToolpathTime
+  type ToolpathTime,
+  type Warning
 } from '@chestnutlabs/toolpath-core';
 
 /** Session/renderer events, re-emitted, plus the controller's own lifecycle events. */
@@ -50,7 +53,16 @@ export type PreviewEvent =
   | PreviewRendererEvent
   | { type: 'parse-started'; bytes: number }
   | { type: 'parse-progress'; progress: ParseProgress }
-  | { type: 'parse-complete'; segments: number; layers: number; complete: boolean }
+  | {
+      type: 'parse-complete';
+      segments: number;
+      layers: number;
+      complete: boolean;
+      /** Per-field capability confidence (DD-001) — lets consumers gate their own UI honestly (#275/M3). */
+      capabilities: Record<string, Confidence>;
+      /** Parse warnings (codes/messages), so consumers can surface disclosures without the raw handle. */
+      warnings: readonly Warning[];
+    }
   | { type: 'parse-cancelled' }
   | { type: 'parse-error'; code: string; message: string }
   | {
@@ -141,6 +153,14 @@ export interface GcodePreviewControls {
   setQuality(quality: QualityMode | 'auto'): void;
   /** Switch camera projection (#150, DD-009 D3). */
   setCameraMode(mode: CameraMode): void;
+  /** Snap to a preset orientation — top/front/iso/… (#268). Instant; preserves the projection.
+   *  The 2D renderer discloses this via `renderer-unsupported` rather than moving. */
+  setView(view: CameraView): void;
+  /** Read the current camera as a serializable snapshot (#268), or null before the renderer is ready
+   *  / on the 2D renderer (which has no 3D pose). */
+  getCameraState(): CameraState | null;
+  /** Restore a camera snapshot verbatim (#268) — no re-fit to the current model. 2D discloses. */
+  setCameraState(state: CameraState): void;
   /** Apply a bounded declarative theme (#153, DD-009 D4). */
   setTheme(theme: Theme): void;
   /** Marks the volume consumer-configured: file-discovered geometry stops auto-applying. */
@@ -402,7 +422,9 @@ export function createPreviewController(options: PreviewControllerOptions = {}):
         type: 'parse-complete',
         segments: result.ir.segments.count,
         layers: result.ir.layers.length,
-        complete: result.ir.header.complete
+        complete: result.ir.header.complete,
+        capabilities: { ...result.ir.header.capabilities },
+        warnings: result.ir.header.warnings
       });
       return { ok: true, result };
     } catch (err) {
@@ -441,6 +463,10 @@ export function createPreviewController(options: PreviewControllerOptions = {}):
     },
     setQuality: (q) => withRenderer((r) => r.setQuality(q)),
     setCameraMode: (m) => withRenderer((r) => r.setCameraMode(m)),
+    setView: (v) => withRenderer((r) => r.setView(v)),
+    // Returns a value, so it can't queue: before the renderer is ready (or on 2D) there is no pose → null.
+    getCameraState: () => (renderer !== null ? renderer.getCameraState() : null),
+    setCameraState: (s) => withRenderer((r) => r.setCameraState(s)),
     setTheme: (t) => withRenderer((r) => r.setTheme(t)),
     setBuildVolume: (def) => {
       consumerVolumeSet = true;

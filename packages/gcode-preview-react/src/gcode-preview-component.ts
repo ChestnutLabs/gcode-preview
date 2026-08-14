@@ -21,6 +21,8 @@ import {
 import type {
   BuildVolumeDef,
   CameraMode,
+  CameraState,
+  CameraView,
   ColorMode,
   QualityMode,
   Theme,
@@ -54,6 +56,10 @@ export interface GcodePreviewProps {
   quality?: QualityMode | 'auto';
   /** #150 (DD-009 D3): camera projection. */
   cameraMode?: CameraMode;
+  /** #268/#275/M6: snap to a preset orientation (top/front/iso/…). Instant; preserves the projection. */
+  view?: CameraView;
+  /** #268/#275/M6: restore a saved camera pose. Pair with `onCameraChange` for a two-way binding. */
+  cameraState?: CameraState | null;
   /** #153 (DD-009 D4): bounded declarative theme. */
   theme?: Theme;
   colorMode?: ColorMode;
@@ -78,7 +84,15 @@ export interface GcodePreviewProps {
     NonNullable<UseGcodePreviewOptions['renderer']>,
     'buildVolume' | 'quality' | 'cameraMode' | 'theme' | 'colorMode' | 'tube'
   >;
-  onReady?: (summary: { segments: number; layers: number; complete: boolean }) => void;
+  onReady?: (summary: {
+    segments: number;
+    layers: number;
+    complete: boolean;
+    capabilities: Record<string, import('@chestnutlabs/toolpath-core').Confidence>;
+    warnings: readonly import('@chestnutlabs/toolpath-core').Warning[];
+  }) => void;
+  /** #275/M6: fires after a user camera interaction settles, with the new serializable state. */
+  onCameraChange?: (state: CameraState) => void;
   onParseError?: (e: { code: string; message: string }) => void;
   onParseCancelled?: () => void;
   onParseProgress?: (p: { bytesProcessed: number; totalBytes: number }) => void;
@@ -118,7 +132,16 @@ function GcodePreviewImpl(props: GcodePreviewProps, ref: ForwardedRef<GcodePrevi
       const p = cbRef.current;
       switch (e.type) {
         case 'parse-complete':
-          p.onReady?.({ segments: e.segments, layers: e.layers, complete: e.complete });
+          p.onReady?.({
+            segments: e.segments,
+            layers: e.layers,
+            complete: e.complete,
+            capabilities: e.capabilities,
+            warnings: e.warnings
+          });
+          break;
+        case 'camera-changed':
+          p.onCameraChange?.(e.state);
           break;
         case 'parse-error':
           p.onParseError?.({ code: e.code, message: e.message });
@@ -166,6 +189,8 @@ function GcodePreviewImpl(props: GcodePreviewProps, ref: ForwardedRef<GcodePrevi
     colorMode,
     quality,
     cameraMode,
+    view,
+    cameraState,
     theme,
     buildVolume,
     progress
@@ -202,6 +227,12 @@ function GcodePreviewImpl(props: GcodePreviewProps, ref: ForwardedRef<GcodePrevi
     if (cameraMode !== undefined) preview.controls.setCameraMode(cameraMode);
   }, [cameraMode]);
   useEffect(() => {
+    if (view !== undefined) preview.controls.setView(view);
+  }, [view]);
+  useEffect(() => {
+    if (cameraState !== undefined && cameraState !== null) preview.controls.setCameraState(cameraState);
+  }, [cameraState]);
+  useEffect(() => {
     if (theme !== undefined) preview.controls.setTheme(theme);
   }, [theme]);
   useEffect(() => {
@@ -215,6 +246,7 @@ function GcodePreviewImpl(props: GcodePreviewProps, ref: ForwardedRef<GcodePrevi
   return createElement('canvas', {
     ref: preview.canvasRef,
     style: { width: '100%', height: '100%', display: 'block', touchAction: 'none' },
+    tabIndex: 0, // focusable → keyboard camera (DD-004 a11y, #275/M4)
     'aria-label': '3D G-code toolpath preview'
   });
 }

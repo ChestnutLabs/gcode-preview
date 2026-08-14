@@ -6,7 +6,7 @@
  */
 import { GcodeParseSession, CancelledError } from '@chestnutlabs/gcode-parser';
 import { ToolpathRenderer } from '@chestnutlabs/gcode-renderer-three';
-import { createProgressMapper } from '@chestnutlabs/toolpath-core';
+import { createProgressMapper, computeToolpathTime, segmentsCompletedAtTime } from '@chestnutlabs/toolpath-core';
 import { downloadToolpathStl } from './stl-export.js';
 
 // Inherited MIT demo corpus (see test-data/manifest.json), served by Vite's publicDir.
@@ -96,6 +96,11 @@ const els = {
   qualityNote: $('qualityNote'),
   frame: $('frame'),
   exportStl: $('exportStl'),
+  timeScrub: $('timeScrub'),
+  timeScrubVal: $('timeScrubVal'),
+  printTimeNote: $('printTimeNote'),
+  saveView: $('saveView'),
+  restoreView: $('restoreView'),
   disclosure: $('disclosure'),
   stats: $('stats'),
   progressTier: $('progressTier'),
@@ -158,6 +163,42 @@ function applyScrub() {
   renderer.setScrubPosition(all ? null : v);
 }
 
+// #276: kinematic time axis backs the time-scrub; the slicer estimate (when present) is the
+// displayed total. The provenance (slicer vs kinematic) is shown honestly.
+let timeAxis = null;
+let savedCameraState = null;
+
+function fmtTime(ms) {
+  const min = ms / 60000;
+  return min >= 1 ? `${min.toFixed(1)} min` : `${(ms / 1000).toFixed(1)} s`;
+}
+
+function setupTimeScrub(ir, metadata) {
+  timeAxis = computeToolpathTime(ir);
+  const slicerSeconds = metadata?.printEstimate?.seconds;
+  const totalMs = slicerSeconds !== undefined ? slicerSeconds * 1000 : timeAxis.totalMs;
+  const source = slicerSeconds !== undefined ? 'slicer' : 'kinematic';
+  els.timeScrub.max = String(Math.max(1, Math.round(timeAxis.totalMs)));
+  els.timeScrub.value = els.timeScrub.max;
+  els.timeScrub.disabled = false;
+  els.timeScrubVal.textContent = 'all';
+  const caveat =
+    source === 'slicer'
+      ? ' (slicer estimate)'
+      : ` (kinematic — constant-velocity approximation${
+          timeAxis.hasUnknownFeedrate ? ', lower bound: some feedrates unknown' : ''
+        })`;
+  els.printTimeNote.textContent = `Estimated print time: ${fmtTime(totalMs)}${caveat}`;
+}
+
+function applyTimeScrub() {
+  if (timeAxis === null) return;
+  const ms = Number(els.timeScrub.value);
+  const all = ms >= Number(els.timeScrub.max);
+  renderer.setScrubPosition(all ? null : segmentsCompletedAtTime(timeAxis.cumulativeMs, ms));
+  els.timeScrubVal.textContent = all ? 'all' : fmtTime(ms);
+}
+
 function enableControls(ir) {
   const lastLayer = Math.max(0, renderer.layerCount - 1);
   els.startLayer.max = String(lastLayer);
@@ -169,8 +210,9 @@ function enableControls(ir) {
   els.scrub.max = String(renderer.segmentCount);
   els.scrub.value = String(renderer.segmentCount);
   els.scrubVal.textContent = 'all';
-  for (const el of [els.startLayer, els.endLayer, els.scrub, els.colorMode, els.frame, els.exportStl])
+  for (const el of [els.startLayer, els.endLayer, els.scrub, els.colorMode, els.frame, els.exportStl, els.saveView])
     el.disabled = false;
+  for (const btn of document.querySelectorAll('.view-btn')) btn.disabled = false;
 
   // Capability-honest color modes (§4.6): never offer fabricated feature colors.
   const featureOpt = els.colorMode.querySelector('option[value="feature"]');
@@ -278,6 +320,7 @@ async function parseAndRender() {
     enableSim(ir, bytes);
     // DD-005 §4.2: this demo opts into file-discovered bed geometry (arrives
     // with the phase-2/3 adapters); mismatches surface via the renderer event.
+    setupTimeScrub(ir, result.metadata);
     const machine = result.metadata?.machine;
     bedNote = machine ? ` · bed from file: ${machine.printerName ?? 'unknown printer'} (${machine.confidence})` : '';
     if (machine) {
@@ -430,6 +473,18 @@ const applyTheme = () => renderer.setTheme(themeFor(els.theme.value, els.materia
 els.theme.addEventListener('change', applyTheme);
 els.material.addEventListener('change', applyTheme);
 els.frame.addEventListener('click', () => renderer.frame());
+els.timeScrub.addEventListener('input', applyTimeScrub);
+// #276: preset views + save/restore camera state (exercises setView / get+setCameraState).
+for (const btn of document.querySelectorAll('.view-btn')) {
+  btn.addEventListener('click', () => renderer.setView(btn.dataset.view));
+}
+els.saveView.addEventListener('click', () => {
+  savedCameraState = renderer.getCameraState();
+  els.restoreView.disabled = false;
+});
+els.restoreView.addEventListener('click', () => {
+  if (savedCameraState !== null) renderer.setCameraState(savedCameraState);
+});
 els.exportStl.addEventListener('click', () => {
   const ir = renderer.ir;
   if (!ir) return;

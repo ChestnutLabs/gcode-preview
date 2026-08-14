@@ -22,6 +22,10 @@
   export let quality = 'auto';
   /** #150 (DD-009 D3): camera projection ('perspective' | 'orthographic'). */
   export let cameraMode = 'perspective';
+  /** #268/#275/M6: snap to a preset orientation (top/front/iso/…). */
+  export let view = undefined;
+  /** #268/#275/M6: restore a saved camera pose. Pair with the `camerachange` event for two-way. */
+  export let cameraState = undefined;
   /** #153 (DD-009 D4): bounded declarative theme. */
   export let theme = undefined;
   export let colorMode = undefined;
@@ -68,12 +72,19 @@
     parseDefaults: parseOptions
   });
 
-  if (isMachine) preview.controls.setBuildVolume(buildVolume);
-
   preview.onEvent((e) => {
     switch (e.type) {
       case 'parse-complete':
-        dispatch('ready', { segments: e.segments, layers: e.layers, complete: e.complete });
+        dispatch('ready', {
+          segments: e.segments,
+          layers: e.layers,
+          complete: e.complete,
+          capabilities: e.capabilities,
+          warnings: e.warnings
+        });
+        break;
+      case 'camera-changed':
+        dispatch('camerachange', e.state);
         break;
       case 'parse-error':
         dispatch('parseerror', { code: e.code, message: e.message });
@@ -111,6 +122,10 @@
   });
 
   // ---- prop wiring: each prop is a thin reactive call into the handle (D1 shell rule) ----
+  // buildVolume must be reactive too (#274) — matching Vue's watch and React's useEffect. A machine
+  // geometry is (re)applied via the handle; a plain BuildVolumeDef is an init-time renderer option
+  // (above) that a post-mount change re-applies here as well.
+  $: if (buildVolume !== undefined) preview.controls.setBuildVolume(buildVolume);
   $: if (source !== null && source !== undefined) void preview.parse(source, parseOptions);
   $: if (layerRange === null || layerRange === undefined) preview.controls.setLayerRange(0, Number.POSITIVE_INFINITY);
   else preview.controls.setLayerRange(layerRange[0], layerRange[1]);
@@ -122,6 +137,8 @@
   $: if (colorMode !== undefined) preview.controls.setColorMode(colorMode);
   $: preview.controls.setQuality(quality);
   $: preview.controls.setCameraMode(cameraMode);
+  $: if (view !== undefined) preview.controls.setView(view);
+  $: if (cameraState !== undefined && cameraState !== null) preview.controls.setCameraState(cameraState);
   $: if (theme !== undefined) preview.controls.setTheme(theme);
   $: if (progress === null || progress === undefined) preview.clearProgress();
   else preview.observeProgress(progress);
@@ -129,8 +146,10 @@
   onDestroy(() => preview.dispose());
 </script>
 
+<!-- tabindex makes the canvas focusable → keyboard camera (DD-004 a11y, #275/M4) -->
 <canvas
   use:preview.canvas
+  tabindex="0"
   style="width: 100%; height: 100%; display: block; touch-action: none;"
   aria-label="3D G-code toolpath preview"
 ></canvas>

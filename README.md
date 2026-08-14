@@ -3,8 +3,8 @@
 A worker-based, cross-vendor **G-code toolpath stack** for the browser: parse `.gcode`,
 `.gcode.3mf`, and Prusa binary `.bgcode` off the main thread, normalize them into a versioned
 intermediate representation (`ToolpathIR`), and render an interactive Three.js (or low-resource
-Canvas 2D) preview — with first-class **Vue, React, and Svelte** integrations that are thin adapters
-over one shared, framework-neutral engine.
+Canvas 2D) preview — with first-class **Vue, React, Svelte, and a framework-neutral Web Component**
+integrations that are thin adapters over one shared engine.
 
 > **Status: published.** Thirteen `@chestnutlabs/*` packages are on npm (latest **`v0.4.0`**,
 > lockstep-versioned with npm provenance). E0–E11 of the
@@ -49,9 +49,10 @@ over one shared, framework-neutral engine.
   mapped onto the toolpath with tiered confidence: a precise cut + marker when the source position
   is known, an uncertainty band when it is approximated, stale-signal handling, and user scrub
   always winning.
-- **Three equal framework adapters** — each ships a ready-to-use `<GcodePreview>` component *and*
+- **Four equal framework adapters** — Vue, React, Svelte, and a framework-neutral `<gcode-preview>`
+  Web Component (`@chestnutlabs/gcode-preview-element`) — each ships a ready-to-use component *and*
   a lower-level surface, with the same capabilities, options, events, and TypeScript contracts,
-  enforced by a shared behavioral suite that runs against all three in CI.
+  enforced by a shared behavioral suite that runs against all four in CI.
 
 | Honest live progress | Layer clipping & scrub |
 |---|---|
@@ -143,9 +144,10 @@ Ships as raw `.svelte` (your bundler's Svelte plugin compiles it). Lower level:
 [`createGcodePreview()`](packages/gcode-preview-svelte/README.md) — store contract +
 `use:` canvas action.
 
-All three components share the same defaulted prop surface — `source`, `parseOptions`,
+All four adapters share the same defaulted option surface — `source`, `parseOptions`,
 `buildVolume`, `quality`, `colorMode`, `layerRange`, `scrub`, `showTravel`, `progress`,
-`createWorker` — with matching events/callbacks. `<GcodePreview source={file} />` is the whole
+`createWorker` — with matching events/callbacks (the Web Component exposes them as attributes /
+properties). `<GcodePreview source={file} />` is the whole
 thin path; the full viewer is reachable without switching APIs.
 
 ## Workers: batteries included, escape hatch provided

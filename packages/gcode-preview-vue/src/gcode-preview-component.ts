@@ -13,11 +13,14 @@ import { defineComponent, h, onMounted, ref, watch, type PropType } from 'vue';
 import type {
   BuildVolumeDef,
   CameraMode,
+  CameraState,
+  CameraView,
   ColorMode,
   QualityMode,
   Theme,
   TubeOptions
 } from '@chestnutlabs/gcode-renderer-three';
+import type { Confidence, Warning } from '@chestnutlabs/toolpath-core';
 import type { MachineGeometry, ProgressObservation } from '@chestnutlabs/toolpath-core';
 import type { WireParseOptions, WorkerLike } from '@chestnutlabs/gcode-parser';
 import {
@@ -44,6 +47,10 @@ export const GcodePreview = defineComponent({
     quality: { type: String as PropType<QualityMode | 'auto'>, default: 'auto' },
     /** #150 (DD-009 D3): camera projection. */
     cameraMode: { type: String as PropType<CameraMode>, default: 'perspective' },
+    /** #268/#275/M6: snap to a preset orientation (top/front/iso/…). */
+    view: { type: String as PropType<CameraView>, default: undefined },
+    /** #268/#275/M6: restore a saved camera pose. Pair with `@camera-change` for a two-way binding. */
+    cameraState: { type: Object as PropType<CameraState | null>, default: undefined },
     /** #153 (DD-009 D4): bounded declarative theme. */
     theme: { type: Object as PropType<Theme>, default: undefined },
     colorMode: { type: Object as PropType<ColorMode>, default: undefined },
@@ -80,7 +87,14 @@ export const GcodePreview = defineComponent({
   },
   emits: {
     /* eslint-disable @typescript-eslint/no-unused-vars -- emit validators document payloads */
-    ready: (_summary: { segments: number; layers: number; complete: boolean }) => true,
+    ready: (_summary: {
+      segments: number;
+      layers: number;
+      complete: boolean;
+      capabilities: Record<string, Confidence>;
+      warnings: readonly Warning[];
+    }) => true,
+    'camera-change': (_state: CameraState) => true,
     'parse-error': (_e: { code: string; message: string }) => true,
     'parse-cancelled': () => true,
     'parse-progress': (_p: { bytesProcessed: number; totalBytes: number }) => true,
@@ -120,7 +134,16 @@ export const GcodePreview = defineComponent({
     preview.onEvent((e: PreviewEvent) => {
       switch (e.type) {
         case 'parse-complete':
-          emit('ready', { segments: e.segments, layers: e.layers, complete: e.complete });
+          emit('ready', {
+            segments: e.segments,
+            layers: e.layers,
+            complete: e.complete,
+            capabilities: e.capabilities,
+            warnings: e.warnings
+          });
+          break;
+        case 'camera-changed':
+          emit('camera-change', e.state);
           break;
         case 'parse-error':
           emit('parse-error', { code: e.code, message: e.message });
@@ -206,6 +229,18 @@ export const GcodePreview = defineComponent({
       (mode) => preview.controls.setCameraMode(mode)
     );
     watch(
+      () => props.view,
+      (view) => {
+        if (view !== undefined) preview.controls.setView(view);
+      }
+    );
+    watch(
+      () => props.cameraState,
+      (state) => {
+        if (state !== undefined && state !== null) preview.controls.setCameraState(state);
+      }
+    );
+    watch(
       () => props.theme,
       (theme) => {
         if (theme !== undefined) preview.controls.setTheme(theme);
@@ -237,6 +272,7 @@ export const GcodePreview = defineComponent({
       h('canvas', {
         ref: canvasEl,
         style: { width: '100%', height: '100%', display: 'block', touchAction: 'none' },
+        tabindex: '0', // focusable → keyboard camera (DD-004 a11y, #275/M4)
         'aria-label': '3D G-code toolpath preview'
       });
   }
