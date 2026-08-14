@@ -414,6 +414,10 @@ export class ToolpathRenderer {
         // 3D viewer, and free inside OrbitControls (#267). Distance clamps are derived from the framed
         // model size and (re)applied in frame(), since they change per file.
         this.controls.zoomToCursor = true;
+        // Keyboard-operable camera for embedders (DD-004 a11y, #275/M4): arrow keys pan the view when
+        // the canvas is focused. Scoped to the canvas element (not window) so an embedded viewer never
+        // hijacks the page's arrow keys; the adapters make the canvas focusable via `tabindex="0"`.
+        this.controls.listenToKeyEvents(domEl);
         this.controls.addEventListener('change', () => this.render());
       } catch {
         this.controls = null; // headless hosts without full DOM events
