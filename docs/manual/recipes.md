@@ -25,6 +25,28 @@ Clip to a layer range and scrub within it — no geometry rebuilds, just draw-ra
 `colorMode` is capability-gated — the stack colors by a feature only when the dialect actually
 disclosed it (see [ToolpathIR & the capability model](concept-ir-capabilities.md)).
 
+## Camera control: preset views & saved state
+
+The imperative `controls` handle (the composable return / React ref / Svelte `bind:this` / element
+instance) exposes preset orientations and a serializable camera snapshot:
+
+```ts
+const { controls } = preview; // or handleRef.current, etc.
+
+controls.setView('iso'); // 'top' | 'bottom' | 'front' | 'back' | 'left' | 'right' | 'iso'
+controls.frame(); // re-fit to the model bounds
+controls.setCameraMode('orthographic'); // perspective ↔ ortho
+
+// Persist "where the user was looking" and restore it later (e.g. a dashboard).
+const view = controls.getCameraState(); // { position, target, zoom, cameraMode } | null
+localStorage.setItem('view', JSON.stringify(view));
+controls.setCameraState(view); // restores verbatim — no re-fit to the current model
+```
+
+`setView` snaps instantly (no animation) and preserves the active projection. `getCameraState`
+returns `null` on the low-resource 2D renderer, which has no 3D pose — `setView`/`setCameraState`
+there disclose via the `renderer-unsupported` event rather than fabricating one.
+
 ## `.gcode.3mf` multi-plate
 
 `.gcode.3mf` containers can hold several sliced plates. Select one with `parseOptions.plate`:

@@ -7,7 +7,7 @@
 import { describe, expect, it } from 'vitest';
 import { OrthographicCamera, PerspectiveCamera } from 'three';
 import { MoveKind, ToolpathIRBuilder, type ToolpathIR } from '@chestnutlabs/toolpath-core';
-import { ToolpathRenderer, type CameraMode, type GLRendererLike } from '../index.js';
+import { ToolpathRenderer, type CameraMode, type CameraState, type CameraView, type GLRendererLike } from '../index.js';
 
 function makeIR(): ToolpathIR {
   const b = new ToolpathIRBuilder({ parserVersion: 'test', units: 'mm', unitsSource: 'known' });
@@ -132,6 +132,86 @@ describe('orthographic camera (#150)', () => {
     renderer.resize(800, 400); // aspect 2
     expect(cam.top).toBeCloseTo(topAtSquare, 5); // vertical extent unchanged
     expect(cam.right).toBeCloseTo(rightAtSquare * 2, 5); // horizontal doubled
+    renderer.dispose();
+  });
+});
+
+describe('preset views + camera state (#268)', () => {
+  /** Expected unit direction (scene coords) from the target to the camera, per preset. */
+  const DIRS: Record<CameraView, readonly [number, number, number]> = {
+    top: [0, 1, 0],
+    bottom: [0, -1, 0],
+    front: [0, 0, 1],
+    back: [0, 0, -1],
+    left: [-1, 0, 0],
+    right: [1, 0, 0],
+    iso: [1, 1, 1]
+  };
+  const distance = (s: CameraState): number =>
+    Math.hypot(s.position.x - s.target.x, s.position.y - s.target.y, s.position.z - s.target.z);
+
+  it('each preset places the camera on the expected unit direction from the target', () => {
+    const { renderer, runTicks } = makeRenderer();
+    renderer.setIR(makeIR());
+    runTicks();
+    for (const view of Object.keys(DIRS) as CameraView[]) {
+      renderer.setView(view);
+      const s = renderer.getCameraState();
+      const off = [s.position.x - s.target.x, s.position.y - s.target.y, s.position.z - s.target.z];
+      const len = Math.hypot(off[0], off[1], off[2]);
+      const dir = DIRS[view];
+      const dl = Math.hypot(dir[0], dir[1], dir[2]);
+      expect(off[0] / len).toBeCloseTo(dir[0] / dl, 5);
+      expect(off[1] / len).toBeCloseTo(dir[1] / dl, 5);
+      expect(off[2] / len).toBeCloseTo(dir[2] / dl, 5);
+    }
+    renderer.dispose();
+  });
+
+  it('setView preserves the active projection and the dolly distance', () => {
+    const { renderer, runTicks } = makeRenderer('orthographic');
+    renderer.setIR(makeIR());
+    runTicks();
+    const d0 = distance(renderer.getCameraState());
+    renderer.setView('iso');
+    const s = renderer.getCameraState();
+    expect(s.cameraMode).toBe('orthographic');
+    expect(distance(s)).toBeCloseTo(d0, 3);
+    renderer.dispose();
+  });
+
+  it('getCameraState → setCameraState restores position, target, zoom, and mode', () => {
+    const { renderer, runTicks } = makeRenderer();
+    renderer.setIR(makeIR());
+    runTicks();
+    renderer.setView('right');
+    const saved = renderer.getCameraState();
+    renderer.setView('top'); // move somewhere else first
+    renderer.setCameraState(saved);
+    const back = renderer.getCameraState();
+    expect(back.position.x).toBeCloseTo(saved.position.x, 6);
+    expect(back.position.y).toBeCloseTo(saved.position.y, 6);
+    expect(back.position.z).toBeCloseTo(saved.position.z, 6);
+    expect(back.target.x).toBeCloseTo(saved.target.x, 6);
+    expect(back.target.y).toBeCloseTo(saved.target.y, 6);
+    expect(back.target.z).toBeCloseTo(saved.target.z, 6);
+    expect(back.zoom).toBeCloseTo(saved.zoom, 6);
+    expect(back.cameraMode).toBe(saved.cameraMode);
+    renderer.dispose();
+  });
+
+  it('setCameraState also restores the projection (ortho state onto a perspective renderer)', () => {
+    const { renderer, runTicks } = makeRenderer(); // starts perspective
+    renderer.setIR(makeIR());
+    runTicks();
+    renderer.setCameraState({
+      position: { x: 10, y: 20, z: 30 },
+      target: { x: 0, y: 0, z: 0 },
+      zoom: 1,
+      cameraMode: 'orthographic'
+    });
+    expect(renderer.cameraMode).toBe('orthographic');
+    expect(renderer.camera).toBeInstanceOf(OrthographicCamera);
     renderer.dispose();
   });
 });

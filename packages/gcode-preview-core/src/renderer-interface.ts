@@ -11,11 +11,15 @@
 import type {
   BuildVolumeDef,
   CameraMode,
+  CameraState,
+  CameraView,
   ColorMode,
   QualityMode,
   RendererEvent,
   Theme
 } from '@chestnutlabs/gcode-renderer-three';
+
+export type { CameraState, CameraView } from '@chestnutlabs/gcode-renderer-three';
 import type { MachineGeometry, MappedProgress, ToolpathIR } from '@chestnutlabs/toolpath-core';
 
 /** Which renderer implementation backs the preview. `'3d'` is the default (Three.js). */
@@ -54,6 +58,12 @@ export interface PreviewRenderer {
   setColorMode(mode: ColorMode): boolean;
   setQuality(quality: QualityMode | 'auto'): void;
   setCameraMode(mode: CameraMode): void;
+  /** Snap to a preset orientation (#268). 2D renderers disclose via `renderer-unsupported`. */
+  setView(view: CameraView): void;
+  /** Read the current camera as a serializable snapshot (#268). Null when the renderer has no 3D pose (2D). */
+  getCameraState(): CameraState | null;
+  /** Restore a camera snapshot verbatim (#268). 2D renderers disclose via `renderer-unsupported`. */
+  setCameraState(state: CameraState): void;
   setTheme(theme: Theme): void;
   setProgress(p: MappedProgress | null): void;
   /**

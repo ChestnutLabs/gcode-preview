@@ -11,3 +11,5 @@ export { LayerView2DRenderer, type LayerView2DRendererOptions } from './renderer
 export { renderStill, type RenderStillOptions, type RenderStillResult, type StillCameraPose } from './render-still.js';
 // Re-export the theme contract so core consumers get it three-free (#153, DD-009 D4).
 export type { Theme, MaterialPreset, ThemeColor } from '@chestnutlabs/gcode-renderer-three';
+// Camera contracts (three-free type re-exports): projection + preset views + serializable state (#268).
+export type { CameraMode, CameraView, CameraState } from '@chestnutlabs/gcode-renderer-three';
