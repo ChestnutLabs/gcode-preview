@@ -190,6 +190,16 @@ describe('DD-012 phase 2 — canned drilling cycles (#189)', () => {
     expect(minZ1(ir)).toBeCloseTo(-6);
   });
 
+  it('G82 (dwell drill) expands to a single Cut plunge to depth (#277/M5)', () => {
+    // G82 is routed in the parser but was untested — it drills like G81 (the dwell P is a no-op here).
+    const { ir } = parseGcodeToIR('G0 X0 Y0 Z5\nG82 X0 Y0 Z-4 R2 P50 F100\nG80\n', {});
+    expect(ir.header.capabilities.cannedCycles).toBe('known');
+    let cutCount = 0;
+    for (let i = 0; i < ir.segments.count; i++) if (cut(ir.segments.kind[i])) cutCount++;
+    expect(cutCount).toBe(1); // single plunge (not a peck loop)
+    expect(minZ1(ir)).toBeCloseTo(-4);
+  });
+
   it('G80 cancels: a following bare coordinate line drills nothing', () => {
     const active = parseGcodeToIR('G0 X0 Y0 Z5\nG81 X10 Y10 Z-5 R2\nX20 Y10\n', {}).ir.segments.count;
     const cancelled = parseGcodeToIR('G0 X0 Y0 Z5\nG81 X10 Y10 Z-5 R2\nG80\nX20 Y10\n', {}).ir.segments.count;
