@@ -78,6 +78,9 @@ runBehavioralSuite(
           setColorMode: (m) => latest().controls.setColorMode(m),
           setQuality: (q) => latest().controls.setQuality(q),
           setBuildVolume: (d) => latest().controls.setBuildVolume(d),
+          setView: (v) => latest().controls.setView(v),
+          getCameraState: () => latest().controls.getCameraState(),
+          setCameraState: (s) => latest().controls.setCameraState(s),
           frame: () => latest().controls.frame()
         },
         observeProgress: (obs) => latest().observeProgress(obs),

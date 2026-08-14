@@ -110,15 +110,20 @@ export interface AdapterInstance {
   settle(): Promise<void>;
 }
 
+/** The subset of matchers the parity suite uses — structurally satisfied by any vitest/jest `expect`. */
+interface Matchers {
+  toBe(v: unknown): void;
+  toBeNull(): void;
+  toMatchObject(v: object): void;
+  toBeGreaterThan(v: number): void;
+  toBeLessThan(v: number): void;
+  toBeCloseTo(v: number, numDigits?: number): void;
+}
+
 interface TestApi {
   describe: (name: string, fn: () => void) => void;
   it: (name: string, fn: () => Promise<void> | void) => void;
-  expect: (actual: unknown) => Record<string, (...args: never[]) => unknown> & {
-    toBe(v: unknown): void;
-    toBeNull(): void;
-    toMatchObject(v: object): void;
-    toBeGreaterThan(v: number): void;
-  };
+  expect: (actual: unknown) => Matchers & { not: Matchers };
 }
 
 /** The parity contract every adapter must pass (DD-007 §4.6 amendment). */
@@ -145,6 +150,43 @@ export function runBehavioralSuite(name: string, api: TestApi, harness: AdapterH
       a.controls.setScrubPosition(null);
       await a.settle();
       expect(a.firstChunkDrawCount()).toBe(24);
+      await a.dispose();
+    });
+
+    it('camera preset views + state round-trip reach the renderer (#268)', async () => {
+      const a = await harness.create();
+      await a.parse(new Uint8Array(1_000));
+      await a.settle();
+
+      const initial = a.controls.getCameraState();
+      expect(initial).not.toBeNull();
+      expect(initial!.cameraMode).toBe('perspective');
+
+      // A preset snaps deterministically and preserves the projection. 'top' looks straight down
+      // scene +Y, so the camera sits above the target on Y and level in X/Z.
+      a.controls.setView('top');
+      await a.settle();
+      const top = a.controls.getCameraState()!;
+      expect(top.cameraMode).toBe('perspective');
+      expect(top.position.y).toBeGreaterThan(top.target.y);
+      expect(Math.abs(top.position.x - top.target.x)).toBeLessThan(1e-3);
+      expect(Math.abs(top.position.z - top.target.z)).toBeLessThan(1e-3);
+
+      // getCameraState → setCameraState restores the same view even after moving away.
+      const saved = a.controls.getCameraState()!;
+      a.controls.setView('front');
+      await a.settle();
+      a.controls.setCameraState(saved);
+      await a.settle();
+      const restored = a.controls.getCameraState()!;
+      expect(restored.position.x).toBeCloseTo(saved.position.x, 3);
+      expect(restored.position.y).toBeCloseTo(saved.position.y, 3);
+      expect(restored.position.z).toBeCloseTo(saved.position.z, 3);
+      expect(restored.target.x).toBeCloseTo(saved.target.x, 3);
+      expect(restored.target.y).toBeCloseTo(saved.target.y, 3);
+      expect(restored.target.z).toBeCloseTo(saved.target.z, 3);
+      expect(restored.cameraMode).toBe(saved.cameraMode);
+
       await a.dispose();
     });
 

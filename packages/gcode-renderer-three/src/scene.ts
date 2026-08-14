@@ -45,7 +45,7 @@ import {
   WebGLRenderer
 } from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
-import type { MachineGeometry, MappedProgress, ToolpathIR } from '@chestnutlabs/toolpath-core';
+import type { MachineGeometry, MappedProgress, ToolpathIR, Vec3 } from '@chestnutlabs/toolpath-core';
 import { autoDecimation, buildChunks, type ChunkBuildResult, type GeometryChunk } from './chunks.js';
 import { buildChunkColors, type ColorMode } from './colors.js';
 import { computeDrawState, computeOverlayDrawStates } from './ranges.js';
@@ -62,6 +62,40 @@ export type QualityMode = 'lines' | 'tubes';
  * Switching preserves the view direction, target, and apparent framing.
  */
 export type CameraMode = 'perspective' | 'orthographic';
+
+/**
+ * Preset orientations for {@link ToolpathRenderer.setView} (#268). `iso` is the standard
+ * front-top-right corner; the six orthogonal views look along a principal axis.
+ */
+export type CameraView = 'top' | 'bottom' | 'front' | 'back' | 'left' | 'right' | 'iso';
+
+/**
+ * A serializable snapshot of the camera (#268), in **scene coordinates**. A stable contract a
+ * dashboard may persist across sessions: {@link ToolpathRenderer.getCameraState} reads it and
+ * {@link ToolpathRenderer.setCameraState} restores it verbatim (no re-fit to the current model —
+ * restoring onto a different model is the caller's choice).
+ */
+export interface CameraState {
+  position: Vec3;
+  target: Vec3;
+  /** Camera zoom factor (three's `camera.zoom`); mainly meaningful for the orthographic view. */
+  zoom: number;
+  cameraMode: CameraMode;
+}
+
+/**
+ * Unit direction (scene coords) from the framed target to the camera for each preset (#268). The
+ * root rotation maps printer (x,y,z) → scene (x, z, -y), so e.g. printer +Z "up" is scene +Y.
+ */
+const VIEW_DIRECTIONS: Record<CameraView, readonly [number, number, number]> = {
+  top: [0, 1, 0],
+  bottom: [0, -1, 0],
+  front: [0, 0, 1],
+  back: [0, 0, -1],
+  left: [-1, 0, 0],
+  right: [1, 0, 0],
+  iso: [1, 1, 1]
+};
 
 /** §4.3 `auto` decision, exported for tests and consumers. */
 export function chooseQuality(requested: QualityMode | 'auto', totalSegments: number): QualityMode {
@@ -226,6 +260,9 @@ export class ToolpathRenderer {
   private aspect = 1;
   /** Vertical half-height the camera frames, set by frame(); sizes the ortho frustum. */
   private viewHalfHeight = 100;
+  /** Last framed orbit target (scene coords). Mirrors `controls.target`, and stands in for it on
+   *  headless hosts (no OrbitControls) so setView/getCameraState work there too (#268). */
+  private framedTarget = new Vector3();
   private controls: OrbitControls | null = null;
 
   private ir: ToolpathIR | null = null;
@@ -1062,6 +1099,76 @@ export class ToolpathRenderer {
     this.render();
   }
 
+  /** The live orbit target: `controls.target` when interactive, else the last framed target (#268). */
+  private currentTarget(): Vector3 {
+    return this.controls ? this.controls.target.clone() : this.framedTarget.clone();
+  }
+
+  /** Screen-up for a view direction. World-up (0,1,0) is degenerate when looking straight up/down it,
+   *  so top/bottom roll about scene −Z instead. Reproduces every preset's up *and* keeps setCameraState
+   *  round-trips deterministic (the state contract carries no explicit up). */
+  private upForViewDir(dir: Vector3): Vector3 {
+    return Math.abs(dir.y) > 0.999 ? new Vector3(0, 0, -1) : new Vector3(0, 1, 0);
+  }
+
+  /**
+   * Snap to a preset orientation (#268): place the camera on the view's unit direction from the
+   * current target, at the current distance, and look at the target. Instant (no animation);
+   * preserves the active `cameraMode`. A no-op on a disposed renderer.
+   */
+  setView(view: CameraView): void {
+    if (this.disposed) return;
+    const dir = new Vector3(...VIEW_DIRECTIONS[view]).normalize();
+    const target = this.currentTarget();
+    // Keep the current dolly distance; fall back to the framed distance if the camera sits on target.
+    const distance = this.activeCamera.position.distanceTo(target) || this.viewHalfHeight * 2.15;
+    this.activeCamera.up.copy(this.upForViewDir(dir));
+    this.activeCamera.position.copy(target).addScaledVector(dir, distance);
+    this.activeCamera.lookAt(target);
+    this.framedTarget.copy(target);
+    this.updateCameraProjection();
+    if (this.controls) {
+      this.controls.target.copy(target);
+      this.controls.update();
+    }
+    this.render();
+  }
+
+  /** Read the current camera as a serializable {@link CameraState} (scene coords, #268). */
+  getCameraState(): CameraState {
+    const t = this.currentTarget();
+    const p = this.activeCamera.position;
+    return {
+      position: { x: p.x, y: p.y, z: p.z },
+      target: { x: t.x, y: t.y, z: t.z },
+      zoom: this.activeCamera.zoom,
+      cameraMode: this.cameraModeState
+    };
+  }
+
+  /**
+   * Restore a {@link CameraState} verbatim (#268) — position/target/zoom/mode as given, with no
+   * re-fit to the current model's bounds. Instant. A no-op on a disposed renderer.
+   */
+  setCameraState(state: CameraState): void {
+    if (this.disposed) return;
+    this.setCameraMode(state.cameraMode); // no-op if unchanged; activates the right camera otherwise
+    const cam = this.activeCamera;
+    const target = new Vector3(state.target.x, state.target.y, state.target.z);
+    const dir = new Vector3(state.position.x, state.position.y, state.position.z).sub(target).normalize();
+    cam.up.copy(this.upForViewDir(dir));
+    cam.position.set(state.position.x, state.position.y, state.position.z);
+    cam.zoom = state.zoom;
+    cam.lookAt(target);
+    cam.updateProjectionMatrix();
+    this.framedTarget.copy(target);
+    if (this.controls) {
+      this.controls.target.copy(target);
+      this.controls.update();
+    }
+    this.render();
+  }
+
   /** Fit the camera to the toolpath bounds (falls back to the build volume). */
   frame(): void {
     if (this.disposed) return;
@@ -1088,6 +1195,7 @@ export class ToolpathRenderer {
     // ortho frustum uses the same half-height so toggling projection keeps the
     // model the same apparent size (#150).
     this.viewHalfHeight = radius * 1.25;
+    this.framedTarget.copy(target);
     this.activeCamera.position.set(target.x - radius * 1.2, target.y + radius * 1.6, target.z + radius * 1.8);
     this.activeCamera.lookAt(target);
     this.updateCameraProjection();

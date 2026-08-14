@@ -18,7 +18,14 @@ import {
   type LayerProgress,
   type TravelStyle
 } from '@chestnutlabs/gcode-renderer-2d';
-import type { BuildVolumeDef, CameraMode, QualityMode, Theme } from '@chestnutlabs/gcode-renderer-three';
+import type {
+  BuildVolumeDef,
+  CameraMode,
+  CameraState,
+  CameraView,
+  QualityMode,
+  Theme
+} from '@chestnutlabs/gcode-renderer-three';
 import type { MachineGeometry, MappedProgress, ToolpathIR } from '@chestnutlabs/toolpath-core';
 import type { MoveKindToggle, PreviewRenderer, PreviewRendererEvent } from './renderer-interface.js';
 
@@ -142,6 +149,19 @@ export class LayerView2DRenderer implements PreviewRenderer {
 
   setCameraMode(_mode: CameraMode): void {
     this.disclose('camera', 'Camera projection applies only to the 3D renderer; the 2D view is flat top-down.');
+  }
+
+  setView(_view: CameraView): void {
+    this.disclose('camera', 'Preset views apply only to the 3D renderer; the 2D view is fixed top-down.');
+  }
+
+  getCameraState(): CameraState | null {
+    // The flat 2D view has no 3D pose — return null rather than fabricate one (#268, honesty pattern).
+    return null;
+  }
+
+  setCameraState(_state: CameraState): void {
+    this.disclose('camera', 'Camera state applies only to the 3D renderer; the 2D view has no 3D pose.');
   }
 
   setTheme(_theme: Theme): void {

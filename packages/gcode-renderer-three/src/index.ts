@@ -21,7 +21,9 @@ export type {
   GLRendererLike,
   ProgressPresentationMode,
   QualityMode,
-  CameraMode
+  CameraMode,
+  CameraView,
+  CameraState
 } from './scene.js';
 export { createBuildVolume } from './build-volume.js';
 export type { BuildVolumeDef, BuildVolumeStyle } from './build-volume.js';

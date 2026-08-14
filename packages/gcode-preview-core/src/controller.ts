@@ -21,6 +21,8 @@ import {
 import type {
   BuildVolumeDef,
   CameraMode,
+  CameraState,
+  CameraView,
   ColorMode,
   GLRendererLike,
   ProgressPresentationMode,
@@ -141,6 +143,14 @@ export interface GcodePreviewControls {
   setQuality(quality: QualityMode | 'auto'): void;
   /** Switch camera projection (#150, DD-009 D3). */
   setCameraMode(mode: CameraMode): void;
+  /** Snap to a preset orientation — top/front/iso/… (#268). Instant; preserves the projection.
+   *  The 2D renderer discloses this via `renderer-unsupported` rather than moving. */
+  setView(view: CameraView): void;
+  /** Read the current camera as a serializable snapshot (#268), or null before the renderer is ready
+   *  / on the 2D renderer (which has no 3D pose). */
+  getCameraState(): CameraState | null;
+  /** Restore a camera snapshot verbatim (#268) — no re-fit to the current model. 2D discloses. */
+  setCameraState(state: CameraState): void;
   /** Apply a bounded declarative theme (#153, DD-009 D4). */
   setTheme(theme: Theme): void;
   /** Marks the volume consumer-configured: file-discovered geometry stops auto-applying. */
@@ -441,6 +451,10 @@ export function createPreviewController(options: PreviewControllerOptions = {}):
     },
     setQuality: (q) => withRenderer((r) => r.setQuality(q)),
     setCameraMode: (m) => withRenderer((r) => r.setCameraMode(m)),
+    setView: (v) => withRenderer((r) => r.setView(v)),
+    // Returns a value, so it can't queue: before the renderer is ready (or on 2D) there is no pose → null.
+    getCameraState: () => (renderer !== null ? renderer.getCameraState() : null),
+    setCameraState: (s) => withRenderer((r) => r.setCameraState(s)),
     setTheme: (t) => withRenderer((r) => r.setTheme(t)),
     setBuildVolume: (def) => {
       consumerVolumeSet = true;
