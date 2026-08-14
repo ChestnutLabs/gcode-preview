@@ -19,7 +19,15 @@ import {
   type PreviewEvent,
   type RendererMode
 } from '@chestnutlabs/gcode-preview-core';
-import type { BuildVolumeDef, CameraMode, ColorMode, Theme, TubeOptions } from '@chestnutlabs/gcode-renderer-three';
+import type {
+  BuildVolumeDef,
+  CameraMode,
+  CameraState,
+  CameraView,
+  ColorMode,
+  Theme,
+  TubeOptions
+} from '@chestnutlabs/gcode-renderer-three';
 import type { MachineGeometry, MappedProgress, ProgressObservation } from '@chestnutlabs/toolpath-core';
 import type { WireParseOptions, WorkerLike } from '@chestnutlabs/gcode-parser';
 
@@ -36,6 +44,7 @@ type PreviewControllerRenderer = NonNullable<Parameters<typeof createPreviewCont
 const OBSERVED = [
   'quality',
   'camera-mode',
+  'view',
   'show-travel',
   'show-wipe',
   'show-retractions',
@@ -65,6 +74,7 @@ export class GcodePreviewElement extends HTMLElement {
   private _progress: ProgressObservation | null = null;
   private _createWorker: (() => WorkerLike) | undefined;
   private _rendererOptions: ElementRendererOptions | undefined;
+  private _cameraState: CameraState | null = null;
 
   // ---- rich-option property accessors ----
   get source(): GcodePreviewSource {
@@ -139,6 +149,22 @@ export class GcodePreviewElement extends HTMLElement {
   }
   set cameraMode(v: string | null) {
     this.reflect('camera-mode', v);
+  }
+  /** #268/#275/M6: preset orientation attribute (top/front/iso/…). */
+  get view(): string | null {
+    return this.getAttribute('view');
+  }
+  set view(v: string | null) {
+    this.reflect('view', v);
+  }
+  /** #268/#275/M6: restore a saved pose (property-only — objects can't be attributes). Pair with the
+   *  `camerachange` event for two-way. */
+  get cameraState(): CameraState | null {
+    return this.controller !== null ? this.controller.controls.getCameraState() : this._cameraState;
+  }
+  set cameraState(v: CameraState | null) {
+    this._cameraState = v;
+    if (this.controller !== null && v !== null) this.controller.controls.setCameraState(v);
   }
   /** Default true; only `show-travel="false"` hides travel. */
   get showTravel(): boolean {
@@ -263,6 +289,9 @@ export class GcodePreviewElement extends HTMLElement {
       case 'camera-mode':
         if (value !== null) c.setCameraMode(value as CameraMode);
         break;
+      case 'view':
+        if (value !== null) c.setView(value as CameraView);
+        break;
       case 'show-travel':
         c.setKindVisible('travel', value !== 'false');
         break;
@@ -329,7 +358,16 @@ export class GcodePreviewElement extends HTMLElement {
     };
     switch (e.type) {
       case 'parse-complete':
-        emit('ready', { segments: e.segments, layers: e.layers, complete: e.complete });
+        emit('ready', {
+          segments: e.segments,
+          layers: e.layers,
+          complete: e.complete,
+          capabilities: e.capabilities,
+          warnings: e.warnings
+        });
+        break;
+      case 'camera-changed':
+        emit('camerachange', e.state);
         break;
       case 'parse-error':
         emit('parse-error', { code: e.code, message: e.message });

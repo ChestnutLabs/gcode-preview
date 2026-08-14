@@ -22,6 +22,10 @@
   export let quality = 'auto';
   /** #150 (DD-009 D3): camera projection ('perspective' | 'orthographic'). */
   export let cameraMode = 'perspective';
+  /** #268/#275/M6: snap to a preset orientation (top/front/iso/…). */
+  export let view = undefined;
+  /** #268/#275/M6: restore a saved camera pose. Pair with the `camerachange` event for two-way. */
+  export let cameraState = undefined;
   /** #153 (DD-009 D4): bounded declarative theme. */
   export let theme = undefined;
   export let colorMode = undefined;
@@ -71,7 +75,16 @@
   preview.onEvent((e) => {
     switch (e.type) {
       case 'parse-complete':
-        dispatch('ready', { segments: e.segments, layers: e.layers, complete: e.complete });
+        dispatch('ready', {
+          segments: e.segments,
+          layers: e.layers,
+          complete: e.complete,
+          capabilities: e.capabilities,
+          warnings: e.warnings
+        });
+        break;
+      case 'camera-changed':
+        dispatch('camerachange', e.state);
         break;
       case 'parse-error':
         dispatch('parseerror', { code: e.code, message: e.message });
@@ -124,6 +137,8 @@
   $: if (colorMode !== undefined) preview.controls.setColorMode(colorMode);
   $: preview.controls.setQuality(quality);
   $: preview.controls.setCameraMode(cameraMode);
+  $: if (view !== undefined) preview.controls.setView(view);
+  $: if (cameraState !== undefined && cameraState !== null) preview.controls.setCameraState(cameraState);
   $: if (theme !== undefined) preview.controls.setTheme(theme);
   $: if (progress === null || progress === undefined) preview.clearProgress();
   else preview.observeProgress(progress);
