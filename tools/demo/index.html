@@ -91,6 +91,18 @@
         opacity: 0.45;
         cursor: default;
       }
+      .preset-views {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 4px;
+        margin: 4px 0;
+      }
+      .preset-views button {
+        flex: 1 1 auto;
+        min-width: 44px;
+        padding: 4px 6px;
+        font-size: 12px;
+      }
       button.primary {
         background: var(--accent);
         border-color: var(--accent);
@@ -184,6 +196,11 @@
           Scrub (segments): <span id="scrubVal">all</span>
           <input id="scrub" type="range" min="0" max="0" value="0" step="1" disabled />
         </label>
+        <label>
+          Scrub (time): <span id="timeScrubVal">all</span>
+          <input id="timeScrub" type="range" min="0" max="0" value="0" step="1" disabled />
+        </label>
+        <p id="printTimeNote" role="note">Estimated print time: —</p>
       </fieldset>
 
       <fieldset>
@@ -226,6 +243,19 @@
           </select>
         </label>
         <p id="qualityNote" role="note"></p>
+        <div class="preset-views" role="group" aria-label="Preset camera views">
+          <button class="view-btn" data-view="top" disabled>Top</button>
+          <button class="view-btn" data-view="bottom" disabled>Bottom</button>
+          <button class="view-btn" data-view="front" disabled>Front</button>
+          <button class="view-btn" data-view="back" disabled>Back</button>
+          <button class="view-btn" data-view="left" disabled>Left</button>
+          <button class="view-btn" data-view="right" disabled>Right</button>
+          <button class="view-btn" data-view="iso" disabled>Iso</button>
+        </div>
+        <div class="preset-views">
+          <button id="saveView" disabled title="Remember the current camera position">Save view</button>
+          <button id="restoreView" disabled title="Return to the saved camera position">Restore view</button>
+        </div>
         <button id="frame" disabled>Frame model</button>
         <button id="exportStl" disabled title="Download the productive toolpath (extrude/cut moves) as a binary STL mesh">Export STL</button>
         <p id="disclosure" role="note"></p>
