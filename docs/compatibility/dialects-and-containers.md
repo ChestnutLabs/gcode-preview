@@ -31,14 +31,15 @@ annotation) · **unsupported** (generic parse only — geometry always works; me
 ## Dialects (non-extrusion — CNC / laser / plotter, DD-012 #189)
 
 Non-extrusion controllers. Each declares a **validation tier** (DD-012 D6): until a controller is
-confirmed on real hardware, its non-extrusion claims are reported **`inferred`** (experimental), never
-`known` — the tier *is* the honesty mechanism. Geometry (positions, arcs, drilled holes) always parses
+confirmed on real hardware, its non-extrusion claims are reported **`inferred`** (experimental); once
+validated on a real machine they are promoted to **`known`** and the disclosure warning drops — the tier
+*is* the honesty mechanism. Geometry (positions, arcs, drilled holes) always parses
 regardless of tier; the tier governs only how much to trust the *semantic* classification. The
 underlying capabilities are in [Cross-cutting coverage](#cross-cutting-coverage) below.
 
 | Controller | Detection | Machine class | Validation tier | Non-extrusion claims | Fixtures | Evidence date |
 |---|---|---|---|---|---|---|
-| GRBL laser | LightBurn header / `$32=1` laser mode / `M4`+`S`, no extrusion | laser | **experimental** | `cutMoves` · `toolPower` (laser power) · `cannedCycles` — reported **`inferred`** until hardware-validated | synthetic | 2026-07-28 |
+| GRBL laser | LightBurn header / `$32=1` laser mode / `M4`+`S`, no extrusion | laser | **validated** | `cutMoves` · `toolPower` (laser power) · `cannedCycles` — reported **`known`** (hardware-validated, [DD-012 log](../design/DD-012-hardware-validation-log.md)) | synthetic + real GRBL/LightBurn run | 2026-07-29 |
 | GRBL mill | `Grbl` banner + `M3` spindle, no extrusion | mill | **experimental** | `cutMoves` · `toolPower` (spindle RPM) · `cannedCycles` — **`inferred`** | synthetic | 2026-07-28 |
 | LinuxCNC / EMC | `LinuxCNC`/`EMC` header / `%`-program + `M3` | mill | **experimental** | as above — **`inferred`** | synthetic | 2026-07-28 |
 | Marlin-laser / Mach / Smoothieware | _reserved_ | laser/mill | _pending_ | generic parse only until added | — | — |
@@ -54,8 +55,8 @@ are proprietary binary formats, not G-code.
 
 | Container | Discovery | Plates | Machine metadata | Integrity checks | Security review | Fixtures | Evidence date |
 |---|---|---|---|---|---|---|---|
-| `.gcode.3mf` (Orca/Bambu) | **full** (magic sniff + CD walk) | **full** (multi-plate lifecycle, `{plate}` select, default-0 + warning) | **full** (`printable_area`/`printable_height`/printer/filaments → `MachineGeometry`, `known`) | **full** (CRC32, header agreement, encryption/zip64 rejection, duplicates, incremental caps) | [record prepared — awaiting sign-off](../design/SECURITY-REVIEW-DD-005-containers.md) | `container-mini-project` + 7 adversarial | 2026-07-23 |
-| `.bgcode` (Prusa binary) | **full** (`GCDE` magic sniff) | single plate | **partial** (`bed_shape` INI → `MachineGeometry`, `inferred`) | **full** (per-block CRC32; bounded, capped decode; DEFLATE flavor-lock) | [record prepared — awaiting sign-off](../design/SECURITY-REVIEW-DD-011-bgcode.md) | `prim-cube` golden pair + adversarial fuzz corpus | 2026-07-27 |
+| `.gcode.3mf` (Orca/Bambu) | **full** (magic sniff + CD walk) | **full** (multi-plate lifecycle, `{plate}` select, default-0 + warning) | **full** (`printable_area`/`printable_height`/printer/filaments → `MachineGeometry`, `known`) | **full** (CRC32, header agreement, encryption/zip64 rejection, duplicates, incremental caps) | [**signed off** 2026-07-23](../design/SECURITY-REVIEW-DD-005-containers.md) | `container-mini-project` + 7 adversarial | 2026-07-23 |
+| `.bgcode` (Prusa binary) | **full** (`GCDE` magic sniff) | single plate | **partial** (`bed_shape` INI → `MachineGeometry`, `inferred`) | **full** (per-block CRC32; bounded, capped decode; DEFLATE flavor-lock) | [**signed off** 2026-07-28](../design/SECURITY-REVIEW-DD-011-bgcode.md) | `prim-cube` golden pair + adversarial fuzz corpus | 2026-07-27 |
 
 ## Cross-cutting coverage
 
