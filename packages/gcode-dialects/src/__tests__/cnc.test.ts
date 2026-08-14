@@ -119,6 +119,13 @@ describe('DD-012 phase 3 — evidence-based detection of header-less real files 
     expect(detected).toBe(true); // recognized as non-extrusion, not rejected as FDM by the bare `E`
   });
 
+  it('GRBL `$32=1` laser-mode setting is a detection signal (#277/M5)', () => {
+    // The $32=1 branch (grbl-laser) was uncovered — it guards the honesty tier for header-less files.
+    const { ir, metadata } = cncParse('$32=1\nG21 G90\nM4 S0\nG1 X10 F600 S255\nS0\nM5\n');
+    expect(ir.header.dialects.some((d) => d.id === 'grbl-laser')).toBe(true);
+    expect((metadata.raw as Record<string, string>)['cnc.machineClass']).toBe('laser');
+  });
+
   it('a commented-out spindle (`(M3)`) is not treated as tool-on', () => {
     // TinyG posts sometimes note `(M3)` in a comment with no active spindle — no tool-state to infer.
     const { detected } = cncParse('N1 T1M6\nN2 (M3)\nN3 G1 X10 Y0 F100\nN4 X20\n');
