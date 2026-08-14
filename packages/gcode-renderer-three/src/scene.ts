@@ -120,6 +120,10 @@ export type RendererEvent =
   | { type: 'previewAppend'; cumulativeSegments: number; decimationApplied: number }
   | { type: 'contextlost' }
   | { type: 'restored' }
+  /** The camera settled after a user interaction (orbit/pan/zoom/key) — carries the new serializable
+   *  state so a consumer can persist "where the user was looking" (#275/M6). Programmatic setView /
+   *  setCameraState do NOT emit this (they are consumer-driven already), so a bound prop can't loop. */
+  | { type: 'camera-changed'; state: CameraState }
   | { type: 'error'; code: string; message: string };
 
 /**
@@ -415,6 +419,11 @@ export class ToolpathRenderer {
         // model size and (re)applied in frame(), since they change per file.
         this.controls.zoomToCursor = true;
         this.controls.addEventListener('change', () => this.render());
+        // Two-way camera state (#275/M6): after a user interaction settles, publish the new pose so a
+        // bound `cameraState` can persist it. `end` fires once per gesture (not per frame like `change`).
+        this.controls.addEventListener('end', () =>
+          this.emit({ type: 'camera-changed', state: this.getCameraState() })
+        );
       } catch {
         this.controls = null; // headless hosts without full DOM events
       }

@@ -44,7 +44,8 @@ import {
   type ProgressMapper,
   type ProgressObservation,
   type ToolpathIR,
-  type ToolpathTime
+  type ToolpathTime,
+  type Warning
 } from '@chestnutlabs/toolpath-core';
 
 /** Session/renderer events, re-emitted, plus the controller's own lifecycle events. */
@@ -52,7 +53,16 @@ export type PreviewEvent =
   | PreviewRendererEvent
   | { type: 'parse-started'; bytes: number }
   | { type: 'parse-progress'; progress: ParseProgress }
-  | { type: 'parse-complete'; segments: number; layers: number; complete: boolean }
+  | {
+      type: 'parse-complete';
+      segments: number;
+      layers: number;
+      complete: boolean;
+      /** Per-field capability confidence (DD-001) — lets consumers gate their own UI honestly (#275/M3). */
+      capabilities: Record<string, Confidence>;
+      /** Parse warnings (codes/messages), so consumers can surface disclosures without the raw handle. */
+      warnings: readonly Warning[];
+    }
   | { type: 'parse-cancelled' }
   | { type: 'parse-error'; code: string; message: string }
   | {
@@ -412,7 +422,9 @@ export function createPreviewController(options: PreviewControllerOptions = {}):
         type: 'parse-complete',
         segments: result.ir.segments.count,
         layers: result.ir.layers.length,
-        complete: result.ir.header.complete
+        complete: result.ir.header.complete,
+        capabilities: { ...result.ir.header.capabilities },
+        warnings: result.ir.header.warnings
       });
       return { ok: true, result };
     } catch (err) {

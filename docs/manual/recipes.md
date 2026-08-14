@@ -47,6 +47,23 @@ controls.setCameraState(view); // restores verbatim — no re-fit to the current
 returns `null` on the low-resource 2D renderer, which has no 3D pose — `setView`/`setCameraState`
 there disclose via the `renderer-unsupported` event rather than fabricating one.
 
+The same three are also **declarative props** on every adapter — a `view` prop (preset) and a
+`cameraState` prop (restore) — paired with a **`camerachange`/`camera-change`** event that fires with
+the new `CameraState` after a user orbits/pans/zooms. Together they form a two-way binding you can
+persist:
+
+```svelte
+<GcodePreview {source} {view} bind:cameraState on:camerachange={(e) => save(e.detail)} />
+```
+
+## Capabilities & warnings on `ready`
+
+The `ready` event (React `onReady`, Vue `@ready`, Svelte `on:ready`, element `ready`) carries
+`capabilities` (the per-field `known | inferred | approximated | unavailable` map) and `warnings`
+alongside `{ segments, layers, complete }` — so a consumer can gate its own UI (e.g. only offer a
+color-by-power control when `capabilities.toolPower !== 'unavailable'`) without reaching for the raw
+handle.
+
 ## `.gcode.3mf` multi-plate
 
 `.gcode.3mf` containers can hold several sliced plates. Select one with `parseOptions.plate`:
