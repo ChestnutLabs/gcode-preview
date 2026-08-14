@@ -6,14 +6,17 @@ intermediate representation (`ToolpathIR`), and render an interactive Three.js (
 Canvas 2D) preview — with first-class **Vue, React, Svelte, and a framework-neutral Web Component**
 integrations that are thin adapters over one shared engine.
 
-> **Status: published.** Thirteen `@chestnutlabs/*` packages are on npm (latest **`v0.4.0`**,
+> **Status: published.** Thirteen `@chestnutlabs/*` packages are on npm (latest **`v0.5.0`**,
 > lockstep-versioned with npm provenance). E0–E11 of the
-> [master plan](docs/00_PROJECT_MASTER_PLAN.md) are closed; **`v0.4.0` adds non-extrusion toolpaths —
-> CNC / laser / plotter**: `MoveKind.Cut` classification, an opt-in modal `toolPower` (laser power /
-> spindle RPM) channel, canned drilling-cycle expansion (`G81`/`G82`/`G83`), evidence-based controller
-> recognition (GRBL laser/mill, LinuxCNC) with **validation tiers** (GRBL-laser hardware-validated),
-> power / cut-vs-rapid color modes, and toolpath STL export — all honesty-tiered, with FDM output
-> byte-identical. Install from npm — see *Quick start* below.
+> [master plan](docs/00_PROJECT_MASTER_PLAN.md) are closed. **`v0.5.0`** adds camera controls — **preset
+> views + a serializable camera-state API** (`setView`/`getCameraState`/`setCameraState`, declarative
+> `view`/`cameraState` props, zoom-to-cursor, keyboard-operable camera) — and surfaces `capabilities` /
+> `warnings` on the `ready` event. **`v0.4.0`** added non-extrusion toolpaths — CNC / laser / plotter:
+> `MoveKind.Cut` classification, an opt-in modal `toolPower` channel, canned drilling-cycle expansion
+> (`G81`/`G82`/`G83`), evidence-based controller recognition (GRBL laser/mill, LinuxCNC) with
+> **validation tiers** (GRBL-laser hardware-validated), power / cut-vs-rapid color modes, and toolpath
+> STL export — all honesty-tiered, with FDM output byte-identical. Install from npm — see *Quick start*
+> below.
 
 ![3DBenchy rendered as tubes with feature coloring in the showcase viewer](docs/media/viewer-benchy-tubes.png)
 

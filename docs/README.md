@@ -39,7 +39,7 @@ See also [`../PROJECT_SETUP.md`](../PROJECT_SETUP.md) for the local environment 
 Provenance of inherited vs. Chestnut code, the exact founding baseline, and the branch mapping are
 tracked in [`UPSTREAM_PROVENANCE.md`](UPSTREAM_PROVENANCE.md).
 
-## Current state (updated 2026-07-29 — **v0.4.0 shipped to npm** (13 lockstep pkgs); #188 bgcode closed; #189 CNC/laser phases 1–5 + real-file lexer/detection, G0-rapid fix, GRBL-laser hardware-validated, #152 STL export done; DD-017 RS274NGC parametric programs proposed)
+## Current state (updated 2026-08-14 — **v0.5.0 shipped to npm** (13 lockstep pkgs): camera preset-views + serializable `CameraState` API, zoom-to-cursor, keyboard-a11y, `capabilities`/`warnings` on `ready`, Svelte `buildVolume` fix, docs/demo/CNC-test hardening (epic #279). v0.4.0 shipped 2026-08-01 (#189 CNC/laser: lexer/detection, GRBL-laser hardware-validated, STL). DD-017 RS274NGC parametric programs proposed, unbuilt)
 
 | Epic | Status | Gate |
 |---|---|---|
