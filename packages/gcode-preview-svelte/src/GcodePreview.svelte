@@ -68,8 +68,6 @@
     parseDefaults: parseOptions
   });
 
-  if (isMachine) preview.controls.setBuildVolume(buildVolume);
-
   preview.onEvent((e) => {
     switch (e.type) {
       case 'parse-complete':
@@ -111,6 +109,10 @@
   });
 
   // ---- prop wiring: each prop is a thin reactive call into the handle (D1 shell rule) ----
+  // buildVolume must be reactive too (#274) — matching Vue's watch and React's useEffect. A machine
+  // geometry is (re)applied via the handle; a plain BuildVolumeDef is an init-time renderer option
+  // (above) that a post-mount change re-applies here as well.
+  $: if (buildVolume !== undefined) preview.controls.setBuildVolume(buildVolume);
   $: if (source !== null && source !== undefined) void preview.parse(source, parseOptions);
   $: if (layerRange === null || layerRange === undefined) preview.controls.setLayerRange(0, Number.POSITIVE_INFINITY);
   else preview.controls.setLayerRange(layerRange[0], layerRange[1]);
