@@ -373,6 +373,10 @@ export class ToolpathRenderer {
     if (isHtmlCanvas(domEl)) {
       try {
         this.controls = new OrbitControls(this.activeCamera, domEl);
+        // Zoom toward the pointer rather than the orbit target — the affordance users expect from a
+        // 3D viewer, and free inside OrbitControls (#267). Distance clamps are derived from the framed
+        // model size and (re)applied in frame(), since they change per file.
+        this.controls.zoomToCursor = true;
         this.controls.addEventListener('change', () => this.render());
       } catch {
         this.controls = null; // headless hosts without full DOM events
@@ -1089,6 +1093,11 @@ export class ToolpathRenderer {
     this.updateCameraProjection();
     if (this.controls) {
       this.controls.target.copy(target);
+      // Bound zoom to the framed model so the user can't dolly through it or lose it at the extremes
+      // (#267). Recomputed here, not just at construction, because `radius` changes per file. The
+      // default framed distance is ≈2.69·radius, so this keeps a wide but finite range around it.
+      this.controls.minDistance = Math.max(1, radius * 0.15);
+      this.controls.maxDistance = radius * 30;
       this.controls.update();
     }
     this.render();
