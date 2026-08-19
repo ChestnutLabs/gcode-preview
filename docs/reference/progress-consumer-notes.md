@@ -6,7 +6,7 @@ from *my* printer data" side, written against AnyBridge's normalized `JobProgres
 (`src/anybridge/model/telemetry.py`) as surveyed in DD-006 §1.1 — but nothing here imports or
 depends on AnyBridge.
 
-![What the host's users see: the completed portion in full color, the remaining toolpath as a translucent ghost, and a marker at the reported print position](../media/live-progress-overlay.png)
+![What the host's users see: the completed portion in full color, the remaining toolpath as a translucent ghost, and a marker at the reported print position](../media/progress-known.png)
 
 ## Mapping `JobProgress` → `ProgressObservation`
 
