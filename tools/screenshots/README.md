@@ -1,0 +1,84 @@
+# Documentation media capture
+
+Regenerates the toolpath screenshots in `docs/media/` used by the root README and the manual.
+Every image is a real render of a real file from the tracked MIT demo corpus, produced by driving
+the actual `tools/demo` app with a headless browser — nothing is mocked or hand-edited. Regenerate
+these whenever visible rendering behavior changes (see
+[`docs/USER_FACING_DOCS_STYLE.md`](../../docs/USER_FACING_DOCS_STYLE.md) §8).
+
+## What it produces
+
+`capture.mjs` drives the main demo (`index.html`) and writes:
+
+| File | Shows |
+|---|---|
+| `viewer-benchy-tubes.png` | Hero: 3DBenchy as tubes, feature coloring |
+| `app-control-panel.png` | Full app — control panel + render (via a frozen-frame image swap) |
+| `layer-clip-benchy.png` | Layer-range clipping |
+| `color-speed-calicat.png` | Color by feedrate |
+| `color-layerheight.png` | Color by layer height (variable-layer fixture) |
+| `retraction-markers.png` | Retraction / de-retraction markers |
+| `progress-known.png` / `progress-approximated.png` | Live-progress overlay: exact marker vs. uncertainty band |
+| `camera-top.png` / `camera-front.png` / `camera-iso.png` | Camera presets |
+| `cnc-cut-vs-rapid.png` | CNC toolpath colored cut-vs-rapid |
+
+`capture-2d.mjs` drives `2d.html` and writes `canvas-2d-fallback.png` (the Canvas 2D layer view).
+
+The shot manifest lives at the top of `capture.mjs` — add or adjust entries there.
+
+## Prerequisites
+
+1. **Build the workspace packages** in dependency order so the demo can resolve them:
+
+   ```sh
+   for p in toolpath-core gcode-colors gcode-containers gcode-dialects gcode-bgcode \
+            gcode-parser gcode-renderer-three gcode-renderer-2d gcode-preview-core \
+            gcode-preview-vue gcode-preview-react gcode-preview-svelte gcode-preview-element; do
+     npm run build -w @chestnutlabs/$p
+   done
+   ```
+
+2. **Start the demo** (leave it running):
+
+   ```sh
+   cd tools/demo && npm install && npm run dev     # http://localhost:5199
+   ```
+
+3. **Install the capture dependency** (kept out of the repo dependency tree — this directory has no
+   `package.json`, and `node_modules` is git-ignored):
+
+   ```sh
+   cd tools/screenshots && npm i playwright-core
+   ```
+
+4. **Have Chrome/Chromium.** The harness launches the system browser via `playwright-core` — no
+   browser download. Override the path with `CHROME_PATH` if needed
+   (default `/usr/bin/google-chrome-stable`).
+
+## Run
+
+```sh
+cd tools/screenshots
+node capture.mjs                 # all main-demo shots
+node capture.mjs viewer-benchy-tubes cnc-cut-vs-rapid   # a subset by name
+node capture-2d.mjs              # the Canvas 2D fallback shot
+```
+
+Override the demo URL with `DEMO_URL` (default `http://localhost:5199`).
+
+## How it works (and why)
+
+- It selects a corpus file, clicks **Parse & render**, and waits for the parse to report done.
+- It then drives the demo's debug handle (`window.viewer.renderer`) to set quality, color mode,
+  layer range, camera, and simulated live-progress, and **waits for `buildComplete`** so it never
+  captures a half-uploaded model.
+- It uses a consistent, slightly-lower 3/4 camera across the perspective shots. CNC/laser files have
+  no extrusion, so their extrude-only bounds are empty — the harness frames them from
+  travel-inclusive bounds instead.
+- For canvas shots it copies the WebGL backing store into a 2D canvas and reads a PNG (the same
+  approach as the repo's visual-regression harness in `tools/demo/src/vr.js`). This is deterministic
+  and avoids the compositor stall that a live `requestAnimationFrame` loop causes for a full-page
+  screenshot. The one full-page shot (`app-control-panel`) freezes the GL frame into a static `<img>`
+  first, then screenshots the DOM.
+
+Keep framing, viewport, and filenames stable when adding shots so the set reads as one system.
