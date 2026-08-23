@@ -180,6 +180,17 @@ export const GcodePreview = defineComponent({
     });
 
     // ---- prop wiring: each prop is a thin call into the composable (D1 shell rule) ----
+    //
+    // `{ immediate: true }` on every RUNTIME-ONLY prop watcher: Vue's `watch` does not fire on mount
+    // by default, so a runtime control prop set at mount time (`:show-travel="false"`, `:layer-range`,
+    // `:scrub`, `:view`, …) would otherwise be dropped and only take effect on a later *change* — the
+    // initial-state desync the other three adapters don't have (React's `useEffect`, Svelte's `$:`,
+    // and Element's `applyRuntimeState()` all apply the initial value on mount). Controls issued before
+    // the renderer resolves are queued and replayed, so firing at mount is safe.
+    //
+    // The CONSTRUCTION-covered props (`colorMode`, `quality`, `cameraMode`, `theme`, and a plain
+    // `buildVolume`) are already applied as renderer options at controller creation above, so their
+    // watchers stay change-only — making them immediate would just re-apply the same value redundantly.
     watch(
       () => props.source,
       (source) => {
@@ -192,27 +203,33 @@ export const GcodePreview = defineComponent({
       (range) => {
         if (range === null) preview.controls.setLayerRange(0, Number.POSITIVE_INFINITY);
         else preview.controls.setLayerRange(range[0], range[1]);
-      }
+      },
+      { immediate: true }
     );
     watch(
       () => props.scrub,
-      (scrub) => preview.controls.setScrubPosition(scrub)
+      (scrub) => preview.controls.setScrubPosition(scrub),
+      { immediate: true }
     );
     watch(
       () => props.scrubTime,
-      (t) => preview.controls.setScrubTime(t)
+      (t) => preview.controls.setScrubTime(t),
+      { immediate: true }
     );
     watch(
       () => props.showTravel,
-      (visible) => preview.controls.setKindVisible('travel', visible)
+      (visible) => preview.controls.setKindVisible('travel', visible),
+      { immediate: true }
     );
     watch(
       () => props.showWipe,
-      (visible) => preview.controls.setKindVisible('wipe', visible)
+      (visible) => preview.controls.setKindVisible('wipe', visible),
+      { immediate: true }
     );
     watch(
       () => props.showRetractions,
-      (visible) => preview.controls.setShowRetractions(visible)
+      (visible) => preview.controls.setShowRetractions(visible),
+      { immediate: true }
     );
     watch(
       () => props.colorMode,
@@ -232,13 +249,15 @@ export const GcodePreview = defineComponent({
       () => props.view,
       (view) => {
         if (view !== undefined) preview.controls.setView(view);
-      }
+      },
+      { immediate: true }
     );
     watch(
       () => props.cameraState,
       (state) => {
         if (state !== undefined && state !== null) preview.controls.setCameraState(state);
-      }
+      },
+      { immediate: true }
     );
     watch(
       () => props.theme,
@@ -258,7 +277,8 @@ export const GcodePreview = defineComponent({
       (obs) => {
         if (obs === null) preview.clearProgress();
         else preview.observeProgress(obs);
-      }
+      },
+      { immediate: true }
     );
 
     // Template-ref access to the full handle (defineExpose per §4.1).
