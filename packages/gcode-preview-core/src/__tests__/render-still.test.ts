@@ -10,8 +10,8 @@ import { MoveKind, ToolpathIRBuilder, type ToolpathIR } from '@chestnutlabs/tool
 import { renderStill } from '../render-still.js';
 import { makeTestIR, SuiteStubWorker } from '../testing.js';
 
-/** An IR with both an extrusion segment and a travel segment (a distinct 'travel' geometry chunk). */
-function makeTravelBearingIR(): ToolpathIR {
+/** An IR with an extrusion segment plus a travel segment and a wipe segment (distinct geometry chunks). */
+function makeMixedIR(): ToolpathIR {
   const b = new ToolpathIRBuilder({
     parserVersion: 'render-still-test',
     units: 'mm',
@@ -20,24 +20,27 @@ function makeTravelBearingIR(): ToolpathIR {
   });
   b.addSegment({ x0: 100, y0: 100, z0: 0.2, x1: 110, y1: 100, z1: 0.2, e: 1, kind: MoveKind.Extrude, layer: 0, srcByte: 0 });
   b.addSegment({ x0: 110, y0: 100, z0: 0.2, x1: 120, y1: 110, z1: 0.2, e: 0, kind: MoveKind.Travel, layer: 0, srcByte: 10 });
+  b.addSegment({ x0: 120, y0: 110, z0: 0.2, x1: 118, y1: 110, z1: 0.2, e: 0, kind: MoveKind.Wipe, layer: 0, srcByte: 20 });
   return b.finalize();
 }
 
 /**
- * GL stub that, on each render, snapshots the `.visible` state of any 'travel' geometry chunk mesh
- * in the scene — lets a test observe travel visibility inside renderStill (which disposes internally).
+ * GL stub that, on each render, snapshots the `.visible` state of the 'travel' and 'wipe' geometry
+ * chunk meshes in the scene — lets a test observe kind visibility inside renderStill (which disposes
+ * its renderer internally, so post-call inspection isn't possible).
  */
-function makeTravelProbeGL(): {
+function makeKindProbeGL(): {
   gl: (c: RenderTargetCanvas) => GLRendererLike;
-  travelVisible: () => boolean | null;
+  visible: (kind: string) => boolean | null;
 } {
-  let travelVisible: boolean | null = null;
+  const seen: Record<string, boolean | null> = {};
   return {
     gl: (canvas: RenderTargetCanvas) => ({
       render: (scene?: { traverse(cb: (o: { userData?: { chunk?: { kind?: string } }; visible?: boolean }) => void): void }) => {
         if (scene && typeof scene.traverse === 'function') {
           scene.traverse((o) => {
-            if (o.userData?.chunk?.kind === 'travel') travelVisible = o.visible ?? null;
+            const kind = o.userData?.chunk?.kind;
+            if (kind) seen[kind] = o.visible ?? null;
           });
         }
       },
@@ -45,7 +48,7 @@ function makeTravelProbeGL(): {
       dispose: () => undefined,
       domElement: canvas
     }),
-    travelVisible: () => travelVisible
+    visible: (kind: string) => seen[kind] ?? null
   };
 }
 
@@ -160,21 +163,24 @@ describe('renderStill (#132)', () => {
     expect(counting.renders()).toBeGreaterThan(0);
   });
 
-  it('hides travel by default and honors showTravel:false (regression: showTravel:false was a no-op)', async () => {
-    // Default (showTravel omitted) → travel hidden (documented default false).
-    const def = makeTravelProbeGL();
-    await renderStill(makeTravelBearingIR(), { canvas: makeStubCanvas(), createRenderer: def.gl });
-    expect(def.travelVisible()).toBe(false);
+  it('hides travel & wipe by default and honors showTravel/showWipe:false (regression: :false was a no-op)', async () => {
+    // Default (omitted) → travel AND wipe hidden (documented clean-still defaults).
+    const def = makeKindProbeGL();
+    await renderStill(makeMixedIR(), { canvas: makeStubCanvas(), createRenderer: def.gl });
+    expect(def.visible('travel')).toBe(false);
+    expect(def.visible('wipe')).toBe(false);
 
-    // Explicit false → travel hidden.
-    const off = makeTravelProbeGL();
-    await renderStill(makeTravelBearingIR(), { canvas: makeStubCanvas(), showTravel: false, createRenderer: off.gl });
-    expect(off.travelVisible()).toBe(false);
+    // Explicit false → hidden.
+    const off = makeKindProbeGL();
+    await renderStill(makeMixedIR(), { canvas: makeStubCanvas(), showTravel: false, showWipe: false, createRenderer: off.gl });
+    expect(off.visible('travel')).toBe(false);
+    expect(off.visible('wipe')).toBe(false);
 
-    // Explicit true → travel visible.
-    const on = makeTravelProbeGL();
-    await renderStill(makeTravelBearingIR(), { canvas: makeStubCanvas(), showTravel: true, createRenderer: on.gl });
-    expect(on.travelVisible()).toBe(true);
+    // Explicit true → visible.
+    const on = makeKindProbeGL();
+    await renderStill(makeMixedIR(), { canvas: makeStubCanvas(), showTravel: true, showWipe: true, createRenderer: on.gl });
+    expect(on.visible('travel')).toBe(true);
+    expect(on.visible('wipe')).toBe(true);
   });
 
   it('applies layer-range and scrub clips', async () => {
