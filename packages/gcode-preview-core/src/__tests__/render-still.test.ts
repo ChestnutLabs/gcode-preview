@@ -6,8 +6,48 @@
  */
 import { describe, it, expect } from 'vitest';
 import type { GLRendererLike, RenderTargetCanvas } from '@chestnutlabs/gcode-renderer-three';
+import { MoveKind, ToolpathIRBuilder, type ToolpathIR } from '@chestnutlabs/toolpath-core';
 import { renderStill } from '../render-still.js';
 import { makeTestIR, SuiteStubWorker } from '../testing.js';
+
+/** An IR with both an extrusion segment and a travel segment (a distinct 'travel' geometry chunk). */
+function makeTravelBearingIR(): ToolpathIR {
+  const b = new ToolpathIRBuilder({
+    parserVersion: 'render-still-test',
+    units: 'mm',
+    unitsSource: 'known',
+    source: { byteLength: 100 }
+  });
+  b.addSegment({ x0: 100, y0: 100, z0: 0.2, x1: 110, y1: 100, z1: 0.2, e: 1, kind: MoveKind.Extrude, layer: 0, srcByte: 0 });
+  b.addSegment({ x0: 110, y0: 100, z0: 0.2, x1: 120, y1: 110, z1: 0.2, e: 0, kind: MoveKind.Travel, layer: 0, srcByte: 10 });
+  return b.finalize();
+}
+
+/**
+ * GL stub that, on each render, snapshots the `.visible` state of any 'travel' geometry chunk mesh
+ * in the scene — lets a test observe travel visibility inside renderStill (which disposes internally).
+ */
+function makeTravelProbeGL(): {
+  gl: (c: RenderTargetCanvas) => GLRendererLike;
+  travelVisible: () => boolean | null;
+} {
+  let travelVisible: boolean | null = null;
+  return {
+    gl: (canvas: RenderTargetCanvas) => ({
+      render: (scene?: { traverse(cb: (o: { userData?: { chunk?: { kind?: string } }; visible?: boolean }) => void): void }) => {
+        if (scene && typeof scene.traverse === 'function') {
+          scene.traverse((o) => {
+            if (o.userData?.chunk?.kind === 'travel') travelVisible = o.visible ?? null;
+          });
+        }
+      },
+      setSize: () => undefined,
+      dispose: () => undefined,
+      domElement: canvas
+    }),
+    travelVisible: () => travelVisible
+  };
+}
 
 /** OffscreenCanvas-shaped stub (EventTarget surface, no DOM `style`). */
 function makeStubCanvas(width = 320, height = 240): RenderTargetCanvas {
@@ -118,6 +158,23 @@ describe('renderStill (#132)', () => {
     });
     expect(result.segmentCount).toBe(12);
     expect(counting.renders()).toBeGreaterThan(0);
+  });
+
+  it('hides travel by default and honors showTravel:false (regression: showTravel:false was a no-op)', async () => {
+    // Default (showTravel omitted) → travel hidden (documented default false).
+    const def = makeTravelProbeGL();
+    await renderStill(makeTravelBearingIR(), { canvas: makeStubCanvas(), createRenderer: def.gl });
+    expect(def.travelVisible()).toBe(false);
+
+    // Explicit false → travel hidden.
+    const off = makeTravelProbeGL();
+    await renderStill(makeTravelBearingIR(), { canvas: makeStubCanvas(), showTravel: false, createRenderer: off.gl });
+    expect(off.travelVisible()).toBe(false);
+
+    // Explicit true → travel visible.
+    const on = makeTravelProbeGL();
+    await renderStill(makeTravelBearingIR(), { canvas: makeStubCanvas(), showTravel: true, createRenderer: on.gl });
+    expect(on.travelVisible()).toBe(true);
   });
 
   it('applies layer-range and scrub clips', async () => {

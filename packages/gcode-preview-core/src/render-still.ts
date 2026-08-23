@@ -164,7 +164,11 @@ export async function renderStill(
       if (ir.segments.count === 0) queueMicrotask(finish);
     });
 
-    if (options.showTravel === true) renderer.setKindVisible('travel', true);
+    // Apply travel visibility UNCONDITIONALLY. The renderer defaults travel visible, so only ever
+    // turning it *on* (the old `if (showTravel === true)`) left `showTravel: false` — and the
+    // documented default of false — a no-op, so travel always showed. Set it from the option every
+    // time so a still honors `showTravel: false` (the default) and frames as a clean thumbnail.
+    renderer.setKindVisible('travel', options.showTravel === true);
     if (options.colorMode) renderer.setColorMode(options.colorMode);
     if (options.layerRange) renderer.setLayerRange(options.layerRange[0], options.layerRange[1]);
     if (options.scrub !== undefined) renderer.setScrubPosition(options.scrub);
