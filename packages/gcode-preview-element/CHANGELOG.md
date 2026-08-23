@@ -1,5 +1,15 @@
 # @chestnutlabs/gcode-preview-element
 
+## 0.5.1
+
+### Patch Changes
+
+- Updated dependencies []:
+  - @chestnutlabs/gcode-parser@0.5.1
+  - @chestnutlabs/gcode-preview-core@0.5.1
+  - @chestnutlabs/gcode-renderer-three@0.5.1
+  - @chestnutlabs/toolpath-core@0.5.1
+
 ## 0.5.0
 
 ### Minor Changes
