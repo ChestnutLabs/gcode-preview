@@ -28,7 +28,14 @@ interface Mounted {
   };
 }
 
-function mountPreview(opts: { machine?: typeof MACHINE; consumerVolume?: boolean } = {}): Mounted {
+function mountPreview(
+  opts: {
+    machine?: typeof MACHINE;
+    consumerVolume?: boolean;
+    /** Initial (mount-time) prop values — to test that runtime props are honored on first render. */
+    initial?: { showTravel?: boolean; showWipe?: boolean; layerRange?: [number, number] | null };
+  } = {}
+): Mounted {
   const { gl, calls } = makeStubGL();
   const ticks: (() => void)[] = [];
   const emitted: Record<string, unknown[]> = {};
@@ -39,8 +46,8 @@ function mountPreview(opts: { machine?: typeof MACHINE; consumerVolume?: boolean
   const props: Mounted['props'] = {
     source: shallowRef<Uint8Array | null>(null),
     scrub: ref<number | null>(null),
-    layerRange: shallowRef<[number, number] | null>(null),
-    showTravel: ref(true),
+    layerRange: shallowRef<[number, number] | null>(opts.initial?.layerRange ?? null),
+    showTravel: ref(opts.initial?.showTravel ?? true),
     progress: shallowRef<ProgressObservation | null>(null),
     buildVolume: shallowRef(opts.consumerVolume === true ? { x: 220, y: 220, z: 250 } : undefined)
   };
@@ -55,6 +62,7 @@ function mountPreview(opts: { machine?: typeof MACHINE; consumerVolume?: boolean
           scrub: props.scrub.value,
           layerRange: props.layerRange.value,
           showTravel: props.showTravel.value,
+          showWipe: opts.initial?.showWipe ?? true,
           progress: props.progress.value,
           buildVolume: props.buildVolume.value,
           quality: 'lines',
@@ -159,6 +167,44 @@ describe('<GcodePreview> — full prop surface (D4)', () => {
     m.props.source.value = new Uint8Array(1_000);
     await settle();
     expect(m.emitted['machine-geometry-discovered']?.[0]).toMatchObject({ confidence: 'known' });
+    m.app.unmount();
+  });
+});
+
+describe('<GcodePreview> — initial runtime-prop application at mount (Vue watch immediacy)', () => {
+  // Regression: Vue's `watch` does not fire on mount, so runtime-only props set at mount time were
+  // dropped until they later changed (the "travel renders on first open" desync AnyBridge hit). The
+  // watchers for runtime-only props are now `{ immediate: true }`, so the initial value is applied on
+  // first render with NO prop change. Asserted on the renderer's own state, not via a toggle.
+  type WithKindVisible = { kindVisible: Record<'extrude' | 'travel' | 'wipe', boolean> };
+
+  it('applies initial showTravel=false / showWipe=false at mount (no prop change)', async () => {
+    const m = mountPreview({ initial: { showTravel: false, showWipe: false } });
+    m.props.source.value = new Uint8Array(1_000);
+    await settle();
+    const renderer = m.handle().raw.renderer()! as unknown as WithKindVisible;
+    expect(renderer.kindVisible.travel).toBe(false);
+    expect(renderer.kindVisible.wipe).toBe(false);
+    m.app.unmount();
+  });
+
+  it('applies an initial layerRange at mount (no prop change)', async () => {
+    const m = mountPreview({ initial: { layerRange: [1, 1] } });
+    m.props.source.value = new Uint8Array(1_000);
+    await settle();
+    const renderer = m.handle().raw.renderer()!;
+    // makeIR(): 2 layers × 6 segments; layer 1 is the second 12-vertex half — start:12, count:12.
+    expect(renderer.chunkMeshes[0].geometry.drawRange).toMatchObject({ start: 12, count: 12 });
+    m.app.unmount();
+  });
+
+  it('default mount leaves travel/wipe visible (immediate watchers re-apply the true default harmlessly)', async () => {
+    const m = mountPreview();
+    m.props.source.value = new Uint8Array(1_000);
+    await settle();
+    const renderer = m.handle().raw.renderer()! as unknown as WithKindVisible;
+    expect(renderer.kindVisible.travel).toBe(true);
+    expect(renderer.kindVisible.wipe).toBe(true);
     m.app.unmount();
   });
 });
