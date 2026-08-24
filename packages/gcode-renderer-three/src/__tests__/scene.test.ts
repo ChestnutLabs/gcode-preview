@@ -6,7 +6,7 @@
  * only WebGLRenderer needs a real context) and a manual frame scheduler, so
  * incremental build, context-loss recovery, and disposal are all deterministic.
  */
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { Mesh, MeshBasicMaterial, MeshLambertMaterial, type LineLoop, type LineSegments } from 'three';
 import { MoveKind, ToolpathIRBuilder, type Confidence, type ToolpathIR } from '@chestnutlabs/toolpath-core';
 import {
@@ -67,7 +67,7 @@ function makeIR(
 interface Harness {
   renderer: ToolpathRenderer;
   canvas: HTMLCanvasElement;
-  glCalls: { render: number; dispose: number };
+  glCalls: { render: number; dispose: number; ratios: number[] };
   ticks: (() => void)[];
   runTicks: () => void;
   events: RendererEvent[];
@@ -81,13 +81,15 @@ function makeHarness(
     target?: number;
     quality?: QualityMode | 'auto';
     tube?: TubeOptions;
+    interactionQuality?: 'off' | 'auto';
   } = {}
 ): Harness {
   const canvas = document.createElement('canvas');
-  const glCalls = { render: 0, dispose: 0 };
+  const glCalls = { render: 0, dispose: 0, ratios: [] as number[] };
   const stub: GLRendererLike = {
     render: () => glCalls.render++,
     setSize: () => undefined,
+    setPixelRatio: (r: number) => glCalls.ratios.push(r),
     dispose: () => glCalls.dispose++,
     domElement: canvas
   };
@@ -100,6 +102,7 @@ function makeHarness(
     // opt into tubes/auto explicitly.
     quality: opts.quality ?? 'lines',
     tube: opts.tube,
+    interactionQuality: opts.interactionQuality,
     createRenderer: () => stub,
     scheduleFrame: (cb) => ticks.push(cb)
   });
@@ -432,6 +435,48 @@ describe('ToolpathRenderer clipping/scrub/visibility/coloring (phase 3)', () => 
     h2.events.length = 0;
     h2.renderer.setFrameContent('object');
     expect(h2.events.some((e) => e.type === 'error' && e.code === 'E_FRAME_CONTENT_UNAVAILABLE')).toBe(true);
+  });
+
+  it('interactionQuality:auto reduces pixel ratio while moving, restores on settle (#306/2, DD-020)', () => {
+    vi.useFakeTimers();
+    Object.defineProperty(window, 'devicePixelRatio', { value: 1, configurable: true });
+    try {
+      const h = makeHarness({ interactionQuality: 'auto' });
+      h.renderer.setIR(makeIR(1, 4));
+      h.runTicks();
+      h.glCalls.ratios.length = 0;
+      const priv = h.renderer as unknown as { onInteractionFrame(): void; settleInteraction(): void };
+      // A gesture frame proactively reduces the pixel ratio.
+      priv.onInteractionFrame();
+      const reduced = h.glCalls.ratios.at(-1)!;
+      // Settle restores the base ratio after the debounce.
+      priv.settleInteraction();
+      vi.advanceTimersByTime(200);
+      const restored = h.glCalls.ratios.at(-1)!;
+      // A gesture reduces detail below the resting base; settling restores the full base.
+      expect(reduced).toBeLessThan(restored);
+      expect(reduced).toBeGreaterThanOrEqual(restored * 0.4); // clamped to MIN_INTERACTION_FACTOR
+      h.renderer.dispose();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("interactionQuality:'off' never touches the pixel ratio (default, backward-compatible)", () => {
+    const h = makeHarness(); // default 'off'
+    h.renderer.setIR(makeIR(1, 4));
+    h.runTicks();
+    h.glCalls.ratios.length = 0;
+    (h.renderer as unknown as { onInteractionFrame(): void }).onInteractionFrame();
+    expect(h.glCalls.ratios).toHaveLength(0);
+    // Toggling on then off restores the base ratio and stops adapting.
+    h.renderer.setInteractionQuality('auto');
+    (h.renderer as unknown as { onInteractionFrame(): void }).onInteractionFrame();
+    const reduced = h.glCalls.ratios.at(-1)!;
+    h.renderer.setInteractionQuality('off');
+    const restored = h.glCalls.ratios.at(-1)!;
+    expect(restored).toBeGreaterThan(reduced); // 'off' restores full detail
+    h.renderer.dispose();
   });
 
   it('bedSurface:solid adds a filled plate under the grid; default adds none (#185)', () => {

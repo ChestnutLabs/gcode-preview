@@ -36,7 +36,7 @@ export type GcodePreviewSource = Uint8Array | ArrayBuffer | File | null;
 /** Advanced/test renderer injectables (pass-throughs of the controller's renderer contract). */
 export type ElementRendererOptions = Omit<
   NonNullable<PreviewControllerRenderer>,
-  'buildVolume' | 'quality' | 'cameraMode' | 'frameContent' | 'theme' | 'colorMode' | 'tube'
+  'buildVolume' | 'quality' | 'cameraMode' | 'frameContent' | 'interactionQuality' | 'theme' | 'colorMode' | 'tube'
 >;
 type PreviewControllerRenderer = NonNullable<Parameters<typeof createPreviewController>[0]>['renderer'];
 
@@ -45,6 +45,7 @@ const OBSERVED = [
   'quality',
   'camera-mode',
   'frame-content',
+  'interaction-quality',
   'view',
   'show-travel',
   'show-wipe',
@@ -158,6 +159,13 @@ export class GcodePreviewElement extends HTMLElement {
   }
   set frameContent(v: string | null) {
     this.reflect('frame-content', v);
+  }
+  /** #306/2 (DD-020): 'auto' reduces detail while the camera moves. */
+  get interactionQuality(): string | null {
+    return this.getAttribute('interaction-quality');
+  }
+  set interactionQuality(v: string | null) {
+    this.reflect('interaction-quality', v);
   }
   /** #268/#275/M6: preset orientation attribute (top/front/iso/…). */
   get view(): string | null {
@@ -274,6 +282,7 @@ export class GcodePreviewElement extends HTMLElement {
         quality: (this.getAttribute('quality') as 'auto' | 'lines' | 'tubes' | null) ?? 'auto',
         cameraMode: (this.getAttribute('camera-mode') as CameraMode | null) ?? undefined,
         frameContent: (this.getAttribute('frame-content') as 'object' | 'all' | null) ?? undefined,
+        interactionQuality: (this.getAttribute('interaction-quality') as 'off' | 'auto' | null) ?? undefined,
         colorMode: this._colorMode,
         tube: this._tube,
         theme: this._theme,
@@ -308,6 +317,9 @@ export class GcodePreviewElement extends HTMLElement {
         break;
       case 'frame-content':
         if (value !== null) c.setFrameContent(value as 'object' | 'all');
+        break;
+      case 'interaction-quality':
+        if (value !== null) c.setInteractionQuality(value as 'off' | 'auto');
         break;
       case 'view':
         if (value !== null) c.setView(value as CameraView);
