@@ -149,6 +149,8 @@ export interface ToolpathRendererOptions {
   quality?: QualityMode | 'auto';
   /** Camera projection (#150, DD-009 D3); default 'perspective'. */
   cameraMode?: CameraMode;
+  /** Framing target (#306/#6): 'all' extrusion (default) or the printed 'object' (excludes skirt/prime). */
+  frameContent?: 'object' | 'all';
   /** Tube profile parameters (tubes mode only). */
   tube?: TubeOptions;
   /** Bounded declarative theme (#153, DD-009 D4); omitted fields keep the default look. */
@@ -240,6 +242,8 @@ export class ToolpathRenderer {
   private volumeGroup: Group | null = null;
   /** Whether the build-volume wireframe cage is shown (#306/#6); the plate/grid is independent. */
   private cageVisible = true;
+  /** Framing target (#306/#6): 'all' = full extrude bounds (default); 'object' = printed object only. */
+  private frameContentMode: 'object' | 'all' = 'all';
   private volumeDef: BuildVolumeDef | null = null;
   // Themeable scene objects (#153): lights + resolved theme, retained so setTheme
   // can restyle them live. Materials for tube geometry are made per-chunk.
@@ -345,6 +349,7 @@ export class ToolpathRenderer {
     this.chunksPerTick = opts.chunksPerTick;
     this.colorMode = opts.colorMode ?? DEFAULT_COLOR;
     this.requestedQuality = opts.quality ?? 'auto';
+    this.frameContentMode = opts.frameContent ?? 'all';
     this.tubeOptions = opts.tube ?? {};
     // Default scheduler: rAF for frame alignment, with a timeout backstop so
     // work still progresses when rAF is suspended (hidden/throttled tabs —
@@ -1172,10 +1177,22 @@ export class ToolpathRenderer {
     this.render();
   }
 
+  /**
+   * Choose the bounds to frame to (#306/#6): `frameContent: 'object'` frames the printed object,
+   * excluding skirt/prime/purge, when the file has object labels; otherwise (or `'all'`) the full
+   * extrude bounds. Returns null when neither is finite (empty IR).
+   */
+  private frameBounds(): { min: { x: number; y: number; z: number }; max: { x: number; y: number; z: number } } | null {
+    const ir = this.ir;
+    if (ir === null) return null;
+    if (this.frameContentMode === 'object' && Number.isFinite(ir.objectBounds.min.x)) return ir.objectBounds;
+    return Number.isFinite(ir.bounds.min.x) ? ir.bounds : null;
+  }
+
   /** Fit the camera to the toolpath bounds (falls back to the build volume). */
   frame(): void {
     if (this.disposed) return;
-    const b = this.ir && Number.isFinite(this.ir.bounds.min.x) ? this.ir.bounds : null;
+    const b = this.frameBounds();
     const center = new Vector3();
     let radius = 100;
     if (b) {
@@ -1271,6 +1288,24 @@ export class ToolpathRenderer {
     const cage = this.volumeGroup?.getObjectByName('volumeCage');
     if (cage !== undefined) cage.visible = visible;
     this.render();
+  }
+
+  /**
+   * Frame the printed **object** vs. **all** extrusion (#306/#6). `'object'` excludes skirt/prime/purge
+   * so a prime line at the bed edge doesn't shrink the object in view — but only when the file carries
+   * object labels; otherwise it discloses (an honest `error` event) and frames all extrusion. Re-frames.
+   */
+  setFrameContent(mode: 'object' | 'all'): void {
+    if (this.disposed) return;
+    this.frameContentMode = mode;
+    if (mode === 'object' && this.ir !== null && !Number.isFinite(this.ir.objectBounds.min.x)) {
+      this.emit({
+        type: 'error',
+        code: 'E_FRAME_CONTENT_UNAVAILABLE',
+        message: "frameContent 'object' has no object-labeled geometry; framing all extrusion"
+      });
+    }
+    this.frame();
   }
 
   /** Set (or clear) the scene background from the theme. Null leaves three's default. */

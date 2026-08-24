@@ -17,15 +17,19 @@ function expand(b: ToolpathBounds, x: number, y: number, z: number): void {
 }
 
 /**
- * Compute bounds over segment endpoints, converting Float32 deltas back to absolute
- * coordinates via `origin`. Returns extrude-only bounds and travel-inclusive bounds.
+ * Compute bounds over segment endpoints, converting Float32 deltas back to absolute coordinates via
+ * `origin`. Returns extrude-only bounds, travel-inclusive bounds, and **object-only** bounds — the
+ * extrusion of labeled objects (`object != 0`), excluding skirt/prime/purge (which are `object 0`).
+ * `objectBounds` is empty (Infinity/-Infinity) when the file carries no object labels; a consumer
+ * that wants "frame the printed object, not the skirt" (#306/#6) uses it only when finite.
  */
 export function computeSegmentBounds(
   seg: ToolpathSegments,
   origin: Vec3
-): { bounds: ToolpathBounds; boundsWithTravel: ToolpathBounds } {
+): { bounds: ToolpathBounds; boundsWithTravel: ToolpathBounds; objectBounds: ToolpathBounds } {
   const bounds = emptyBounds();
   const boundsWithTravel = emptyBounds();
+  const objectBounds = emptyBounds();
   for (let i = 0; i < seg.count; i++) {
     const sx = origin.x + seg.x0[i];
     const sy = origin.y + seg.y0[i];
@@ -38,7 +42,11 @@ export function computeSegmentBounds(
     if ((seg.kind[i] & MoveKind.Extrude) !== 0) {
       expand(bounds, sx, sy, sz);
       expand(bounds, ex, ey, ez);
+      if (seg.object[i] !== 0) {
+        expand(objectBounds, sx, sy, sz);
+        expand(objectBounds, ex, ey, ez);
+      }
     }
   }
-  return { bounds, boundsWithTravel };
+  return { bounds, boundsWithTravel, objectBounds };
 }

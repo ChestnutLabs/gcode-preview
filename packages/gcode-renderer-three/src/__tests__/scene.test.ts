@@ -379,6 +379,61 @@ describe('ToolpathRenderer clipping/scrub/visibility/coloring (phase 3)', () => 
     expect(grp.getObjectByName('volumeCage')?.visible).toBe(true);
   });
 
+  it('frameContent:object frames the labeled object, not the skirt; discloses when unavailable (#306/#6)', () => {
+    // Skirt (object 0) far out; the actual object (object 1) compact near the middle.
+    const b = new ToolpathIRBuilder({ parserVersion: 'test', units: 'mm', unitsSource: 'known' });
+    b.setCapability('objects', 'known');
+    b.addSegment({
+      x0: 0,
+      y0: 0,
+      z0: 0.2,
+      x1: 200,
+      y1: 0,
+      z1: 0.2,
+      e: 3,
+      kind: MoveKind.Extrude,
+      layer: 0,
+      srcByte: 0,
+      object: 0
+    });
+    b.addSegment({
+      x0: 100,
+      y0: 100,
+      z0: 0.2,
+      x1: 110,
+      y1: 110,
+      z1: 0.2,
+      e: 3,
+      kind: MoveKind.Extrude,
+      layer: 0,
+      srcByte: 10,
+      object: 1
+    });
+    const ir = b.finalize();
+
+    const h = makeHarness();
+    h.renderer.setIR(ir);
+    h.runTicks();
+    h.renderer.setFrameContent('all');
+    const all = h.renderer.getCameraState();
+    h.renderer.setFrameContent('object');
+    const obj = h.renderer.getCameraState();
+    // Different framing target: 'object' centers on object 1 (~105,105), 'all' on the skirt-inflated box.
+    expect(obj.target.x).not.toBeCloseTo(all.target.x);
+    // 'object' frames tighter → camera nearer its target than the 'all' framing is to its own.
+    const dist = (s: typeof obj): number =>
+      Math.hypot(s.position.x - s.target.x, s.position.y - s.target.y, s.position.z - s.target.z);
+    expect(dist(obj)).toBeLessThan(dist(all));
+
+    // A file with no object labels discloses and frames all extrusion.
+    const h2 = makeHarness();
+    h2.renderer.setIR(makeIR(1, 4)); // no object labels
+    h2.runTicks();
+    h2.events.length = 0;
+    h2.renderer.setFrameContent('object');
+    expect(h2.events.some((e) => e.type === 'error' && e.code === 'E_FRAME_CONTENT_UNAVAILABLE')).toBe(true);
+  });
+
   it('bedSurface:solid adds a filled plate under the grid; default adds none (#185)', () => {
     const bare = createBuildVolume({ x: 200, y: 200, z: 250 });
     expect(bare.children.find((c) => c.name === 'bedSurface')).toBeUndefined();

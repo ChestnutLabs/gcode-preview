@@ -211,5 +211,11 @@ export interface ToolpathIR {
   bounds: ToolpathBounds;
   /** Bounds including travel moves. */
   boundsWithTravel: ToolpathBounds;
+  /**
+   * Bounds over the extrusion of labeled objects (`segments.object != 0`) — excludes skirt/prime/purge
+   * (which are `object 0`). Empty (Infinity/-Infinity) when the file carries no object labels. Used to
+   * "frame the printed object, not the skirt" (#306/#6); a consumer checks it is finite before use.
+   */
+  objectBounds: ToolpathBounds;
   sourceIndex: SourceIndex;
 }

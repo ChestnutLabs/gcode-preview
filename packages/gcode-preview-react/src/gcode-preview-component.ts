@@ -56,6 +56,8 @@ export interface GcodePreviewProps {
   quality?: QualityMode | 'auto';
   /** #150 (DD-009 D3): camera projection. */
   cameraMode?: CameraMode;
+  /** #306/#6: frame the printed 'object' (excl. skirt/prime) or 'all' extrusion. Default 'all'. */
+  frameContent?: 'object' | 'all';
   /** #268/#275/M6: snap to a preset orientation (top/front/iso/…). Instant; preserves the projection. */
   view?: CameraView;
   /** #268/#275/M6: restore a saved camera pose. Pair with `onCameraChange` for a two-way binding. */
@@ -84,7 +86,7 @@ export interface GcodePreviewProps {
   /** Advanced/test renderer injectables (pass-throughs of the renderer contract). */
   rendererOptions?: Omit<
     NonNullable<UseGcodePreviewOptions['renderer']>,
-    'buildVolume' | 'quality' | 'cameraMode' | 'theme' | 'colorMode' | 'tube'
+    'buildVolume' | 'quality' | 'cameraMode' | 'frameContent' | 'theme' | 'colorMode' | 'tube'
   >;
   onReady?: (summary: {
     segments: number;
@@ -117,6 +119,7 @@ function GcodePreviewImpl(props: GcodePreviewProps, ref: ForwardedRef<GcodePrevi
       buildVolume: isMachine ? undefined : (props.buildVolume as BuildVolumeDef | undefined),
       quality: props.quality ?? 'auto',
       cameraMode: props.cameraMode ?? 'perspective',
+      frameContent: props.frameContent ?? 'all',
       theme: props.theme,
       colorMode: props.colorMode,
       tube: props.tube,
@@ -194,6 +197,7 @@ function GcodePreviewImpl(props: GcodePreviewProps, ref: ForwardedRef<GcodePrevi
     colorMode,
     quality,
     cameraMode,
+    frameContent,
     view,
     cameraState,
     theme,
@@ -234,6 +238,9 @@ function GcodePreviewImpl(props: GcodePreviewProps, ref: ForwardedRef<GcodePrevi
   useEffect(() => {
     if (cameraMode !== undefined) preview.controls.setCameraMode(cameraMode);
   }, [cameraMode]);
+  useEffect(() => {
+    if (frameContent !== undefined) preview.controls.setFrameContent(frameContent);
+  }, [frameContent]);
   useEffect(() => {
     if (view !== undefined) preview.controls.setView(view);
   }, [view]);

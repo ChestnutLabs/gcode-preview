@@ -182,7 +182,7 @@ export class ToolpathIRBuilder {
     };
     const origin = this.originOffset ?? { x: 0, y: 0, z: 0 };
     const layers = deriveLayers(segments, origin.z);
-    const { bounds, boundsWithTravel } = computeSegmentBounds(segments, origin);
+    const { bounds, boundsWithTravel, objectBounds } = computeSegmentBounds(segments, origin);
     const sourceIndex = buildSourceIndex(segments.srcByte, count);
 
     const header: ToolpathIRHeader = {
@@ -213,6 +213,7 @@ export class ToolpathIRBuilder {
       colorChanges: this.colorChangesList,
       bounds,
       boundsWithTravel,
+      objectBounds,
       sourceIndex
     };
   }

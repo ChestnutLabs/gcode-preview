@@ -93,6 +93,8 @@ export interface PreviewControllerOptions {
     quality?: QualityMode | 'auto';
     /** Camera projection (#150, DD-009 D3); default 'perspective'. 3D only. */
     cameraMode?: CameraMode;
+    /** Framing target (#306/#6): 'all' extrusion (default) or the printed 'object'. 3D only. */
+    frameContent?: 'object' | 'all';
     colorMode?: ColorMode;
     tube?: TubeOptions;
     /** Bounded declarative theme (#153, DD-009 D4). 3D only. */
@@ -174,6 +176,8 @@ export interface GcodePreviewControls {
   setBuildVolume(def: BuildVolumeDef | MachineGeometry): void;
   /** Show/hide the build-volume wireframe cage independently of the bed/plate (#306/#6). */
   setBuildVolumeCage(visible: boolean): void;
+  /** Frame the printed 'object' (excl. skirt/prime) vs 'all' extrusion, and re-frame (#306/#6). */
+  setFrameContent(mode: 'object' | 'all'): void;
   frame(): void;
 }
 
@@ -350,6 +354,7 @@ export function createPreviewController(options: PreviewControllerOptions = {}):
           buildVolume: r.buildVolume,
           quality: r.quality ?? 'auto',
           cameraMode: r.cameraMode,
+          frameContent: r.frameContent,
           colorMode: r.colorMode,
           tube: r.tube,
           theme: r.theme,
@@ -483,6 +488,7 @@ export function createPreviewController(options: PreviewControllerOptions = {}):
       withRenderer((r) => r.setBuildVolume(def));
     },
     setBuildVolumeCage: (v) => withRenderer((r) => r.setBuildVolumeCage(v)),
+    setFrameContent: (m) => withRenderer((r) => r.setFrameContent(m)),
     frame: () => withRenderer((r) => r.frame())
   };
 

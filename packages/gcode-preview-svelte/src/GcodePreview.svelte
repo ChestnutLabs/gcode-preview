@@ -22,6 +22,8 @@
   export let quality = 'auto';
   /** #150 (DD-009 D3): camera projection ('perspective' | 'orthographic'). */
   export let cameraMode = 'perspective';
+  /** #306/#6: frame the printed 'object' (excl. skirt/prime) or 'all' extrusion. Default 'all'. */
+  export let frameContent = 'all';
   /** #268/#275/M6: snap to a preset orientation (top/front/iso/…). */
   export let view = undefined;
   /** #268/#275/M6: restore a saved camera pose. Pair with the `camerachange` event for two-way. */
@@ -65,6 +67,7 @@
       buildVolume: isMachine ? undefined : buildVolume,
       quality,
       cameraMode,
+      frameContent,
       theme,
       colorMode,
       tube,
@@ -141,6 +144,7 @@
   $: if (colorMode !== undefined) preview.controls.setColorMode(colorMode);
   $: preview.controls.setQuality(quality);
   $: preview.controls.setCameraMode(cameraMode);
+  $: preview.controls.setFrameContent(frameContent);
   $: if (view !== undefined) preview.controls.setView(view);
   $: if (cameraState !== undefined && cameraState !== null) preview.controls.setCameraState(cameraState);
   $: if (theme !== undefined) preview.controls.setTheme(theme);
