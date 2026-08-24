@@ -1,5 +1,37 @@
 # @chestnutlabs/gcode-model-renderer
 
+## 0.8.0
+
+### Minor Changes
+
+- [#318](https://github.com/ChestnutLabs/gcode-preview/pull/318) [`959e507`](https://github.com/ChestnutLabs/gcode-preview/commit/959e50779f3e2f84672a10e0e9ec0bfc5174f691) Thanks [@sobechestnut-dev](https://github.com/sobechestnut-dev)! - feat(model-renderer): decode Bambu/Orca 3MF `paint_color` for production multicolor
+
+  Real designer-authored Bambu Studio / OrcaSlicer 3MF files paint per-region colour with a proprietary
+  `paint_color` facet attribute and keep the palette in `project_settings.config` — not in standard 3MF
+  materials. `parse3mf` / `renderModelStill` now decode that facet-paint format (clean-room from the
+  observed encoding, see RR-005) and read the `filament_colour` palette themselves, so a multicolor
+  source model renders in its true colours without slicing. Capability-honest: `materials: 'known'`
+  (or `'approximated'` when a few multi-colour facets are flattened), and still `'unavailable'` — neutral
+  default, never a fabricated colour — when no palette is present.
+
+  `@chestnutlabs/gcode-containers` gains an exported `filamentColoursFromSettings(settings)` helper so the
+  "which key is the palette" semantics live in one place, shared by the toolpath and model paths.
+
+- [#320](https://github.com/ChestnutLabs/gcode-preview/pull/320) [`2c9cdcb`](https://github.com/ChestnutLabs/gcode-preview/commit/2c9cdcb84f9fc8d5b80024a1f8da9e1f61137b8d) Thanks [@sobechestnut-dev](https://github.com/sobechestnut-dev)! - feat(model-renderer): optional `filamentPalette` override on `renderModelStill` / `parse3mf`
+
+  Consumers that already hold a corrected or richer filament palette (e.g. re-rendering a sliced
+  `.gcode.3mf`) can pass `filamentPalette` (hex `#RRGGBB` per 0-based slot) to override the palette read
+  from the file's `project_settings.config` when colouring `paint_color` facets. Additive and optional —
+  the renderer stays self-sufficient and reads the file's own palette without it. Mirrors the toolpath
+  renderer's `mode: 'tool'` colour seam.
+
+### Patch Changes
+
+- Updated dependencies [[`959e507`](https://github.com/ChestnutLabs/gcode-preview/commit/959e50779f3e2f84672a10e0e9ec0bfc5174f691)]:
+  - @chestnutlabs/gcode-containers@0.8.0
+  - @chestnutlabs/gcode-renderer-three@0.8.0
+  - @chestnutlabs/toolpath-core@0.8.0
+
 ## 0.7.0
 
 ### Minor Changes

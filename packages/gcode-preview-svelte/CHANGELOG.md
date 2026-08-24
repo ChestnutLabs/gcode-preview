@@ -1,5 +1,15 @@
 # @chestnutlabs/gcode-preview-svelte
 
+## 0.8.0
+
+### Patch Changes
+
+- Updated dependencies []:
+  - @chestnutlabs/gcode-parser@0.8.0
+  - @chestnutlabs/gcode-preview-core@0.8.0
+  - @chestnutlabs/gcode-renderer-three@0.8.0
+  - @chestnutlabs/toolpath-core@0.8.0
+
 ## 0.7.0
 
 ### Minor Changes
