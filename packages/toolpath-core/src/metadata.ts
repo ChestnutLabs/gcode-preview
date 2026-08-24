@@ -107,6 +107,18 @@ export interface DialectMetadata {
   /** The slicer's own print-time estimate (#183); absent when not emitted. */
   printEstimate?: PrintEstimate;
   thumbnails?: ThumbnailData[];
+  /**
+   * Multi-plate container plates (#306/#3): the discovered plates and which one was parsed into this
+   * IR. Absent for non-container / single-plate sources. One plate is parsed at a time — plates are
+   * never merged into one scene; re-parse with `parseOptions.plate` to select another.
+   */
+  plates?: { list: readonly PlateSummary[]; parsed: number };
   /** Whitelisted key/value settings only — bounded, never local paths. */
   raw?: Record<string, string>;
+}
+
+/** A plate in a multi-plate container (`Metadata/plate_N.gcode`). */
+export interface PlateSummary {
+  index: number;
+  name: string;
 }
