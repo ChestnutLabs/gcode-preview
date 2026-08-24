@@ -51,6 +51,12 @@ export interface PreviewRenderer {
   readonly layerCount: number;
   readonly segmentCount: number;
   setBuildVolume(def: BuildVolumeDef | MachineGeometry): void;
+  /** Show/hide the build-volume wireframe cage independently of the bed/plate (#306/#6). */
+  setBuildVolumeCage(visible: boolean): void;
+  /** Frame the printed 'object' (excl. skirt/prime) vs 'all' extrusion (#306/#6). */
+  setFrameContent(mode: 'object' | 'all'): void;
+  /** Interaction-aware quality: 'auto' reduces detail while the camera moves (#306/2, DD-020). */
+  setInteractionQuality(mode: 'off' | 'auto'): void;
   setLayerRange(startLayer: number, endLayer: number): void;
   setScrubPosition(segIndex: number | null): void;
   setKindVisible(kind: MoveKindToggle, visible: boolean): void;

@@ -1031,7 +1031,7 @@ export function createEngine(input: string | Uint8Array, opts: ParseOptions): En
     stats.segments = segments.count;
 
     const origin = { x: ox, y: oy, z: oz };
-    const { bounds, boundsWithTravel } = computeSegmentBounds(segments, origin);
+    const { bounds, boundsWithTravel, objectBounds } = computeSegmentBounds(segments, origin);
     const sourceIndex = buildSourceIndex(segments.srcByte, segments.count);
 
     // Layer table for the IR (absolute z; seg ranges accumulated above).
@@ -1128,6 +1128,7 @@ export function createEngine(input: string | Uint8Array, opts: ParseOptions): En
       })),
       bounds,
       boundsWithTravel,
+      objectBounds,
       sourceIndex
     };
 
@@ -1157,7 +1158,7 @@ export function createEngine(input: string | Uint8Array, opts: ParseOptions): En
       throw err;
     }
     const origin = { x: ox, y: oy, z: oz };
-    const { bounds, boundsWithTravel } = computeSegmentBounds(channels, origin);
+    const { bounds, boundsWithTravel, objectBounds } = computeSegmentBounds(channels, origin);
     const lastZ = channels.count > 0 ? oz + channels.z1[channels.count - 1] : oz;
     const slice: ToolpathIR = {
       header: {
@@ -1202,6 +1203,7 @@ export function createEngine(input: string | Uint8Array, opts: ParseOptions): En
       colorChanges: [],
       bounds,
       boundsWithTravel,
+      objectBounds,
       sourceIndex: { byteOffsets: new Uint32Array(0), segmentIndices: new Uint32Array(0) }
     };
     return { slice, upTo: cut };

@@ -6,7 +6,7 @@
  * only WebGLRenderer needs a real context) and a manual frame scheduler, so
  * incremental build, context-loss recovery, and disposal are all deterministic.
  */
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { Mesh, MeshBasicMaterial, MeshLambertMaterial, type LineLoop, type LineSegments } from 'three';
 import { MoveKind, ToolpathIRBuilder, type Confidence, type ToolpathIR } from '@chestnutlabs/toolpath-core';
 import {
@@ -67,7 +67,7 @@ function makeIR(
 interface Harness {
   renderer: ToolpathRenderer;
   canvas: HTMLCanvasElement;
-  glCalls: { render: number; dispose: number };
+  glCalls: { render: number; dispose: number; ratios: number[] };
   ticks: (() => void)[];
   runTicks: () => void;
   events: RendererEvent[];
@@ -81,13 +81,15 @@ function makeHarness(
     target?: number;
     quality?: QualityMode | 'auto';
     tube?: TubeOptions;
+    interactionQuality?: 'off' | 'auto';
   } = {}
 ): Harness {
   const canvas = document.createElement('canvas');
-  const glCalls = { render: 0, dispose: 0 };
+  const glCalls = { render: 0, dispose: 0, ratios: [] as number[] };
   const stub: GLRendererLike = {
     render: () => glCalls.render++,
     setSize: () => undefined,
+    setPixelRatio: (r: number) => glCalls.ratios.push(r),
     dispose: () => glCalls.dispose++,
     domElement: canvas
   };
@@ -100,6 +102,7 @@ function makeHarness(
     // opt into tubes/auto explicitly.
     quality: opts.quality ?? 'lines',
     tube: opts.tube,
+    interactionQuality: opts.interactionQuality,
     createRenderer: () => stub,
     scheduleFrame: (cb) => ticks.push(cb)
   });
@@ -356,6 +359,124 @@ describe('ToolpathRenderer clipping/scrub/visibility/coloring (phase 3)', () => 
     expect(minY).toBe(0);
     expect(maxX).toBe(220);
     expect(maxY).toBe(220);
+  });
+
+  it('build-volume cage is independently toggleable, default visible (#306/#6)', () => {
+    // createBuildVolume: cage named 'volumeCage', respects style.showCage (default true).
+    const shown = createBuildVolume({ x: 200, y: 200, z: 250 });
+    expect(shown.getObjectByName('volumeCage')?.visible).toBe(true);
+    const hidden = createBuildVolume({ x: 200, y: 200, z: 250 }, { showCage: false });
+    expect(hidden.getObjectByName('volumeCage')?.visible).toBe(false);
+    // The plate/grid is independent — still present when the cage is hidden.
+    expect(hidden.children.some((c) => c.type === 'LineSegments' && c.name !== 'volumeCage')).toBe(true);
+
+    // Renderer-level toggle flips the cage in place, plate unaffected.
+    const h = makeHarness();
+    const grp = (
+      h.renderer as unknown as { volumeGroup: { getObjectByName(n: string): { visible: boolean } | undefined } }
+    ).volumeGroup;
+    expect(grp.getObjectByName('volumeCage')?.visible).toBe(true);
+    h.renderer.setBuildVolumeCage(false);
+    expect(grp.getObjectByName('volumeCage')?.visible).toBe(false);
+    h.renderer.setBuildVolumeCage(true);
+    expect(grp.getObjectByName('volumeCage')?.visible).toBe(true);
+  });
+
+  it('frameContent:object frames the labeled object, not the skirt; discloses when unavailable (#306/#6)', () => {
+    // Skirt (object 0) far out; the actual object (object 1) compact near the middle.
+    const b = new ToolpathIRBuilder({ parserVersion: 'test', units: 'mm', unitsSource: 'known' });
+    b.setCapability('objects', 'known');
+    b.addSegment({
+      x0: 0,
+      y0: 0,
+      z0: 0.2,
+      x1: 200,
+      y1: 0,
+      z1: 0.2,
+      e: 3,
+      kind: MoveKind.Extrude,
+      layer: 0,
+      srcByte: 0,
+      object: 0
+    });
+    b.addSegment({
+      x0: 100,
+      y0: 100,
+      z0: 0.2,
+      x1: 110,
+      y1: 110,
+      z1: 0.2,
+      e: 3,
+      kind: MoveKind.Extrude,
+      layer: 0,
+      srcByte: 10,
+      object: 1
+    });
+    const ir = b.finalize();
+
+    const h = makeHarness();
+    h.renderer.setIR(ir);
+    h.runTicks();
+    h.renderer.setFrameContent('all');
+    const all = h.renderer.getCameraState();
+    h.renderer.setFrameContent('object');
+    const obj = h.renderer.getCameraState();
+    // Different framing target: 'object' centers on object 1 (~105,105), 'all' on the skirt-inflated box.
+    expect(obj.target.x).not.toBeCloseTo(all.target.x);
+    // 'object' frames tighter → camera nearer its target than the 'all' framing is to its own.
+    const dist = (s: typeof obj): number =>
+      Math.hypot(s.position.x - s.target.x, s.position.y - s.target.y, s.position.z - s.target.z);
+    expect(dist(obj)).toBeLessThan(dist(all));
+
+    // A file with no object labels discloses and frames all extrusion.
+    const h2 = makeHarness();
+    h2.renderer.setIR(makeIR(1, 4)); // no object labels
+    h2.runTicks();
+    h2.events.length = 0;
+    h2.renderer.setFrameContent('object');
+    expect(h2.events.some((e) => e.type === 'error' && e.code === 'E_FRAME_CONTENT_UNAVAILABLE')).toBe(true);
+  });
+
+  it('interactionQuality:auto reduces pixel ratio while moving, restores on settle (#306/2, DD-020)', () => {
+    vi.useFakeTimers();
+    Object.defineProperty(window, 'devicePixelRatio', { value: 1, configurable: true });
+    try {
+      const h = makeHarness({ interactionQuality: 'auto' });
+      h.renderer.setIR(makeIR(1, 4));
+      h.runTicks();
+      h.glCalls.ratios.length = 0;
+      const priv = h.renderer as unknown as { onInteractionFrame(): void; settleInteraction(): void };
+      // A gesture frame proactively reduces the pixel ratio.
+      priv.onInteractionFrame();
+      const reduced = h.glCalls.ratios.at(-1)!;
+      // Settle restores the base ratio after the debounce.
+      priv.settleInteraction();
+      vi.advanceTimersByTime(200);
+      const restored = h.glCalls.ratios.at(-1)!;
+      // A gesture reduces detail below the resting base; settling restores the full base.
+      expect(reduced).toBeLessThan(restored);
+      expect(reduced).toBeGreaterThanOrEqual(restored * 0.4); // clamped to MIN_INTERACTION_FACTOR
+      h.renderer.dispose();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("interactionQuality:'off' never touches the pixel ratio (default, backward-compatible)", () => {
+    const h = makeHarness(); // default 'off'
+    h.renderer.setIR(makeIR(1, 4));
+    h.runTicks();
+    h.glCalls.ratios.length = 0;
+    (h.renderer as unknown as { onInteractionFrame(): void }).onInteractionFrame();
+    expect(h.glCalls.ratios).toHaveLength(0);
+    // Toggling on then off restores the base ratio and stops adapting.
+    h.renderer.setInteractionQuality('auto');
+    (h.renderer as unknown as { onInteractionFrame(): void }).onInteractionFrame();
+    const reduced = h.glCalls.ratios.at(-1)!;
+    h.renderer.setInteractionQuality('off');
+    const restored = h.glCalls.ratios.at(-1)!;
+    expect(restored).toBeGreaterThan(reduced); // 'off' restores full detail
+    h.renderer.dispose();
   });
 
   it('bedSurface:solid adds a filled plate under the grid; default adds none (#185)', () => {

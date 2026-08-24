@@ -22,6 +22,10 @@
   export let quality = 'auto';
   /** #150 (DD-009 D3): camera projection ('perspective' | 'orthographic'). */
   export let cameraMode = 'perspective';
+  /** #306/#6: frame the printed 'object' (excl. skirt/prime) or 'all' extrusion. Default 'all'. */
+  export let frameContent = 'all';
+  /** #306/2 (DD-020): 'auto' reduces detail while the camera moves. Default 'off'. */
+  export let interactionQuality = 'off';
   /** #268/#275/M6: snap to a preset orientation (top/front/iso/…). */
   export let view = undefined;
   /** #268/#275/M6: restore a saved camera pose. Pair with the `camerachange` event for two-way. */
@@ -41,6 +45,8 @@
   export let showWipe = true;
   /** DD-009 D1 (#148): opt-in retraction/deretraction markers. */
   export let showRetractions = false;
+  /** #306/#6: show the build-volume wireframe cage (independent of the bed/plate). Default true. */
+  export let showVolumeCage = true;
   /** DD-006 live progress observation; null hides the overlay. */
   export let progress = null;
   /** Worker factory escape hatch (DD-005 slim/custom entries; D2). */
@@ -63,6 +69,8 @@
       buildVolume: isMachine ? undefined : buildVolume,
       quality,
       cameraMode,
+      frameContent,
+      interactionQuality,
       theme,
       colorMode,
       tube,
@@ -80,7 +88,8 @@
           layers: e.layers,
           complete: e.complete,
           capabilities: e.capabilities,
-          warnings: e.warnings
+          warnings: e.warnings,
+          metadata: e.metadata
         });
         break;
       case 'camera-changed':
@@ -134,9 +143,12 @@
   $: preview.controls.setKindVisible('travel', showTravel);
   $: preview.controls.setKindVisible('wipe', showWipe);
   $: preview.controls.setShowRetractions(showRetractions);
+  $: preview.controls.setBuildVolumeCage(showVolumeCage);
   $: if (colorMode !== undefined) preview.controls.setColorMode(colorMode);
   $: preview.controls.setQuality(quality);
   $: preview.controls.setCameraMode(cameraMode);
+  $: preview.controls.setFrameContent(frameContent);
+  $: preview.controls.setInteractionQuality(interactionQuality);
   $: if (view !== undefined) preview.controls.setView(view);
   $: if (cameraState !== undefined && cameraState !== null) preview.controls.setCameraState(cameraState);
   $: if (theme !== undefined) preview.controls.setTheme(theme);

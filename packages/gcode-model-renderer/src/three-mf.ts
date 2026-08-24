@@ -1,16 +1,23 @@
 /**
- * 3MF → {@link ModelScene} (DD-018 Phase 2). Multi-object, per-object/per-triangle **solid** colors,
- * build-item transforms — a multicolor model becomes a multicolor thumbnail without slicing.
+ * 3MF → {@link ModelScene} (DD-018 Phase 2, + production-extension follow-up). Multi-object,
+ * per-object/per-triangle **solid** colors, build-item transforms, and the **3MF Production Extension**
+ * (Bambu/MakerWorld default): `<components>` whose `<component p:path=…>` reference external
+ * `/3D/Objects/*.model` parts. A multicolor model becomes a multicolor thumbnail without slicing.
  *
  * 3MF is an OPC (ZIP) package; the ZIP is opened with the hardened, zero-dep reader from
- * `@chestnutlabs/gcode-containers` (DD-005 §7 — zip-bomb / traversal / size caps reused verbatim). The
- * 3D model part is a small XML document parsed here with a minimal, worker-safe scan (no `DOMParser`,
- * which Web Workers lack; no dependency). Only the subset needed for a presentation render is read:
+ * `@chestnutlabs/gcode-containers` (DD-005 §7 — zip-bomb / traversal / size caps reused verbatim). Each
+ * model part is a small XML document parsed with a minimal, worker-safe scan (no `DOMParser`, which Web
+ * Workers lack; no dependency). Only the subset needed for a presentation render is read:
  * `<vertices>/<triangles>`, object/triangle material refs, `<basematerials>`/`<m:colorgroup>` palettes,
- * and `<build><item>` transforms. Textures and non-color material properties are ignored (disclosed via
- * capability honesty), never fetched (no network).
+ * `<components><component>` (with `p:path`), and `<build><item>` transforms. Textures and non-color
+ * material properties are ignored (disclosed via capability honesty), never fetched (no network).
  */
-import { readDirectory, extractEntry, DEFAULT_CONTAINER_LIMITS } from '@chestnutlabs/gcode-containers';
+import {
+  readDirectory,
+  extractEntry,
+  DEFAULT_CONTAINER_LIMITS,
+  type ZipDirectory
+} from '@chestnutlabs/gcode-containers';
 import {
   IDENTITY_MAT4,
   type MeshGeometry,
@@ -19,7 +26,7 @@ import {
   type ModelScene,
   type RGB
 } from './scene-model.js';
-import { ModelParseError, resolveLimits, type ModelLimits } from './limits.js';
+import { ModelParseError, resolveLimits, type ModelLimits, type ResolvedLimits } from './limits.js';
 
 /** millimeter is the 3MF default; convert others to mm. */
 const UNIT_TO_MM: Record<string, number> = {
@@ -31,14 +38,32 @@ const UNIT_TO_MM: Record<string, number> = {
   foot: 304.8
 };
 
+/** Max component-resolution depth (guards cyclic / pathological assemblies). */
+const MAX_DEPTH = 50;
+
+interface Component {
+  /** Absolute OPC path to an external model part (production extension), or undefined = same part. */
+  path?: string;
+  objectid: string;
+  transform: number[] | null;
+}
+
 interface ParsedObject {
   name?: string;
   vertices: number[]; // flat xyz, indexed
   tris: number[]; // flat v1,v2,v3 per triangle
   triColorIdx: (readonly [number, number, number] | null)[]; // per-triangle [c1,c2,c3] palette indices, or null
   triPid: (string | null)[]; // per-triangle property group id (for palette lookup)
+  components: Component[]; // production-extension sub-assemblies
   objPid?: string;
   objPindex?: number;
+}
+
+interface ModelPart {
+  objects: Map<string, ParsedObject>;
+  palettes: Map<string, RGB[]>; // resource id → colors
+  unitScale: number;
+  items: { objectid: string; transform: number[] | null }[];
 }
 
 const TAG_RE = /<(\/?)([\w:.-]+)((?:[^>"']|"[^"]*"|'[^']*')*?)(\/?)>/g;
@@ -72,51 +97,34 @@ function srgbHexToLinear(hex: string): RGB | null {
   return Number.isNaN(r) || Number.isNaN(g) || Number.isNaN(b) ? null : [r, g, b];
 }
 
-async function findModelXml(bytes: Uint8Array): Promise<Uint8Array> {
-  const limits = DEFAULT_CONTAINER_LIMITS;
-  const dir = readDirectory(bytes, limits);
-  // Prefer the conventional path, then the OPC-declared StartPart, then any *.model.
-  const byName = (pred: (n: string) => boolean): (typeof dir.entries)[number] | undefined =>
-    dir.entries.find((e) => pred(e.name.toLowerCase()));
-  let entry = byName((n) => n === '3d/3dmodel.model');
-  if (entry === undefined) {
-    const rels = byName((n) => n === '_rels/.rels');
-    if (rels !== undefined) {
-      const relXml = new TextDecoder().decode(await extractEntry(bytes, rels, limits.maxMetadataBytes));
-      const target = /Target="\/?([^"]+\.model)"/i.exec(relXml)?.[1];
-      if (target !== undefined) entry = byName((n) => n === target.toLowerCase());
-    }
-  }
-  if (entry === undefined) entry = byName((n) => n.endsWith('.model'));
-  if (entry === undefined) throw new ModelParseError('E_MODEL_PARSE', '3MF contains no 3D model part');
-  return extractEntry(bytes, entry, limits.maxExpandedBytesPerEntry);
+function parseTransform(s: string | undefined): number[] | null {
+  if (s === undefined) return null;
+  const v = s.trim().split(/\s+/).map(Number);
+  return v.length === 12 && v.every((n) => !Number.isNaN(n)) ? v : null;
 }
 
-/** Parse 3MF bytes into a {@link ModelScene}. Rejects with {@link ModelParseError} on failure. */
-export async function parse3mf(source: Uint8Array | ArrayBuffer, limits?: ModelLimits): Promise<ModelScene> {
-  const lim = resolveLimits(limits);
-  const bytes = source instanceof Uint8Array ? source : new Uint8Array(source);
-  if (bytes.byteLength === 0) throw new ModelParseError('E_MODEL_EMPTY', '3MF source is empty');
-  if (bytes.byteLength > lim.maxSourceBytes) {
-    throw new ModelParseError(
-      'E_MODEL_TOO_LARGE',
-      `3MF source ${bytes.byteLength} bytes exceeds limit ${lim.maxSourceBytes}`
-    );
-  }
+/** Apply a 3MF row-vector affine (12 values) to a point. */
+function applyTransform(v: number[], x: number, y: number, z: number): [number, number, number] {
+  return [
+    v[0] * x + v[3] * y + v[6] * z + v[9],
+    v[1] * x + v[4] * y + v[7] * z + v[10],
+    v[2] * x + v[5] * y + v[8] * z + v[11]
+  ];
+}
 
-  let xml: string;
-  try {
-    xml = new TextDecoder().decode(await findModelXml(bytes));
-  } catch (e) {
-    if (e instanceof ModelParseError) throw e;
-    throw new ModelParseError('E_MODEL_PARSE', `3MF unzip failed: ${(e as Error).message}`);
-  }
+/** Apply a chain of transforms in order (innermost first): comp → … → build item. */
+function applyChain(chain: number[][], x: number, y: number, z: number): [number, number, number] {
+  let p: [number, number, number] = [x, y, z];
+  for (const t of chain) p = applyTransform(t, p[0], p[1], p[2]);
+  return p;
+}
 
-  // Single scan over the model XML.
+/** Parse ONE model part's XML into objects/palettes/items (no cross-part resolution). */
+function parseModelPart(xml: string, lim: ResolvedLimits): ModelPart {
   let unitScale = 1;
-  const palettes = new Map<string, RGB[]>(); // resource id → colors
+  const palettes = new Map<string, RGB[]>();
   const objects = new Map<string, ParsedObject>();
-  const items: { objectid: string; transform?: string }[] = [];
+  const items: { objectid: string; transform: number[] | null }[] = [];
 
   let curObj: ParsedObject | null = null;
   let curObjId: string | null = null;
@@ -153,13 +161,24 @@ export async function parse3mf(source: Uint8Array | ArrayBuffer, limits?: ModelL
       } else {
         const a = attrs(raw);
         curObjId = a.id ?? null;
-        curObj = { vertices: [], tris: [], triColorIdx: [], triPid: [], name: a.name };
+        curObj = { vertices: [], tris: [], triColorIdx: [], triPid: [], components: [], name: a.name };
         if (a.pid !== undefined) curObj.objPid = a.pid;
         if (a.pindex !== undefined) curObj.objPindex = Number(a.pindex);
         if (selfClose) {
           curObj = null;
           curObjId = null;
         }
+      }
+    } else if (name === 'component' && curObj !== null) {
+      // Production extension: a sub-object, possibly in an external part via `p:path` (any prefix).
+      const a = attrs(raw);
+      const path = a['p:path'] ?? a.path;
+      if (a.objectid !== undefined) {
+        curObj.components.push({
+          ...(path !== undefined ? { path } : {}),
+          objectid: a.objectid,
+          transform: parseTransform(a.transform)
+        });
       }
     } else if (name === 'vertex' && curObj !== null) {
       const a = attrs(raw);
@@ -172,7 +191,6 @@ export async function parse3mf(source: Uint8Array | ArrayBuffer, limits?: ModelL
       }
       const pid = a.pid ?? curObj.objPid ?? null;
       curObj.triPid.push(pid);
-      // Per-vertex color indices p1/p2/p3 (fall back to p1 for all, then object pindex).
       if (a.p1 !== undefined) {
         const p1 = Number(a.p1);
         const p2 = a.p2 !== undefined ? Number(a.p2) : p1;
@@ -188,111 +206,192 @@ export async function parse3mf(source: Uint8Array | ArrayBuffer, limits?: ModelL
       inBuild = !closing;
     } else if (name === 'item' && inBuild && !closing) {
       const a = attrs(raw);
-      if (a.objectid !== undefined) items.push({ objectid: a.objectid, transform: a.transform });
+      if (a.objectid !== undefined) items.push({ objectid: a.objectid, transform: parseTransform(a.transform) });
     }
   }
-
-  return assemble(objects, palettes, items, unitScale, lim.maxTriangles);
+  return { objects, palettes, unitScale, items };
 }
 
-function parseTransform(s: string | undefined): number[] | null {
-  if (s === undefined) return null;
-  const v = s.trim().split(/\s+/).map(Number);
-  return v.length === 12 && v.every((n) => !Number.isNaN(n)) ? v : null;
+/** Accumulators threaded through the recursive resolve. */
+interface BuildState {
+  built: ModelObject[];
+  anyColor: boolean;
+  anyTransform: boolean;
+  min: [number, number, number];
+  max: [number, number, number];
+  totalTris: number;
 }
 
-/** Apply a 3MF row-vector affine (12 values) to a point. */
-function applyTransform(v: number[], x: number, y: number, z: number): [number, number, number] {
-  return [
-    v[0] * x + v[3] * y + v[6] * z + v[9],
-    v[1] * x + v[4] * y + v[7] * z + v[10],
-    v[2] * x + v[5] * y + v[8] * z + v[11]
-  ];
-}
-
-function assemble(
-  objects: Map<string, ParsedObject>,
-  palettes: Map<string, RGB[]>,
-  items: { objectid: string; transform?: string }[],
-  unitScale: number,
-  maxTriangles: number
-): ModelScene {
-  // With no <build>, render every declared object at identity (some minimal 3MFs omit build).
-  const instances =
-    items.length > 0 ? items : [...objects.keys()].map((objectid) => ({ objectid, transform: undefined }));
-
-  const built: ModelObject[] = [];
-  let anyColor = false;
-  let anyTransform = false;
-  const min: [number, number, number] = [Infinity, Infinity, Infinity];
-  const max: [number, number, number] = [-Infinity, -Infinity, -Infinity];
-  let totalTris = 0;
-
-  for (const inst of instances) {
-    const obj = objects.get(inst.objectid);
-    if (obj === undefined || obj.tris.length === 0) continue;
-    const xform = parseTransform(inst.transform);
-    if (xform !== null) anyTransform = true;
-
-    const triCount = obj.tris.length / 3;
-    totalTris += triCount;
-    if (totalTris > maxTriangles)
-      throw new ModelParseError('E_MODEL_TOO_MANY_TRIANGLES', `3MF exceeds triangle limit ${maxTriangles}`);
-
-    // Expand to a non-indexed mesh (per-triangle colors need independent vertices).
-    const positions = new Float32Array(triCount * 9);
-    let colors: Float32Array | null = null;
-    let objHasColor = false;
-    for (let ti = 0; ti < triCount; ti++) {
-      const pid = obj.triPid[ti];
-      const palette = pid !== null ? palettes.get(pid) : undefined;
-      const cidx = obj.triColorIdx[ti];
-      for (let k = 0; k < 3; k++) {
-        const vi = obj.tris[ti * 3 + k] * 3;
-        let x = obj.vertices[vi] * unitScale;
-        let y = obj.vertices[vi + 1] * unitScale;
-        let z = obj.vertices[vi + 2] * unitScale;
-        if (xform !== null) [x, y, z] = applyTransform(xform, x, y, z);
-        const o = (ti * 3 + k) * 3;
-        positions[o] = x;
-        positions[o + 1] = y;
-        positions[o + 2] = z;
-        if (x < min[0]) min[0] = x;
-        if (y < min[1]) min[1] = y;
-        if (z < min[2]) min[2] = z;
-        if (x > max[0]) max[0] = x;
-        if (y > max[1]) max[1] = y;
-        if (z > max[2]) max[2] = z;
-        if (palette !== undefined && cidx !== null) {
-          const col = palette[cidx[k]] ?? palette[0];
-          if (col !== undefined) {
-            if (colors === null) colors = new Float32Array(triCount * 9);
-            colors[o] = col[0];
-            colors[o + 1] = col[1];
-            colors[o + 2] = col[2];
-            objHasColor = true;
-          }
+/** Bake one mesh object (its own triangles) into a `ModelObject`, applying the transform chain. */
+function bakeMesh(
+  obj: ParsedObject,
+  part: ModelPart,
+  chain: number[][],
+  id: string,
+  st: BuildState,
+  lim: ResolvedLimits
+): void {
+  const triCount = obj.tris.length / 3;
+  st.totalTris += triCount;
+  if (st.totalTris > lim.maxTriangles) {
+    throw new ModelParseError('E_MODEL_TOO_MANY_TRIANGLES', `3MF exceeds triangle limit ${lim.maxTriangles}`);
+  }
+  const positions = new Float32Array(triCount * 9);
+  let colors: Float32Array | null = null;
+  let objHasColor = false;
+  for (let ti = 0; ti < triCount; ti++) {
+    const pid = obj.triPid[ti];
+    const palette = pid !== null ? part.palettes.get(pid) : undefined;
+    const cidx = obj.triColorIdx[ti];
+    for (let k = 0; k < 3; k++) {
+      const vi = obj.tris[ti * 3 + k] * 3;
+      const [x, y, z] = applyChain(
+        chain,
+        obj.vertices[vi] * part.unitScale,
+        obj.vertices[vi + 1] * part.unitScale,
+        obj.vertices[vi + 2] * part.unitScale
+      );
+      const o = (ti * 3 + k) * 3;
+      positions[o] = x;
+      positions[o + 1] = y;
+      positions[o + 2] = z;
+      if (x < st.min[0]) st.min[0] = x;
+      if (y < st.min[1]) st.min[1] = y;
+      if (z < st.min[2]) st.min[2] = z;
+      if (x > st.max[0]) st.max[0] = x;
+      if (y > st.max[1]) st.max[1] = y;
+      if (z > st.max[2]) st.max[2] = z;
+      if (palette !== undefined && cidx !== null) {
+        const col = palette[cidx[k]] ?? palette[0];
+        if (col !== undefined) {
+          if (colors === null) colors = new Float32Array(triCount * 9);
+          colors[o] = col[0];
+          colors[o + 1] = col[1];
+          colors[o + 2] = col[2];
+          objHasColor = true;
         }
       }
     }
-    if (objHasColor) anyColor = true;
+  }
+  if (objHasColor) st.anyColor = true;
+  const geometry: MeshGeometry = colors !== null ? { positions, colors } : { positions };
+  const built: ModelObject = { id, geometry, transform: IDENTITY_MAT4 };
+  if (obj.name !== undefined) built.name = obj.name;
+  st.built.push(built);
+}
 
-    const geometry: MeshGeometry = colors !== null ? { positions, colors } : { positions };
-    const built1: ModelObject = { id: inst.objectid, geometry, transform: IDENTITY_MAT4 };
-    if (obj.name !== undefined) built1.name = obj.name;
-    built.push(built1);
+export async function parse3mf(source: Uint8Array | ArrayBuffer, limits?: ModelLimits): Promise<ModelScene> {
+  const lim = resolveLimits(limits);
+  const bytes = source instanceof Uint8Array ? source : new Uint8Array(source);
+  if (bytes.byteLength === 0) throw new ModelParseError('E_MODEL_EMPTY', '3MF source is empty');
+  if (bytes.byteLength > lim.maxSourceBytes) {
+    throw new ModelParseError(
+      'E_MODEL_TOO_LARGE',
+      `3MF source ${bytes.byteLength} bytes exceeds limit ${lim.maxSourceBytes}`
+    );
   }
 
-  if (built.length === 0) throw new ModelParseError('E_MODEL_EMPTY', '3MF contains no renderable geometry');
+  const climits = DEFAULT_CONTAINER_LIMITS;
+  let dir: ZipDirectory;
+  try {
+    dir = readDirectory(bytes, climits);
+  } catch (e) {
+    throw new ModelParseError('E_MODEL_PARSE', `3MF unzip failed: ${(e as Error).message}`);
+  }
+  const entryByName = (nameLower: string): ZipDirectory['entries'][number] | undefined =>
+    dir.entries.find((e) => e.name.toLowerCase() === nameLower);
 
-  const bounds: ModelBounds = { min, max };
+  // Locate the primary model part: conventional path, then OPC StartPart, then any *.model.
+  let mainEntry = entryByName('3d/3dmodel.model');
+  if (mainEntry === undefined) {
+    const rels = entryByName('_rels/.rels');
+    if (rels !== undefined) {
+      const relXml = new TextDecoder().decode(await extractEntry(bytes, rels, climits.maxMetadataBytes));
+      const target = /Target="\/?([^"]+\.model)"/i.exec(relXml)?.[1];
+      if (target !== undefined) mainEntry = entryByName(target.toLowerCase());
+    }
+  }
+  if (mainEntry === undefined) mainEntry = dir.entries.find((e) => e.name.toLowerCase().endsWith('.model'));
+  if (mainEntry === undefined) throw new ModelParseError('E_MODEL_PARSE', '3MF contains no 3D model part');
+
+  // Lazily parse model parts by absolute OPC path (production-extension components reference them).
+  const partCache = new Map<string, ModelPart>();
+  const parseEntry = async (entry: ZipDirectory['entries'][number]): Promise<ModelPart> => {
+    const key = entry.name.toLowerCase();
+    const cached = partCache.get(key);
+    if (cached !== undefined) return cached;
+    const xml = new TextDecoder().decode(await extractEntry(bytes, entry, climits.maxExpandedBytesPerEntry));
+    const part = parseModelPart(xml, lim);
+    partCache.set(key, part);
+    return part;
+  };
+  const getPartByPath = async (path: string): Promise<ModelPart | null> => {
+    const norm = path.replace(/^\//, '').toLowerCase();
+    const entry = entryByName(norm);
+    return entry === undefined ? null : parseEntry(entry);
+  };
+
+  let mainPart: ModelPart;
+  try {
+    mainPart = await parseEntry(mainEntry);
+  } catch (e) {
+    if (e instanceof ModelParseError) throw e;
+    throw new ModelParseError('E_MODEL_PARSE', `3MF unzip failed: ${(e as Error).message}`);
+  }
+
+  const st: BuildState = {
+    built: [],
+    anyColor: false,
+    anyTransform: false,
+    min: [Infinity, Infinity, Infinity],
+    max: [-Infinity, -Infinity, -Infinity],
+    totalTris: 0
+  };
+
+  // Resolve an object (mesh and/or components) within `part`, applying the transform chain.
+  const resolve = async (
+    part: ModelPart,
+    objectid: string,
+    chain: number[][],
+    id: string,
+    depth: number
+  ): Promise<void> => {
+    if (depth > MAX_DEPTH) return;
+    const obj = part.objects.get(objectid);
+    if (obj === undefined) return;
+    if (obj.tris.length > 0) bakeMesh(obj, part, chain, id, st, lim);
+    for (let ci = 0; ci < obj.components.length; ci++) {
+      const comp = obj.components[ci];
+      const targetPart = comp.path !== undefined ? await getPartByPath(comp.path) : part;
+      if (targetPart === null) continue;
+      // Apply the component transform FIRST (child space → this object), then the existing chain.
+      const childChain = comp.transform !== null ? [comp.transform, ...chain] : chain;
+      if (comp.transform !== null) st.anyTransform = true;
+      await resolve(targetPart, comp.objectid, childChain, `${id}.${ci}`, depth + 1);
+    }
+  };
+
+  // With no <build>, resolve every declared object at identity (some minimal 3MFs omit build).
+  const instances =
+    mainPart.items.length > 0
+      ? mainPart.items
+      : [...mainPart.objects.keys()].map((objectid) => ({ objectid, transform: null }));
+  for (const inst of instances) {
+    const chain = inst.transform !== null ? [inst.transform] : [];
+    if (inst.transform !== null) st.anyTransform = true;
+    await resolve(mainPart, inst.objectid, chain, inst.objectid, 0);
+  }
+
+  if (st.built.length === 0) throw new ModelParseError('E_MODEL_EMPTY', '3MF contains no renderable geometry');
+
+  const bounds: ModelBounds = { min: st.min, max: st.max };
   return {
-    objects: built,
+    objects: st.built,
     bounds,
     capabilities: {
-      materials: anyColor ? 'known' : 'unavailable',
-      transforms: anyTransform ? 'known' : 'unavailable',
-      multiObject: built.length > 1 ? 'known' : 'unavailable'
+      materials: st.anyColor ? 'known' : 'unavailable',
+      transforms: st.anyTransform ? 'known' : 'unavailable',
+      multiObject: st.built.length > 1 ? 'known' : 'unavailable'
     }
   };
 }

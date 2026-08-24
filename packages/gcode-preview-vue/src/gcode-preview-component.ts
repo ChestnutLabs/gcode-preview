@@ -20,7 +20,7 @@ import type {
   Theme,
   TubeOptions
 } from '@chestnutlabs/gcode-renderer-three';
-import type { Confidence, Warning } from '@chestnutlabs/toolpath-core';
+import type { Confidence, DialectMetadata, Warning } from '@chestnutlabs/toolpath-core';
 import type { MachineGeometry, ProgressObservation } from '@chestnutlabs/toolpath-core';
 import type { WireParseOptions, WorkerLike } from '@chestnutlabs/gcode-parser';
 import {
@@ -47,6 +47,10 @@ export const GcodePreview = defineComponent({
     quality: { type: String as PropType<QualityMode | 'auto'>, default: 'auto' },
     /** #150 (DD-009 D3): camera projection. */
     cameraMode: { type: String as PropType<CameraMode>, default: 'perspective' },
+    /** #306/#6: frame the printed 'object' (excl. skirt/prime) or 'all' extrusion. Default 'all'. */
+    frameContent: { type: String as PropType<'object' | 'all'>, default: 'all' },
+    /** #306/2 (DD-020): 'auto' reduces detail while the camera moves. Default 'off'. */
+    interactionQuality: { type: String as PropType<'off' | 'auto'>, default: 'off' },
     /** #268/#275/M6: snap to a preset orientation (top/front/iso/…). */
     view: { type: String as PropType<CameraView>, default: undefined },
     /** #268/#275/M6: restore a saved camera pose. Pair with `@camera-change` for a two-way binding. */
@@ -66,6 +70,8 @@ export const GcodePreview = defineComponent({
     showWipe: { type: Boolean, default: true },
     /** DD-009 D1 (#148): opt-in retraction/deretraction markers. */
     showRetractions: { type: Boolean, default: false },
+    /** #306/#6: show the build-volume wireframe cage (independent of the bed/plate). Default true. */
+    showVolumeCage: { type: Boolean, default: true },
     /** DD-006 live progress observation; null hides the overlay. */
     progress: { type: Object as PropType<ProgressObservation | null>, default: null },
     /** Worker factory escape hatch (DD-005 slim/custom entries; D2). Factory form only —
@@ -79,7 +85,14 @@ export const GcodePreview = defineComponent({
       type: Object as PropType<
         Omit<
           NonNullable<UseGcodePreviewOptions['renderer']>,
-          'buildVolume' | 'quality' | 'cameraMode' | 'theme' | 'colorMode' | 'tube'
+          | 'buildVolume'
+          | 'quality'
+          | 'cameraMode'
+          | 'frameContent'
+          | 'interactionQuality'
+          | 'theme'
+          | 'colorMode'
+          | 'tube'
         >
       >,
       default: undefined
@@ -93,6 +106,7 @@ export const GcodePreview = defineComponent({
       complete: boolean;
       capabilities: Record<string, Confidence>;
       warnings: readonly Warning[];
+      metadata: DialectMetadata | undefined;
     }) => true,
     'camera-change': (_state: CameraState) => true,
     'parse-error': (_e: { code: string; message: string }) => true,
@@ -115,6 +129,8 @@ export const GcodePreview = defineComponent({
         buildVolume: 'bed' in (props.buildVolume ?? {}) ? undefined : (props.buildVolume as BuildVolumeDef | undefined),
         quality: props.quality,
         cameraMode: props.cameraMode,
+        frameContent: props.frameContent,
+        interactionQuality: props.interactionQuality,
         theme: props.theme,
         colorMode: props.colorMode,
         tube: props.tube,
@@ -139,7 +155,8 @@ export const GcodePreview = defineComponent({
             layers: e.layers,
             complete: e.complete,
             capabilities: e.capabilities,
-            warnings: e.warnings
+            warnings: e.warnings,
+            metadata: e.metadata
           });
           break;
         case 'camera-changed':
@@ -232,6 +249,11 @@ export const GcodePreview = defineComponent({
       { immediate: true }
     );
     watch(
+      () => props.showVolumeCage,
+      (visible) => preview.controls.setBuildVolumeCage(visible),
+      { immediate: true }
+    );
+    watch(
       () => props.colorMode,
       (mode) => {
         if (mode !== undefined) preview.controls.setColorMode(mode);
@@ -244,6 +266,14 @@ export const GcodePreview = defineComponent({
     watch(
       () => props.cameraMode,
       (mode) => preview.controls.setCameraMode(mode)
+    );
+    watch(
+      () => props.frameContent,
+      (mode) => preview.controls.setFrameContent(mode)
+    );
+    watch(
+      () => props.interactionQuality,
+      (mode) => preview.controls.setInteractionQuality(mode)
     );
     watch(
       () => props.view,

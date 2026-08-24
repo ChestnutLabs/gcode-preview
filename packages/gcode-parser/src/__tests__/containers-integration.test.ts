@@ -47,6 +47,12 @@ describe('.gcode.3mf through the worker pipeline (#74)', () => {
     expect(result.metadata?.machine?.confidence).toBe('known');
     expect(result.metadata?.filaments?.length).toBe(2);
     expect(result.metadata?.raw?.['printer_model']).toBe('Chestnut Test Printer X1');
+    // Structured plate list (#306/#3): consumer can build a selector without scraping the warning.
+    expect(result.metadata?.plates?.list.map((p) => p.name)).toEqual([
+      'Metadata/plate_1.gcode',
+      'Metadata/plate_2.gcode'
+    ]);
+    expect(result.metadata?.plates?.parsed).toBe(0);
     session.dispose();
   });
 
@@ -55,6 +61,8 @@ describe('.gcode.3mf through the worker pipeline (#74)', () => {
     const result = await session.parse(load('mini-project.gcode.3mf'), { yieldIntervalMs: 5, plate: 1 });
     expect(result.ir.segments.count).toBe(251);
     expect(result.ir.header.warnings.some((w) => w.code === 'container-multiple-plates')).toBe(false);
+    expect(result.metadata?.plates?.parsed).toBe(1); // structured list reflects the selected plate (#306/#3)
+    expect(result.metadata?.plates?.list).toHaveLength(2);
     session.dispose();
 
     const session2 = new GcodeParseSession({ worker: loopbackWorker({ containers: CONTAINERS }) });

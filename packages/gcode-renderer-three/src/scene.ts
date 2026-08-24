@@ -149,6 +149,10 @@ export interface ToolpathRendererOptions {
   quality?: QualityMode | 'auto';
   /** Camera projection (#150, DD-009 D3); default 'perspective'. */
   cameraMode?: CameraMode;
+  /** Framing target (#306/#6): 'all' extrusion (default) or the printed 'object' (excludes skirt/prime). */
+  frameContent?: 'object' | 'all';
+  /** Interaction-aware quality (#306/2, DD-020): 'auto' reduces detail while the camera moves. Default 'off'. */
+  interactionQuality?: 'off' | 'auto';
   /** Tube profile parameters (tubes mode only). */
   tube?: TubeOptions;
   /** Bounded declarative theme (#153, DD-009 D4); omitted fields keep the default look. */
@@ -212,6 +216,15 @@ function isHtmlCanvas(c: RenderTargetCanvas): c is HTMLCanvasElement {
 const TICK_BUDGET_MS = 8;
 /** Tubes chunk target: ~2k segments keeps a single tube-chunk build under the stall budget. */
 const TUBES_CHUNK_TARGET = 2048;
+// Interaction-aware quality (DD-020): factor clamp, settle debounce, and the bounded frame-time
+// hysteresis band (derived from the §8 16 ms stall budget with interaction headroom).
+const MIN_INTERACTION_FACTOR = 0.4;
+/** Proactive reduction applied when a gesture starts (then adapted by frame time). */
+const DEFAULT_INTERACTION_FACTOR = 0.6;
+const INTERACTION_SETTLE_MS = 150;
+const INTERACTION_FRAME_BUDGET_HI = 22; // ms → step coarser
+const INTERACTION_FRAME_BUDGET_LO = 12; // ms → step finer
+const INTERACTION_FACTOR_STEP = 0.15;
 
 /**
  * Map a raycast hit on a toolpath chunk mesh — identified by its hit vertex index — back to the IR
@@ -238,6 +251,17 @@ export class ToolpathRenderer {
   private readonly root = new Group();
   private readonly toolpathGroup = new Group();
   private volumeGroup: Group | null = null;
+  /** Whether the build-volume wireframe cage is shown (#306/#6); the plate/grid is independent. */
+  private cageVisible = true;
+  /** Framing target (#306/#6): 'all' = full extrude bounds (default); 'object' = printed object only. */
+  private frameContentMode: 'object' | 'all' = 'all';
+  // Interaction-aware quality (DD-020, #306/2): reduce render detail (pixel ratio) while the camera moves,
+  // restore on settle. Off by default — no behavior change. `factor` is clamped to [MIN_FACTOR, 1].
+  private interactionQualityMode: 'off' | 'auto' = 'off';
+  private basePixelRatio = 1;
+  private interactionFactor = 1;
+  private interacting = false;
+  private settleTimer: ReturnType<typeof setTimeout> | null = null;
   private volumeDef: BuildVolumeDef | null = null;
   // Themeable scene objects (#153): lights + resolved theme, retained so setTheme
   // can restyle them live. Materials for tube geometry are made per-chunk.
@@ -343,6 +367,8 @@ export class ToolpathRenderer {
     this.chunksPerTick = opts.chunksPerTick;
     this.colorMode = opts.colorMode ?? DEFAULT_COLOR;
     this.requestedQuality = opts.quality ?? 'auto';
+    this.frameContentMode = opts.frameContent ?? 'all';
+    this.interactionQualityMode = opts.interactionQuality ?? 'off';
     this.tubeOptions = opts.tube ?? {};
     // Default scheduler: rAF for frame alignment, with a timeout backstop so
     // work still progresses when rAF is suspended (hidden/throttled tabs —
@@ -410,12 +436,13 @@ export class ToolpathRenderer {
         // the canvas is focused. Scoped to the canvas element (not window) so an embedded viewer never
         // hijacks the page's arrow keys; the adapters make the canvas focusable via `tabindex="0"`.
         this.controls.listenToKeyEvents(domEl);
-        this.controls.addEventListener('change', () => this.render());
+        this.controls.addEventListener('change', () => this.onInteractionFrame());
         // Two-way camera state (#275/M6): after a user interaction settles, publish the new pose so a
         // bound `cameraState` can persist it. `end` fires once per gesture (not per frame like `change`).
-        this.controls.addEventListener('end', () =>
-          this.emit({ type: 'camera-changed', state: this.getCameraState() })
-        );
+        this.controls.addEventListener('end', () => {
+          this.settleInteraction();
+          this.emit({ type: 'camera-changed', state: this.getCameraState() });
+        });
       } catch {
         this.controls = null; // headless hosts without full DOM events
       }
@@ -1170,10 +1197,22 @@ export class ToolpathRenderer {
     this.render();
   }
 
+  /**
+   * Choose the bounds to frame to (#306/#6): `frameContent: 'object'` frames the printed object,
+   * excluding skirt/prime/purge, when the file has object labels; otherwise (or `'all'`) the full
+   * extrude bounds. Returns null when neither is finite (empty IR).
+   */
+  private frameBounds(): { min: { x: number; y: number; z: number }; max: { x: number; y: number; z: number } } | null {
+    const ir = this.ir;
+    if (ir === null) return null;
+    if (this.frameContentMode === 'object' && Number.isFinite(ir.objectBounds.min.x)) return ir.objectBounds;
+    return Number.isFinite(ir.bounds.min.x) ? ir.bounds : null;
+  }
+
   /** Fit the camera to the toolpath bounds (falls back to the build volume). */
   frame(): void {
     if (this.disposed) return;
-    const b = this.ir && Number.isFinite(this.ir.bounds.min.x) ? this.ir.bounds : null;
+    const b = this.frameBounds();
     const center = new Vector3();
     let radius = 100;
     if (b) {
@@ -1254,8 +1293,99 @@ export class ToolpathRenderer {
       gridOpacity: t.gridOpacity,
       boxColor: t.bedColor,
       boxOpacity: t.bedOpacity,
-      bedSurface: t.bedSurface
+      bedSurface: t.bedSurface,
+      showCage: this.cageVisible
     };
+  }
+
+  /**
+   * Show/hide the build-volume wireframe **cage** independently of the bed/plate (#306/#6). Toggles the
+   * named `volumeCage` child in place (no geometry rebuild); persists so a later volume rebuild honors it.
+   */
+  setBuildVolumeCage(visible: boolean): void {
+    if (this.disposed) return;
+    this.cageVisible = visible;
+    const cage = this.volumeGroup?.getObjectByName('volumeCage');
+    if (cage !== undefined) cage.visible = visible;
+    this.render();
+  }
+
+  /**
+   * Frame the printed **object** vs. **all** extrusion (#306/#6). `'object'` excludes skirt/prime/purge
+   * so a prime line at the bed edge doesn't shrink the object in view — but only when the file carries
+   * object labels; otherwise it discloses (an honest `error` event) and frames all extrusion. Re-frames.
+   */
+  setFrameContent(mode: 'object' | 'all'): void {
+    if (this.disposed) return;
+    this.frameContentMode = mode;
+    if (mode === 'object' && this.ir !== null && !Number.isFinite(this.ir.objectBounds.min.x)) {
+      this.emit({
+        type: 'error',
+        code: 'E_FRAME_CONTENT_UNAVAILABLE',
+        message: "frameContent 'object' has no object-labeled geometry; framing all extrusion"
+      });
+    }
+    this.frame();
+  }
+
+  /** Toggle interaction-aware quality (DD-020, #306/2). 'off' restores full detail immediately. */
+  setInteractionQuality(mode: 'off' | 'auto'): void {
+    if (this.disposed) return;
+    this.interactionQualityMode = mode;
+    if (mode === 'off') {
+      if (this.settleTimer !== null) {
+        clearTimeout(this.settleTimer);
+        this.settleTimer = null;
+      }
+      this.interacting = false;
+      this.interactionFactor = 1;
+      this.applyPixelRatio(this.basePixelRatio);
+    }
+  }
+
+  private applyPixelRatio(r: number): void {
+    this.gl.setPixelRatio?.(r);
+  }
+
+  /** OrbitControls 'change' handler: render, and (when auto) reduce detail + adapt to frame time. */
+  private onInteractionFrame(): void {
+    if (this.disposed) return;
+    if (this.interactionQualityMode !== 'auto') {
+      this.render();
+      return;
+    }
+    if (!this.interacting) {
+      this.interacting = true;
+      this.basePixelRatio = typeof window !== 'undefined' ? window.devicePixelRatio || 1 : 1;
+      this.interactionFactor = DEFAULT_INTERACTION_FACTOR; // proactive reduction, then adapt below
+    }
+    if (this.settleTimer !== null) {
+      clearTimeout(this.settleTimer);
+      this.settleTimer = null;
+    }
+    this.applyPixelRatio(this.basePixelRatio * this.interactionFactor);
+    const t0 = Date.now();
+    this.render();
+    const dt = Date.now() - t0;
+    // Bounded hysteresis: too slow → coarser; comfortably fast → finer. Clamped to [MIN, 1].
+    if (dt > INTERACTION_FRAME_BUDGET_HI) {
+      this.interactionFactor = Math.max(MIN_INTERACTION_FACTOR, this.interactionFactor - INTERACTION_FACTOR_STEP);
+    } else if (dt < INTERACTION_FRAME_BUDGET_LO) {
+      this.interactionFactor = Math.min(1, this.interactionFactor + INTERACTION_FACTOR_STEP);
+    }
+  }
+
+  /** Restore full render detail a short debounce after the camera settles (DD-020). */
+  private settleInteraction(): void {
+    if (this.interactionQualityMode !== 'auto') return;
+    if (this.settleTimer !== null) clearTimeout(this.settleTimer);
+    this.settleTimer = setTimeout(() => {
+      this.settleTimer = null;
+      this.interacting = false;
+      this.interactionFactor = 1;
+      this.applyPixelRatio(this.basePixelRatio);
+      this.render();
+    }, INTERACTION_SETTLE_MS);
   }
 
   /** Set (or clear) the scene background from the theme. Null leaves three's default. */
@@ -1399,6 +1529,10 @@ export class ToolpathRenderer {
   dispose(): void {
     if (this.disposed) return;
     this.disposed = true;
+    if (this.settleTimer !== null) {
+      clearTimeout(this.settleTimer);
+      this.settleTimer = null;
+    }
     this.canvas.removeEventListener('webglcontextlost', this.onContextLost);
     this.canvas.removeEventListener('webglcontextrestored', this.onContextRestored);
     this.clearToolpathGeometry();

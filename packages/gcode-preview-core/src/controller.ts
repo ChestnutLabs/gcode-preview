@@ -62,6 +62,13 @@ export type PreviewEvent =
       capabilities: Record<string, Confidence>;
       /** Parse warnings (codes/messages), so consumers can surface disclosures without the raw handle. */
       warnings: readonly Warning[];
+      /**
+       * Slicer-reported metadata (per-tool `filaments`, `filamentUsage`, `printEstimate`, `thumbnails`,
+       * `dialects`, whitelisted `raw`) — for a consumer "Slice details" panel without the raw handle
+       * (#306/#4). Capability-honest: `undefined` when the file carried none; individual fields are
+       * absent (not fabricated) when a slicer didn't emit them. Purge/tower/cost are not parsed.
+       */
+      metadata: DialectMetadata | undefined;
     }
   | { type: 'parse-cancelled' }
   | { type: 'parse-error'; code: string; message: string }
@@ -86,6 +93,10 @@ export interface PreviewControllerOptions {
     quality?: QualityMode | 'auto';
     /** Camera projection (#150, DD-009 D3); default 'perspective'. 3D only. */
     cameraMode?: CameraMode;
+    /** Framing target (#306/#6): 'all' extrusion (default) or the printed 'object'. 3D only. */
+    frameContent?: 'object' | 'all';
+    /** Interaction-aware quality (#306/2, DD-020): 'auto' reduces detail while moving. 3D only. */
+    interactionQuality?: 'off' | 'auto';
     colorMode?: ColorMode;
     tube?: TubeOptions;
     /** Bounded declarative theme (#153, DD-009 D4). 3D only. */
@@ -165,6 +176,12 @@ export interface GcodePreviewControls {
   setTheme(theme: Theme): void;
   /** Marks the volume consumer-configured: file-discovered geometry stops auto-applying. */
   setBuildVolume(def: BuildVolumeDef | MachineGeometry): void;
+  /** Show/hide the build-volume wireframe cage independently of the bed/plate (#306/#6). */
+  setBuildVolumeCage(visible: boolean): void;
+  /** Frame the printed 'object' (excl. skirt/prime) vs 'all' extrusion, and re-frame (#306/#6). */
+  setFrameContent(mode: 'object' | 'all'): void;
+  /** Interaction-aware quality: 'auto' reduces detail while the camera moves (#306/2, DD-020). */
+  setInteractionQuality(mode: 'off' | 'auto'): void;
   frame(): void;
 }
 
@@ -341,6 +358,8 @@ export function createPreviewController(options: PreviewControllerOptions = {}):
           buildVolume: r.buildVolume,
           quality: r.quality ?? 'auto',
           cameraMode: r.cameraMode,
+          frameContent: r.frameContent,
+          interactionQuality: r.interactionQuality,
           colorMode: r.colorMode,
           tube: r.tube,
           theme: r.theme,
@@ -424,7 +443,8 @@ export function createPreviewController(options: PreviewControllerOptions = {}):
         layers: result.ir.layers.length,
         complete: result.ir.header.complete,
         capabilities: { ...result.ir.header.capabilities },
-        warnings: result.ir.header.warnings
+        warnings: result.ir.header.warnings,
+        metadata: result.metadata
       });
       return { ok: true, result };
     } catch (err) {
@@ -472,6 +492,9 @@ export function createPreviewController(options: PreviewControllerOptions = {}):
       consumerVolumeSet = true;
       withRenderer((r) => r.setBuildVolume(def));
     },
+    setBuildVolumeCage: (v) => withRenderer((r) => r.setBuildVolumeCage(v)),
+    setFrameContent: (m) => withRenderer((r) => r.setFrameContent(m)),
+    setInteractionQuality: (m) => withRenderer((r) => r.setInteractionQuality(m)),
     frame: () => withRenderer((r) => r.frame())
   };
 

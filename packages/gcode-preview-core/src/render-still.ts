@@ -21,6 +21,7 @@
 import { GcodeParseSession, type SessionOptions, type WireParseOptions } from '@chestnutlabs/gcode-parser';
 import {
   ToolpathRenderer,
+  createDefaultGLRenderer,
   machineToVolume,
   type BuildVolumeDef,
   type CameraMode,
@@ -29,6 +30,7 @@ import {
   type QualityMode,
   type RenderTargetCanvas,
   type Theme,
+  type ThemeColor,
   type TubeOptions
 } from '@chestnutlabs/gcode-renderer-three';
 import { type MachineGeometry, type ToolpathIR } from '@chestnutlabs/toolpath-core';
@@ -51,10 +53,19 @@ export interface RenderStillOptions {
   quality?: QualityMode | 'auto';
   /** Camera projection (#150, DD-009 D3); default 'perspective'. */
   cameraMode?: CameraMode;
+  /** Framing target (#306/#6): 'all' extrusion (default) or the printed 'object' (excludes skirt/prime). */
+  frameContent?: 'object' | 'all';
   colorMode?: ColorMode;
   tube?: TubeOptions;
   /** Bounded declarative theme (#153, DD-009 D4); headless stills theme identically. */
   theme?: Theme;
+  /**
+   * Presentation-card convenience (#306): `'transparent'` composites the still on the consumer's card
+   * (creates an alpha GL context so the unset scene background shows through), or a solid `ThemeColor`
+   * paints a themed backdrop. Shorthand for wiring `theme.background` + an alpha `createRenderer`
+   * yourself; an explicit `theme.background` or `createRenderer` you pass takes precedence.
+   */
+  background?: 'transparent' | ThemeColor;
   /** Bed geometry — a renderer volume or discovered MachineGeometry. */
   buildVolume?: BuildVolumeDef | MachineGeometry;
   /** Inclusive layer clip [start, end]. Omitted → whole model. */
@@ -132,18 +143,34 @@ export async function renderStill(
     }
   }
 
+  // `background` shorthand (#306): a solid color merges into the theme; 'transparent' leaves the scene
+  // background unset AND creates an alpha GL context so the card shows through. Explicit theme.background
+  // / createRenderer win.
+  const transparent = options.background === 'transparent';
+  const bgColor = options.background !== undefined && !transparent ? options.background : undefined;
+  const resolvedTheme: Theme | undefined =
+    bgColor !== undefined
+      ? { ...(options.theme ?? {}), background: options.theme?.background ?? bgColor }
+      : options.theme;
+  const resolvedCreateRenderer =
+    options.createRenderer ??
+    (transparent
+      ? (c: RenderTargetCanvas) => createDefaultGLRenderer(c, { alpha: true, preserveDrawingBuffer: true })
+      : undefined);
+
   // Build to completion off the event loop (no rAF): microtask-scheduled ticks.
   const renderer = new ToolpathRenderer({
     canvas,
     quality: options.quality ?? 'auto',
     ...(options.cameraMode ? { cameraMode: options.cameraMode } : {}),
-    ...(options.theme ? { theme: options.theme } : {}),
+    ...(options.frameContent ? { frameContent: options.frameContent } : {}),
+    ...(resolvedTheme ? { theme: resolvedTheme } : {}),
     ...(options.colorMode ? { colorMode: options.colorMode } : {}),
     ...(options.tube ? { tube: options.tube } : {}),
     ...(options.buildVolume ? { buildVolume: toVolume(options.buildVolume) } : {}),
     preserveDrawingBuffer: true,
     scheduleFrame: (cb) => queueMicrotask(cb),
-    ...(options.createRenderer ? { createRenderer: options.createRenderer } : {})
+    ...(resolvedCreateRenderer ? { createRenderer: resolvedCreateRenderer } : {})
   });
 
   try {

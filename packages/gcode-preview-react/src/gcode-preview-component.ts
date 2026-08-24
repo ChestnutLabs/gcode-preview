@@ -56,6 +56,10 @@ export interface GcodePreviewProps {
   quality?: QualityMode | 'auto';
   /** #150 (DD-009 D3): camera projection. */
   cameraMode?: CameraMode;
+  /** #306/#6: frame the printed 'object' (excl. skirt/prime) or 'all' extrusion. Default 'all'. */
+  frameContent?: 'object' | 'all';
+  /** #306/2 (DD-020): 'auto' reduces detail while the camera moves. Default 'off'. */
+  interactionQuality?: 'off' | 'auto';
   /** #268/#275/M6: snap to a preset orientation (top/front/iso/…). Instant; preserves the projection. */
   view?: CameraView;
   /** #268/#275/M6: restore a saved camera pose. Pair with `onCameraChange` for a two-way binding. */
@@ -75,6 +79,8 @@ export interface GcodePreviewProps {
   showWipe?: boolean;
   /** DD-009 D1 (#148): opt-in retraction/deretraction markers. */
   showRetractions?: boolean;
+  /** #306/#6: show the build-volume wireframe cage (independent of the bed/plate). Default true. */
+  showVolumeCage?: boolean;
   /** DD-006 live progress observation; null hides the overlay. */
   progress?: ProgressObservation | null;
   /** Worker factory escape hatch (DD-005 slim/custom entries; D2). */
@@ -82,7 +88,7 @@ export interface GcodePreviewProps {
   /** Advanced/test renderer injectables (pass-throughs of the renderer contract). */
   rendererOptions?: Omit<
     NonNullable<UseGcodePreviewOptions['renderer']>,
-    'buildVolume' | 'quality' | 'cameraMode' | 'theme' | 'colorMode' | 'tube'
+    'buildVolume' | 'quality' | 'cameraMode' | 'frameContent' | 'interactionQuality' | 'theme' | 'colorMode' | 'tube'
   >;
   onReady?: (summary: {
     segments: number;
@@ -90,6 +96,7 @@ export interface GcodePreviewProps {
     complete: boolean;
     capabilities: Record<string, import('@chestnutlabs/toolpath-core').Confidence>;
     warnings: readonly import('@chestnutlabs/toolpath-core').Warning[];
+    metadata: import('@chestnutlabs/toolpath-core').DialectMetadata | undefined;
   }) => void;
   /** #275/M6: fires after a user camera interaction settles, with the new serializable state. */
   onCameraChange?: (state: CameraState) => void;
@@ -114,6 +121,8 @@ function GcodePreviewImpl(props: GcodePreviewProps, ref: ForwardedRef<GcodePrevi
       buildVolume: isMachine ? undefined : (props.buildVolume as BuildVolumeDef | undefined),
       quality: props.quality ?? 'auto',
       cameraMode: props.cameraMode ?? 'perspective',
+      frameContent: props.frameContent ?? 'all',
+      interactionQuality: props.interactionQuality ?? 'off',
       theme: props.theme,
       colorMode: props.colorMode,
       tube: props.tube,
@@ -137,7 +146,8 @@ function GcodePreviewImpl(props: GcodePreviewProps, ref: ForwardedRef<GcodePrevi
             layers: e.layers,
             complete: e.complete,
             capabilities: e.capabilities,
-            warnings: e.warnings
+            warnings: e.warnings,
+            metadata: e.metadata
           });
           break;
         case 'camera-changed':
@@ -186,9 +196,12 @@ function GcodePreviewImpl(props: GcodePreviewProps, ref: ForwardedRef<GcodePrevi
     showTravel,
     showWipe,
     showRetractions,
+    showVolumeCage,
     colorMode,
     quality,
     cameraMode,
+    frameContent,
+    interactionQuality,
     view,
     cameraState,
     theme,
@@ -218,6 +231,9 @@ function GcodePreviewImpl(props: GcodePreviewProps, ref: ForwardedRef<GcodePrevi
     preview.controls.setShowRetractions(showRetractions ?? false);
   }, [showRetractions]);
   useEffect(() => {
+    preview.controls.setBuildVolumeCage(showVolumeCage ?? true);
+  }, [showVolumeCage]);
+  useEffect(() => {
     if (colorMode !== undefined) preview.controls.setColorMode(colorMode);
   }, [colorMode]);
   useEffect(() => {
@@ -226,6 +242,12 @@ function GcodePreviewImpl(props: GcodePreviewProps, ref: ForwardedRef<GcodePrevi
   useEffect(() => {
     if (cameraMode !== undefined) preview.controls.setCameraMode(cameraMode);
   }, [cameraMode]);
+  useEffect(() => {
+    if (frameContent !== undefined) preview.controls.setFrameContent(frameContent);
+  }, [frameContent]);
+  useEffect(() => {
+    if (interactionQuality !== undefined) preview.controls.setInteractionQuality(interactionQuality);
+  }, [interactionQuality]);
   useEffect(() => {
     if (view !== undefined) preview.controls.setView(view);
   }, [view]);
