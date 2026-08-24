@@ -39,7 +39,7 @@ See also [`../PROJECT_SETUP.md`](../PROJECT_SETUP.md) for the local environment 
 Provenance of inherited vs. Chestnut code, the exact founding baseline, and the branch mapping are
 tracked in [`UPSTREAM_PROVENANCE.md`](UPSTREAM_PROVENANCE.md).
 
-## Current state (updated 2026-08-14 — **v0.5.0 shipped to npm** (13 lockstep pkgs): camera preset-views + serializable `CameraState` API, zoom-to-cursor, keyboard-a11y, `capabilities`/`warnings` on `ready`, Svelte `buildVolume` fix, docs/demo/CNC-test hardening (epic #279). v0.4.0 shipped 2026-08-01 (#189 CNC/laser: lexer/detection, GRBL-laser hardware-validated, STL). DD-017 RS274NGC parametric programs proposed, unbuilt)
+## Current state (updated 2026-08-24 — **v0.7.0 shipped to npm** (14 lockstep pkgs): new package `@chestnutlabs/gcode-model-renderer` — a **presentation** renderer for source models (STL + 3MF multi-object/material) with headless `renderModelStill`, distinct from toolpath inspection ([DD-018](design/DD-018-model-renderer.md)); plus the shared render "stage" extracted in `gcode-renderer-three`, the 3MF Production-Extension (`p:path`) reader, and a toolpath-renderer batch — slice metadata on `ready`, structured multi-plate metadata, independent build-volume cage, frame-to-content, interaction-aware render quality ([DD-020](design/DD-020-interaction-aware-quality.md)), and a `renderStill` background option. v0.6.0 introduced the ModelRenderer package (STL presentation slice); v0.5.x added camera preset-views + serializable `CameraState`, zoom-to-cursor, keyboard-a11y, `capabilities`/`warnings` on `ready`, and the Vue/Svelte adapter mount-prop fixes (epics #279/#296/#306). DD-017 RS274NGC parametric programs proposed, unbuilt)
 
 | Epic | Status | Gate |
 |---|---|---|
@@ -65,7 +65,9 @@ Shipped so far: `packages/toolpath-core` (SoA `ToolpathIR`, capability model), `
 `packages/gcode-renderer-three` (geometry builders + scene/lifecycle), the IR adapter (`src/ir-adapter.ts`),
 golden/native fixtures + manifest with CI validation, boundary lint, license CI gate, and Vite/Electron
 consumer smoke harnesses, plus the five framework adapters (`gcode-preview-core`/`-vue`/`-react`/
-`-svelte`/`-element`). CI (`build`) is a required check on `main`/`dev`. **All thirteen `@chestnutlabs/*`
-packages are published to npm at `v0.4.0`** (lockstep, npm provenance); `main` is the release branch,
-publishing from tagged GitHub Releases (`v0.1.0` E7/DD-008, `v0.2.0` E9/DD-009, `v0.3.0` E8/#188,
-`v0.4.0` #189 non-extrusion). Changesets accumulate on `dev` for the next release.
+`-svelte`/`-element`) and the presentation renderer (`gcode-model-renderer`). CI (`build`) is a
+required check on `main`/`dev`. **All fourteen `@chestnutlabs/*` packages are published to npm at
+`v0.7.0`** (lockstep, npm provenance); `main` is the release branch, publishing from tagged GitHub
+Releases (`v0.1.0` E7/DD-008, `v0.2.0` E9/DD-009, `v0.3.0` E8/#188, `v0.4.0` #189 non-extrusion,
+`v0.5.x` hardening #279, `v0.6.0`/`v0.7.0` ModelRenderer + toolpath batch #296/#306). Changesets
+accumulate on `dev` for the next release.
