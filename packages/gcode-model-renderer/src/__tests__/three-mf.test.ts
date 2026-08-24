@@ -109,6 +109,32 @@ const PER_TRIANGLE_COLOR = `<?xml version="1.0"?>
   </triangles></mesh></object>
 </resources><build><item objectid="1"/></build></model>`;
 
+// 3MF Production Extension (Bambu/MakerWorld default): shell references an external mesh part via p:path.
+const PROD_SHELL = `<?xml version="1.0"?>
+<model unit="millimeter" requiredextensions="p" xmlns:p="http://schemas.microsoft.com/3dmanufacturing/production/2015/06">
+ <resources>
+  <object id="2" type="model">
+   <components>
+    <component p:path="/3D/Objects/object_1.model" objectid="1" transform="1 0 0 0 1 0 0 0 1 5 0 0"/>
+   </components>
+  </object>
+ </resources>
+ <build><item objectid="2"/></build>
+</model>`;
+const PROD_EXTERNAL = `<?xml version="1.0"?>
+<model unit="millimeter"><resources>
+ <basematerials id="7"><base name="green" displaycolor="#00FF00"/></basematerials>
+ <object id="1" pid="7" pindex="0"><mesh>
+  <vertices><vertex x="0" y="0" z="0"/><vertex x="10" y="0" z="0"/><vertex x="0" y="10" z="0"/></vertices>
+  <triangles><triangle v1="0" v2="1" v3="2"/></triangles></mesh></object>
+</resources></model>`;
+function prodExtension3mf(): Uint8Array {
+  return makeZip([
+    { name: '3D/3dmodel.model', data: new TextEncoder().encode(PROD_SHELL) },
+    { name: '3D/Objects/object_1.model', data: new TextEncoder().encode(PROD_EXTERNAL) }
+  ]);
+}
+
 function stubCanvas(): RenderTargetCanvas {
   return { width: 128, height: 128 } as unknown as RenderTargetCanvas;
 }
@@ -156,6 +182,22 @@ describe('parse3mf', () => {
     expect(c[1]).toBeCloseTo(0);
     expect(c[9 + 1]).toBeGreaterThan(0.9); // G of tri1 vertex0
     expect(c[9]).toBeCloseTo(0);
+  });
+
+  it('follows the production extension: component p:path → external mesh part (Bambu/MakerWorld)', async () => {
+    const scene = await parse3mf(prodExtension3mf());
+    // The shell has no inline mesh; geometry comes from the external /3D/Objects part.
+    expect(scene.objects).toHaveLength(1);
+    expect(scene.objects[0].geometry.positions).toHaveLength(1 * 9);
+    // Component transform (+5 X) is composed with the build item and baked in.
+    expect(scene.bounds.min[0]).toBeCloseTo(5);
+    expect(scene.bounds.max[0]).toBeCloseTo(15);
+    // Color resolved from the EXTERNAL part's palette (green), honest 'known'.
+    expect(scene.capabilities.materials).toBe('known');
+    expect(scene.capabilities.transforms).toBe('known');
+    const c = scene.objects[0].geometry.colors!;
+    expect(c[1]).toBeGreaterThan(0.9); // G high
+    expect(c[0]).toBeCloseTo(0);
   });
 
   it('rejects empty input', async () => {
