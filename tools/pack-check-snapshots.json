@@ -179,6 +179,7 @@
     "package.json"
   ],
   "gcode-model-renderer": [
+    "README.md",
     "dist/cache-key.d.ts",
     "dist/cache-key.d.ts.map",
     "dist/cache-key.js",
