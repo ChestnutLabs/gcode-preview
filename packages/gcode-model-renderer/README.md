@@ -48,6 +48,10 @@ const { canvas, objectCount, materials, cacheKey } = await renderModelStill(
 const blob = await canvas.convertToBlob();
 ```
 
+Already hold a corrected or richer filament palette (e.g. re-rendering a sliced file)? Pass
+`filamentPalette` (hex per 0-based slot) to `renderModelStill` / `parse3mf` to override the one read
+from `project_settings.config`. Optional — the renderer reads the file's own palette without it.
+
 Want to build your own scene or drive the renderer interactively? `parseStl` / `parse3mf` return a
 three-free `ModelScene`, and `ModelRenderer` renders one onto a canvas you own.
 

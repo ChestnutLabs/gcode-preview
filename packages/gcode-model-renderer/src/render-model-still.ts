@@ -35,6 +35,12 @@ export interface RenderModelStillOptions {
   view?: PresentationView;
   createRenderer?: (canvas: RenderTargetCanvas) => GLRendererLike;
   limits?: ModelLimits;
+  /**
+   * Override the 3MF source-model filament palette (hex `#RRGGBB` per 0-based slot) used to colour
+   * `paint_color` facets, instead of the file's own `project_settings.config`. Niche: for consumers
+   * re-rendering a file with a corrected/richer palette. Ignored for STL and pre-built scenes.
+   */
+  filamentPalette?: readonly (string | undefined)[];
   /** Override the environment id folded into the cache key (default: the `three` revision). */
   envId?: string;
 }
@@ -56,7 +62,8 @@ function isModelScene(s: ModelSource): s is ModelScene {
 
 async function toScene(
   source: ModelSource,
-  limits?: ModelLimits
+  limits?: ModelLimits,
+  filamentPalette?: readonly (string | undefined)[]
 ): Promise<{ scene: ModelScene; sourceBytes: Uint8Array }> {
   if (isModelScene(source)) {
     // No raw bytes for a pre-built scene: key off a stable structural summary instead.
@@ -64,7 +71,7 @@ async function toScene(
     return { scene: source, sourceBytes: new TextEncoder().encode(summary) };
   }
   const bytes = source.bytes instanceof Uint8Array ? source.bytes : new Uint8Array(source.bytes);
-  const scene = source.kind === '3mf' ? await parse3mf(bytes, limits) : parseStl(bytes, limits);
+  const scene = source.kind === '3mf' ? await parse3mf(bytes, limits, { filamentPalette }) : parseStl(bytes, limits);
   return { scene, sourceBytes: bytes };
 }
 
@@ -83,7 +90,7 @@ export async function renderModelStill(
   const background: ModelBackground = options.background ?? 'transparent';
   const view: PresentationView = options.view ?? 'iso';
 
-  const { scene, sourceBytes } = await toScene(source, options.limits);
+  const { scene, sourceBytes } = await toScene(source, options.limits, options.filamentPalette);
 
   const renderer = new ModelRenderer({
     canvas,
@@ -96,7 +103,7 @@ export async function renderModelStill(
     renderer.setScene(scene);
     renderer.render();
 
-    const optionsJson = JSON.stringify({ width, height, background, view });
+    const optionsJson = JSON.stringify({ width, height, background, view, palette: options.filamentPalette });
     const cacheKey = computeCacheKey(sourceBytes, optionsJson, options.envId);
     return {
       canvas,
