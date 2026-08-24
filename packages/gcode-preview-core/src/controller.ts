@@ -95,6 +95,8 @@ export interface PreviewControllerOptions {
     cameraMode?: CameraMode;
     /** Framing target (#306/#6): 'all' extrusion (default) or the printed 'object'. 3D only. */
     frameContent?: 'object' | 'all';
+    /** Interaction-aware quality (#306/2, DD-020): 'auto' reduces detail while moving. 3D only. */
+    interactionQuality?: 'off' | 'auto';
     colorMode?: ColorMode;
     tube?: TubeOptions;
     /** Bounded declarative theme (#153, DD-009 D4). 3D only. */
@@ -178,6 +180,8 @@ export interface GcodePreviewControls {
   setBuildVolumeCage(visible: boolean): void;
   /** Frame the printed 'object' (excl. skirt/prime) vs 'all' extrusion, and re-frame (#306/#6). */
   setFrameContent(mode: 'object' | 'all'): void;
+  /** Interaction-aware quality: 'auto' reduces detail while the camera moves (#306/2, DD-020). */
+  setInteractionQuality(mode: 'off' | 'auto'): void;
   frame(): void;
 }
 
@@ -355,6 +359,7 @@ export function createPreviewController(options: PreviewControllerOptions = {}):
           quality: r.quality ?? 'auto',
           cameraMode: r.cameraMode,
           frameContent: r.frameContent,
+          interactionQuality: r.interactionQuality,
           colorMode: r.colorMode,
           tube: r.tube,
           theme: r.theme,
@@ -489,6 +494,7 @@ export function createPreviewController(options: PreviewControllerOptions = {}):
     },
     setBuildVolumeCage: (v) => withRenderer((r) => r.setBuildVolumeCage(v)),
     setFrameContent: (m) => withRenderer((r) => r.setFrameContent(m)),
+    setInteractionQuality: (m) => withRenderer((r) => r.setInteractionQuality(m)),
     frame: () => withRenderer((r) => r.frame())
   };
 

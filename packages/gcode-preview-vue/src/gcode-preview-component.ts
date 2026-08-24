@@ -49,6 +49,8 @@ export const GcodePreview = defineComponent({
     cameraMode: { type: String as PropType<CameraMode>, default: 'perspective' },
     /** #306/#6: frame the printed 'object' (excl. skirt/prime) or 'all' extrusion. Default 'all'. */
     frameContent: { type: String as PropType<'object' | 'all'>, default: 'all' },
+    /** #306/2 (DD-020): 'auto' reduces detail while the camera moves. Default 'off'. */
+    interactionQuality: { type: String as PropType<'off' | 'auto'>, default: 'off' },
     /** #268/#275/M6: snap to a preset orientation (top/front/iso/…). */
     view: { type: String as PropType<CameraView>, default: undefined },
     /** #268/#275/M6: restore a saved camera pose. Pair with `@camera-change` for a two-way binding. */
@@ -83,7 +85,14 @@ export const GcodePreview = defineComponent({
       type: Object as PropType<
         Omit<
           NonNullable<UseGcodePreviewOptions['renderer']>,
-          'buildVolume' | 'quality' | 'cameraMode' | 'frameContent' | 'theme' | 'colorMode' | 'tube'
+          | 'buildVolume'
+          | 'quality'
+          | 'cameraMode'
+          | 'frameContent'
+          | 'interactionQuality'
+          | 'theme'
+          | 'colorMode'
+          | 'tube'
         >
       >,
       default: undefined
@@ -121,6 +130,7 @@ export const GcodePreview = defineComponent({
         quality: props.quality,
         cameraMode: props.cameraMode,
         frameContent: props.frameContent,
+        interactionQuality: props.interactionQuality,
         theme: props.theme,
         colorMode: props.colorMode,
         tube: props.tube,
@@ -260,6 +270,10 @@ export const GcodePreview = defineComponent({
     watch(
       () => props.frameContent,
       (mode) => preview.controls.setFrameContent(mode)
+    );
+    watch(
+      () => props.interactionQuality,
+      (mode) => preview.controls.setInteractionQuality(mode)
     );
     watch(
       () => props.view,

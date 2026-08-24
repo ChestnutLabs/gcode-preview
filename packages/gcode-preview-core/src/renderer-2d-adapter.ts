@@ -112,6 +112,10 @@ export class LayerView2DRenderer implements PreviewRenderer {
     // The 2D view fits the whole model in XY; object-vs-all framing is a 3D-camera concern (#306/#6).
   }
 
+  setInteractionQuality(_mode: 'off' | 'auto'): void {
+    // The 2D layer view has no orbit interaction to degrade — a documented no-op (#306/2).
+  }
+
   setLayerRange(_startLayer: number, endLayer: number): void {
     // A single-layer 2D view shows the TOP of the requested range (the current layer).
     this.view.setLayer(endLayer);

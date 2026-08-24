@@ -58,6 +58,8 @@ export interface GcodePreviewProps {
   cameraMode?: CameraMode;
   /** #306/#6: frame the printed 'object' (excl. skirt/prime) or 'all' extrusion. Default 'all'. */
   frameContent?: 'object' | 'all';
+  /** #306/2 (DD-020): 'auto' reduces detail while the camera moves. Default 'off'. */
+  interactionQuality?: 'off' | 'auto';
   /** #268/#275/M6: snap to a preset orientation (top/front/iso/…). Instant; preserves the projection. */
   view?: CameraView;
   /** #268/#275/M6: restore a saved camera pose. Pair with `onCameraChange` for a two-way binding. */
@@ -86,7 +88,7 @@ export interface GcodePreviewProps {
   /** Advanced/test renderer injectables (pass-throughs of the renderer contract). */
   rendererOptions?: Omit<
     NonNullable<UseGcodePreviewOptions['renderer']>,
-    'buildVolume' | 'quality' | 'cameraMode' | 'frameContent' | 'theme' | 'colorMode' | 'tube'
+    'buildVolume' | 'quality' | 'cameraMode' | 'frameContent' | 'interactionQuality' | 'theme' | 'colorMode' | 'tube'
   >;
   onReady?: (summary: {
     segments: number;
@@ -120,6 +122,7 @@ function GcodePreviewImpl(props: GcodePreviewProps, ref: ForwardedRef<GcodePrevi
       quality: props.quality ?? 'auto',
       cameraMode: props.cameraMode ?? 'perspective',
       frameContent: props.frameContent ?? 'all',
+      interactionQuality: props.interactionQuality ?? 'off',
       theme: props.theme,
       colorMode: props.colorMode,
       tube: props.tube,
@@ -198,6 +201,7 @@ function GcodePreviewImpl(props: GcodePreviewProps, ref: ForwardedRef<GcodePrevi
     quality,
     cameraMode,
     frameContent,
+    interactionQuality,
     view,
     cameraState,
     theme,
@@ -241,6 +245,9 @@ function GcodePreviewImpl(props: GcodePreviewProps, ref: ForwardedRef<GcodePrevi
   useEffect(() => {
     if (frameContent !== undefined) preview.controls.setFrameContent(frameContent);
   }, [frameContent]);
+  useEffect(() => {
+    if (interactionQuality !== undefined) preview.controls.setInteractionQuality(interactionQuality);
+  }, [interactionQuality]);
   useEffect(() => {
     if (view !== undefined) preview.controls.setView(view);
   }, [view]);

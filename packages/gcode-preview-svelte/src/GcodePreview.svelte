@@ -24,6 +24,8 @@
   export let cameraMode = 'perspective';
   /** #306/#6: frame the printed 'object' (excl. skirt/prime) or 'all' extrusion. Default 'all'. */
   export let frameContent = 'all';
+  /** #306/2 (DD-020): 'auto' reduces detail while the camera moves. Default 'off'. */
+  export let interactionQuality = 'off';
   /** #268/#275/M6: snap to a preset orientation (top/front/iso/…). */
   export let view = undefined;
   /** #268/#275/M6: restore a saved camera pose. Pair with the `camerachange` event for two-way. */
@@ -68,6 +70,7 @@
       quality,
       cameraMode,
       frameContent,
+      interactionQuality,
       theme,
       colorMode,
       tube,
@@ -145,6 +148,7 @@
   $: preview.controls.setQuality(quality);
   $: preview.controls.setCameraMode(cameraMode);
   $: preview.controls.setFrameContent(frameContent);
+  $: preview.controls.setInteractionQuality(interactionQuality);
   $: if (view !== undefined) preview.controls.setView(view);
   $: if (cameraState !== undefined && cameraState !== null) preview.controls.setCameraState(cameraState);
   $: if (theme !== undefined) preview.controls.setTheme(theme);
