@@ -1,6 +1,6 @@
 {
   "name": "@chestnutlabs/gcode-parser",
-  "version": "0.5.1",
+  "version": "0.5.2",
   "description": "Worker-safe G-code parse core producing ToolpathIR (DD-003).",
   "keywords": [
     "gcode",
@@ -49,9 +49,9 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@chestnutlabs/toolpath-core": "0.5.1",
-    "@chestnutlabs/gcode-dialects": "0.5.1",
-    "@chestnutlabs/gcode-containers": "0.5.1",
-    "@chestnutlabs/gcode-bgcode": "0.5.1"
+    "@chestnutlabs/toolpath-core": "0.5.2",
+    "@chestnutlabs/gcode-dialects": "0.5.2",
+    "@chestnutlabs/gcode-containers": "0.5.2",
+    "@chestnutlabs/gcode-bgcode": "0.5.2"
   }
 }

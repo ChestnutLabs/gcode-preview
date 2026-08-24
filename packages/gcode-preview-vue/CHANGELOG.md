@@ -1,5 +1,15 @@
 # @chestnutlabs/gcode-preview-vue
 
+## 0.5.2
+
+### Patch Changes
+
+- Updated dependencies [[`d7f3e88`](https://github.com/ChestnutLabs/gcode-preview/commit/d7f3e88afd80fd07167625cd8128f569830be3f8)]:
+  - @chestnutlabs/gcode-preview-core@0.5.2
+  - @chestnutlabs/gcode-parser@0.5.2
+  - @chestnutlabs/gcode-renderer-three@0.5.2
+  - @chestnutlabs/toolpath-core@0.5.2
+
 ## 0.5.1
 
 ### Patch Changes

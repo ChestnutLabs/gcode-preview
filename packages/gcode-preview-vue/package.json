@@ -1,6 +1,6 @@
 {
   "name": "@chestnutlabs/gcode-preview-vue",
-  "version": "0.5.1",
+  "version": "0.5.2",
   "description": "Thin Vue 3 integration for the Chestnut Labs G-code viewer (DD-007): useGcodePreview composable + GcodePreview component over the framework-neutral parser/renderer/progress packages.",
   "keywords": [
     "gcode",
@@ -50,10 +50,10 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@chestnutlabs/gcode-parser": "0.5.1",
-    "@chestnutlabs/gcode-renderer-three": "0.5.1",
-    "@chestnutlabs/toolpath-core": "0.5.1",
-    "@chestnutlabs/gcode-preview-core": "0.5.1"
+    "@chestnutlabs/gcode-parser": "0.5.2",
+    "@chestnutlabs/gcode-renderer-three": "0.5.2",
+    "@chestnutlabs/toolpath-core": "0.5.2",
+    "@chestnutlabs/gcode-preview-core": "0.5.2"
   },
   "peerDependencies": {
     "vue": "^3.4.0"
