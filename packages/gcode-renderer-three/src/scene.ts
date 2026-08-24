@@ -51,6 +51,7 @@ import { buildChunkColors, type ColorMode } from './colors.js';
 import { computeDrawState, computeOverlayDrawStates } from './ranges.js';
 import { createBuildVolume, type BuildVolumeDef, type BuildVolumeStyle } from './build-volume.js';
 import { buildTubeChunk, TUBES_AUTO_MAX_SEGMENTS, type TubeOptions } from './tubes.js';
+import { framingFromCenterRadius } from './stage.js';
 import { resolveTheme, type Theme, type ResolvedTheme } from './theme.js';
 
 /** §4.3 quality tiers. `auto` picks by segment count (chooseQuality). */
@@ -1201,15 +1202,13 @@ export class ToolpathRenderer {
       center.set(this.volumeDef.x / 2, this.volumeDef.y / 2, 0);
       radius = Math.max(10, Math.max(this.volumeDef.x, this.volumeDef.y) * 0.75);
     }
-    // Printer coords → scene coords through the root rotation (x, z, -y).
-    const target = new Vector3(center.x, center.z, -center.y);
-    // The perspective offset magnitude is ≈2.69·radius at fov 50°, so the visible
-    // half-height at the target plane is ≈2.69·radius·tan(25°) ≈ 1.25·radius; the
-    // ortho frustum uses the same half-height so toggling projection keeps the
-    // model the same apparent size (#150).
-    this.viewHalfHeight = radius * 1.25;
+    // Printer coords → scene coords + the shared 3/4 framing pose (DD-018 Phase 0: single-sourced
+    // in stage.ts so ModelRenderer frames identically). viewHalfHeight sizes the ortho frustum so
+    // toggling projection keeps the model the same apparent size (#150).
+    const { target, position, viewHalfHeight } = framingFromCenterRadius(center, radius);
+    this.viewHalfHeight = viewHalfHeight;
     this.framedTarget.copy(target);
-    this.activeCamera.position.set(target.x - radius * 1.2, target.y + radius * 1.6, target.z + radius * 1.8);
+    this.activeCamera.position.copy(position);
     this.activeCamera.lookAt(target);
     this.updateCameraProjection();
     if (this.controls) {
