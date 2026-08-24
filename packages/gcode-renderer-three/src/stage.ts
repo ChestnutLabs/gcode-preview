@@ -9,7 +9,49 @@
  * It is grown incrementally and each move is gated by the toolpath renderer's existing golden/visual
  * parity (the extraction must be behavior-preserving for the toolpath side).
  */
-import { Vector3 } from 'three';
+import { Camera, Scene, Vector3, WebGLRenderer } from 'three';
+
+/**
+ * Render target: a DOM canvas (interactive hosts) or an OffscreenCanvas (workers / headless
+ * still-render, #132). Both are EventTargets with WebGL2, so the stage treats them uniformly.
+ */
+export type RenderTargetCanvas = HTMLCanvasElement | OffscreenCanvas;
+
+/** Minimal surface of `WebGLRenderer` the stage/renderers use — injectable for tests. */
+export interface GLRendererLike {
+  // Base `Camera`, not `PerspectiveCamera`: the active camera may be either projection (#150).
+  // Every stub GL ignores the arg, so this only widens types.
+  render(scene: Scene, camera: Camera): void;
+  setSize(width: number, height: number, updateStyle?: boolean): void;
+  setPixelRatio?(ratio: number): void;
+  dispose(): void;
+  domElement: RenderTargetCanvas;
+}
+
+/** Options for {@link createDefaultGLRenderer}. */
+export interface DefaultGLOptions {
+  /** Keep the drawing buffer readable after render (headless still-capture). Default false. */
+  preserveDrawingBuffer?: boolean;
+  /** Alpha channel in the drawing buffer → transparent background when the scene background is unset.
+   *  ModelRenderer's card-thumbnail path sets this true; the toolpath renderer leaves it false. */
+  alpha?: boolean;
+  /** MSAA. Default true. */
+  antialias?: boolean;
+}
+
+/**
+ * The default `WebGLRenderer` the stage builds when a consumer injects none. Extracted from
+ * `ToolpathRenderer`'s constructor (DD-018 Phase 0) so both renderers create GL identically; the
+ * `alpha` option is the only addition (needed for ModelRenderer's transparent background).
+ */
+export function createDefaultGLRenderer(canvas: RenderTargetCanvas, opts: DefaultGLOptions = {}): WebGLRenderer {
+  return new WebGLRenderer({
+    canvas: canvas as HTMLCanvasElement,
+    antialias: opts.antialias ?? true,
+    preserveDrawingBuffer: opts.preserveDrawingBuffer ?? false,
+    alpha: opts.alpha ?? false
+  });
+}
 
 /** A framed camera pose (scene coordinates) derived from a model's center + bounding radius. */
 export interface Framing {
