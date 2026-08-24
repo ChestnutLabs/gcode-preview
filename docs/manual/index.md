@@ -4,7 +4,7 @@ A worker-based, cross-vendor **G-code toolpath stack** for the browser: parse `.
 Svelte**, and **Web Component** adapters over one shared, framework-neutral engine.
 
 This is the **SDK manual** (these Guide and Concept pages). The **generated
-API reference** — every public export of all ten `@chestnutlabs/*` packages — is a companion site
+API reference** — every public export of all fourteen `@chestnutlabs/*` packages — is a companion site
 linked from the **API reference** item in the top nav.
 
 ## Install
@@ -53,7 +53,8 @@ viewer is reachable without switching APIs.
 | A viewer with **no framework** | `@chestnutlabs/gcode-preview-element` |
 | To build your own viewer on the shared controller | `@chestnutlabs/gcode-preview-core` |
 | Just the **parser → IR** (no rendering) | `@chestnutlabs/gcode-parser` + `@chestnutlabs/toolpath-core` |
-| A **headless still image** (server thumbnails) | `renderStill` from `@chestnutlabs/gcode-renderer-three` |
+| A **headless still image** of a toolpath (server thumbnails) | `renderStill` from `@chestnutlabs/gcode-renderer-three` |
+| A **presentation thumbnail of the source model** (STL / 3MF, not the toolpath) | `renderModelStill` from `@chestnutlabs/gcode-model-renderer` |
 
 ## Where to next
 
@@ -66,6 +67,6 @@ viewer is reachable without switching APIs.
   [Live progress & motion model](concept-progress-motion.md).
 - **API reference** — pick a package in the sidebar (`toolpath-core`, `gcode-parser`, …).
 
-> **Status:** published — all ten `@chestnutlabs/*` packages are on npm (latest `v0.2.0`,
+> **Status:** published — all fourteen `@chestnutlabs/*` packages are on npm (latest `v0.7.0`,
 > lockstep-versioned with provenance). Governance and epic status live in the
 > [repository docs](https://github.com/ChestnutLabs/gcode-preview/tree/dev/docs).
