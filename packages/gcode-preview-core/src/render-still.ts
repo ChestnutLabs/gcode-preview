@@ -61,8 +61,10 @@ export interface RenderStillOptions {
   layerRange?: [number, number];
   /** Draw only up to this segment (progress-style clip). null/omitted → whole model. */
   scrub?: number | null;
-  /** Include travel moves (default false). */
+  /** Include travel moves (default false — a still is a clean model-only image by default). */
   showTravel?: boolean;
+  /** Include slicer wipe moves (default false — same clean-still default as {@link showTravel}). */
+  showWipe?: boolean;
   /** Camera: an explicit pose, or omitted for deterministic bounds framing. */
   camera?: StillCameraPose;
   /** Worker factory for the bytes path (batteries default when omitted). */
@@ -164,7 +166,12 @@ export async function renderStill(
       if (ir.segments.count === 0) queueMicrotask(finish);
     });
 
-    if (options.showTravel === true) renderer.setKindVisible('travel', true);
+    // Apply travel/wipe visibility UNCONDITIONALLY. The renderer defaults both visible, so only ever
+    // turning them *on* (the old `if (showTravel === true)`) left `showTravel: false` — and the
+    // documented default of false — a no-op, so travel always showed. Set them from the options every
+    // time so a still honors the clean-thumbnail defaults (both off) and frames as a model-only image.
+    renderer.setKindVisible('travel', options.showTravel === true);
+    renderer.setKindVisible('wipe', options.showWipe === true);
     if (options.colorMode) renderer.setColorMode(options.colorMode);
     if (options.layerRange) renderer.setLayerRange(options.layerRange[0], options.layerRange[1]);
     if (options.scrub !== undefined) renderer.setScrubPosition(options.scrub);
