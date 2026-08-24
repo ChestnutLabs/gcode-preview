@@ -1,0 +1,63 @@
+{
+  "name": "@chestnutlabs/gcode-model-renderer",
+  "version": "0.5.2",
+  "description": "Three.js presentation renderer for source models (STL/3MF) — clean thumbnails/cards, distinct from toolpath inspection (DD-018).",
+  "keywords": [
+    "3d-printing",
+    "stl",
+    "3mf",
+    "model",
+    "thumbnail",
+    "presentation",
+    "chestnutlabs",
+    "three",
+    "threejs",
+    "webgl",
+    "renderer",
+    "offscreen"
+  ],
+  "author": "Chestnut Labs",
+  "homepage": "https://github.com/ChestnutLabs/gcode-preview#readme",
+  "bugs": "https://github.com/ChestnutLabs/gcode-preview/issues",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ChestnutLabs/gcode-preview.git",
+    "directory": "packages/gcode-model-renderer"
+  },
+  "license": "MIT",
+  "engines": {
+    "node": ">=22"
+  },
+  "type": "module",
+  "sideEffects": false,
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@chestnutlabs/gcode-renderer-three": "0.5.2",
+    "@chestnutlabs/toolpath-core": "0.5.2"
+  },
+  "devDependencies": {
+    "@types/three": "0.178.0"
+  },
+  "peerDependencies": {
+    "three": "^0.178.0"
+  }
+}
