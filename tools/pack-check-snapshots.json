@@ -200,6 +200,9 @@
     "dist/stl.d.ts",
     "dist/stl.d.ts.map",
     "dist/stl.js",
+    "dist/three-mf.d.ts",
+    "dist/three-mf.d.ts.map",
+    "dist/three-mf.js",
     "package.json"
   ],
   "gcode-preview-core": [

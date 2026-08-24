@@ -125,9 +125,15 @@ export class ModelRenderer {
     if (obj.geometry.normals !== undefined) g.setAttribute('normal', new BufferAttribute(obj.geometry.normals, 3));
     else g.computeVertexNormals();
 
-    const color = obj.material?.color ?? NEUTRAL_COLOR;
     const mat = new MeshStandardMaterial({ roughness: 0.62, metalness: 0.0 });
-    mat.color.setRGB(color[0], color[1], color[2]);
+    if (obj.geometry.colors !== undefined) {
+      // A single mesh carrying multiple colors (per-triangle 3MF material) → vertex colors.
+      g.setAttribute('color', new BufferAttribute(obj.geometry.colors, 3));
+      mat.vertexColors = true;
+    } else {
+      const color = obj.material?.color ?? NEUTRAL_COLOR;
+      mat.color.setRGB(color[0], color[1], color[2]);
+    }
 
     const mesh = new Mesh(g, mat);
     mesh.matrixAutoUpdate = false;
