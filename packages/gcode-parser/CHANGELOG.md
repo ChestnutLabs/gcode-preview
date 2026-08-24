@@ -1,5 +1,31 @@
 # @chestnutlabs/gcode-parser
 
+## 0.7.0
+
+### Minor Changes
+
+- [#313](https://github.com/ChestnutLabs/gcode-preview/pull/313) [`39ede6e`](https://github.com/ChestnutLabs/gcode-preview/commit/39ede6ebc0a1ba594a391f1b33db2bdf3445d414) Thanks [@sobechestnut-dev](https://github.com/sobechestnut-dev)! - Frame-to-content: frame the printed **object**, not the skirt/prime ([#306](https://github.com/ChestnutLabs/gcode-preview/issues/306) item 6). New
+  `ToolpathIR.objectBounds` (extrusion of labeled objects only, `segments.object != 0`; empty when the
+  file has no object labels) and a `frameContent: 'object' | 'all'` option threaded through the renderer
+  (`setFrameContent`), `renderStill`, and all four adapters (`show-`-style `frame-content` attribute on the
+  element). Default `'all'` (unchanged framing). `'object'` frames only the printed objects so a prime
+  line or skirt at the bed edge no longer shrinks the object in view; when the file carries no object
+  labels it discloses (an `E_FRAME_CONTENT_UNAVAILABLE` event) and frames all extrusion — never fabricated.
+
+  Note: `frameContent: 'object'` engages only when the parser populated the `objects` capability (M486 /
+  EXCLUDE_OBJECT / `; printing object`). Broadening object-label detection for more slicer/firmware
+  variants is tracked separately.
+
+- [#309](https://github.com/ChestnutLabs/gcode-preview/pull/309) [`1c15c5e`](https://github.com/ChestnutLabs/gcode-preview/commit/1c15c5ea38f69aba99478cec60e4a0af28b9cae4) Thanks [@sobechestnut-dev](https://github.com/sobechestnut-dev)! - Surface a **structured multi-plate list** on `DialectMetadata.plates` ([#306](https://github.com/ChestnutLabs/gcode-preview/issues/306) item 3): `{ list: [{ index, name }], parsed }` — the plates discovered in a `.gcode.3mf` container and which one was parsed into this IR. A consumer can build a plate selector from data and re-parse with `parseOptions.plate` to select another, instead of scraping the `container-multiple-plates` warning string. One plate is parsed at a time — plates are never merged into one scene. Rides on the `metadata`-on-`ready` surface, so it reaches adapters with no further wiring. Absent for non-container / single-plate sources.
+
+### Patch Changes
+
+- Updated dependencies [[`39ede6e`](https://github.com/ChestnutLabs/gcode-preview/commit/39ede6ebc0a1ba594a391f1b33db2bdf3445d414), [`1c15c5e`](https://github.com/ChestnutLabs/gcode-preview/commit/1c15c5ea38f69aba99478cec60e4a0af28b9cae4)]:
+  - @chestnutlabs/toolpath-core@0.7.0
+  - @chestnutlabs/gcode-bgcode@0.7.0
+  - @chestnutlabs/gcode-containers@0.7.0
+  - @chestnutlabs/gcode-dialects@0.7.0
+
 ## 0.6.0
 
 ### Patch Changes

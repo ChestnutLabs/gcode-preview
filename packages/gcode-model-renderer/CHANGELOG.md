@@ -1,5 +1,30 @@
 # @chestnutlabs/gcode-model-renderer
 
+## 0.7.0
+
+### Minor Changes
+
+- [#311](https://github.com/ChestnutLabs/gcode-preview/pull/311) [`5e156ec`](https://github.com/ChestnutLabs/gcode-preview/commit/5e156ec62d813691cbca2a939c97fb695c7ccd5f) Thanks [@sobechestnut-dev](https://github.com/sobechestnut-dev)! - 3MF **Production Extension** support in `parse3mf` (the Bambu Studio / MakerWorld default layout). A
+  production-extension file has a small `3D/3dmodel.model` shell whose `<build><item>` points at a
+  `<components>` object that references the real mesh in an **external** part (`<component
+p:path="/3D/Objects/*.model" objectid=… transform=…/>`). Previously this parsed as "no renderable
+  geometry"; now the parser follows `p:path` into the referenced part, resolves the object, and composes
+  the component transform with the build-item transform — resolving nested components across parts (depth-
+  guarded). The inline-mesh case is unchanged; materials resolve from whichever part defines the mesh's
+  colors.
+
+  Note: some vendors (e.g. Bambu) encode multicolor via a proprietary per-triangle `paint_color` attribute
+  plus filament colors in `project_settings.config`, not standard 3MF materials. Those still render with
+  correct geometry and honest `materials: 'unavailable'` (a neutral model, never a fabricated color) —
+  decoding vendor paint into true colors is a separate follow-up.
+
+### Patch Changes
+
+- Updated dependencies [[`bbdef97`](https://github.com/ChestnutLabs/gcode-preview/commit/bbdef97d8a1eb77a3864291918f7f5aace559ff2), [`39ede6e`](https://github.com/ChestnutLabs/gcode-preview/commit/39ede6ebc0a1ba594a391f1b33db2bdf3445d414), [`caaa0fa`](https://github.com/ChestnutLabs/gcode-preview/commit/caaa0fad0938bfa3ac1cd9f312f9cd2355c722d1), [`1c15c5e`](https://github.com/ChestnutLabs/gcode-preview/commit/1c15c5ea38f69aba99478cec60e4a0af28b9cae4)]:
+  - @chestnutlabs/gcode-renderer-three@0.7.0
+  - @chestnutlabs/toolpath-core@0.7.0
+  - @chestnutlabs/gcode-containers@0.7.0
+
 ## 0.6.0
 
 ### Minor Changes

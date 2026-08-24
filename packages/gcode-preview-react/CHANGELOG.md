@@ -1,5 +1,58 @@
 # @chestnutlabs/gcode-preview-react
 
+## 0.7.0
+
+### Minor Changes
+
+- [#310](https://github.com/ChestnutLabs/gcode-preview/pull/310) [`bbdef97`](https://github.com/ChestnutLabs/gcode-preview/commit/bbdef97d8a1eb77a3864291918f7f5aace559ff2) Thanks [@sobechestnut-dev](https://github.com/sobechestnut-dev)! - Decouple the build-volume **wireframe cage** from the bed/plate ([#306](https://github.com/ChestnutLabs/gcode-preview/issues/306) item 6). The cage (the box up to
+  the volume height) is now independently toggleable: a new `controls.setBuildVolumeCage(visible)` and a
+  `showVolumeCage` prop across all four adapters (`show-volume-cage` attribute on the element), plus a
+  `BuildVolumeStyle.showCage` option. Default `true` (unchanged look); set `false` to show only the
+  printable bed/plate without the whole machine-volume cage. The 2D renderer treats it as a documented
+  no-op. Toggling flips the named `volumeCage` object in place (no geometry rebuild).
+
+- [#313](https://github.com/ChestnutLabs/gcode-preview/pull/313) [`39ede6e`](https://github.com/ChestnutLabs/gcode-preview/commit/39ede6ebc0a1ba594a391f1b33db2bdf3445d414) Thanks [@sobechestnut-dev](https://github.com/sobechestnut-dev)! - Frame-to-content: frame the printed **object**, not the skirt/prime ([#306](https://github.com/ChestnutLabs/gcode-preview/issues/306) item 6). New
+  `ToolpathIR.objectBounds` (extrusion of labeled objects only, `segments.object != 0`; empty when the
+  file has no object labels) and a `frameContent: 'object' | 'all'` option threaded through the renderer
+  (`setFrameContent`), `renderStill`, and all four adapters (`show-`-style `frame-content` attribute on the
+  element). Default `'all'` (unchanged framing). `'object'` frames only the printed objects so a prime
+  line or skirt at the bed edge no longer shrinks the object in view; when the file carries no object
+  labels it discloses (an `E_FRAME_CONTENT_UNAVAILABLE` event) and frames all extrusion — never fabricated.
+
+  Note: `frameContent: 'object'` engages only when the parser populated the `objects` capability (M486 /
+  EXCLUDE_OBJECT / `; printing object`). Broadening object-label detection for more slicer/firmware
+  variants is tracked separately.
+
+- [#314](https://github.com/ChestnutLabs/gcode-preview/pull/314) [`caaa0fa`](https://github.com/ChestnutLabs/gcode-preview/commit/caaa0fad0938bfa3ac1cd9f312f9cd2355c722d1) Thanks [@sobechestnut-dev](https://github.com/sobechestnut-dev)! - Interaction-aware render quality ([#306](https://github.com/ChestnutLabs/gcode-preview/issues/306) item 2, DD-020). New opt-in `interactionQuality: 'off' | 'auto'`
+  renderer option + `controls.setInteractionQuality` + an `interactionQuality` prop / `interaction-quality`
+  attribute on all four adapters. With `'auto'`, the renderer **reduces render detail (pixel ratio) while
+  the camera is moving and restores full detail when it settles** (short debounce), so orbiting a heavy tube
+  scene stays responsive without permanently dropping to lines. The reduction is proactive (a gesture starts
+  at 0.6× the resting pixel ratio) and adapts to measured frame time within a clamped `[0.4, 1]` band. The
+  hard vertex-budget `quality-fallback` (tubes → lines when a chunk can't allocate) is unchanged as the final
+  safety net. **Default `'off'` — existing behavior is byte-identical.** The 2D renderer treats it as a
+  documented no-op.
+
+  A consumer maps a High / Balanced / Performance preference on top: High = `quality:'tubes'` +
+  `interactionQuality:'auto'`; Balanced = `quality:'auto'` + `interactionQuality:'auto'`; Performance =
+  `quality:'lines'`.
+
+- [#307](https://github.com/ChestnutLabs/gcode-preview/pull/307) [`69806d8`](https://github.com/ChestnutLabs/gcode-preview/commit/69806d8e44498925c9140acb124a5f76395a1e8f) Thanks [@sobechestnut-dev](https://github.com/sobechestnut-dev)! - Surface slicer **`metadata`** on the `ready` / `parse-complete` event ([#306](https://github.com/ChestnutLabs/gcode-preview/issues/306) item 4). The
+  `DialectMetadata` a slicer file carries — per-tool `filaments` (`{slot, type, color, name}`),
+  `filamentUsage` (`{lengthMm, volumeCm3, weightG}`), `printEstimate` (`{seconds, mode}`), `thumbnails`,
+  `dialects`, and whitelisted `raw` settings — is now on the event across all four adapters, so a consumer
+  can build a "Slice details" panel without reaching into the raw handle. Capability-honest: `metadata` is
+  `undefined` when the file carried none, and individual fields are absent (never fabricated) when a slicer
+  didn't emit them. (Purge/waste, prime/tower, and cost are not parsed and are intentionally not present.)
+
+### Patch Changes
+
+- Updated dependencies [[`bbdef97`](https://github.com/ChestnutLabs/gcode-preview/commit/bbdef97d8a1eb77a3864291918f7f5aace559ff2), [`39ede6e`](https://github.com/ChestnutLabs/gcode-preview/commit/39ede6ebc0a1ba594a391f1b33db2bdf3445d414), [`caaa0fa`](https://github.com/ChestnutLabs/gcode-preview/commit/caaa0fad0938bfa3ac1cd9f312f9cd2355c722d1), [`1c15c5e`](https://github.com/ChestnutLabs/gcode-preview/commit/1c15c5ea38f69aba99478cec60e4a0af28b9cae4), [`6293342`](https://github.com/ChestnutLabs/gcode-preview/commit/62933424cb59684878bf142ad7fc7edb44507a19), [`69806d8`](https://github.com/ChestnutLabs/gcode-preview/commit/69806d8e44498925c9140acb124a5f76395a1e8f)]:
+  - @chestnutlabs/gcode-renderer-three@0.7.0
+  - @chestnutlabs/gcode-preview-core@0.7.0
+  - @chestnutlabs/toolpath-core@0.7.0
+  - @chestnutlabs/gcode-parser@0.7.0
+
 ## 0.6.0
 
 ### Patch Changes
