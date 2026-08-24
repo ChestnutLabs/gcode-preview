@@ -80,7 +80,8 @@
           layers: e.layers,
           complete: e.complete,
           capabilities: e.capabilities,
-          warnings: e.warnings
+          warnings: e.warnings,
+          metadata: e.metadata
         });
         break;
       case 'camera-changed':

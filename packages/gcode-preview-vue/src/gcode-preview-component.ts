@@ -20,7 +20,7 @@ import type {
   Theme,
   TubeOptions
 } from '@chestnutlabs/gcode-renderer-three';
-import type { Confidence, Warning } from '@chestnutlabs/toolpath-core';
+import type { Confidence, DialectMetadata, Warning } from '@chestnutlabs/toolpath-core';
 import type { MachineGeometry, ProgressObservation } from '@chestnutlabs/toolpath-core';
 import type { WireParseOptions, WorkerLike } from '@chestnutlabs/gcode-parser';
 import {
@@ -93,6 +93,7 @@ export const GcodePreview = defineComponent({
       complete: boolean;
       capabilities: Record<string, Confidence>;
       warnings: readonly Warning[];
+      metadata: DialectMetadata | undefined;
     }) => true,
     'camera-change': (_state: CameraState) => true,
     'parse-error': (_e: { code: string; message: string }) => true,
@@ -139,7 +140,8 @@ export const GcodePreview = defineComponent({
             layers: e.layers,
             complete: e.complete,
             capabilities: e.capabilities,
-            warnings: e.warnings
+            warnings: e.warnings,
+            metadata: e.metadata
           });
           break;
         case 'camera-changed':

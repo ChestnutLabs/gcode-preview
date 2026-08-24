@@ -90,6 +90,7 @@ export interface GcodePreviewProps {
     complete: boolean;
     capabilities: Record<string, import('@chestnutlabs/toolpath-core').Confidence>;
     warnings: readonly import('@chestnutlabs/toolpath-core').Warning[];
+    metadata: import('@chestnutlabs/toolpath-core').DialectMetadata | undefined;
   }) => void;
   /** #275/M6: fires after a user camera interaction settles, with the new serializable state. */
   onCameraChange?: (state: CameraState) => void;
@@ -137,7 +138,8 @@ function GcodePreviewImpl(props: GcodePreviewProps, ref: ForwardedRef<GcodePrevi
             layers: e.layers,
             complete: e.complete,
             capabilities: e.capabilities,
-            warnings: e.warnings
+            warnings: e.warnings,
+            metadata: e.metadata
           });
           break;
         case 'camera-changed':
