@@ -10,6 +10,7 @@
     "packages/gcode-bgcode",
     "packages/gcode-renderer-three",
     "packages/gcode-renderer-2d",
+    "packages/gcode-model-renderer",
     "packages/gcode-preview-core",
     "packages/gcode-preview-vue",
     "packages/gcode-preview-react",
