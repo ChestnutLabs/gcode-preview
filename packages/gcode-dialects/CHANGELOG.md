@@ -1,5 +1,12 @@
 # @chestnutlabs/gcode-dialects
 
+## 0.6.0
+
+### Patch Changes
+
+- Updated dependencies []:
+  - @chestnutlabs/toolpath-core@0.6.0
+
 ## 0.5.2
 
 ### Patch Changes

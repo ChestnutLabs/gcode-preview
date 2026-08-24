@@ -1,5 +1,15 @@
 # @chestnutlabs/gcode-parser
 
+## 0.6.0
+
+### Patch Changes
+
+- Updated dependencies []:
+  - @chestnutlabs/gcode-bgcode@0.6.0
+  - @chestnutlabs/gcode-containers@0.6.0
+  - @chestnutlabs/gcode-dialects@0.6.0
+  - @chestnutlabs/toolpath-core@0.6.0
+
 ## 0.5.2
 
 ### Patch Changes
