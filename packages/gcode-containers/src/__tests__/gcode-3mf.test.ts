@@ -6,7 +6,23 @@ import { describe, expect, it } from 'vitest';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { ContainerError, DEFAULT_CONTAINER_LIMITS, openGcode3mf, readDirectory, sniffGcode3mf } from '../index';
+import {
+  ContainerError,
+  DEFAULT_CONTAINER_LIMITS,
+  filamentColoursFromSettings,
+  openGcode3mf,
+  readDirectory,
+  sniffGcode3mf
+} from '../index';
+
+describe('filamentColoursFromSettings', () => {
+  it('returns the filament_colour palette by slot, undefined where absent, [] when missing', () => {
+    expect(filamentColoursFromSettings({ filament_colour: ['#8080FF', '#000000'] })).toEqual(['#8080FF', '#000000']);
+    expect(filamentColoursFromSettings({ filament_colour: ['#FFF', 42] })).toEqual(['#FFF', undefined]);
+    expect(filamentColoursFromSettings({})).toEqual([]);
+    expect(filamentColoursFromSettings({ filament_colour: 'nope' })).toEqual([]);
+  });
+});
 
 const fixtureDir = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),

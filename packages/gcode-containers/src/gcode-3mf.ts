@@ -108,14 +108,27 @@ function machineFromSettings(settings: Record<string, unknown>): MachineGeometry
   };
 }
 
+/**
+ * The slicer filament palette from a parsed `project_settings.config`: the `filament_colour` array,
+ * one hex string per filament slot (0-based), `undefined` where a slot has no colour. This is the
+ * single source of the "which key is the palette" semantics — shared so the model presentation
+ * renderer (`@chestnutlabs/gcode-model-renderer`) reads the same palette for source-model painting
+ * (Bambu/Orca `paint_color`) instead of duplicating it. Empty array when the key is absent/malformed.
+ */
+export function filamentColoursFromSettings(settings: Record<string, unknown>): (string | undefined)[] {
+  const colours = settings['filament_colour'];
+  if (!Array.isArray(colours)) return [];
+  return colours.slice(0, 64).map((c) => (typeof c === 'string' ? c : undefined));
+}
+
 function filamentsFromSettings(settings: Record<string, unknown>): FilamentInfo[] | undefined {
   const types = settings['filament_type'];
   if (!Array.isArray(types)) return undefined;
-  const colours = Array.isArray(settings['filament_colour']) ? settings['filament_colour'] : [];
+  const colours = filamentColoursFromSettings(settings);
   return types.slice(0, 64).map((t, i) => ({
     slot: i,
     type: typeof t === 'string' ? t : undefined,
-    color: typeof colours[i] === 'string' ? colours[i] : undefined
+    color: colours[i]
   }));
 }
 

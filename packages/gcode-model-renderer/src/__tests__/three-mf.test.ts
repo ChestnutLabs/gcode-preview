@@ -142,6 +142,87 @@ function stubGL(canvas: RenderTargetCanvas): GLRendererLike {
   return { render: () => undefined, setSize: () => undefined, dispose: () => undefined, domElement: canvas };
 }
 
+// --- Bambu/Orca production paint fixtures (fully synthetic, MIT-clean; see RR-005) ---
+// Palette lives in project_settings.config; per-triangle paint_color leaves decode 4→state1, 8→2,
+// 0C→3, 1C→4. state 0 / unpainted = default extruder (here 1 → filament index 0 = periwinkle).
+const PAINT_SETTINGS = JSON.stringify({
+  filament_type: ['PLA', 'PLA', 'PLA', 'PLA'],
+  filament_colour: ['#8080FF', '#000000', '#FFFFFF', '#808080'] // periwinkle, black, white, grey
+});
+const PAINT_MODEL_SETTINGS = `<?xml version="1.0"?><config><object id="1"><metadata key="extruder" value="1"/></object></config>`;
+const PAINT_MODEL = `<?xml version="1.0"?>
+<model unit="millimeter"><resources>
+ <object id="1" type="model"><mesh>
+  <vertices>
+   <vertex x="0" y="0" z="0"/><vertex x="10" y="0" z="0"/><vertex x="0" y="10" z="0"/>
+   <vertex x="10" y="10" z="0"/><vertex x="0" y="0" z="10"/>
+  </vertices>
+  <triangles>
+   <triangle v1="0" v2="1" v3="2"/>
+   <triangle v1="0" v2="1" v3="3" paint_color="4"/>
+   <triangle v1="0" v2="2" v3="4" paint_color="8"/>
+   <triangle v1="1" v2="2" v3="3" paint_color="0C"/>
+   <triangle v1="2" v2="3" v3="4" paint_color="1C"/>
+  </triangles>
+ </mesh></object>
+</resources><build><item objectid="1"/></build></model>`;
+function paintFixture(opts: { settings?: string; subdivided?: boolean } = {}): Uint8Array {
+  const model = opts.subdivided
+    ? PAINT_MODEL.replace('paint_color="1C"', 'paint_color="1C1C1C00031C1C31C1C3"')
+    : PAINT_MODEL;
+  const files = [
+    { name: '3D/3dmodel.model', data: new TextEncoder().encode(model) },
+    { name: 'Metadata/model_settings.config', data: new TextEncoder().encode(PAINT_MODEL_SETTINGS) }
+  ];
+  if (opts.settings !== undefined) {
+    files.push({ name: 'Metadata/project_settings.config', data: new TextEncoder().encode(opts.settings) });
+  }
+  return makeZip(files);
+}
+/** First vertex color (RGB) of triangle `ti` from a per-vertex color buffer. */
+const triColor = (colors: Float32Array, ti: number): [number, number, number] => [
+  colors[ti * 9],
+  colors[ti * 9 + 1],
+  colors[ti * 9 + 2]
+];
+
+describe('parse3mf paint_color (Bambu/Orca facet paint)', () => {
+  it('decodes paint_color states to filament colours from project_settings.config', async () => {
+    const scene = await parse3mf(paintFixture({ settings: PAINT_SETTINGS }));
+    expect(scene.objects).toHaveLength(1);
+    expect(scene.capabilities.materials).toBe('known'); // whole-triangle paint only
+    const colors = scene.objects[0].geometry.colors;
+    expect(colors).toBeInstanceOf(Float32Array);
+    const c = colors!;
+    // T2 paint_color="8" → state 2 → filament index 1 → black (exact linear 0,0,0)
+    expect(triColor(c, 2)).toEqual([0, 0, 0]);
+    // T3 paint_color="0C" → state 3 → filament index 2 → white (exact linear 1,1,1)
+    expect(triColor(c, 3)).toEqual([1, 1, 1]);
+    // T4 paint_color="1C" → state 4 → filament index 3 → grey (equal channels, mid, not 0/1)
+    const grey = triColor(c, 4);
+    expect(grey[0]).toBeCloseTo(grey[1]);
+    expect(grey[1]).toBeCloseTo(grey[2]);
+    expect(grey[0]).toBeGreaterThan(0);
+    expect(grey[0]).toBeLessThan(1);
+    // T0 unpainted and T1 paint_color="4" (state 1 → filament 0) are both the default periwinkle
+    expect(triColor(c, 0)).toEqual(triColor(c, 1));
+    expect(triColor(c, 0)[2]).toBeCloseTo(1); // periwinkle blue channel #FF → linear 1
+    expect(triColor(c, 0)[0]).toBeLessThan(0.5); // #80 → linear ~0.216
+  });
+
+  it('reports approximated materials when a paint_color facet is subdivided', async () => {
+    const scene = await parse3mf(paintFixture({ settings: PAINT_SETTINGS, subdivided: true }));
+    expect(scene.capabilities.materials).toBe('approximated');
+    expect(scene.objects[0].geometry.colors).toBeInstanceOf(Float32Array);
+  });
+
+  it('paint_color without a palette stays honestly unavailable (neutral, never fabricated)', async () => {
+    const scene = await parse3mf(paintFixture()); // no project_settings.config
+    expect(scene.capabilities.materials).toBe('unavailable');
+    expect(scene.objects[0].geometry.colors).toBeUndefined();
+  });
+});
+
 describe('parse3mf', () => {
   it('single object, no color → honest unavailable materials + correct bounds', async () => {
     const scene = await parse3mf(threeMf(SINGLE));

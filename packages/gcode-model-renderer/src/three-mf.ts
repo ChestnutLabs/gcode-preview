@@ -15,6 +15,7 @@
 import {
   readDirectory,
   extractEntry,
+  filamentColoursFromSettings,
   DEFAULT_CONTAINER_LIMITS,
   type ZipDirectory
 } from '@chestnutlabs/gcode-containers';
@@ -54,6 +55,7 @@ interface ParsedObject {
   tris: number[]; // flat v1,v2,v3 per triangle
   triColorIdx: (readonly [number, number, number] | null)[]; // per-triangle [c1,c2,c3] palette indices, or null
   triPid: (string | null)[]; // per-triangle property group id (for palette lookup)
+  triPaint: (string | null)[]; // per-triangle Bambu/Orca `paint_color` facet-paint hex, or null (#189 follow-up)
   components: Component[]; // production-extension sub-assemblies
   objPid?: string;
   objPindex?: number;
@@ -95,6 +97,68 @@ function srgbHexToLinear(hex: string): RGB | null {
   const g = to(2);
   const b = to(4);
   return Number.isNaN(r) || Number.isNaN(g) || Number.isNaN(b) ? null : [r, g, b];
+}
+
+/**
+ * Decode a Bambu/Orca `paint_color` facet-paint attribute (clean-room from the observed format —
+ * see RR-005, NOT from Orca/PrusaSlicer GPL source). The value is a **little-endian** stream of 4-bit
+ * nibble tokens forming a recursive triangle-split tree:
+ *
+ * - `token & 0b11` = split-sides: `0` ⇒ a **leaf**, otherwise the triangle is split into
+ *   `split_sides + 1` children (2/3/4) that follow, decoded depth-first (`token >> 2` is the split
+ *   side — irrelevant to a presentation render).
+ * - a leaf's state is `token >> 2`, with `3` escaping into the following nibble (`3 + next`).
+ *
+ * **State 0 = the object's default extruder (unpainted); state s ≥ 1 = filament index s − 1.**
+ * Returns the dominant leaf state plus whether the facet was subdivided (so the caller can flatten it
+ * to one colour and disclose `approximated`), or `null` if the value is malformed/truncated.
+ */
+function decodePaintState(hex: string): { state: number; subdivided: boolean } | null {
+  const clean = hex.trim();
+  if (clean.length === 0) return null;
+  const nibbles: number[] = [];
+  for (let i = clean.length - 1; i >= 0; i--) {
+    const n = parseInt(clean[i], 16);
+    if (Number.isNaN(n)) return null;
+    nibbles.push(n);
+  }
+  let pos = 0;
+  const states: number[] = [];
+  const next = (): number => {
+    if (pos >= nibbles.length) throw new ModelParseError('E_MODEL_PARSE', 'paint_color underflow');
+    return nibbles[pos++];
+  };
+  const node = (depth: number): void => {
+    if (depth > 16) throw new ModelParseError('E_MODEL_PARSE', 'paint_color too deep');
+    const t = next();
+    const ss = t & 0b11;
+    if (ss === 0) {
+      const s2 = t >> 2;
+      states.push(s2 === 3 ? 3 + next() : s2);
+    } else {
+      for (let i = 0; i <= ss; i++) node(depth + 1);
+    }
+  };
+  try {
+    node(0);
+  } catch {
+    return null;
+  }
+  if (states.length === 0) return null;
+  // Dominant leaf state — subdivided facets are a tiny fraction of any real model, so flattening them
+  // to their most-common state (and reporting `approximated`) is a faithful presentation trade-off.
+  const counts = new Map<number, number>();
+  let best = states[0];
+  let bestN = 0;
+  for (const s of states) {
+    const c = (counts.get(s) ?? 0) + 1;
+    counts.set(s, c);
+    if (c > bestN) {
+      bestN = c;
+      best = s;
+    }
+  }
+  return { state: best, subdivided: states.length > 1 };
 }
 
 function parseTransform(s: string | undefined): number[] | null {
@@ -161,7 +225,15 @@ function parseModelPart(xml: string, lim: ResolvedLimits): ModelPart {
       } else {
         const a = attrs(raw);
         curObjId = a.id ?? null;
-        curObj = { vertices: [], tris: [], triColorIdx: [], triPid: [], components: [], name: a.name };
+        curObj = {
+          vertices: [],
+          tris: [],
+          triColorIdx: [],
+          triPid: [],
+          triPaint: [],
+          components: [],
+          name: a.name
+        };
         if (a.pid !== undefined) curObj.objPid = a.pid;
         if (a.pindex !== undefined) curObj.objPindex = Number(a.pindex);
         if (selfClose) {
@@ -191,6 +263,7 @@ function parseModelPart(xml: string, lim: ResolvedLimits): ModelPart {
       }
       const pid = a.pid ?? curObj.objPid ?? null;
       curObj.triPid.push(pid);
+      curObj.triPaint.push(a.paint_color ?? null);
       if (a.p1 !== undefined) {
         const p1 = Number(a.p1);
         const p2 = a.p2 !== undefined ? Number(a.p2) : p1;
@@ -217,6 +290,12 @@ interface BuildState {
   built: ModelObject[];
   anyColor: boolean;
   anyTransform: boolean;
+  /** Whether any colour came from flattening a subdivided `paint_color` facet (→ `approximated`). */
+  anyApprox: boolean;
+  /** Scene filament palette (linear RGB by 0-based slot) from `project_settings.config`, or empty. */
+  paintPalette: RGB[];
+  /** 0-based default-extruder filament index applied to unpainted facets of a painted mesh. */
+  defaultExtruderIdx: number;
   min: [number, number, number];
   max: [number, number, number];
   totalTris: number;
@@ -239,7 +318,25 @@ function bakeMesh(
   const positions = new Float32Array(triCount * 9);
   let colors: Float32Array | null = null;
   let objHasColor = false;
+  // A mesh painted with Bambu/Orca `paint_color` (only meaningful when we have a filament palette).
+  const objHasPaint = st.paintPalette.length > 0 && obj.triPaint.some((p) => p !== null);
   for (let ti = 0; ti < triCount; ti++) {
+    // Paint path: one filament colour for the whole triangle. Painted facets decode to a state; the
+    // unpainted facets of a painted mesh take the object's default-extruder colour (never left blank).
+    let paintCol: RGB | undefined;
+    if (objHasPaint) {
+      let idx = st.defaultExtruderIdx;
+      const paint = obj.triPaint[ti];
+      if (paint !== null) {
+        const dec = decodePaintState(paint);
+        if (dec !== null) {
+          idx = dec.state === 0 ? st.defaultExtruderIdx : dec.state - 1;
+          if (dec.subdivided) st.anyApprox = true;
+        }
+      }
+      paintCol = st.paintPalette[idx] ?? st.paintPalette[st.defaultExtruderIdx];
+    }
+    // Standard 3MF material path (basematerials / colorgroup + pid) — fallback when there's no paint.
     const pid = obj.triPid[ti];
     const palette = pid !== null ? part.palettes.get(pid) : undefined;
     const cidx = obj.triColorIdx[ti];
@@ -261,15 +358,13 @@ function bakeMesh(
       if (x > st.max[0]) st.max[0] = x;
       if (y > st.max[1]) st.max[1] = y;
       if (z > st.max[2]) st.max[2] = z;
-      if (palette !== undefined && cidx !== null) {
-        const col = palette[cidx[k]] ?? palette[0];
-        if (col !== undefined) {
-          if (colors === null) colors = new Float32Array(triCount * 9);
-          colors[o] = col[0];
-          colors[o + 1] = col[1];
-          colors[o + 2] = col[2];
-          objHasColor = true;
-        }
+      const col = paintCol ?? (palette !== undefined && cidx !== null ? (palette[cidx[k]] ?? palette[0]) : undefined);
+      if (col !== undefined) {
+        if (colors === null) colors = new Float32Array(triCount * 9);
+        colors[o] = col[0];
+        colors[o + 1] = col[1];
+        colors[o + 2] = col[2];
+        objHasColor = true;
       }
     }
   }
@@ -339,10 +434,43 @@ export async function parse3mf(source: Uint8Array | ArrayBuffer, limits?: ModelL
     throw new ModelParseError('E_MODEL_PARSE', `3MF unzip failed: ${(e as Error).message}`);
   }
 
+  // Source-model filament palette for Bambu/Orca `paint_color`: it lives in `project_settings.config`
+  // (`filament_colour`), NOT the model XML, so the render is self-contained and needs no slicer output.
+  let paintPalette: RGB[] = [];
+  const settingsEntry = entryByName('metadata/project_settings.config');
+  if (settingsEntry !== undefined) {
+    try {
+      const json = new TextDecoder().decode(await extractEntry(bytes, settingsEntry, climits.maxMetadataBytes));
+      const settings = JSON.parse(json) as Record<string, unknown>;
+      paintPalette = filamentColoursFromSettings(settings).map((hex) =>
+        hex !== undefined ? (srgbHexToLinear(hex) ?? [0.8, 0.8, 0.82]) : [0.8, 0.8, 0.82]
+      );
+    } catch {
+      // Malformed/oversized settings → no palette; paint stays capability-honest `unavailable`.
+      paintPalette = [];
+    }
+  }
+  // Default extruder (1-based) for a painted mesh's unpainted facets; from `model_settings.config`, else 1.
+  let defaultExtruderIdx = 0;
+  const modelSettingsEntry = entryByName('metadata/model_settings.config');
+  if (modelSettingsEntry !== undefined) {
+    try {
+      const xml = new TextDecoder().decode(await extractEntry(bytes, modelSettingsEntry, climits.maxMetadataBytes));
+      const m = /key="extruder"\s+value="(\d+)"/i.exec(xml);
+      const n = m !== null ? parseInt(m[1], 10) : NaN;
+      if (Number.isFinite(n) && n >= 1) defaultExtruderIdx = n - 1;
+    } catch {
+      defaultExtruderIdx = 0;
+    }
+  }
+
   const st: BuildState = {
     built: [],
     anyColor: false,
     anyTransform: false,
+    anyApprox: false,
+    paintPalette,
+    defaultExtruderIdx,
     min: [Infinity, Infinity, Infinity],
     max: [-Infinity, -Infinity, -Infinity],
     totalTris: 0
@@ -389,7 +517,8 @@ export async function parse3mf(source: Uint8Array | ArrayBuffer, limits?: ModelL
     objects: st.built,
     bounds,
     capabilities: {
-      materials: st.anyColor ? 'known' : 'unavailable',
+      // `approximated` when any colour came from flattening a subdivided `paint_color` facet.
+      materials: st.anyApprox ? 'approximated' : st.anyColor ? 'known' : 'unavailable',
       transforms: st.anyTransform ? 'known' : 'unavailable',
       multiObject: st.built.length > 1 ? 'known' : 'unavailable'
     }
