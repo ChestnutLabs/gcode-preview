@@ -371,6 +371,15 @@ export function createWorkerHandler(
           if (Object.keys(opened.metadata.raw).length > 0) {
             metadata.raw = { ...opened.metadata.raw, ...(metadata.raw ?? {}) };
           }
+          // Structured plate list (#306/#3): the discovered plates + which one was parsed, so a
+          // consumer can build a plate selector and re-parse with {plate: N} — instead of scraping the
+          // `container-multiple-plates` warning string. One plate is parsed at a time (never merged).
+          if (opened.plates.length > 0) {
+            metadata.plates = {
+              list: opened.plates.map((p) => ({ index: p.index, name: p.name })),
+              parsed: plate ?? 0
+            };
+          }
         }
         for (const w of containerWarnings) {
           result.ir.header.warnings.push(w);
