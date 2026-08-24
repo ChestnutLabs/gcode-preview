@@ -22,7 +22,6 @@
 import {
   BufferAttribute,
   BufferGeometry,
-  type Camera,
   Color,
   DirectionalLight,
   Group,
@@ -41,8 +40,7 @@ import {
   Scene,
   SphereGeometry,
   Vector2,
-  Vector3,
-  WebGLRenderer
+  Vector3
 } from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import type { MachineGeometry, MappedProgress, ToolpathIR, Vec3 } from '@chestnutlabs/toolpath-core';
@@ -51,7 +49,12 @@ import { buildChunkColors, type ColorMode } from './colors.js';
 import { computeDrawState, computeOverlayDrawStates } from './ranges.js';
 import { createBuildVolume, type BuildVolumeDef, type BuildVolumeStyle } from './build-volume.js';
 import { buildTubeChunk, TUBES_AUTO_MAX_SEGMENTS, type TubeOptions } from './tubes.js';
-import { framingFromCenterRadius } from './stage.js';
+import {
+  framingFromCenterRadius,
+  createDefaultGLRenderer,
+  type RenderTargetCanvas,
+  type GLRendererLike
+} from './stage.js';
 import { resolveTheme, type Theme, type ResolvedTheme } from './theme.js';
 
 /** §4.3 quality tiers. `auto` picks by segment count (chooseQuality). */
@@ -127,23 +130,10 @@ export type RendererEvent =
   | { type: 'camera-changed'; state: CameraState }
   | { type: 'error'; code: string; message: string };
 
-/**
- * Render target: a DOM canvas (interactive hosts) or an OffscreenCanvas
- * (workers / headless still-render, #132). Both are EventTargets with WebGL2,
- * so the scene layer treats them uniformly.
- */
-export type RenderTargetCanvas = HTMLCanvasElement | OffscreenCanvas;
-
-/** Minimal surface of WebGLRenderer the scene layer uses — injectable for tests. */
-export interface GLRendererLike {
-  // Base `Camera`, not `PerspectiveCamera`: the active camera may be either
-  // projection (#150). Every stub GL ignores the arg, so this only widens types.
-  render(scene: Scene, camera: Camera): void;
-  setSize(width: number, height: number, updateStyle?: boolean): void;
-  setPixelRatio?(ratio: number): void;
-  dispose(): void;
-  domElement: RenderTargetCanvas;
-}
+// `RenderTargetCanvas` and `GLRendererLike` are shared stage contracts (DD-018 Phase 0): defined in
+// stage.ts and re-exported here so existing import paths (index.ts re-exports them from './scene.js')
+// keep working unchanged.
+export type { RenderTargetCanvas, GLRendererLike } from './stage.js';
 
 export interface ToolpathRendererOptions {
   canvas: RenderTargetCanvas;
@@ -370,14 +360,11 @@ export class ToolpathRenderer {
         if (typeof requestAnimationFrame === 'function') requestAnimationFrame(run);
         setTimeout(run, 50);
       });
+    // Default GL is the shared stage builder (DD-018 Phase 0); the toolpath renderer leaves alpha
+    // false (opaque), so this is byte-identical to the previous inline default.
     this.gl = (
       opts.createRenderer ??
-      ((canvas) =>
-        new WebGLRenderer({
-          canvas: canvas as HTMLCanvasElement,
-          antialias: true,
-          preserveDrawingBuffer: opts.preserveDrawingBuffer ?? false
-        }))
+      ((canvas) => createDefaultGLRenderer(canvas, { preserveDrawingBuffer: opts.preserveDrawingBuffer }))
     )(opts.canvas);
 
     // Single Z-up→Y-up conversion (§6.2); everything below is printer coordinates.
