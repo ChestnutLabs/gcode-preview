@@ -75,6 +75,8 @@ export interface GcodePreviewProps {
   showWipe?: boolean;
   /** DD-009 D1 (#148): opt-in retraction/deretraction markers. */
   showRetractions?: boolean;
+  /** #306/#6: show the build-volume wireframe cage (independent of the bed/plate). Default true. */
+  showVolumeCage?: boolean;
   /** DD-006 live progress observation; null hides the overlay. */
   progress?: ProgressObservation | null;
   /** Worker factory escape hatch (DD-005 slim/custom entries; D2). */
@@ -188,6 +190,7 @@ function GcodePreviewImpl(props: GcodePreviewProps, ref: ForwardedRef<GcodePrevi
     showTravel,
     showWipe,
     showRetractions,
+    showVolumeCage,
     colorMode,
     quality,
     cameraMode,
@@ -219,6 +222,9 @@ function GcodePreviewImpl(props: GcodePreviewProps, ref: ForwardedRef<GcodePrevi
   useEffect(() => {
     preview.controls.setShowRetractions(showRetractions ?? false);
   }, [showRetractions]);
+  useEffect(() => {
+    preview.controls.setBuildVolumeCage(showVolumeCage ?? true);
+  }, [showVolumeCage]);
   useEffect(() => {
     if (colorMode !== undefined) preview.controls.setColorMode(colorMode);
   }, [colorMode]);

@@ -51,6 +51,8 @@ export interface PreviewRenderer {
   readonly layerCount: number;
   readonly segmentCount: number;
   setBuildVolume(def: BuildVolumeDef | MachineGeometry): void;
+  /** Show/hide the build-volume wireframe cage independently of the bed/plate (#306/#6). */
+  setBuildVolumeCage(visible: boolean): void;
   setLayerRange(startLayer: number, endLayer: number): void;
   setScrubPosition(segIndex: number | null): void;
   setKindVisible(kind: MoveKindToggle, visible: boolean): void;

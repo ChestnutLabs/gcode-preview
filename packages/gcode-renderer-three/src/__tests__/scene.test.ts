@@ -358,6 +358,27 @@ describe('ToolpathRenderer clipping/scrub/visibility/coloring (phase 3)', () => 
     expect(maxY).toBe(220);
   });
 
+  it('build-volume cage is independently toggleable, default visible (#306/#6)', () => {
+    // createBuildVolume: cage named 'volumeCage', respects style.showCage (default true).
+    const shown = createBuildVolume({ x: 200, y: 200, z: 250 });
+    expect(shown.getObjectByName('volumeCage')?.visible).toBe(true);
+    const hidden = createBuildVolume({ x: 200, y: 200, z: 250 }, { showCage: false });
+    expect(hidden.getObjectByName('volumeCage')?.visible).toBe(false);
+    // The plate/grid is independent — still present when the cage is hidden.
+    expect(hidden.children.some((c) => c.type === 'LineSegments' && c.name !== 'volumeCage')).toBe(true);
+
+    // Renderer-level toggle flips the cage in place, plate unaffected.
+    const h = makeHarness();
+    const grp = (
+      h.renderer as unknown as { volumeGroup: { getObjectByName(n: string): { visible: boolean } | undefined } }
+    ).volumeGroup;
+    expect(grp.getObjectByName('volumeCage')?.visible).toBe(true);
+    h.renderer.setBuildVolumeCage(false);
+    expect(grp.getObjectByName('volumeCage')?.visible).toBe(false);
+    h.renderer.setBuildVolumeCage(true);
+    expect(grp.getObjectByName('volumeCage')?.visible).toBe(true);
+  });
+
   it('bedSurface:solid adds a filled plate under the grid; default adds none (#185)', () => {
     const bare = createBuildVolume({ x: 200, y: 200, z: 250 });
     expect(bare.children.find((c) => c.name === 'bedSurface')).toBeUndefined();

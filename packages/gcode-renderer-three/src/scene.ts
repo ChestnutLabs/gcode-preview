@@ -238,6 +238,8 @@ export class ToolpathRenderer {
   private readonly root = new Group();
   private readonly toolpathGroup = new Group();
   private volumeGroup: Group | null = null;
+  /** Whether the build-volume wireframe cage is shown (#306/#6); the plate/grid is independent. */
+  private cageVisible = true;
   private volumeDef: BuildVolumeDef | null = null;
   // Themeable scene objects (#153): lights + resolved theme, retained so setTheme
   // can restyle them live. Materials for tube geometry are made per-chunk.
@@ -1254,8 +1256,21 @@ export class ToolpathRenderer {
       gridOpacity: t.gridOpacity,
       boxColor: t.bedColor,
       boxOpacity: t.bedOpacity,
-      bedSurface: t.bedSurface
+      bedSurface: t.bedSurface,
+      showCage: this.cageVisible
     };
+  }
+
+  /**
+   * Show/hide the build-volume wireframe **cage** independently of the bed/plate (#306/#6). Toggles the
+   * named `volumeCage` child in place (no geometry rebuild); persists so a later volume rebuild honors it.
+   */
+  setBuildVolumeCage(visible: boolean): void {
+    if (this.disposed) return;
+    this.cageVisible = visible;
+    const cage = this.volumeGroup?.getObjectByName('volumeCage');
+    if (cage !== undefined) cage.visible = visible;
+    this.render();
   }
 
   /** Set (or clear) the scene background from the theme. Null leaves three's default. */

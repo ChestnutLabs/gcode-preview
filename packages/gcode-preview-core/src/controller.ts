@@ -172,6 +172,8 @@ export interface GcodePreviewControls {
   setTheme(theme: Theme): void;
   /** Marks the volume consumer-configured: file-discovered geometry stops auto-applying. */
   setBuildVolume(def: BuildVolumeDef | MachineGeometry): void;
+  /** Show/hide the build-volume wireframe cage independently of the bed/plate (#306/#6). */
+  setBuildVolumeCage(visible: boolean): void;
   frame(): void;
 }
 
@@ -480,6 +482,7 @@ export function createPreviewController(options: PreviewControllerOptions = {}):
       consumerVolumeSet = true;
       withRenderer((r) => r.setBuildVolume(def));
     },
+    setBuildVolumeCage: (v) => withRenderer((r) => r.setBuildVolumeCage(v)),
     frame: () => withRenderer((r) => r.frame())
   };
 

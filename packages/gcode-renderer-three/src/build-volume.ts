@@ -43,6 +43,12 @@ export interface BuildVolumeStyle {
   boxOpacity?: number;
   /** Build-plate surface (#185); default `{ mode: 'none' }` (bare grid). */
   bedSurface?: BedSurface;
+  /**
+   * Show the full build-volume wireframe **cage** (the box up to `def.z`). Default `true`. When
+   * `false`, only the bed/plate (grid + surface + origin) shows — the cage is decoupled from the plate
+   * (#306/#6), so a consumer can present the printable bed without the whole machine volume.
+   */
+  showCage?: boolean;
 }
 
 function lines(positions: number[], color: ThemeColor, opacity = 1): LineSegments {
@@ -101,7 +107,11 @@ export function createBuildVolume(def: BuildVolumeDef, style?: BuildVolumeStyle)
     box.push(x1, y1, z, x2, y2, z); // top edges
     box.push(x1, y1, 0, x1, y1, z); // verticals
   }
-  group.add(lines(box, boxColor, boxOpacity));
+  // Named + independently visible (#306/#6): the cage is decoupled from the plate, default on.
+  const cage = lines(box, boxColor, boxOpacity);
+  cage.name = 'volumeCage';
+  cage.visible = style?.showCage ?? true;
+  group.add(cage);
 
   // Excluded-region outlines (#185): keep-out zones the machine reports (`MachineGeometry`),
   // drawn just above the plate so they read against it. Amber, semi-opaque; informational only.

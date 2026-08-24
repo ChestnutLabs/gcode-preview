@@ -66,6 +66,8 @@ export const GcodePreview = defineComponent({
     showWipe: { type: Boolean, default: true },
     /** DD-009 D1 (#148): opt-in retraction/deretraction markers. */
     showRetractions: { type: Boolean, default: false },
+    /** #306/#6: show the build-volume wireframe cage (independent of the bed/plate). Default true. */
+    showVolumeCage: { type: Boolean, default: true },
     /** DD-006 live progress observation; null hides the overlay. */
     progress: { type: Object as PropType<ProgressObservation | null>, default: null },
     /** Worker factory escape hatch (DD-005 slim/custom entries; D2). Factory form only —
@@ -231,6 +233,11 @@ export const GcodePreview = defineComponent({
     watch(
       () => props.showRetractions,
       (visible) => preview.controls.setShowRetractions(visible),
+      { immediate: true }
+    );
+    watch(
+      () => props.showVolumeCage,
+      (visible) => preview.controls.setBuildVolumeCage(visible),
       { immediate: true }
     );
     watch(
