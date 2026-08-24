@@ -1,5 +1,12 @@
 # @chestnutlabs/gcode-containers
 
+## 0.5.2
+
+### Patch Changes
+
+- Updated dependencies []:
+  - @chestnutlabs/toolpath-core@0.5.2
+
 ## 0.5.1
 
 ### Patch Changes
