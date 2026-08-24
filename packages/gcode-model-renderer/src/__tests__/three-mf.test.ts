@@ -221,6 +221,16 @@ describe('parse3mf paint_color (Bambu/Orca facet paint)', () => {
     expect(scene.capabilities.materials).toBe('unavailable');
     expect(scene.objects[0].geometry.colors).toBeUndefined();
   });
+
+  it('a filamentPalette override colours paint_color even without project_settings.config', async () => {
+    const scene = await parse3mf(paintFixture(), undefined, {
+      filamentPalette: ['#8080FF', '#000000', '#FFFFFF', '#808080']
+    });
+    expect(scene.capabilities.materials).toBe('known');
+    const c = scene.objects[0].geometry.colors!;
+    expect(triColor(c, 2)).toEqual([0, 0, 0]); // "8" → state 2 → filament 1 → black
+    expect(triColor(c, 3)).toEqual([1, 1, 1]); // "0C" → state 3 → filament 2 → white
+  });
 });
 
 describe('parse3mf', () => {

@@ -375,7 +375,24 @@ function bakeMesh(
   st.built.push(built);
 }
 
-export async function parse3mf(source: Uint8Array | ArrayBuffer, limits?: ModelLimits): Promise<ModelScene> {
+export interface Parse3mfOptions {
+  /**
+   * Override the source-model filament palette (hex `#RRGGBB` per 0-based slot) used to colour
+   * `paint_color` facets, instead of reading it from `project_settings.config`. For consumers that
+   * already hold a corrected/richer palette (e.g. re-rendering a sliced `.gcode.3mf`). Ignored when
+   * empty; the file's own palette is still read.
+   */
+  filamentPalette?: readonly (string | undefined)[];
+}
+
+const hexPaletteToLinear = (hexes: readonly (string | undefined)[]): RGB[] =>
+  hexes.map((hex) => (hex !== undefined ? (srgbHexToLinear(hex) ?? [0.8, 0.8, 0.82]) : [0.8, 0.8, 0.82]));
+
+export async function parse3mf(
+  source: Uint8Array | ArrayBuffer,
+  limits?: ModelLimits,
+  opts?: Parse3mfOptions
+): Promise<ModelScene> {
   const lim = resolveLimits(limits);
   const bytes = source instanceof Uint8Array ? source : new Uint8Array(source);
   if (bytes.byteLength === 0) throw new ModelParseError('E_MODEL_EMPTY', '3MF source is empty');
@@ -437,17 +454,21 @@ export async function parse3mf(source: Uint8Array | ArrayBuffer, limits?: ModelL
   // Source-model filament palette for Bambu/Orca `paint_color`: it lives in `project_settings.config`
   // (`filament_colour`), NOT the model XML, so the render is self-contained and needs no slicer output.
   let paintPalette: RGB[] = [];
-  const settingsEntry = entryByName('metadata/project_settings.config');
-  if (settingsEntry !== undefined) {
-    try {
-      const json = new TextDecoder().decode(await extractEntry(bytes, settingsEntry, climits.maxMetadataBytes));
-      const settings = JSON.parse(json) as Record<string, unknown>;
-      paintPalette = filamentColoursFromSettings(settings).map((hex) =>
-        hex !== undefined ? (srgbHexToLinear(hex) ?? [0.8, 0.8, 0.82]) : [0.8, 0.8, 0.82]
-      );
-    } catch {
-      // Malformed/oversized settings → no palette; paint stays capability-honest `unavailable`.
-      paintPalette = [];
+  const override = opts?.filamentPalette;
+  if (override !== undefined && override.length > 0) {
+    // Consumer-supplied palette wins over the file's own (e.g. a corrected slicer palette).
+    paintPalette = hexPaletteToLinear(override);
+  } else {
+    const settingsEntry = entryByName('metadata/project_settings.config');
+    if (settingsEntry !== undefined) {
+      try {
+        const json = new TextDecoder().decode(await extractEntry(bytes, settingsEntry, climits.maxMetadataBytes));
+        const settings = JSON.parse(json) as Record<string, unknown>;
+        paintPalette = hexPaletteToLinear(filamentColoursFromSettings(settings));
+      } catch {
+        // Malformed/oversized settings → no palette; paint stays capability-honest `unavailable`.
+        paintPalette = [];
+      }
     }
   }
   // Default extruder (1-based) for a painted mesh's unpainted facets; from `model_settings.config`, else 1.
