@@ -14,12 +14,16 @@ import type { Confidence } from '@chestnutlabs/toolpath-core';
 import type { GLRendererLike, RenderTargetCanvas } from '@chestnutlabs/gcode-renderer-three';
 import { ModelRenderer, type ModelBackground, type PresentationView } from './model-renderer.js';
 import { parseStl } from './stl.js';
+import { parse3mf } from './three-mf.js';
 import type { ModelScene } from './scene-model.js';
 import { computeCacheKey } from './cache-key.js';
 import type { ModelLimits } from './limits.js';
 
-/** A source model. Phase 1: STL bytes, or a pre-built `ModelScene`. (3MF arrives in Phase 2.) */
-export type ModelSource = { kind: 'stl'; bytes: Uint8Array | ArrayBuffer } | ModelScene;
+/** A source model: STL bytes, 3MF bytes, or a pre-built `ModelScene`. */
+export type ModelSource =
+  | { kind: 'stl'; bytes: Uint8Array | ArrayBuffer }
+  | { kind: '3mf'; bytes: Uint8Array | ArrayBuffer }
+  | ModelScene;
 
 export interface RenderModelStillOptions {
   canvas: RenderTargetCanvas;
@@ -50,24 +54,36 @@ function isModelScene(s: ModelSource): s is ModelScene {
   return (s as ModelScene).objects !== undefined && (s as { kind?: string }).kind === undefined;
 }
 
-function toScene(source: ModelSource, limits?: ModelLimits): { scene: ModelScene; sourceBytes: Uint8Array } {
+async function toScene(
+  source: ModelSource,
+  limits?: ModelLimits
+): Promise<{ scene: ModelScene; sourceBytes: Uint8Array }> {
   if (isModelScene(source)) {
     // No raw bytes for a pre-built scene: key off a stable structural summary instead.
     const summary = JSON.stringify({ n: source.objects.length, b: source.bounds, c: source.capabilities });
     return { scene: source, sourceBytes: new TextEncoder().encode(summary) };
   }
   const bytes = source.bytes instanceof Uint8Array ? source.bytes : new Uint8Array(source.bytes);
-  return { scene: parseStl(bytes, limits), sourceBytes: bytes };
+  const scene = source.kind === '3mf' ? await parse3mf(bytes, limits) : parseStl(bytes, limits);
+  return { scene, sourceBytes: bytes };
 }
 
-export function renderModelStill(source: ModelSource, options: RenderModelStillOptions): RenderModelStillResult {
+/**
+ * Render one presentation still. Async because the 3MF path unzips with the container reader
+ * (`DecompressionStream`); the STL and pre-built-`ModelScene` paths resolve promptly. Mirrors the
+ * async `renderStill` on the toolpath side.
+ */
+export async function renderModelStill(
+  source: ModelSource,
+  options: RenderModelStillOptions
+): Promise<RenderModelStillResult> {
   const { canvas } = options;
   const width = options.width ?? canvas.width;
   const height = options.height ?? canvas.height;
   const background: ModelBackground = options.background ?? 'transparent';
   const view: PresentationView = options.view ?? 'iso';
 
-  const { scene, sourceBytes } = toScene(source, options.limits);
+  const { scene, sourceBytes } = await toScene(source, options.limits);
 
   const renderer = new ModelRenderer({
     canvas,

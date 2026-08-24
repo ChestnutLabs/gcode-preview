@@ -9,6 +9,7 @@ export default defineConfig({
       // own transitive deps, since resolving it from source pulls them in too.
       '@chestnutlabs/toolpath-core': fileURLToPath(new URL('../toolpath-core/src/index.ts', import.meta.url)),
       '@chestnutlabs/gcode-colors': fileURLToPath(new URL('../gcode-colors/src/index.ts', import.meta.url)),
+      '@chestnutlabs/gcode-containers': fileURLToPath(new URL('../gcode-containers/src/index.ts', import.meta.url)),
       '@chestnutlabs/gcode-renderer-three': fileURLToPath(
         new URL('../gcode-renderer-three/src/index.ts', import.meta.url)
       )

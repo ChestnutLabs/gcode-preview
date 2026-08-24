@@ -23,7 +23,7 @@ export interface ModelBounds {
   max: readonly [number, number, number];
 }
 
-/** Triangle mesh geometry (three-free). Positions are required; normals/indices are optional. */
+/** Triangle mesh geometry (three-free). Positions are required; normals/indices/colors are optional. */
 export interface MeshGeometry {
   /** Flat XYZ positions, length = 3·vertexCount. */
   positions: Float32Array;
@@ -31,6 +31,12 @@ export interface MeshGeometry {
   normals?: Float32Array;
   /** Optional triangle indices; non-indexed (soup) when absent. */
   indices?: Uint32Array;
+  /**
+   * Optional flat per-vertex **linear** RGB colors (length = positions.length), for a single mesh that
+   * carries multiple colors (per-triangle material assignment in 3MF). When present the renderer uses
+   * vertex colors; when absent the object's {@link ModelObject.material} (or the neutral default) applies.
+   */
+  colors?: Float32Array;
 }
 
 /** A source material for an object — solid color only in v1 (textures deferred, DD-018 §13). */

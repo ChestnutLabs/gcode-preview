@@ -123,9 +123,9 @@ describe('ModelRenderer background', () => {
 });
 
 describe('renderModelStill', () => {
-  it('renders STL bytes → result with honest materials + a stable cache key', () => {
+  it('renders STL bytes → result with honest materials + a stable cache key', async () => {
     const bytes = makeBinaryStl(TWO_TRIS);
-    const a = renderModelStill(
+    const a = await renderModelStill(
       { kind: 'stl', bytes },
       { canvas: stubCanvas(), width: 128, height: 96, createRenderer: stubGL }
     );
@@ -134,22 +134,22 @@ describe('renderModelStill', () => {
     expect(a.width).toBe(128);
     expect(a.height).toBe(96);
     // Deterministic: same input + options → same key.
-    const b = renderModelStill(
+    const b = await renderModelStill(
       { kind: 'stl', bytes },
       { canvas: stubCanvas(), width: 128, height: 96, createRenderer: stubGL }
     );
     expect(b.cacheKey).toBe(a.cacheKey);
     // Sensitive to options.
-    const c = renderModelStill(
+    const c = await renderModelStill(
       { kind: 'stl', bytes },
       { canvas: stubCanvas(), width: 200, height: 96, createRenderer: stubGL }
     );
     expect(c.cacheKey).not.toBe(a.cacheKey);
   });
 
-  it('accepts a pre-built ModelScene source', () => {
+  it('accepts a pre-built ModelScene source', async () => {
     const scene: ModelScene = parseStl(makeBinaryStl(TWO_TRIS));
-    const res = renderModelStill(scene, { canvas: stubCanvas(), createRenderer: stubGL });
+    const res = await renderModelStill(scene, { canvas: stubCanvas(), createRenderer: stubGL });
     expect(res.objectCount).toBe(1);
     expect(res.cacheKey.startsWith('mr1_')).toBe(true);
   });

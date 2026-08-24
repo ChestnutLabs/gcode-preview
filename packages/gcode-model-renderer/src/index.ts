@@ -9,6 +9,7 @@ export type { ModelRendererOptions, ModelBackground, PresentationView } from './
 export { renderModelStill } from './render-model-still.js';
 export type { ModelSource, RenderModelStillOptions, RenderModelStillResult } from './render-model-still.js';
 export { parseStl } from './stl.js';
+export { parse3mf } from './three-mf.js';
 export { computeCacheKey, defaultEnvId } from './cache-key.js';
 export { DEFAULT_LIMITS, resolveLimits, ModelParseError } from './limits.js';
 export type { ModelLimits, ResolvedLimits } from './limits.js';
