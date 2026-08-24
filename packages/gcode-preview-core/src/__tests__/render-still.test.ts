@@ -228,6 +228,26 @@ describe('renderStill (#132)', () => {
     expect(on.visible('wipe')).toBe(true);
   });
 
+  it('accepts the background convenience option (transparent + solid) without throwing (#306)', async () => {
+    // Explicit createRenderer wins over the transparent alpha-injection, so this stays headless-safe.
+    const t = makeCountingGL();
+    const rt = await renderStill(makeTestIR(), {
+      canvas: makeStubCanvas(),
+      background: 'transparent',
+      createRenderer: t.gl
+    });
+    expect(rt.segmentCount).toBe(12);
+    expect(t.renders()).toBeGreaterThan(0);
+    const c = makeCountingGL();
+    const rc = await renderStill(makeTestIR(), {
+      canvas: makeStubCanvas(),
+      background: '#112233',
+      createRenderer: c.gl
+    });
+    expect(rc.segmentCount).toBe(12);
+    expect(c.renders()).toBeGreaterThan(0);
+  });
+
   it('applies layer-range and scrub clips', async () => {
     const counting = makeCountingGL();
     // Should complete without error; the clip calls exercise the renderer paths.
