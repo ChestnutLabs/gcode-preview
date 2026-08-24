@@ -6,6 +6,8 @@ toolpath renderer, which answers *"how does this print/cut run?"* (design: DD-01
 
 > **Peer dependency:** `three` (supported range `^0.178.0`) — install it alongside this package.
 
+![Two presentation thumbnails: a neutral gray STL part (materials: unavailable) beside a red/amber/green three-object 3MF (materials: known)](https://raw.githubusercontent.com/ChestnutLabs/gcode-preview/dev/docs/media/model-render-stl-3mf.png)
+
 Use it for file-browser thumbnails, library cards, and "what's in this file" previews — the picture a
 slicer shows of a part, not the toolpath. For inspecting the actual moves (layers, travel, seams,
 color modes, live progress), use [`@chestnutlabs/gcode-renderer-three`](../gcode-renderer-three)

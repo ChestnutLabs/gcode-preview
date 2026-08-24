@@ -163,6 +163,8 @@ But sometimes you don't want the toolpath at all — you want a clean picture of
 the way a slicer's file browser shows a part. Those are two different jobs, so they're two different
 renderers:
 
+![Two presentation thumbnails from renderModelStill: left, a neutral gray two-tier part from an STL labeled "materials: unavailable"; right, a red/amber/green three-block tower from a 3MF labeled "materials: known"](docs/media/model-render-stl-3mf.png)
+
 | | Toolpath renderer | Model renderer |
 |---|---|---|
 | **Package** | `@chestnutlabs/gcode-renderer-three` (+ `-2d`) | `@chestnutlabs/gcode-model-renderer` |
