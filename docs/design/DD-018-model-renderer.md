@@ -1,11 +1,17 @@
 # DD-018 — ModelRenderer: source-model presentation rendering (STL / 3MF)
 
-**Status:** Proposed <!-- Draft | Proposed | Accepted | Superseded | Rejected -->
+**Status:** Accepted <!-- Draft | Proposed | Accepted | Superseded | Rejected -->
 **Authors/Owners:** Nathaniel Chestnut (maintainer)
 **Date:** 2026-08-23 · **Last revised:** 2026-08-23
-**Owning Epic:** new — "Presentation rendering / ModelRenderer" (epic issue to be created on acceptance) · **Milestone:** M1 (v1)
+**Owning Epic:** "Presentation rendering / ModelRenderer" (epic to be created on acceptance) · **Milestone:** M1 (v1)
 **Supersedes / Superseded by:** none
 **Related:** DD-004 (Three.js rendering), DD-005 (container/ZIP adapters — `.3mf` unzip), DD-008 (release/versioning, new-package checklist), DD-007 §4.8 / `renderStill` (headless still contract), AnyBridge thumbnail sidecar (#791), issue #292 (the fix that clarified the reframe).
+
+> **Accepted 2026-08-23 (maintainer).** All sections as proposed, with these confirmations recorded:
+> - **§14 v1 scope:** v1 includes **both STL and 3MF**, implemented **sequentially** (shared foundation → STL proving slice → 3MF multi-object/material/color → v1 acceptance). 3MF is **not** a deferred future feature; the sequential build is only how the work is de-risked. The `ModelScene`/API is multi-object + material-capable from day one so the STL slice cannot lock in a model that 3MF forces replacing.
+> - **§12 shared-stage location:** keep the shared `stage` implementation **in `gcode-renderer-three` short-term**; the new model-renderer package depends on / imports it. Extract a dedicated `render-stage` package **later, only if** maintaining both renderers makes it worthwhile — and that cleanup must **not block** ModelRenderer.
+> - **Consumer landscape (context, not a scope change):** the primary consumer (AnyBridge) already renders STL/STEP/OBJ mesh thumbnails via a separate F3D/VTK sidecar, so plain STL cards are already serviceable there. The value DD-018 adds is therefore specifically **(1) 3MF multi-object/multicolor thumbnails directly from source (no slicing)**, which F3D does poorly, and **(2) a single Three.js renderer** consistent with the toolpath viewer and the future preview pane. In DD-018 terms the STL slice is the *foundation/proving* slice; the 3MF/color case is the consumer payoff. Whether AnyBridge retires F3D or runs both once v1 ships is an AnyBridge-side decision, out of scope here.
+> - Implementation may begin per §14; API/consumption boundary to be coordinated with the AnyBridge session as phases land.
 
 ---
 
