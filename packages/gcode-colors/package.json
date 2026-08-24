@@ -1,6 +1,6 @@
 {
   "name": "@chestnutlabs/gcode-colors",
-  "version": "0.5.1",
+  "version": "0.5.2",
   "description": "Renderer-agnostic per-segment color model for the Chestnut Labs G-code toolpath stack (DD-014 D3): the ColorMode union and honest, capability-gated segment coloring over ToolpathIR channels, shared by the 3D and 2D renderers.",
   "keywords": [
     "gcode",
@@ -47,6 +47,6 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@chestnutlabs/toolpath-core": "0.5.1"
+    "@chestnutlabs/toolpath-core": "0.5.2"
   }
 }
