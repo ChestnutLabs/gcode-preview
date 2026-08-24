@@ -1,8 +1,8 @@
 /**
  * @chestnutlabs/gcode-model-renderer — Three.js **presentation** renderer for source models
- * (STL single-object + 3MF multi-object/material, incl. the Production Extension) — clean
- * thumbnails/cards answering "what object is this?", distinct from toolpath inspection (DD-018).
- * Sits on the shared render "stage" from `@chestnutlabs/gcode-renderer-three`. `three` is a peer dependency.
+ * (STL now; 3MF multi-object/material next) — clean thumbnails/cards answering "what object is this?",
+ * distinct from toolpath inspection (DD-018). Sits on the shared render "stage" from
+ * `@chestnutlabs/gcode-renderer-three`. `three` is a peer dependency.
  */
 export { ModelRenderer, NEUTRAL_MATERIAL_COLOR } from './model-renderer.js';
 export type { ModelRendererOptions, ModelBackground, PresentationView } from './model-renderer.js';
