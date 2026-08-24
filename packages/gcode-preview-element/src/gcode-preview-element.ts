@@ -36,7 +36,7 @@ export type GcodePreviewSource = Uint8Array | ArrayBuffer | File | null;
 /** Advanced/test renderer injectables (pass-throughs of the controller's renderer contract). */
 export type ElementRendererOptions = Omit<
   NonNullable<PreviewControllerRenderer>,
-  'buildVolume' | 'quality' | 'cameraMode' | 'theme' | 'colorMode' | 'tube'
+  'buildVolume' | 'quality' | 'cameraMode' | 'frameContent' | 'theme' | 'colorMode' | 'tube'
 >;
 type PreviewControllerRenderer = NonNullable<Parameters<typeof createPreviewController>[0]>['renderer'];
 
@@ -44,6 +44,7 @@ type PreviewControllerRenderer = NonNullable<Parameters<typeof createPreviewCont
 const OBSERVED = [
   'quality',
   'camera-mode',
+  'frame-content',
   'view',
   'show-travel',
   'show-wipe',
@@ -150,6 +151,13 @@ export class GcodePreviewElement extends HTMLElement {
   }
   set cameraMode(v: string | null) {
     this.reflect('camera-mode', v);
+  }
+  /** #306/#6: frame the printed 'object' (excl. skirt/prime) or 'all' extrusion. */
+  get frameContent(): string | null {
+    return this.getAttribute('frame-content');
+  }
+  set frameContent(v: string | null) {
+    this.reflect('frame-content', v);
   }
   /** #268/#275/M6: preset orientation attribute (top/front/iso/…). */
   get view(): string | null {
@@ -265,6 +273,7 @@ export class GcodePreviewElement extends HTMLElement {
         buildVolume: isMachine ? undefined : (this._buildVolume as BuildVolumeDef | undefined),
         quality: (this.getAttribute('quality') as 'auto' | 'lines' | 'tubes' | null) ?? 'auto',
         cameraMode: (this.getAttribute('camera-mode') as CameraMode | null) ?? undefined,
+        frameContent: (this.getAttribute('frame-content') as 'object' | 'all' | null) ?? undefined,
         colorMode: this._colorMode,
         tube: this._tube,
         theme: this._theme,
@@ -296,6 +305,9 @@ export class GcodePreviewElement extends HTMLElement {
         break;
       case 'camera-mode':
         if (value !== null) c.setCameraMode(value as CameraMode);
+        break;
+      case 'frame-content':
+        if (value !== null) c.setFrameContent(value as 'object' | 'all');
         break;
       case 'view':
         if (value !== null) c.setView(value as CameraView);

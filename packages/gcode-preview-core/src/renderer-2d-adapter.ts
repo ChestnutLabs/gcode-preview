@@ -108,6 +108,10 @@ export class LayerView2DRenderer implements PreviewRenderer {
     // The flat 2D view has no build-volume cage — a documented no-op (#306/#6).
   }
 
+  setFrameContent(_mode: 'object' | 'all'): void {
+    // The 2D view fits the whole model in XY; object-vs-all framing is a 3D-camera concern (#306/#6).
+  }
+
   setLayerRange(_startLayer: number, endLayer: number): void {
     // A single-layer 2D view shows the TOP of the requested range (the current layer).
     this.view.setLayer(endLayer);

@@ -53,6 +53,8 @@ export interface PreviewRenderer {
   setBuildVolume(def: BuildVolumeDef | MachineGeometry): void;
   /** Show/hide the build-volume wireframe cage independently of the bed/plate (#306/#6). */
   setBuildVolumeCage(visible: boolean): void;
+  /** Frame the printed 'object' (excl. skirt/prime) vs 'all' extrusion (#306/#6). */
+  setFrameContent(mode: 'object' | 'all'): void;
   setLayerRange(startLayer: number, endLayer: number): void;
   setScrubPosition(segIndex: number | null): void;
   setKindVisible(kind: MoveKindToggle, visible: boolean): void;

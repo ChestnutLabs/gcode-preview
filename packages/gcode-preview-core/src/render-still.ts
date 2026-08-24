@@ -53,6 +53,8 @@ export interface RenderStillOptions {
   quality?: QualityMode | 'auto';
   /** Camera projection (#150, DD-009 D3); default 'perspective'. */
   cameraMode?: CameraMode;
+  /** Framing target (#306/#6): 'all' extrusion (default) or the printed 'object' (excludes skirt/prime). */
+  frameContent?: 'object' | 'all';
   colorMode?: ColorMode;
   tube?: TubeOptions;
   /** Bounded declarative theme (#153, DD-009 D4); headless stills theme identically. */
@@ -161,6 +163,7 @@ export async function renderStill(
     canvas,
     quality: options.quality ?? 'auto',
     ...(options.cameraMode ? { cameraMode: options.cameraMode } : {}),
+    ...(options.frameContent ? { frameContent: options.frameContent } : {}),
     ...(resolvedTheme ? { theme: resolvedTheme } : {}),
     ...(options.colorMode ? { colorMode: options.colorMode } : {}),
     ...(options.tube ? { tube: options.tube } : {}),
