@@ -1,0 +1,41 @@
+/**
+ * Shared render "stage" — the presentation primitives common to both the toolpath renderer
+ * (`ToolpathRenderer`) and the forthcoming `ModelRenderer` (DD-018 Phase 0, #297).
+ *
+ * This module holds renderer-agnostic scene/camera/theme/offscreen machinery so the two renderers
+ * single-source it and cannot drift. Per DD-018 §12 the stage lives inside `gcode-renderer-three`
+ * short-term; a dedicated `render-stage` package is a later, non-blocking cleanup.
+ *
+ * It is grown incrementally and each move is gated by the toolpath renderer's existing golden/visual
+ * parity (the extraction must be behavior-preserving for the toolpath side).
+ */
+import { Vector3 } from 'three';
+
+/** A framed camera pose (scene coordinates) derived from a model's center + bounding radius. */
+export interface Framing {
+  /** Orbit/look target in scene coords. */
+  target: Vector3;
+  /** Camera position in scene coords. */
+  position: Vector3;
+  /** Vertical half-height the camera frames at the target plane — sizes an orthographic frustum. */
+  viewHalfHeight: number;
+}
+
+/**
+ * Deterministic framing pose from a model **center** and bounding **radius** (both in printer
+ * coordinates). Converts printer coords → scene coords through the root Z-up→Y-up rotation
+ * (`x, z, -y`) and places the camera at the fixed 3/4 offset the renderers share.
+ *
+ * The perspective offset magnitude is ≈2.69·radius at fov 50°, so the visible half-height at the
+ * target plane is ≈2.69·radius·tan(25°) ≈ 1.25·radius; an orthographic frustum uses the same
+ * half-height so toggling projection keeps the model the same apparent size (#150).
+ *
+ * Extracted verbatim from `ToolpathRenderer.frame()` (DD-018 Phase 0) so `ModelRenderer` frames
+ * identically. Pure — allocates and returns fresh vectors; mutates nothing.
+ */
+export function framingFromCenterRadius(center: Vector3, radius: number): Framing {
+  const target = new Vector3(center.x, center.z, -center.y);
+  const viewHalfHeight = radius * 1.25;
+  const position = new Vector3(target.x - radius * 1.2, target.y + radius * 1.6, target.z + radius * 1.8);
+  return { target, position, viewHalfHeight };
+}
