@@ -62,6 +62,13 @@ export type PreviewEvent =
       capabilities: Record<string, Confidence>;
       /** Parse warnings (codes/messages), so consumers can surface disclosures without the raw handle. */
       warnings: readonly Warning[];
+      /**
+       * Slicer-reported metadata (per-tool `filaments`, `filamentUsage`, `printEstimate`, `thumbnails`,
+       * `dialects`, whitelisted `raw`) — for a consumer "Slice details" panel without the raw handle
+       * (#306/#4). Capability-honest: `undefined` when the file carried none; individual fields are
+       * absent (not fabricated) when a slicer didn't emit them. Purge/tower/cost are not parsed.
+       */
+      metadata: DialectMetadata | undefined;
     }
   | { type: 'parse-cancelled' }
   | { type: 'parse-error'; code: string; message: string }
@@ -424,7 +431,8 @@ export function createPreviewController(options: PreviewControllerOptions = {}):
         layers: result.ir.layers.length,
         complete: result.ir.header.complete,
         capabilities: { ...result.ir.header.capabilities },
-        warnings: result.ir.header.warnings
+        warnings: result.ir.header.warnings,
+        metadata: result.metadata
       });
       return { ok: true, result };
     } catch (err) {

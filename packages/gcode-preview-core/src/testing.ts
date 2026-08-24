@@ -153,7 +153,7 @@ export function runBehavioralSuite(name: string, api: TestApi, harness: AdapterH
       await a.dispose();
     });
 
-    it('the parse-complete (ready) event carries capabilities + warnings (#275/M3)', async () => {
+    it('the parse-complete (ready) event carries capabilities + warnings + metadata (#275/M3, #306/#4)', async () => {
       const a = await harness.create();
       const events: PreviewEvent[] = [];
       a.onEvent((e) => events.push(e));
@@ -163,9 +163,11 @@ export function runBehavioralSuite(name: string, api: TestApi, harness: AdapterH
         (e): e is Extract<PreviewEvent, { type: 'parse-complete' }> => e.type === 'parse-complete'
       );
       if (!done) throw new Error('no parse-complete event emitted');
-      // Both are surfaced on the event so a consumer can gate its own UI without the raw handle.
+      // All surfaced on the event so a consumer builds its own capability/disclosure/slice-detail UI
+      // without the raw handle. metadata is present but may be undefined (the file carried none).
       expect(typeof done.capabilities).toBe('object');
       expect(Array.isArray(done.warnings)).toBe(true);
+      expect('metadata' in done).toBe(true);
       await a.dispose();
     });
 
