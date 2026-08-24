@@ -104,6 +104,10 @@ export class LayerView2DRenderer implements PreviewRenderer {
     // No bed chrome in the 2D layer view (phase 1–3); not an error, simply not drawn.
   }
 
+  setBuildVolumeCage(_visible: boolean): void {
+    // The flat 2D view has no build-volume cage — a documented no-op (#306/#6).
+  }
+
   setLayerRange(_startLayer: number, endLayer: number): void {
     // A single-layer 2D view shows the TOP of the requested range (the current layer).
     this.view.setLayer(endLayer);

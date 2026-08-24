@@ -48,6 +48,7 @@ const OBSERVED = [
   'show-travel',
   'show-wipe',
   'show-retractions',
+  'show-volume-cage',
   'scrub',
   'scrub-time',
   'layer-range'
@@ -187,6 +188,13 @@ export class GcodePreviewElement extends HTMLElement {
   set showRetractions(v: boolean) {
     this.setAttribute('show-retractions', v ? 'true' : 'false');
   }
+  /** #306/#6: build-volume cage, independent of the plate. Default true; `show-volume-cage="false"` hides it. */
+  get showVolumeCage(): boolean {
+    return this.getAttribute('show-volume-cage') !== 'false';
+  }
+  set showVolumeCage(v: boolean) {
+    this.setAttribute('show-volume-cage', v ? 'true' : 'false');
+  }
   get scrub(): number | null {
     const a = this.getAttribute('scrub');
     return a === null ? null : Number(a);
@@ -298,6 +306,9 @@ export class GcodePreviewElement extends HTMLElement {
       case 'show-wipe':
         c.setKindVisible('wipe', value !== 'false');
         break;
+      case 'show-volume-cage':
+        c.setBuildVolumeCage(value !== 'false');
+        break;
       case 'show-retractions':
         c.setShowRetractions(value === 'true');
         break;
@@ -325,6 +336,7 @@ export class GcodePreviewElement extends HTMLElement {
     c.setKindVisible('travel', this.showTravel);
     c.setKindVisible('wipe', this.showWipe);
     c.setShowRetractions(this.showRetractions);
+    c.setBuildVolumeCage(this.showVolumeCage);
     const r = this.layerRange;
     if (r === null) c.setLayerRange(0, Number.POSITIVE_INFINITY);
     else c.setLayerRange(r[0], r[1]);

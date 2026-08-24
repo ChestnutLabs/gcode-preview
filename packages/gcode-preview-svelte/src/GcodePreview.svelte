@@ -41,6 +41,8 @@
   export let showWipe = true;
   /** DD-009 D1 (#148): opt-in retraction/deretraction markers. */
   export let showRetractions = false;
+  /** #306/#6: show the build-volume wireframe cage (independent of the bed/plate). Default true. */
+  export let showVolumeCage = true;
   /** DD-006 live progress observation; null hides the overlay. */
   export let progress = null;
   /** Worker factory escape hatch (DD-005 slim/custom entries; D2). */
@@ -135,6 +137,7 @@
   $: preview.controls.setKindVisible('travel', showTravel);
   $: preview.controls.setKindVisible('wipe', showWipe);
   $: preview.controls.setShowRetractions(showRetractions);
+  $: preview.controls.setBuildVolumeCage(showVolumeCage);
   $: if (colorMode !== undefined) preview.controls.setColorMode(colorMode);
   $: preview.controls.setQuality(quality);
   $: preview.controls.setCameraMode(cameraMode);
