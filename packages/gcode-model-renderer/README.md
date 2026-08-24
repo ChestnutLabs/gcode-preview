@@ -16,9 +16,15 @@ instead.
 - **STL and 3MF** — a bare STL is a single object with no declared material; a 3MF brings its own
   multi-object structure, per-object transforms, and per-object / per-triangle material colors,
   including files that use the 3MF **Production Extension** (`p:path` external parts).
-- **Capability-honest color** — when the source declares colors (3MF `basematerials`), the render
-  uses them and reports `materials: 'known'`. When it doesn't — a plain STL, or a proprietary paint
-  format the 3MF standard doesn't cover — it draws a neutral default and reports
+- **Production multicolor** — real Bambu Studio / OrcaSlicer files paint per-region color with a
+  proprietary `paint_color` facet attribute and keep the palette in `project_settings.config`, not in
+  standard 3MF materials. The renderer decodes that facet-paint format (clean-room, see
+  [RR-005](../../docs/research/RR-005-3mf-paint-color-facet-format.md)) and reads the `filament_colour`
+  palette itself, so a designer's multicolor model renders in its true colors without slicing.
+- **Capability-honest color** — when the source declares colors — standard 3MF `basematerials`, or
+  `paint_color` + a filament palette — the render uses them and reports `materials: 'known'`
+  (`'approximated'` when a handful of multi-color facets are flattened). When it declares none — a
+  plain STL, or a paint format with no palette present — it draws a neutral default and reports
   `materials: 'unavailable'`. It never invents a source color.
 - **Fixed presentation pose** — framed at a 3/4 angle on the shared render "stage" from
   `@chestnutlabs/gcode-renderer-three`, under a neutral studio light rig, on a transparent (default)
