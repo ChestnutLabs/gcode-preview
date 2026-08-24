@@ -18,9 +18,42 @@ function makeMixedIR(): ToolpathIR {
     unitsSource: 'known',
     source: { byteLength: 100 }
   });
-  b.addSegment({ x0: 100, y0: 100, z0: 0.2, x1: 110, y1: 100, z1: 0.2, e: 1, kind: MoveKind.Extrude, layer: 0, srcByte: 0 });
-  b.addSegment({ x0: 110, y0: 100, z0: 0.2, x1: 120, y1: 110, z1: 0.2, e: 0, kind: MoveKind.Travel, layer: 0, srcByte: 10 });
-  b.addSegment({ x0: 120, y0: 110, z0: 0.2, x1: 118, y1: 110, z1: 0.2, e: 0, kind: MoveKind.Wipe, layer: 0, srcByte: 20 });
+  b.addSegment({
+    x0: 100,
+    y0: 100,
+    z0: 0.2,
+    x1: 110,
+    y1: 100,
+    z1: 0.2,
+    e: 1,
+    kind: MoveKind.Extrude,
+    layer: 0,
+    srcByte: 0
+  });
+  b.addSegment({
+    x0: 110,
+    y0: 100,
+    z0: 0.2,
+    x1: 120,
+    y1: 110,
+    z1: 0.2,
+    e: 0,
+    kind: MoveKind.Travel,
+    layer: 0,
+    srcByte: 10
+  });
+  b.addSegment({
+    x0: 120,
+    y0: 110,
+    z0: 0.2,
+    x1: 118,
+    y1: 110,
+    z1: 0.2,
+    e: 0,
+    kind: MoveKind.Wipe,
+    layer: 0,
+    srcByte: 20
+  });
   return b.finalize();
 }
 
@@ -36,7 +69,9 @@ function makeKindProbeGL(): {
   const seen: Record<string, boolean | null> = {};
   return {
     gl: (canvas: RenderTargetCanvas) => ({
-      render: (scene?: { traverse(cb: (o: { userData?: { chunk?: { kind?: string } }; visible?: boolean }) => void): void }) => {
+      render: (scene?: {
+        traverse(cb: (o: { userData?: { chunk?: { kind?: string } }; visible?: boolean }) => void): void;
+      }) => {
         if (scene && typeof scene.traverse === 'function') {
           scene.traverse((o) => {
             const kind = o.userData?.chunk?.kind;
@@ -172,13 +207,23 @@ describe('renderStill (#132)', () => {
 
     // Explicit false → hidden.
     const off = makeKindProbeGL();
-    await renderStill(makeMixedIR(), { canvas: makeStubCanvas(), showTravel: false, showWipe: false, createRenderer: off.gl });
+    await renderStill(makeMixedIR(), {
+      canvas: makeStubCanvas(),
+      showTravel: false,
+      showWipe: false,
+      createRenderer: off.gl
+    });
     expect(off.visible('travel')).toBe(false);
     expect(off.visible('wipe')).toBe(false);
 
     // Explicit true → visible.
     const on = makeKindProbeGL();
-    await renderStill(makeMixedIR(), { canvas: makeStubCanvas(), showTravel: true, showWipe: true, createRenderer: on.gl });
+    await renderStill(makeMixedIR(), {
+      canvas: makeStubCanvas(),
+      showTravel: true,
+      showWipe: true,
+      createRenderer: on.gl
+    });
     expect(on.visible('travel')).toBe(true);
     expect(on.visible('wipe')).toBe(true);
   });
