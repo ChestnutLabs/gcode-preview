@@ -1,5 +1,28 @@
 # @chestnutlabs/gcode-renderer-three
 
+## 0.6.0
+
+### Minor Changes
+
+- [#300](https://github.com/ChestnutLabs/gcode-preview/pull/300) [`277e148`](https://github.com/ChestnutLabs/gcode-preview/commit/277e1481ba015d6d0fa8d5b4e5ff6c7e014d494b) Thanks [@sobechestnut-dev](https://github.com/sobechestnut-dev)! - Add `framingFromCenterRadius` (and the `Framing` type) — the first piece of the shared render "stage"
+  (DD-018 Phase 0). This is the deterministic 3/4 camera-framing pose (printer→scene coordinates,
+  `viewHalfHeight = 1.25·radius`, fixed offset), lifted verbatim from `ToolpathRenderer.frame()` and now
+  single-sourced so the forthcoming `ModelRenderer` frames identically. Internal refactor for the toolpath
+  side (framing output unchanged); additive public export.
+
+- [#302](https://github.com/ChestnutLabs/gcode-preview/pull/302) [`ac1e1f9`](https://github.com/ChestnutLabs/gcode-preview/commit/ac1e1f984305071db1a16fd8bbd7f1166b877d9d) Thanks [@sobechestnut-dev](https://github.com/sobechestnut-dev)! - Grow the shared render "stage" (DD-018 Phase 0): move the GL type contracts `RenderTargetCanvas` and
+  `GLRendererLike` into `stage.ts` (re-exported from their previous homes, so no import paths change) and
+  add `createDefaultGLRenderer(canvas, { preserveDrawingBuffer, alpha, antialias })` — the default
+  `WebGLRenderer` builder extracted from `ToolpathRenderer`, now single-sourced with an `alpha` option the
+  forthcoming `ModelRenderer` uses for a transparent background. Refactor-only for the toolpath side
+  (alpha stays false → byte-identical); additive public exports.
+
+### Patch Changes
+
+- Updated dependencies []:
+  - @chestnutlabs/gcode-colors@0.6.0
+  - @chestnutlabs/toolpath-core@0.6.0
+
 ## 0.5.2
 
 ### Patch Changes

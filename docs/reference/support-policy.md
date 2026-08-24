@@ -30,9 +30,10 @@ in CI and is a release gate.
 
 ## `three` dependency posture (D6, amended)
 
-`three` is a **peerDependency of `@chestnutlabs/gcode-renderer-three`** with a deliberately narrow
-supported range — initially **`^0.178.0`** — because three's 0.x minors are breaking by
-convention. Consumers install `three` themselves (npm ≥ 7 auto-installs peers); the workspace pins
+`three` is a **peerDependency of `@chestnutlabs/gcode-renderer-three`** (and, from the ModelRenderer
+work, of **`@chestnutlabs/gcode-model-renderer`** — the STL/3MF presentation renderer, DD-018) with a
+deliberately narrow supported range — initially **`^0.178.0`** — because three's 0.x minors are breaking
+by convention. Consumers install `three` themselves (npm ≥ 7 auto-installs peers); the workspace pins
 the exact known-good version (`0.178.0`) as a dev/test dependency, so every CI run, example app,
 and benchmark tests one `three`. Widening the range is a per-release, evidence-backed decision
 recorded in the changelog.

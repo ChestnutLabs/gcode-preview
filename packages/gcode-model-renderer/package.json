@@ -1,16 +1,20 @@
 {
-  "name": "@chestnutlabs/gcode-colors",
+  "name": "@chestnutlabs/gcode-model-renderer",
   "version": "0.6.0",
-  "description": "Renderer-agnostic per-segment color model for the Chestnut Labs G-code toolpath stack (DD-014 D3): the ColorMode union and honest, capability-gated segment coloring over ToolpathIR channels, shared by the 3D and 2D renderers.",
+  "description": "Three.js presentation renderer for source models (STL/3MF) — clean thumbnails/cards, distinct from toolpath inspection (DD-018).",
   "keywords": [
-    "gcode",
     "3d-printing",
-    "toolpath",
-    "cnc",
+    "stl",
+    "3mf",
+    "model",
+    "thumbnail",
+    "presentation",
     "chestnutlabs",
-    "color",
-    "colormap",
-    "visualization"
+    "three",
+    "threejs",
+    "webgl",
+    "renderer",
+    "offscreen"
   ],
   "author": "Chestnut Labs",
   "homepage": "https://github.com/ChestnutLabs/gcode-preview#readme",
@@ -18,7 +22,7 @@
   "repository": {
     "type": "git",
     "url": "git+https://github.com/ChestnutLabs/gcode-preview.git",
-    "directory": "packages/gcode-colors"
+    "directory": "packages/gcode-model-renderer"
   },
   "license": "MIT",
   "engines": {
@@ -47,6 +51,14 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@chestnutlabs/gcode-containers": "0.6.0",
+    "@chestnutlabs/gcode-renderer-three": "0.6.0",
     "@chestnutlabs/toolpath-core": "0.6.0"
+  },
+  "devDependencies": {
+    "@types/three": "0.178.0"
+  },
+  "peerDependencies": {
+    "three": "^0.178.0"
   }
 }
