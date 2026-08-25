@@ -15,8 +15,11 @@ import {
   DirectionalLight,
   Group,
   HemisphereLight,
+  InstancedMesh,
+  Matrix4,
   Mesh,
   MeshStandardMaterial,
+  Object3D,
   Scene,
   Vector3
 } from 'three';
@@ -74,7 +77,7 @@ export class ModelContent {
     return this.framedModel;
   }
 
-  private buildMesh(obj: ModelObject): Mesh {
+  private buildMesh(obj: ModelObject): Object3D {
     const g = new BufferGeometry();
     g.setAttribute('position', new BufferAttribute(obj.geometry.positions, 3));
     if (obj.geometry.indices !== undefined) g.setIndex(new BufferAttribute(obj.geometry.indices, 1));
@@ -90,11 +93,23 @@ export class ModelContent {
       const color = obj.material?.color ?? NEUTRAL_COLOR;
       mat.color.setRGB(color[0], color[1], color[2]);
     }
+    this.disposables.push(g, mat);
+
+    // A master reused across placements (DD-022) → one geometry upload, drawn once per instance matrix.
+    if (obj.instances !== undefined && obj.instances.length > 1) {
+      const inst = new InstancedMesh(g, mat, obj.instances.length);
+      const m = new Matrix4();
+      for (let i = 0; i < obj.instances.length; i++) {
+        inst.setMatrixAt(i, m.fromArray(obj.instances[i] as number[]));
+      }
+      inst.instanceMatrix.needsUpdate = true;
+      this.disposables.push(inst);
+      return inst;
+    }
 
     const mesh = new Mesh(g, mat);
     mesh.matrixAutoUpdate = false;
     mesh.matrix.fromArray(obj.transform as number[]);
-    this.disposables.push(g, mat);
     return mesh;
   }
 

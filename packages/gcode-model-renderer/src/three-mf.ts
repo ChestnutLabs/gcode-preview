@@ -21,6 +21,7 @@ import {
 } from '@chestnutlabs/gcode-containers';
 import {
   IDENTITY_MAT4,
+  type Mat4,
   type MeshGeometry,
   type ModelBounds,
   type ModelObject,
@@ -176,11 +177,65 @@ function applyTransform(v: number[], x: number, y: number, z: number): [number, 
   ];
 }
 
-/** Apply a chain of transforms in order (innermost first): comp → … → build item. */
-function applyChain(chain: number[][], x: number, y: number, z: number): [number, number, number] {
-  let p: [number, number, number] = [x, y, z];
-  for (const t of chain) p = applyTransform(t, p[0], p[1], p[2]);
-  return p;
+/** The identity 3MF row-vector affine (12 values). */
+const IDENTITY_AFFINE: number[] = [1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0];
+
+/**
+ * Compose two 3MF affines so the result applies `inner` first, then `outer`:
+ * `compose(outer, inner)(p) = outer(inner(p))`. Used to fold a component transform into the running
+ * placement matrix while descending the assembly tree, without baking vertices (DD-022 instancing).
+ */
+function composeAffine(outer: number[], inner: number[]): number[] {
+  const lin = (x: number, y: number, z: number): [number, number, number] => [
+    outer[0] * x + outer[3] * y + outer[6] * z,
+    outer[1] * x + outer[4] * y + outer[7] * z,
+    outer[2] * x + outer[5] * y + outer[8] * z
+  ];
+  const c0 = lin(inner[0], inner[1], inner[2]);
+  const c1 = lin(inner[3], inner[4], inner[5]);
+  const c2 = lin(inner[6], inner[7], inner[8]);
+  const t = lin(inner[9], inner[10], inner[11]);
+  return [
+    c0[0],
+    c0[1],
+    c0[2],
+    c1[0],
+    c1[1],
+    c1[2],
+    c2[0],
+    c2[1],
+    c2[2],
+    t[0] + outer[9],
+    t[1] + outer[10],
+    t[2] + outer[11]
+  ];
+}
+
+/** A 3MF row-vector affine (12 values), or null = identity, → a column-major {@link Mat4} (three layout). */
+function affineToMat4(v: number[] | null): Mat4 {
+  if (v === null) return IDENTITY_MAT4;
+  return [v[0], v[1], v[2], 0, v[3], v[4], v[5], 0, v[6], v[7], v[8], 0, v[9], v[10], v[11], 1];
+}
+
+/** Expand `st.min`/`st.max` by a local AABB [min,max] transformed by `affine` (its 8 corners). */
+function expandBoundsByBox(
+  st: { min: [number, number, number]; max: [number, number, number] },
+  bmin: readonly [number, number, number],
+  bmax: readonly [number, number, number],
+  affine: number[]
+): void {
+  for (let c = 0; c < 8; c++) {
+    const x = (c & 1) === 0 ? bmin[0] : bmax[0];
+    const y = (c & 2) === 0 ? bmin[1] : bmax[1];
+    const z = (c & 4) === 0 ? bmin[2] : bmax[2];
+    const [wx, wy, wz] = applyTransform(affine, x, y, z);
+    if (wx < st.min[0]) st.min[0] = wx;
+    if (wy < st.min[1]) st.min[1] = wy;
+    if (wz < st.min[2]) st.min[2] = wz;
+    if (wx > st.max[0]) st.max[0] = wx;
+    if (wy > st.max[1]) st.max[1] = wy;
+    if (wz > st.max[2]) st.max[2] = wz;
+  }
 }
 
 /** Parse ONE model part's XML into objects/palettes/items (no cross-part resolution). */
@@ -285,9 +340,19 @@ function parseModelPart(xml: string, lim: ResolvedLimits): ModelPart {
   return { objects, palettes, unitScale, items };
 }
 
+/** One unique master mesh + the placements (instance matrices) that reference it (DD-022). */
+interface MasterRecord {
+  object: ModelObject;
+  instances: Mat4[];
+  localMin: [number, number, number];
+  localMax: [number, number, number];
+}
+
 /** Accumulators threaded through the recursive resolve. */
 interface BuildState {
   built: ModelObject[];
+  /** Unique masters by `${partKey}#${objectid}` — a repeated placement adds an instance, not a copy. */
+  masters: Map<string, MasterRecord>;
   anyColor: boolean;
   anyTransform: boolean;
   /** Whether any colour came from flattening a subdivided `paint_color` facet (→ `approximated`). */
@@ -298,18 +363,37 @@ interface BuildState {
   defaultExtruderIdx: number;
   min: [number, number, number];
   max: [number, number, number];
+  /** Unique triangles (each master counted once), NOT multiplied by instance count. */
   totalTris: number;
+  /** Total placements across all masters. */
+  totalInstances: number;
 }
 
-/** Bake one mesh object (its own triangles) into a `ModelObject`, applying the transform chain. */
-function bakeMesh(
+/**
+ * Place one mesh object (DD-022 instancing). The FIRST time a master `${partKey}#${objectid}` is reached
+ * its geometry is built once in LOCAL space (unit-scaled, un-baked); every reach — first and repeats —
+ * records the placement `matrix` as an instance and expands the scene bounds by the master's local AABB
+ * transformed by that matrix. So memory + the triangle budget scale with unique geometry, not copy count.
+ */
+function placeMaster(
   obj: ParsedObject,
   part: ModelPart,
-  chain: number[][],
-  id: string,
+  matrix: number[] | null,
+  key: string,
   st: BuildState,
   lim: ResolvedLimits
 ): void {
+  const affine = matrix ?? IDENTITY_AFFINE;
+  const mat4 = affineToMat4(matrix);
+
+  const existing = st.masters.get(key);
+  if (existing !== undefined) {
+    existing.instances.push(mat4);
+    st.totalInstances++;
+    expandBoundsByBox(st, existing.localMin, existing.localMax, affine);
+    return;
+  }
+
   const triCount = obj.tris.length / 3;
   st.totalTris += triCount;
   if (st.totalTris > lim.maxTriangles) {
@@ -318,6 +402,8 @@ function bakeMesh(
   const positions = new Float32Array(triCount * 9);
   let colors: Float32Array | null = null;
   let objHasColor = false;
+  const localMin: [number, number, number] = [Infinity, Infinity, Infinity];
+  const localMax: [number, number, number] = [-Infinity, -Infinity, -Infinity];
   // A mesh painted with Bambu/Orca `paint_color` (only meaningful when we have a filament palette).
   const objHasPaint = st.paintPalette.length > 0 && obj.triPaint.some((p) => p !== null);
   for (let ti = 0; ti < triCount; ti++) {
@@ -342,22 +428,20 @@ function bakeMesh(
     const cidx = obj.triColorIdx[ti];
     for (let k = 0; k < 3; k++) {
       const vi = obj.tris[ti * 3 + k] * 3;
-      const [x, y, z] = applyChain(
-        chain,
-        obj.vertices[vi] * part.unitScale,
-        obj.vertices[vi + 1] * part.unitScale,
-        obj.vertices[vi + 2] * part.unitScale
-      );
+      // LOCAL geometry: unit scale only — the placement matrix (an instance transform) does the rest.
+      const x = obj.vertices[vi] * part.unitScale;
+      const y = obj.vertices[vi + 1] * part.unitScale;
+      const z = obj.vertices[vi + 2] * part.unitScale;
       const o = (ti * 3 + k) * 3;
       positions[o] = x;
       positions[o + 1] = y;
       positions[o + 2] = z;
-      if (x < st.min[0]) st.min[0] = x;
-      if (y < st.min[1]) st.min[1] = y;
-      if (z < st.min[2]) st.min[2] = z;
-      if (x > st.max[0]) st.max[0] = x;
-      if (y > st.max[1]) st.max[1] = y;
-      if (z > st.max[2]) st.max[2] = z;
+      if (x < localMin[0]) localMin[0] = x;
+      if (y < localMin[1]) localMin[1] = y;
+      if (z < localMin[2]) localMin[2] = z;
+      if (x > localMax[0]) localMax[0] = x;
+      if (y > localMax[1]) localMax[1] = y;
+      if (z > localMax[2]) localMax[2] = z;
       const col = paintCol ?? (palette !== undefined && cidx !== null ? (palette[cidx[k]] ?? palette[0]) : undefined);
       if (col !== undefined) {
         if (colors === null) colors = new Float32Array(triCount * 9);
@@ -370,9 +454,12 @@ function bakeMesh(
   }
   if (objHasColor) st.anyColor = true;
   const geometry: MeshGeometry = colors !== null ? { positions, colors } : { positions };
-  const built: ModelObject = { id, geometry, transform: IDENTITY_MAT4 };
-  if (obj.name !== undefined) built.name = obj.name;
-  st.built.push(built);
+  const object: ModelObject = { id: key, geometry, transform: mat4 };
+  if (obj.name !== undefined) object.name = obj.name;
+  st.masters.set(key, { object, instances: [mat4], localMin, localMax });
+  st.built.push(object);
+  st.totalInstances++;
+  expandBoundsByBox(st, localMin, localMax, affine);
 }
 
 export interface Parse3mfOptions {
@@ -577,6 +664,7 @@ export async function parse3mf(
 
   const st: BuildState = {
     built: [],
+    masters: new Map(),
     anyColor: false,
     anyTransform: false,
     anyApprox: false,
@@ -584,44 +672,53 @@ export async function parse3mf(
     defaultExtruderIdx,
     min: [Infinity, Infinity, Infinity],
     max: [-Infinity, -Infinity, -Infinity],
-    totalTris: 0
+    totalTris: 0,
+    totalInstances: 0
   };
 
-  // Resolve an object (mesh and/or components) within `part`, applying the transform chain.
+  // Resolve an object (mesh and/or components) within `part`, folding component transforms into the
+  // running placement `matrix` (DD-022) instead of baking vertices. `partKey` identifies the part so the
+  // same `${partKey}#${objectid}` master, reached via different placements, is instanced not copied.
   const resolve = async (
     part: ModelPart,
     objectid: string,
-    chain: number[][],
-    id: string,
+    matrix: number[] | null,
+    partKey: string,
     depth: number
   ): Promise<void> => {
     if (depth > MAX_DEPTH) return;
     const obj = part.objects.get(objectid);
     if (obj === undefined) return;
-    if (obj.tris.length > 0) bakeMesh(obj, part, chain, id, st, lim);
-    for (let ci = 0; ci < obj.components.length; ci++) {
-      const comp = obj.components[ci];
+    if (obj.tris.length > 0) placeMaster(obj, part, matrix, `${partKey}#${objectid}`, st, lim);
+    for (const comp of obj.components) {
       const targetPart = comp.path !== undefined ? await getPartByPath(comp.path) : part;
       if (targetPart === null) continue;
-      // Apply the component transform FIRST (child space → this object), then the existing chain.
-      const childChain = comp.transform !== null ? [comp.transform, ...chain] : chain;
+      // Fold the component transform (child → this object) into the placement, then descend.
+      const childMatrix = comp.transform !== null ? composeAffine(matrix ?? IDENTITY_AFFINE, comp.transform) : matrix;
       if (comp.transform !== null) st.anyTransform = true;
-      await resolve(targetPart, comp.objectid, childChain, `${id}.${ci}`, depth + 1);
+      const childKey = comp.path !== undefined ? comp.path.replace(/^\//, '').toLowerCase() : partKey;
+      await resolve(targetPart, comp.objectid, childMatrix, childKey, depth + 1);
     }
   };
 
   // With no <build>, resolve every declared object at identity (some minimal 3MFs omit build).
-  const instances =
+  const mainKey = mainEntry.name.toLowerCase();
+  const roots =
     mainPart.items.length > 0
       ? mainPart.items
       : [...mainPart.objects.keys()].map((objectid) => ({ objectid, transform: null }));
-  for (const inst of instances) {
-    const chain = inst.transform !== null ? [inst.transform] : [];
+  for (const inst of roots) {
     if (inst.transform !== null) st.anyTransform = true;
-    await resolve(mainPart, inst.objectid, chain, inst.objectid, 0);
+    await resolve(mainPart, inst.objectid, inst.transform, mainKey, 0);
   }
 
   if (st.built.length === 0) throw new ModelParseError('E_MODEL_EMPTY', '3MF contains no renderable geometry');
+
+  // Attach the instance list to any master reached more than once (a single placement keeps its
+  // `transform` and omits `instances`, per the contract).
+  for (const rec of st.masters.values()) {
+    if (rec.instances.length > 1) rec.object.instances = rec.instances;
+  }
 
   const bounds: ModelBounds = { min: st.min, max: st.max };
   return {
@@ -631,7 +728,9 @@ export async function parse3mf(
       // `approximated` when any colour came from flattening a subdivided `paint_color` facet.
       materials: st.anyApprox ? 'approximated' : st.anyColor ? 'known' : 'unavailable',
       transforms: st.anyTransform ? 'known' : 'unavailable',
-      multiObject: st.built.length > 1 ? 'known' : 'unavailable'
+      multiObject: st.built.length > 1 ? 'known' : 'unavailable',
+      // Instancing preserved when there are more placements than unique masters.
+      instanced: st.totalInstances > st.masters.size ? 'known' : 'unavailable'
     }
   };
 }
