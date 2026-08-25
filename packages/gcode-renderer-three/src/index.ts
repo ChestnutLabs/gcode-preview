@@ -11,7 +11,14 @@ export { buildChunkColors, feedrateRange } from './colors.js';
 export type { ColorMode, RGB } from './colors.js';
 export { computeDrawState, computeOverlayDrawStates } from './ranges.js';
 export type { ChunkDrawState, OverlayDrawStates } from './ranges.js';
-export { buildTubeChunk, TUBES_AUTO_MAX_SEGMENTS } from './tubes.js';
+export {
+  buildTubeChunk,
+  tubeRadialForBudget,
+  tubeSegmentBytes,
+  TUBES_AUTO_MAX_SEGMENTS,
+  TUBE_CPU_BYTE_BUDGET,
+  MIN_RADIAL_SEGMENTS
+} from './tubes.js';
 export type { TubeOptions, TubeChunkGeometry } from './tubes.js';
 export { ToolpathRenderer, chooseQuality, machineToVolume, resolveHitSegment } from './scene.js';
 export type {

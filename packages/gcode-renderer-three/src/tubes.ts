@@ -48,6 +48,42 @@ export const TUBES_AUTO_MAX_SEGMENTS = 1_000_000;
 
 const DEFAULT_MAX_VERTICES = 8_000_000;
 
+/** Minimum tube cross-section sides — below this a tube isn't a tube; degrade to lines instead. */
+export const MIN_RADIAL_SEGMENTS = 3;
+
+/**
+ * CPU-side bytes one tube segment costs at `radialSegments` sides (RR-006 accounting): a ring of
+ * `radialSegments + 1` vertices carrying position + normal + vertexSegment + colour, plus
+ * `radialSegments * 6` indices. Used to size the memory budget below.
+ */
+export function tubeSegmentBytes(radialSegments: number): number {
+  return (radialSegments + 1) * (12 + 12 + 4 + 12) + radialSegments * 6 * 4;
+}
+
+/**
+ * Default CPU byte budget for a tube build (RR-006). ~450 MB CPU → ~900 MB peak once three uploads a
+ * second copy to the GPU — comfortably inside a 2 GB render cgroup with base-heap + source headroom.
+ */
+export const TUBE_CPU_BYTE_BUDGET = 450_000_000;
+
+/**
+ * Pick the tube cross-section resolution for a large file (DD-022 / RR-006 correction). Bounding tube
+ * memory by **dropping segments** shreds the tube (each survivor becomes a disconnected capped stub →
+ * spikes); the right lever is a **coarser cross-section** at full segment continuity. Returns the largest
+ * `radialSegments` in `[MIN_RADIAL_SEGMENTS, requested]` whose whole-build cost fits `byteBudget`, or
+ * `null` when even the minimum does not — the caller then falls back to flat lines (honest, continuous).
+ */
+export function tubeRadialForBudget(
+  segmentCount: number,
+  requested: number,
+  byteBudget = TUBE_CPU_BYTE_BUDGET
+): number | null {
+  for (let r = requested; r >= MIN_RADIAL_SEGMENTS; r--) {
+    if (segmentCount * tubeSegmentBytes(r) <= byteBudget) return r;
+  }
+  return segmentCount * tubeSegmentBytes(MIN_RADIAL_SEGMENTS) <= byteBudget ? MIN_RADIAL_SEGMENTS : null;
+}
+
 /**
  * Split a chunk's included segments into connected polylines: a new run starts
  * whenever the previous segment's end is not this segment's start (Float32
