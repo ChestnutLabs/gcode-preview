@@ -79,6 +79,30 @@ describe('createModelViewer', () => {
     const v = createModelViewer(stubCanvas(), { createRenderer: stubGL });
     const info = await v.setSource(colouredScene());
     expect(info.materials).toBe('known');
+    // Disclosure defaults (DD-022): a single-placement scene → one placement, no decimation.
+    expect(info.instancedCount).toBe(1);
+    expect(info.decimationApplied).toBe(1);
+    v.dispose();
+  });
+
+  it('ready.info.instancedCount reports placements for a reused-master scene (DD-022)', async () => {
+    const mat = (x: number): number[] => [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, x, 0, 0, 1];
+    const scene: ModelScene = {
+      objects: [
+        {
+          id: 'm',
+          geometry: { positions: new Float32Array([0, 0, 0, 10, 0, 0, 0, 10, 0]) },
+          transform: IDENTITY_MAT4,
+          instances: [IDENTITY_MAT4, mat(50), mat(100)]
+        }
+      ],
+      bounds: { min: [0, 0, 0], max: [110, 10, 0] },
+      capabilities: { materials: 'unavailable', transforms: 'known', multiObject: 'unavailable', instanced: 'known' }
+    };
+    const v = createModelViewer(stubCanvas(), { createRenderer: stubGL });
+    const info = await v.setSource(scene);
+    expect(info.objectCount).toBe(1);
+    expect(info.instancedCount).toBe(3);
     v.dispose();
   });
 

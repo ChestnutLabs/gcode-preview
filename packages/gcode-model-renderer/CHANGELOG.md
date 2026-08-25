@@ -1,5 +1,54 @@
 # @chestnutlabs/gcode-model-renderer
 
+## 0.11.0
+
+### Minor Changes
+
+- [#346](https://github.com/ChestnutLabs/gcode-preview/pull/346) [`c5bfae9`](https://github.com/ChestnutLabs/gcode-preview/commit/c5bfae9254c85519a439e200303cde5b859bfae5) Thanks [@sobechestnut-dev](https://github.com/sobechestnut-dev)! - feat(model-renderer): fast structural reject for oversize / instance-bomb source 3MFs (DD-022 Phase 0)
+
+  Before decompressing any large external geometry part, `parse3mf` now runs a cheap structural estimate from
+  the main part's build-item/component tree plus the ZIP directory's uncompressed sizes, and rejects a clear
+  instance-bomb or oversize plate in **sub-second** time instead of ~10 s of decompress-and-bake. New
+  `ModelLimits.maxInstances` (default 50,000) bounds total instance placements → `E_MODEL_TOO_MANY_INSTANCES`;
+  an over-budget triangle estimate → `E_MODEL_TOO_MANY_TRIANGLES` from the estimate rather than mid-bake. The
+  estimate under-counts external geometry and applies a ×2 safety margin, so it never false-rejects a file
+  that would actually fit — borderline files fall through to the exact per-triangle parse.
+
+  First phase of the instance-aware source-model work ([DD-022](../docs/design/DD-022-model-instancing-and-lod.md)):
+  a standalone latency/DoS win. Phase 1 (GPU instancing) will make these plates _render_ instead of reject.
+  Additive; existing files and limits are unchanged.
+
+- [#347](https://github.com/ChestnutLabs/gcode-preview/pull/347) [`c7002a6`](https://github.com/ChestnutLabs/gcode-preview/commit/c7002a64ad07f817773d70bba1a7b5a0aafebfcd) Thanks [@sobechestnut-dev](https://github.com/sobechestnut-dev)! - feat(model-renderer): render reused 3MF geometry via GPU instancing instead of baking copies (DD-022 Phase 1a)
+
+  A source `.3mf` that reuses a master mesh via production-extension `<component>` references or repeated
+  `<build>` items no longer **bakes** a full world-space copy per placement. `parse3mf` now folds the
+  transform chain into per-placement matrices and keeps each master's geometry **once** in local space, and
+  `ModelContent` draws it as a single three `InstancedMesh` (one geometry upload, one draw call across all
+  placements). So memory and the triangle budget scale with **unique** geometry, not copy count — a
+  full-sheet plate of ~40 instanced copies measures as its ~1 master, not ~40× baked.
+
+  New: `ModelObject.instances?: Mat4[]` (present only when a master is reused, length ≥ 2; a single-placement
+  object keeps its `transform`) and `ModelScene.capabilities.instanced` (`'known'` when instancing was
+  preserved). Additive and render-equivalent for existing files (STL and single-placement 3MF are unchanged;
+  the existing suite passes). This is the farm-scale fix behind DD-022; the consumption-boundary disclosure
+  (`instancedCount` on `ready`/result) follows in Phase 1b.
+
+- [#348](https://github.com/ChestnutLabs/gcode-preview/pull/348) [`4755198`](https://github.com/ChestnutLabs/gcode-preview/commit/4755198e1bf924690067f37143bc58539e503839) Thanks [@sobechestnut-dev](https://github.com/sobechestnut-dev)! - feat(model-renderer): disclose `instancedCount` + `decimationApplied` on the model ready/still result (DD-022 Phase 1b)
+
+  `RenderModelStillResult` and `createModelViewer`'s `ready.info` (`ModelReadyInfo`) now report
+  `instancedCount` (total placements drawn — greater than `objectCount` when the source reused geometry, for
+  an "N copies" badge) and a flat `decimationApplied` (1 = none), named identically to the toolpath
+  `RenderStillResult.decimationApplied` so a consumer badges "simplified for size" the same way for model and
+  toolpath cards. `decimationApplied` is always 1 until model LOD lands (DD-022 Phase 2); it is reserved now
+  so the field is stable for consumers wiring the badge against the instancing boundary. Additive.
+
+### Patch Changes
+
+- Updated dependencies []:
+  - @chestnutlabs/gcode-containers@0.11.0
+  - @chestnutlabs/gcode-renderer-three@0.11.0
+  - @chestnutlabs/toolpath-core@0.11.0
+
 ## 0.10.0
 
 ### Patch Changes

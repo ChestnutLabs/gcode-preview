@@ -73,7 +73,12 @@ export function parseStl(source: Uint8Array | ArrayBuffer, limits?: ModelLimits)
   return {
     objects: [{ id: 'stl', geometry, transform: IDENTITY_MAT4 }],
     bounds,
-    capabilities: { materials: 'unavailable', transforms: 'unavailable', multiObject: 'unavailable' }
+    capabilities: {
+      materials: 'unavailable',
+      transforms: 'unavailable',
+      multiObject: 'unavailable',
+      instanced: 'unavailable'
+    }
   };
 }
 

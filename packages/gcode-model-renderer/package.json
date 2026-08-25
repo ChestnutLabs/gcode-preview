@@ -1,6 +1,6 @@
 {
   "name": "@chestnutlabs/gcode-model-renderer",
-  "version": "0.10.0",
+  "version": "0.11.0",
   "description": "Three.js presentation renderer for source models (STL/3MF) — clean thumbnails/cards, distinct from toolpath inspection (DD-018).",
   "keywords": [
     "3d-printing",
@@ -51,9 +51,9 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@chestnutlabs/gcode-containers": "0.10.0",
-    "@chestnutlabs/gcode-renderer-three": "0.10.0",
-    "@chestnutlabs/toolpath-core": "0.10.0"
+    "@chestnutlabs/gcode-containers": "0.11.0",
+    "@chestnutlabs/gcode-renderer-three": "0.11.0",
+    "@chestnutlabs/toolpath-core": "0.11.0"
   },
   "devDependencies": {
     "@types/three": "0.178.0"

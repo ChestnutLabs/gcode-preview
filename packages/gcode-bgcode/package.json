@@ -1,6 +1,6 @@
 {
   "name": "@chestnutlabs/gcode-bgcode",
-  "version": "0.10.0",
+  "version": "0.11.0",
   "description": "Binary G-code (.bgcode) decode adapter for the Chestnut Labs G-code toolpath stack (DD-011): a license-clean, in-memory block walker that decodes Prusa .bgcode to plain G-code for the existing parser/dialect/renderer pipeline. Decode-only.",
   "keywords": [
     "gcode",
@@ -47,7 +47,7 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@chestnutlabs/toolpath-core": "0.10.0",
-    "@chestnutlabs/gcode-containers": "0.10.0"
+    "@chestnutlabs/toolpath-core": "0.11.0",
+    "@chestnutlabs/gcode-containers": "0.11.0"
   }
 }

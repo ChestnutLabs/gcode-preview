@@ -28,7 +28,7 @@ import { ModelContent } from './model-content.js';
 import { DEFAULT_MODEL_LOADERS, resolveModelScene, type ModelLoader, type ModelSourceInput } from './loaders.js';
 import { ModelParseError, type ModelLimits } from './limits.js';
 import type { ModelBackground, PresentationView } from './model-renderer.js';
-import type { ModelBounds, ModelScene } from './scene-model.js';
+import { sceneInstanceCount, type ModelBounds, type ModelScene } from './scene-model.js';
 
 export interface ModelViewerOptions {
   /** Loader registry (open `kind`). Default: `[stlLoader, threeMfLoader]`. */
@@ -54,6 +54,17 @@ export interface ModelReadyInfo {
   objectCount: number;
   materials: Confidence;
   bounds: ModelBounds;
+  /**
+   * Total instance placements drawn (DD-022): > `objectCount` when the source reused geometry, for an "N
+   * copies" badge. 1 per object when nothing is reused.
+   */
+  instancedCount: number;
+  /**
+   * Every-Nth-triangle decimation applied to fit the LOD budget (1 = none). Field-parallel to the toolpath
+   * `decimationApplied` so a card badges "simplified for size" the same way. Always 1 until model LOD lands
+   * (DD-022 Phase 2); reserved so the field is stable.
+   */
+  decimationApplied: number;
   // Reserved additive extension (not v1): `objects?: { name?: string; materials?: Confidence }[]`.
 }
 
@@ -161,7 +172,9 @@ export function createModelViewer(canvas: RenderTargetCanvas, options: ModelView
       const info: ModelReadyInfo = {
         objectCount: parsed.objects.length,
         materials: parsed.capabilities.materials,
-        bounds: parsed.bounds
+        bounds: parsed.bounds,
+        instancedCount: sceneInstanceCount(parsed),
+        decimationApplied: 1
       };
       // Last-wins: a newer setSource (or a dispose) superseded this one — discard without mutating.
       if (my !== sourceToken || disposed || stage === null) return info;
