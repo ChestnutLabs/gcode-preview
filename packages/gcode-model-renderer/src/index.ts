@@ -8,6 +8,8 @@ export { ModelRenderer, NEUTRAL_MATERIAL_COLOR } from './model-renderer.js';
 export type { ModelRendererOptions, ModelBackground, PresentationView } from './model-renderer.js';
 export { renderModelStill } from './render-model-still.js';
 export type { ModelSource, RenderModelStillOptions, RenderModelStillResult } from './render-model-still.js';
+export { createModelViewer } from './model-viewer.js';
+export type { ModelViewer, ModelViewerOptions, ModelViewerEvent, ModelReadyInfo } from './model-viewer.js';
 export { parseStl } from './stl.js';
 export { parse3mf } from './three-mf.js';
 export type { Parse3mfOptions } from './three-mf.js';
