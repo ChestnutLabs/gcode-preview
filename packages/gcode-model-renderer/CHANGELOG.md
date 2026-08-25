@@ -1,5 +1,14 @@
 # @chestnutlabs/gcode-model-renderer
 
+## 0.8.1
+
+### Patch Changes
+
+- Updated dependencies []:
+  - @chestnutlabs/gcode-containers@0.8.1
+  - @chestnutlabs/gcode-renderer-three@0.8.1
+  - @chestnutlabs/toolpath-core@0.8.1
+
 ## 0.8.0
 
 ### Minor Changes

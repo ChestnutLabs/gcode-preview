@@ -1,5 +1,15 @@
 # @chestnutlabs/gcode-preview-react
 
+## 0.8.1
+
+### Patch Changes
+
+- Updated dependencies [[`92ae9a2`](https://github.com/ChestnutLabs/gcode-preview/commit/92ae9a2532e7ecc1a7b9938eda442d105e4f31b4)]:
+  - @chestnutlabs/gcode-parser@0.8.1
+  - @chestnutlabs/gcode-preview-core@0.8.1
+  - @chestnutlabs/gcode-renderer-three@0.8.1
+  - @chestnutlabs/toolpath-core@0.8.1
+
 ## 0.8.0
 
 ### Patch Changes
