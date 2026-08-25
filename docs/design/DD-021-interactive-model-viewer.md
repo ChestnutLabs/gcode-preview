@@ -103,6 +103,10 @@ export interface ModelReadyInfo {
   objectCount: number;
   materials: Confidence;                  // known | approximated | unavailable (never fabricated)
   bounds: ModelBounds;
+  // Reserved additive extension (not v1): a per-object parts list —
+  //   objects?: { name?: string; materials?: Confidence }[]
+  // A multi-object source 3MF could later surface a parts panel. `ModelScene` already carries the
+  // per-object data (id/name/geometry/material), so this is a purely additive field — no redesign.
 }
 
 export type ModelViewerEvent =
@@ -220,7 +224,10 @@ consumer surfaces ("true colours" vs "neutral — this file carries no colour").
   interactive demo harness. **This is the v1 deliverable.**
 - **Phase 2 (follow-on, optional) — framework components.** Thin `<ModelViewer>` wrappers (Vue/React/
   Svelte/Element) analogous to `<GcodePreview>` but model-mode, over the shared behavioral-test pattern —
-  only if the product wants drop-in components. Not required for AnyBridge's handle-level consumption.
+  only if the product wants drop-in components. Not required for handle-level consumption: the early
+  consumer (AnyBridge) wraps the handle directly in v1 (create-on-mount → `setSource` → `onEvent` →
+  reactive state → `ResizeObserver`→`resize` → `dispose`-on-unmount). A Phase-2 component is pulled
+  forward only if that boilerplate is duplicated across enough consumers to warrant it.
 - **Later (out of this DD) — additional source formats.** OBJ/STEP/PLY register `ModelLoader`s into the
   seam; no public-API change. Each is its own small unit of work, gated on its own licensing/parse review.
 
