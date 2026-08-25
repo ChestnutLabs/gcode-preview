@@ -81,7 +81,7 @@ describe('.gcode.3mf container (#74)', () => {
     const text2 = await drain(opened.openPlate(1));
     expect(text1).toContain('; generated fixture plate 1');
     expect(text2).toContain('; generated fixture plate 2');
-    expect(text1.split('\n').length).toBe(405); // header + FEATURE markers + 400 moves
+    expect(text1.split('\n').length).toBe(407); // header (+2 filament comments) + FEATURE markers + 400 moves
     expect(() => opened.openPlate(9)).toThrow(ContainerError);
   });
 
