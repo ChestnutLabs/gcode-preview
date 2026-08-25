@@ -389,6 +389,37 @@ describe('parse3mf instancing (DD-022 Phase 1)', () => {
     expect(scene.objects[0].instances).toBeUndefined();
     expect(scene.capabilities.instanced).toBe('unavailable');
   });
+
+  it('does NOT reject an instanced plate on triangles — the estimate is UNIQUE, not baked (DD-022)', async () => {
+    // 100 placements of ONE external master (the Baby_Opossum full-sheet case). The estimate must count
+    // the master ONCE (unique), not 100× (baked). A ~30 KB external / 256 ≈ 117 unique est triangles is
+    // well under the budget, so with a low maxTriangles of 5000 (baked would be ~11,700 → over the ×2
+    // margin) it still parses and instances, instead of a false E_MODEL_TOO_MANY_TRIANGLES.
+    const padding = `<!-- ${'x'.repeat(30_000)} -->`;
+    const bigExternal = `<?xml version="1.0"?>
+${padding}
+<model unit="millimeter"><resources>
+ <object id="1" type="model"><mesh>
+  <vertices><vertex x="0" y="0" z="0"/><vertex x="1" y="0" z="0"/><vertex x="0" y="1" z="0"/></vertices>
+  <triangles><triangle v1="0" v2="1" v3="2"/></triangles></mesh></object>
+</resources></model>`;
+    const comps = Array.from(
+      { length: 100 },
+      (_v, i) => `<component p:path="/3D/Objects/big.model" objectid="1" transform="1 0 0 0 1 0 0 0 1 ${i * 5} 0 0"/>`
+    ).join('');
+    const shell = `<?xml version="1.0"?>
+<model unit="millimeter" requiredextensions="p" xmlns:p="http://schemas.microsoft.com/3dmanufacturing/production/2015/06">
+ <resources><object id="2" type="model"><components>${comps}</components></object></resources>
+ <build><item objectid="2"/></build></model>`;
+    const bytes = makeZip([
+      { name: '3D/3dmodel.model', data: new TextEncoder().encode(shell) },
+      { name: '3D/Objects/big.model', data: new TextEncoder().encode(bigExternal) }
+    ]);
+    const scene = await parse3mf(bytes, { maxTriangles: 5000 });
+    expect(scene.objects).toHaveLength(1); // one unique master
+    expect(scene.objects[0].instances).toHaveLength(100); // drawn 100× via instancing
+    expect(scene.capabilities.instanced).toBe('known');
+  });
 });
 
 describe('renderModelStill (3mf)', () => {
