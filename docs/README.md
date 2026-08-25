@@ -39,7 +39,7 @@ See also [`../PROJECT_SETUP.md`](../PROJECT_SETUP.md) for the local environment 
 Provenance of inherited vs. Chestnut code, the exact founding baseline, and the branch mapping are
 tracked in [`UPSTREAM_PROVENANCE.md`](UPSTREAM_PROVENANCE.md).
 
-## Current state (updated 2026-08-24 — **v0.7.0 shipped to npm** (14 lockstep pkgs): new package `@chestnutlabs/gcode-model-renderer` — a **presentation** renderer for source models (STL + 3MF multi-object/material) with headless `renderModelStill`, distinct from toolpath inspection ([DD-018](design/DD-018-model-renderer.md)); plus the shared render "stage" extracted in `gcode-renderer-three`, the 3MF Production-Extension (`p:path`) reader, and a toolpath-renderer batch — slice metadata on `ready`, structured multi-plate metadata, independent build-volume cage, frame-to-content, interaction-aware render quality ([DD-020](design/DD-020-interaction-aware-quality.md)), and a `renderStill` background option. v0.6.0 introduced the ModelRenderer package (STL presentation slice); v0.5.x added camera preset-views + serializable `CameraState`, zoom-to-cursor, keyboard-a11y, `capabilities`/`warnings` on `ready`, and the Vue/Svelte adapter mount-prop fixes (epics #279/#296/#306). DD-017 RS274NGC parametric programs proposed, unbuilt)
+## Current state (updated 2026-08-24 — **v0.9.0 shipped to npm** (14 lockstep pkgs): the **interactive source-model viewer** `createModelViewer` in `@chestnutlabs/gcode-model-renderer` — the live orbit/zoom/pan analogue of `renderModelStill` for an STL or 3MF, over a shared interactive "stage" extracted in `gcode-renderer-three`, with an open-`kind` model-source loader registry (STL/3MF now, OBJ/STEP/PLY later without an API change), capability-honest color pass-through, and a `renderer-unsupported` fallback ([DD-021](design/DD-021-interactive-model-viewer.md)). v0.8.1 added production Bambu/Orca 3MF `paint_color` multicolor decode ([RR-005](research/RR-005-3mf-paint-color-facet-format.md)) so a designer's painted model renders in its true colors without slicing, plus a filament-slot dedup fix. v0.7.0 shipped the presentation package `@chestnutlabs/gcode-model-renderer` (headless `renderModelStill`, STL + 3MF multi-object/material, [DD-018](design/DD-018-model-renderer.md)), the 3MF Production-Extension (`p:path`) reader, and a toolpath-renderer batch — slice metadata on `ready`, structured multi-plate metadata, independent build-volume cage, frame-to-content, interaction-aware render quality ([DD-020](design/DD-020-interaction-aware-quality.md)), and a `renderStill` background option. v0.5.x added camera preset-views + serializable `CameraState`, zoom-to-cursor, keyboard-a11y, `capabilities`/`warnings` on `ready`, and the Vue/Svelte adapter mount-prop fixes (epics #279/#296/#306/DD-021). DD-017 RS274NGC parametric programs proposed, unbuilt)
 
 | Epic | Status | Gate |
 |---|---|---|
@@ -67,7 +67,8 @@ golden/native fixtures + manifest with CI validation, boundary lint, license CI 
 consumer smoke harnesses, plus the five framework adapters (`gcode-preview-core`/`-vue`/`-react`/
 `-svelte`/`-element`) and the presentation renderer (`gcode-model-renderer`). CI (`build`) is a
 required check on `main`/`dev`. **All fourteen `@chestnutlabs/*` packages are published to npm at
-`v0.7.0`** (lockstep, npm provenance); `main` is the release branch, publishing from tagged GitHub
+`v0.9.0`** (lockstep, npm provenance); `main` is the release branch, publishing from tagged GitHub
 Releases (`v0.1.0` E7/DD-008, `v0.2.0` E9/DD-009, `v0.3.0` E8/#188, `v0.4.0` #189 non-extrusion,
-`v0.5.x` hardening #279, `v0.6.0`/`v0.7.0` ModelRenderer + toolpath batch #296/#306). Changesets
+`v0.5.x` hardening #279, `v0.6.0`/`v0.7.0` ModelRenderer + toolpath batch #296/#306, `v0.8.1` 3MF
+`paint_color` multicolor decode, `v0.9.0` interactive `createModelViewer` #296/DD-021). Changesets
 accumulate on `dev` for the next release.

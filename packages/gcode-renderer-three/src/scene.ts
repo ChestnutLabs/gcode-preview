@@ -42,64 +42,22 @@ import {
   Vector2,
   Vector3
 } from 'three';
-import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
-import type { MachineGeometry, MappedProgress, ToolpathIR, Vec3 } from '@chestnutlabs/toolpath-core';
+import type { MachineGeometry, MappedProgress, ToolpathIR } from '@chestnutlabs/toolpath-core';
 import { autoDecimation, buildChunks, type ChunkBuildResult, type GeometryChunk } from './chunks.js';
 import { buildChunkColors, type ColorMode } from './colors.js';
 import { computeDrawState, computeOverlayDrawStates } from './ranges.js';
 import { createBuildVolume, type BuildVolumeDef, type BuildVolumeStyle } from './build-volume.js';
 import { buildTubeChunk, TUBES_AUTO_MAX_SEGMENTS, type TubeOptions } from './tubes.js';
-import {
-  framingFromCenterRadius,
-  createDefaultGLRenderer,
-  type RenderTargetCanvas,
-  type GLRendererLike
-} from './stage.js';
+import type { RenderTargetCanvas, GLRendererLike } from './stage.js';
 import { resolveTheme, type Theme, type ResolvedTheme } from './theme.js';
+import { InteractiveStage, type CameraMode, type CameraView, type CameraState } from './interactive-stage.js';
 
 /** §4.3 quality tiers. `auto` picks by segment count (chooseQuality). */
 export type QualityMode = 'lines' | 'tubes';
 
-/**
- * Camera projection (#150, DD-009 D3). `perspective` is the default interactive
- * view; `orthographic` gives parallel-projection technical/dimensional views.
- * Switching preserves the view direction, target, and apparent framing.
- */
-export type CameraMode = 'perspective' | 'orthographic';
-
-/**
- * Preset orientations for {@link ToolpathRenderer.setView} (#268). `iso` is the standard
- * front-top-right corner; the six orthogonal views look along a principal axis.
- */
-export type CameraView = 'top' | 'bottom' | 'front' | 'back' | 'left' | 'right' | 'iso';
-
-/**
- * A serializable snapshot of the camera (#268), in **scene coordinates**. A stable contract a
- * dashboard may persist across sessions: {@link ToolpathRenderer.getCameraState} reads it and
- * {@link ToolpathRenderer.setCameraState} restores it verbatim (no re-fit to the current model —
- * restoring onto a different model is the caller's choice).
- */
-export interface CameraState {
-  position: Vec3;
-  target: Vec3;
-  /** Camera zoom factor (three's `camera.zoom`); mainly meaningful for the orthographic view. */
-  zoom: number;
-  cameraMode: CameraMode;
-}
-
-/**
- * Unit direction (scene coords) from the framed target to the camera for each preset (#268). The
- * root rotation maps printer (x,y,z) → scene (x, z, -y), so e.g. printer +Z "up" is scene +Y.
- */
-const VIEW_DIRECTIONS: Record<CameraView, readonly [number, number, number]> = {
-  top: [0, 1, 0],
-  bottom: [0, -1, 0],
-  front: [0, 0, 1],
-  back: [0, 0, -1],
-  left: [-1, 0, 0],
-  right: [1, 0, 0],
-  iso: [1, 1, 1]
-};
+// Camera types + the preset-view table live in the shared interactive stage (DD-021 Phase 0);
+// re-exported here so existing import paths (index re-exports them from './scene.js') keep working.
+export type { CameraMode, CameraView, CameraState } from './interactive-stage.js';
 
 /** §4.3 `auto` decision, exported for tests and consumers. */
 export function chooseQuality(requested: QualityMode | 'auto', totalSegments: number): QualityMode {
@@ -207,24 +165,10 @@ export function machineToVolume(m: MachineGeometry): BuildVolumeDef {
   return { x: maxX - minX, y: maxY - minY, z: m.heightMm ?? 250, min: { x: minX, y: minY }, excludedRegions };
 }
 
-/** True for a real DOM canvas (has DOM-only members OffscreenCanvas lacks). */
-function isHtmlCanvas(c: RenderTargetCanvas): c is HTMLCanvasElement {
-  return typeof (c as Partial<HTMLCanvasElement>).addEventListener === 'function' && 'style' in c;
-}
-
 /** §8-derived tick budget: half the 16 ms stall budget, leaving frame headroom. */
 const TICK_BUDGET_MS = 8;
 /** Tubes chunk target: ~2k segments keeps a single tube-chunk build under the stall budget. */
 const TUBES_CHUNK_TARGET = 2048;
-// Interaction-aware quality (DD-020): factor clamp, settle debounce, and the bounded frame-time
-// hysteresis band (derived from the §8 16 ms stall budget with interaction headroom).
-const MIN_INTERACTION_FACTOR = 0.4;
-/** Proactive reduction applied when a gesture starts (then adapted by frame time). */
-const DEFAULT_INTERACTION_FACTOR = 0.6;
-const INTERACTION_SETTLE_MS = 150;
-const INTERACTION_FRAME_BUDGET_HI = 22; // ms → step coarser
-const INTERACTION_FRAME_BUDGET_LO = 12; // ms → step finer
-const INTERACTION_FACTOR_STEP = 0.15;
 
 /**
  * Map a raycast hit on a toolpath chunk mesh — identified by its hit vertex index — back to the IR
@@ -242,10 +186,13 @@ export function resolveHitSegment(mesh: LineSegments | Mesh, vertexIndex: number
 }
 
 export class ToolpathRenderer {
-  private readonly canvas: RenderTargetCanvas;
-  private readonly gl: GLRendererLike;
   private readonly scheduleFrame: (cb: () => void) => void;
   private readonly chunksPerTick: number | undefined;
+
+  // The shared interactive viewport (DD-021 Phase 0): owns the GL renderer, camera, orbit controls,
+  // context-loss recovery, resize, render, and interaction-aware quality. This renderer owns the scene
+  // *content* (below) and drives the stage for everything camera/GL.
+  private readonly stage: InteractiveStage;
 
   private readonly scene = new Scene();
   private readonly root = new Group();
@@ -255,34 +202,12 @@ export class ToolpathRenderer {
   private cageVisible = true;
   /** Framing target (#306/#6): 'all' = full extrude bounds (default); 'object' = printed object only. */
   private frameContentMode: 'object' | 'all' = 'all';
-  // Interaction-aware quality (DD-020, #306/2): reduce render detail (pixel ratio) while the camera moves,
-  // restore on settle. Off by default — no behavior change. `factor` is clamped to [MIN_FACTOR, 1].
-  private interactionQualityMode: 'off' | 'auto' = 'off';
-  private basePixelRatio = 1;
-  private interactionFactor = 1;
-  private interacting = false;
-  private settleTimer: ReturnType<typeof setTimeout> | null = null;
   private volumeDef: BuildVolumeDef | null = null;
   // Themeable scene objects (#153): lights + resolved theme, retained so setTheme
   // can restyle them live. Materials for tube geometry are made per-chunk.
   private readonly hemiLight: HemisphereLight;
   private readonly dirLight: DirectionalLight;
   private resolvedTheme: ResolvedTheme;
-  // Two persistent cameras sharing one pose (#150); only the projection differs.
-  // `activeCamera` is the one currently rendered/orbited; the public `camera`
-  // getter returns it as the union (external readers must not assume a `.fov`).
-  private readonly perspectiveCamera: PerspectiveCamera;
-  private readonly orthographicCamera: OrthographicCamera;
-  private activeCamera: PerspectiveCamera | OrthographicCamera;
-  private cameraModeState: CameraMode;
-  /** Viewport aspect (w/h), tracked so both projections resize consistently. */
-  private aspect = 1;
-  /** Vertical half-height the camera frames, set by frame(); sizes the ortho frustum. */
-  private viewHalfHeight = 100;
-  /** Last framed orbit target (scene coords). Mirrors `controls.target`, and stands in for it on
-   *  headless hosts (no OrbitControls) so setView/getCameraState work there too (#268). */
-  private framedTarget = new Vector3();
-  private controls: OrbitControls | null = null;
 
   private ir: ToolpathIR | null = null;
   private readonly raycaster = new Raycaster();
@@ -345,30 +270,12 @@ export class ToolpathRenderer {
   });
   private listeners = new Set<(e: RendererEvent) => void>();
   private disposed = false;
-  private contextLost = false;
-
-  private readonly onContextLost = (ev: Event): void => {
-    ev.preventDefault();
-    this.contextLost = true;
-    this.emit({ type: 'contextlost' });
-  };
-
-  private readonly onContextRestored = (): void => {
-    this.contextLost = false;
-    // Rebuild all GPU-facing resources from the retained IR — the canonical source (§5.2).
-    if (this.ir !== null) {
-      this.startBuild(this.ir);
-    }
-    this.emit({ type: 'restored' });
-  };
 
   constructor(opts: ToolpathRendererOptions) {
-    this.canvas = opts.canvas;
     this.chunksPerTick = opts.chunksPerTick;
     this.colorMode = opts.colorMode ?? DEFAULT_COLOR;
     this.requestedQuality = opts.quality ?? 'auto';
     this.frameContentMode = opts.frameContent ?? 'all';
-    this.interactionQualityMode = opts.interactionQuality ?? 'off';
     this.tubeOptions = opts.tube ?? {};
     // Default scheduler: rAF for frame alignment, with a timeout backstop so
     // work still progresses when rAF is suspended (hidden/throttled tabs —
@@ -386,13 +293,6 @@ export class ToolpathRenderer {
         if (typeof requestAnimationFrame === 'function') requestAnimationFrame(run);
         setTimeout(run, 50);
       });
-    // Default GL is the shared stage builder (DD-018 Phase 0); the toolpath renderer leaves alpha
-    // false (opaque), so this is byte-identical to the previous inline default.
-    this.gl = (
-      opts.createRenderer ??
-      ((canvas) => createDefaultGLRenderer(canvas, { preserveDrawingBuffer: opts.preserveDrawingBuffer }))
-    )(opts.canvas);
-
     // Single Z-up→Y-up conversion (§6.2); everything below is printer coordinates.
     this.root.rotation.x = -Math.PI / 2;
     this.scene.add(this.root);
@@ -413,45 +313,24 @@ export class ToolpathRenderer {
       this.root.add(this.volumeGroup);
     }
 
-    // Both cameras exist for the renderer's lifetime; frame()/setCameraMode keep
-    // their pose in sync so toggling projection never jumps the view (#150). The
-    // ortho frustum is a placeholder until frame()/resize size it from bounds+aspect.
-    this.perspectiveCamera = new PerspectiveCamera(50, 1, 0.1, 10000);
-    this.perspectiveCamera.position.set(-100, 200, 250);
-    this.orthographicCamera = new OrthographicCamera(-1, 1, 1, -1, 0.1, 10000);
-    this.orthographicCamera.position.set(-100, 200, 250);
-    this.cameraModeState = opts.cameraMode ?? 'perspective';
-    this.activeCamera = this.cameraModeState === 'orthographic' ? this.orthographicCamera : this.perspectiveCamera;
-    const domEl = this.gl.domElement;
-    // OrbitControls needs a real DOM element; an OffscreenCanvas (headless
-    // still-render, #132) has no pointer events, so there is nothing to orbit.
-    if (isHtmlCanvas(domEl)) {
-      try {
-        this.controls = new OrbitControls(this.activeCamera, domEl);
-        // Zoom toward the pointer rather than the orbit target — the affordance users expect from a
-        // 3D viewer, and free inside OrbitControls (#267). Distance clamps are derived from the framed
-        // model size and (re)applied in frame(), since they change per file.
-        this.controls.zoomToCursor = true;
-        // Keyboard-operable camera for embedders (DD-004 a11y, #275/M4): arrow keys pan the view when
-        // the canvas is focused. Scoped to the canvas element (not window) so an embedded viewer never
-        // hijacks the page's arrow keys; the adapters make the canvas focusable via `tabindex="0"`.
-        this.controls.listenToKeyEvents(domEl);
-        this.controls.addEventListener('change', () => this.onInteractionFrame());
-        // Two-way camera state (#275/M6): after a user interaction settles, publish the new pose so a
-        // bound `cameraState` can persist it. `end` fires once per gesture (not per frame like `change`).
-        this.controls.addEventListener('end', () => {
-          this.settleInteraction();
-          this.emit({ type: 'camera-changed', state: this.getCameraState() });
-        });
-      } catch {
-        this.controls = null; // headless hosts without full DOM events
+    // The shared interactive viewport (DD-021 Phase 0) owns the GL renderer, the dual camera, orbit
+    // controls, WebGL context-loss recovery, resize, render, and DD-020 interaction-aware quality. It
+    // renders this renderer's scene; context-restore rebuilds the toolpath from the retained IR.
+    this.stage = new InteractiveStage({
+      canvas: opts.canvas,
+      scene: this.scene,
+      cameraMode: opts.cameraMode,
+      interactionQuality: opts.interactionQuality,
+      preserveDrawingBuffer: opts.preserveDrawingBuffer,
+      createRenderer: opts.createRenderer,
+      onCameraChanged: (state) => this.emit({ type: 'camera-changed', state }),
+      onContextLost: () => this.emit({ type: 'contextlost' }),
+      onContextRestored: () => {
+        // Rebuild all GPU-facing resources from the retained IR — the canonical source (§5.2).
+        if (this.ir !== null) this.startBuild(this.ir);
+        this.emit({ type: 'restored' });
       }
-    } else {
-      this.controls = null;
-    }
-
-    this.canvas.addEventListener('webglcontextlost', this.onContextLost);
-    this.canvas.addEventListener('webglcontextrestored', this.onContextRestored);
+    });
     this.frame(); // sensible initial view (bed-centered until an IR arrives)
   }
 
@@ -461,12 +340,12 @@ export class ToolpathRenderer {
    * perspective cameras carry `.fov` (guard writes on `cameraMode`).
    */
   get camera(): PerspectiveCamera | OrthographicCamera {
-    return this.activeCamera;
+    return this.stage.activeCamera;
   }
 
   /** The active camera projection (#150). */
   get cameraMode(): CameraMode {
-    return this.cameraModeState;
+    return this.stage.cameraMode;
   }
 
   onEvent(cb: (e: RendererEvent) => void): () => void {
@@ -727,7 +606,7 @@ export class ToolpathRenderer {
   pickSegment(ndcX: number, ndcY: number, threshold?: number): number | null {
     if (this.chunkMeshes.length === 0) return null;
     this.pointer.set(ndcX, ndcY);
-    this.raycaster.setFromCamera(this.pointer, this.activeCamera);
+    this.raycaster.setFromCamera(this.pointer, this.stage.activeCamera);
     this.raycaster.params.Line.threshold = threshold ?? this.pickThreshold();
     for (const hit of this.raycaster.intersectObjects(this.chunkMeshes, false)) {
       if (hit.index === undefined) continue;
@@ -1087,114 +966,24 @@ export class ToolpathRenderer {
     return this.presentationMode;
   }
 
-  /**
-   * Size both projections from the tracked aspect + framed half-height (#150).
-   * Perspective keeps a fixed vertical fov and only consumes the aspect; ortho
-   * keeps the vertical extent fixed and widens horizontally by aspect — so neither
-   * a resize nor a projection toggle stretches or rescales the model.
-   */
-  private updateCameraProjection(): void {
-    this.perspectiveCamera.aspect = this.aspect;
-    this.perspectiveCamera.updateProjectionMatrix();
-    const h = this.viewHalfHeight;
-    const w = h * this.aspect;
-    this.orthographicCamera.left = -w;
-    this.orthographicCamera.right = w;
-    this.orthographicCamera.top = h;
-    this.orthographicCamera.bottom = -h;
-    this.orthographicCamera.updateProjectionMatrix();
-  }
-
-  /**
-   * Switch the camera projection (#150, DD-009 D3). The pose (position/orientation)
-   * is copied to the incoming camera so the view never jumps, OrbitControls is
-   * reattached to it, and its frustum is re-sized before the next render.
-   */
+  /** Switch the camera projection (#150, DD-009 D3) — delegates to the shared stage. */
   setCameraMode(mode: CameraMode): void {
-    if (this.disposed || mode === this.cameraModeState) return;
-    const prev = this.activeCamera;
-    const next = mode === 'orthographic' ? this.orthographicCamera : this.perspectiveCamera;
-    next.position.copy(prev.position);
-    next.quaternion.copy(prev.quaternion);
-    next.up.copy(prev.up);
-    this.cameraModeState = mode;
-    this.activeCamera = next;
-    this.updateCameraProjection();
-    if (this.controls) {
-      this.controls.object = next;
-      this.controls.update();
-    }
-    this.render();
+    this.stage.setCameraMode(mode);
   }
 
-  /** The live orbit target: `controls.target` when interactive, else the last framed target (#268). */
-  private currentTarget(): Vector3 {
-    return this.controls ? this.controls.target.clone() : this.framedTarget.clone();
-  }
-
-  /** Screen-up for a view direction. World-up (0,1,0) is degenerate when looking straight up/down it,
-   *  so top/bottom roll about scene −Z instead. Reproduces every preset's up *and* keeps setCameraState
-   *  round-trips deterministic (the state contract carries no explicit up). */
-  private upForViewDir(dir: Vector3): Vector3 {
-    return Math.abs(dir.y) > 0.999 ? new Vector3(0, 0, -1) : new Vector3(0, 1, 0);
-  }
-
-  /**
-   * Snap to a preset orientation (#268): place the camera on the view's unit direction from the
-   * current target, at the current distance, and look at the target. Instant (no animation);
-   * preserves the active `cameraMode`. A no-op on a disposed renderer.
-   */
+  /** Snap to a preset orientation (#268) — delegates to the shared stage. */
   setView(view: CameraView): void {
-    if (this.disposed) return;
-    const dir = new Vector3(...VIEW_DIRECTIONS[view]).normalize();
-    const target = this.currentTarget();
-    // Keep the current dolly distance; fall back to the framed distance if the camera sits on target.
-    const distance = this.activeCamera.position.distanceTo(target) || this.viewHalfHeight * 2.15;
-    this.activeCamera.up.copy(this.upForViewDir(dir));
-    this.activeCamera.position.copy(target).addScaledVector(dir, distance);
-    this.activeCamera.lookAt(target);
-    this.framedTarget.copy(target);
-    this.updateCameraProjection();
-    if (this.controls) {
-      this.controls.target.copy(target);
-      this.controls.update();
-    }
-    this.render();
+    this.stage.setView(view);
   }
 
   /** Read the current camera as a serializable {@link CameraState} (scene coords, #268). */
   getCameraState(): CameraState {
-    const t = this.currentTarget();
-    const p = this.activeCamera.position;
-    return {
-      position: { x: p.x, y: p.y, z: p.z },
-      target: { x: t.x, y: t.y, z: t.z },
-      zoom: this.activeCamera.zoom,
-      cameraMode: this.cameraModeState
-    };
+    return this.stage.getCameraState();
   }
 
-  /**
-   * Restore a {@link CameraState} verbatim (#268) — position/target/zoom/mode as given, with no
-   * re-fit to the current model's bounds. Instant. A no-op on a disposed renderer.
-   */
+  /** Restore a {@link CameraState} verbatim (#268) — no re-fit to the current model's bounds. */
   setCameraState(state: CameraState): void {
-    if (this.disposed) return;
-    this.setCameraMode(state.cameraMode); // no-op if unchanged; activates the right camera otherwise
-    const cam = this.activeCamera;
-    const target = new Vector3(state.target.x, state.target.y, state.target.z);
-    const dir = new Vector3(state.position.x, state.position.y, state.position.z).sub(target).normalize();
-    cam.up.copy(this.upForViewDir(dir));
-    cam.position.set(state.position.x, state.position.y, state.position.z);
-    cam.zoom = state.zoom;
-    cam.lookAt(target);
-    cam.updateProjectionMatrix();
-    this.framedTarget.copy(target);
-    if (this.controls) {
-      this.controls.target.copy(target);
-      this.controls.update();
-    }
-    this.render();
+    this.stage.setCameraState(state);
   }
 
   /**
@@ -1209,7 +998,7 @@ export class ToolpathRenderer {
     return Number.isFinite(ir.bounds.min.x) ? ir.bounds : null;
   }
 
-  /** Fit the camera to the toolpath bounds (falls back to the build volume). */
+  /** Fit the camera to the toolpath bounds (falls back to the preview bounds, then the build volume). */
   frame(): void {
     if (this.disposed) return;
     const b = this.frameBounds();
@@ -1228,25 +1017,9 @@ export class ToolpathRenderer {
       center.set(this.volumeDef.x / 2, this.volumeDef.y / 2, 0);
       radius = Math.max(10, Math.max(this.volumeDef.x, this.volumeDef.y) * 0.75);
     }
-    // Printer coords → scene coords + the shared 3/4 framing pose (DD-018 Phase 0: single-sourced
-    // in stage.ts so ModelRenderer frames identically). viewHalfHeight sizes the ortho frustum so
-    // toggling projection keeps the model the same apparent size (#150).
-    const { target, position, viewHalfHeight } = framingFromCenterRadius(center, radius);
-    this.viewHalfHeight = viewHalfHeight;
-    this.framedTarget.copy(target);
-    this.activeCamera.position.copy(position);
-    this.activeCamera.lookAt(target);
-    this.updateCameraProjection();
-    if (this.controls) {
-      this.controls.target.copy(target);
-      // Bound zoom to the framed model so the user can't dolly through it or lose it at the extremes
-      // (#267). Recomputed here, not just at construction, because `radius` changes per file. The
-      // default framed distance is ≈2.69·radius, so this keeps a wide but finite range around it.
-      this.controls.minDistance = Math.max(1, radius * 0.15);
-      this.controls.maxDistance = radius * 30;
-      this.controls.update();
-    }
-    this.render();
+    // The shared stage applies the 3/4 framing pose, sizes the ortho frustum, and derives the
+    // zoom-distance clamps from the radius (single-sourced so ModelRenderer frames identically).
+    this.stage.frameTo(center, radius);
   }
 
   /**
@@ -1328,64 +1101,19 @@ export class ToolpathRenderer {
     this.frame();
   }
 
-  /** Toggle interaction-aware quality (DD-020, #306/2). 'off' restores full detail immediately. */
+  /** Toggle interaction-aware quality (DD-020, #306/2) — delegates to the shared stage. */
   setInteractionQuality(mode: 'off' | 'auto'): void {
-    if (this.disposed) return;
-    this.interactionQualityMode = mode;
-    if (mode === 'off') {
-      if (this.settleTimer !== null) {
-        clearTimeout(this.settleTimer);
-        this.settleTimer = null;
-      }
-      this.interacting = false;
-      this.interactionFactor = 1;
-      this.applyPixelRatio(this.basePixelRatio);
-    }
+    this.stage.setInteractionQuality(mode);
   }
 
-  private applyPixelRatio(r: number): void {
-    this.gl.setPixelRatio?.(r);
-  }
-
-  /** OrbitControls 'change' handler: render, and (when auto) reduce detail + adapt to frame time. */
+  /** OrbitControls 'change' (the stage wires this internally; retained for tests). */
   private onInteractionFrame(): void {
-    if (this.disposed) return;
-    if (this.interactionQualityMode !== 'auto') {
-      this.render();
-      return;
-    }
-    if (!this.interacting) {
-      this.interacting = true;
-      this.basePixelRatio = typeof window !== 'undefined' ? window.devicePixelRatio || 1 : 1;
-      this.interactionFactor = DEFAULT_INTERACTION_FACTOR; // proactive reduction, then adapt below
-    }
-    if (this.settleTimer !== null) {
-      clearTimeout(this.settleTimer);
-      this.settleTimer = null;
-    }
-    this.applyPixelRatio(this.basePixelRatio * this.interactionFactor);
-    const t0 = Date.now();
-    this.render();
-    const dt = Date.now() - t0;
-    // Bounded hysteresis: too slow → coarser; comfortably fast → finer. Clamped to [MIN, 1].
-    if (dt > INTERACTION_FRAME_BUDGET_HI) {
-      this.interactionFactor = Math.max(MIN_INTERACTION_FACTOR, this.interactionFactor - INTERACTION_FACTOR_STEP);
-    } else if (dt < INTERACTION_FRAME_BUDGET_LO) {
-      this.interactionFactor = Math.min(1, this.interactionFactor + INTERACTION_FACTOR_STEP);
-    }
+    this.stage.onInteractionFrame();
   }
 
-  /** Restore full render detail a short debounce after the camera settles (DD-020). */
+  /** OrbitControls settle (the stage wires this internally; retained for tests). */
   private settleInteraction(): void {
-    if (this.interactionQualityMode !== 'auto') return;
-    if (this.settleTimer !== null) clearTimeout(this.settleTimer);
-    this.settleTimer = setTimeout(() => {
-      this.settleTimer = null;
-      this.interacting = false;
-      this.interactionFactor = 1;
-      this.applyPixelRatio(this.basePixelRatio);
-      this.render();
-    }, INTERACTION_SETTLE_MS);
+    this.stage.settleInteraction();
   }
 
   /** Set (or clear) the scene background from the theme. Null leaves three's default. */
@@ -1436,16 +1164,11 @@ export class ToolpathRenderer {
   }
 
   resize(width: number, height: number): void {
-    if (this.disposed) return;
-    this.aspect = width / Math.max(1, height);
-    this.updateCameraProjection();
-    this.gl.setSize(width, height, false);
-    this.render();
+    this.stage.resize(width, height);
   }
 
   render(): void {
-    if (this.disposed || this.contextLost) return;
-    this.gl.render(this.scene, this.activeCamera);
+    this.stage.render();
   }
 
   /**
@@ -1529,12 +1252,6 @@ export class ToolpathRenderer {
   dispose(): void {
     if (this.disposed) return;
     this.disposed = true;
-    if (this.settleTimer !== null) {
-      clearTimeout(this.settleTimer);
-      this.settleTimer = null;
-    }
-    this.canvas.removeEventListener('webglcontextlost', this.onContextLost);
-    this.canvas.removeEventListener('webglcontextrestored', this.onContextRestored);
     this.clearToolpathGeometry();
     if (this.volumeGroup) {
       this.volumeGroup.traverse((obj) => {
@@ -1550,8 +1267,8 @@ export class ToolpathRenderer {
     this.staleMarkerMaterial.dispose();
     (this.retractionPoints?.geometry as BufferGeometry | undefined)?.dispose();
     this.retractionMaterial.dispose();
-    this.controls?.dispose();
-    this.gl.dispose();
+    // The stage owns GL, controls, the context-loss listeners, and the interaction-quality timer.
+    this.stage.dispose();
     this.listeners.clear();
     this.ir = null;
   }

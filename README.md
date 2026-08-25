@@ -195,6 +195,12 @@ const { canvas, materials, cacheKey } = await renderModelStill(
 // materials: 'known' when the source carried colors, 'unavailable' when it didn't.
 ```
 
+Need it live rather than as a thumbnail — a "View in 3D" for the part? `createModelViewer` is the
+interactive analogue of the still: it orbits, zooms, and pans the same STL / 3MF (including production
+multicolor) with camera presets and the same serializable camera state, over the shared camera and
+orbit controls. See the
+[model-renderer README](packages/gcode-model-renderer/README.md#interactive-viewer).
+
 ## Quick start
 
 Install an adapter **plus `three`** (the renderer declares `three` as a peer dependency, range
@@ -389,7 +395,7 @@ row inspects the *toolpath*, the bottom row presents the *source model* (see
 
 Design rationale, boundaries, and the accepted architecture live in
 [`docs/design/`](docs/design); the [docs index](docs/README.md) maps the whole set. Fourteen
-packages publish to npm in lockstep (currently **v0.7.0**) with npm provenance.
+packages publish to npm in lockstep (currently **v0.9.0**) with npm provenance.
 
 ## Development
 

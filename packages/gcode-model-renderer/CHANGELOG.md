@@ -1,5 +1,60 @@
 # @chestnutlabs/gcode-model-renderer
 
+## 0.9.0
+
+### Minor Changes
+
+- [#330](https://github.com/ChestnutLabs/gcode-preview/pull/330) [`7b7541d`](https://github.com/ChestnutLabs/gcode-preview/commit/7b7541d52c506af040130604d0fb628d3af94b58) Thanks [@sobechestnut-dev](https://github.com/sobechestnut-dev)! - feat(model-renderer): add the generic open-`kind` model-source loader registry (DD-021 Phase 1)
+
+  Adds a loader registry so the model-source input is a **generic** `{ kind: string; bytes } | ModelScene`
+  rather than a baked-in `STL | 3MF` union — new formats (OBJ/STEP/PLY/…) become loadable by registering a
+  `ModelLoader`, with no change to the public input type. New exports: `ModelLoader`, `ModelLoadOptions`,
+  `ModelSourceInput`, `stlLoader`, `threeMfLoader`, `DEFAULT_MODEL_LOADERS`, `isModelScene`, and
+  `resolveModelScene` (which throws `E_MODEL_UNSUPPORTED_KIND` for an unregistered `kind`). The 3MF
+  `filament_colour` palette override flows through as a format-agnostic option that non-consuming loaders
+  ignore.
+
+  `renderModelStill` is unchanged in signature and output — its internal source dispatch now flows through
+  this shared registry (the existing `{kind:'stl'} | {kind:'3mf'} | ModelScene` input stays valid). This is
+  the seam the interactive `createModelViewer` (next PR) consumes.
+
+- [#331](https://github.com/ChestnutLabs/gcode-preview/pull/331) [`81f3fc9`](https://github.com/ChestnutLabs/gcode-preview/commit/81f3fc907fedc991fde21664a8726cf706b3ae95) Thanks [@sobechestnut-dev](https://github.com/sobechestnut-dev)! - feat(model-renderer): add `createModelViewer` — the interactive source-model viewer (DD-021 Phase 1)
+
+  Adds `createModelViewer(canvas, options?)` → `ModelViewer`, the **interactive** analogue of
+  `renderModelStill`: orbit / zoom / pan a source model (STL / 3MF, including production `paint_color`
+  multicolor) in the browser. It composes the pieces that already exist rather than duplicating a renderer —
+  the shared `InteractiveStage` (GL + dual camera + orbit/zoom/pan + context-loss recovery + DD-020
+  interaction quality) from `@chestnutlabs/gcode-renderer-three`, the shared `ModelContent` scene core, and
+  the open-`kind` loader registry.
+
+  Handle: `setSource` (async parse→build→frame, last-wins on overlap), `setView`, `get/setCameraState`,
+  `setBackground`, `setInteractionQuality`, `resize`, `frame`, `onEvent`, `dispose`. Events: `ready`
+  (`objectCount` / `materials` tier / `bounds`), `camera-changed`, `error` (structured code — e.g.
+  `E_MODEL_UNSUPPORTED_KIND`), `renderer-unsupported` (WebGL missing → the consumer can fall back to a
+  `renderModelStill` image), and `context-lost` / `context-restored`.
+
+  Capability honesty is passed through from the parsed `ModelScene`, never recomputed (neutral render +
+  `materials:'unavailable'` when the source carries no colour). It is a **distinct surface** from
+  `ToolpathRenderer` / `<GcodePreview>` — no toolpath concepts (layers/travel/scrub/IR). `renderModelStill`
+  is unchanged. New source formats become viewable by registering a `ModelLoader`, with no change to the
+  `ModelViewer` / `createModelViewer` signatures.
+
+### Patch Changes
+
+- [#329](https://github.com/ChestnutLabs/gcode-preview/pull/329) [`9c461ef`](https://github.com/ChestnutLabs/gcode-preview/commit/9c461efe6b49ab516724110e84bd9b4b3789a29c) Thanks [@sobechestnut-dev](https://github.com/sobechestnut-dev)! - refactor(model-renderer): extract the shared presentation scene core into `ModelContent` (DD-021 Phase 1)
+
+  Pulls the model root, studio-light rig, and capability-honest mesh building (including per-triangle
+  `paint_color` vertex colours) out of `ModelRenderer` into a new `ModelContent` class that fills a
+  provided three.js `Scene`. `ModelRenderer` (and therefore `renderModelStill`) keeps its own headless GL
+  - camera and now composes `ModelContent` for scene content — output is unchanged (the renderer suite
+    passes byte-for-byte). This gives the upcoming interactive `createModelViewer` (DD-021 Phase 1) one
+    shared mesh/lighting/paint path instead of a parallel copy.
+
+- Updated dependencies [[`cc6e1f6`](https://github.com/ChestnutLabs/gcode-preview/commit/cc6e1f6b48e531bc991cb1c7c53846ccbf7ca522), [`dd535d6`](https://github.com/ChestnutLabs/gcode-preview/commit/dd535d64ac71bbd876e83e81dccc6dbb046bf689), [`3299760`](https://github.com/ChestnutLabs/gcode-preview/commit/32997607dbd30db79c91d14d2d8383d99be933af)]:
+  - @chestnutlabs/gcode-renderer-three@0.9.0
+  - @chestnutlabs/gcode-containers@0.9.0
+  - @chestnutlabs/toolpath-core@0.9.0
+
 ## 0.8.1
 
 ### Patch Changes

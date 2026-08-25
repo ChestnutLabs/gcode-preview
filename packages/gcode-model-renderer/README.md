@@ -32,6 +32,9 @@ instead.
 - **Headless still** — `renderModelStill` mirrors the toolpath side's `renderStill`: hand it bytes,
   get back a canvas plus a stable `cacheKey` and the `materials` confidence for that render. Runs in
   any Chromium-class WebGL2 context (an `OffscreenCanvas` in a Worker, or headless Chromium).
+- **Interactive viewer** — `createModelViewer` is the live analogue of the still: orbit, zoom, and pan
+  the same STL / 3MF (including production multicolor) in a browser `<canvas>`, with camera presets, a
+  serializable camera state, and an event stream for readiness and errors.
 - **Three-free public types** — `ModelScene` / `ModelObject` / `MeshGeometry` are plain typed arrays,
   so the package's surface never leaks `three`; the renderer builds three meshes internally.
 
@@ -52,10 +55,43 @@ Already hold a corrected or richer filament palette (e.g. re-rendering a sliced 
 `filamentPalette` (hex per 0-based slot) to `renderModelStill` / `parse3mf` to override the one read
 from `project_settings.config`. Optional — the renderer reads the file's own palette without it.
 
-Want to build your own scene or drive the renderer interactively? `parseStl` / `parse3mf` return a
-three-free `ModelScene`, and `ModelRenderer` renders one onto a canvas you own.
+## Interactive viewer
 
-Determinism: same input + same environment ⇒ identical output. Cross-GPU/driver pixel identity is not
-promised — cache by the returned `cacheKey`.
+For a live surface a user can orbit — a "View in 3D" for a source model, as opposed to a static
+thumbnail — `createModelViewer` drives the same scene under the shared camera and orbit controls the
+toolpath renderer uses:
+
+```ts
+import { createModelViewer } from '@chestnutlabs/gcode-model-renderer';
+
+const viewer = createModelViewer(canvas);           // a real <canvas> in the page
+viewer.onEvent((e) => {
+  if (e.type === 'ready') {
+    // e.info.materials === 'known' | 'approximated' → showing the file's true colors
+    // e.info.materials === 'unavailable'            → neutral render; don't claim "true colors"
+    console.log(e.info.objectCount, e.info.materials, e.info.bounds);
+  }
+  if (e.type === 'renderer-unsupported') {
+    // No WebGL — fall back to a renderModelStill image or a static thumbnail
+  }
+});
+
+await viewer.setSource({ kind: '3mf', bytes });     // or { kind: 'stl', bytes }; parse → build → frame
+viewer.setView('front');                            // 'iso' | 'top' | 'front' | 'back' | 'left' | 'right' | 'bottom'
+// ...on unmount:
+viewer.dispose();
+```
+
+Drag to orbit, scroll to zoom, right-drag to pan. `getCameraState()` / `setCameraState()` persist and
+restore a pose (the same serializable `CameraState` as the toolpath renderer), `resize(w, h)` matches a
+`ResizeObserver`, and `setInteractionQuality('auto')` trades detail for smoothness while orbiting. New
+source formats become viewable by registering a `ModelLoader` for a new `kind`, with no change to the
+viewer's API (design: [DD-021](../../docs/design/DD-021-interactive-model-viewer.md)).
+
+Prefer to build your own scene? `parseStl` / `parse3mf` return a three-free `ModelScene`, and both the
+still and the viewer accept a pre-built `ModelScene` directly.
+
+Determinism (stills): same input + same environment ⇒ identical output. Cross-GPU/driver pixel identity
+is not promised — cache by the returned `cacheKey`.
 
 Part of [Chestnut Labs G-code Preview](../../README.md) · MIT
