@@ -136,6 +136,22 @@ describe('buildChunks (§4.3/§4.4)', () => {
     expect(autoDecimation(12_000_000)).toBe(5);
   });
 
+  it('tubeSegmentBudget bounds tube memory by decimating past the budget (RR-006)', () => {
+    const ir = makeIR(10, 100); // 1000 extrude segments
+    // Over budget → decimate so kept ≤ budget: ceil(1000 / 250) = 4.
+    const over = buildChunks(ir, { decimation: 'auto', tubeSegmentBudget: 250 });
+    expect(over.decimationApplied).toBe(4);
+    expect(over.totalSegmentsIncluded).toBeLessThanOrEqual(250 + ir.layers.length * 2); // + always-kept boundaries
+    // Under budget → no reduction (lines-mode behavior unchanged for small/normal files).
+    const under = buildChunks(ir, { decimation: 'auto', tubeSegmentBudget: 5000 });
+    expect(under.decimationApplied).toBe(1);
+    // An explicit numeric decimation is a caller override — the budget never lowers it.
+    const explicit = buildChunks(ir, { decimation: 2, tubeSegmentBudget: 250 });
+    expect(explicit.decimationApplied).toBe(2);
+    // Omitting the budget (lines mode) is unchanged.
+    expect(buildChunks(ir, { decimation: 'auto' }).decimationApplied).toBe(1);
+  });
+
   it('handles an empty IR', () => {
     const ir = new ToolpathIRBuilder().finalize();
     const { chunks, totalSegmentsIncluded } = buildChunks(ir);

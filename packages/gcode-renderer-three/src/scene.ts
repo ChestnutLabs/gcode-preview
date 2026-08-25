@@ -43,7 +43,13 @@ import {
   Vector3
 } from 'three';
 import type { MachineGeometry, MappedProgress, ToolpathIR } from '@chestnutlabs/toolpath-core';
-import { autoDecimation, buildChunks, type ChunkBuildResult, type GeometryChunk } from './chunks.js';
+import {
+  autoDecimation,
+  buildChunks,
+  TUBE_SEGMENT_BUDGET,
+  type ChunkBuildResult,
+  type GeometryChunk
+} from './chunks.js';
 import { buildChunkColors, type ColorMode } from './colors.js';
 import { computeDrawState, computeOverlayDrawStates } from './ranges.js';
 import { createBuildVolume, type BuildVolumeDef, type BuildVolumeStyle } from './build-volume.js';
@@ -113,6 +119,12 @@ export interface ToolpathRendererOptions {
   interactionQuality?: 'off' | 'auto';
   /** Tube profile parameters (tubes mode only). */
   tube?: TubeOptions;
+  /**
+   * Max kept tube segments before tube mode decimates to bound memory (RR-006); default ~400k (safe in a
+   * 2 GB render cgroup). Raise on a memory-rich host for more tube detail on huge files, or lower for a
+   * tighter sidecar. Any reduction is disclosed via `decimationApplied`. Lines mode ignores it.
+   */
+  tubeSegmentBudget?: number;
   /** Bounded declarative theme (#153, DD-009 D4); omitted fields keep the default look. */
   theme?: Theme;
   /**
@@ -220,6 +232,7 @@ export class ToolpathRenderer {
   private requestedQuality: QualityMode | 'auto';
   private active: QualityMode = 'lines';
   private readonly tubeOptions: TubeOptions;
+  private readonly tubeSegmentBudget: number;
   // Progressive-preview state (#60): transient meshes replaced by the final IR.
   private previewSegments = 0;
   private previewBounds: { min: Vector3; max: Vector3 } | null = null;
@@ -277,6 +290,7 @@ export class ToolpathRenderer {
     this.requestedQuality = opts.quality ?? 'auto';
     this.frameContentMode = opts.frameContent ?? 'all';
     this.tubeOptions = opts.tube ?? {};
+    this.tubeSegmentBudget = opts.tubeSegmentBudget ?? TUBE_SEGMENT_BUDGET;
     // Default scheduler: rAF for frame alignment, with a timeout backstop so
     // work still progresses when rAF is suspended (hidden/throttled tabs —
     // otherwise a parse finishing in a background tab would never finish
@@ -454,7 +468,13 @@ export class ToolpathRenderer {
       // Tube geometry is ~50× the build cost of lines: rebuild with a small
       // chunk target so no single chunk can exceed the §8 stall budget.
       try {
-        this.buildResult = buildChunks(ir, { decimation: 'auto', targetSegmentsPerChunk: TUBES_CHUNK_TARGET });
+        this.buildResult = buildChunks(ir, {
+          decimation: 'auto',
+          targetSegmentsPerChunk: TUBES_CHUNK_TARGET,
+          // Bound tube memory on large files (RR-006) — decimates past the budget, disclosed via
+          // decimationApplied; prevents the ~2 GB-cgroup OOM on ~1.6 M-segment forced-tube builds.
+          tubeSegmentBudget: this.tubeSegmentBudget
+        });
       } catch (err) {
         this.emit({
           type: 'error',

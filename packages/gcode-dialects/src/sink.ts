@@ -160,6 +160,39 @@ export class BufferedAnnotationSink implements AnnotationSink {
       ir.segments[op.channel].fill(op.value, start, end);
       touched[op.channel] = true;
     }
+    // `objectBounds` was computed by the parse core before any object labels existed (empty then). Now
+    // that this adapter has populated the object channel, refresh the object-only bounds so
+    // `frameContent:'object'` (#306/#6) frames the printed object rather than falling back to `'all'`.
+    // Mirrors toolpath-core's parse-time objectBounds pass (extruded segments with object != 0), in
+    // absolute coordinates; empty (Infinity) stays empty when nothing qualifies — the honest default.
+    if (touched.object) {
+      const seg = ir.segments;
+      const o = ir.header.originOffset;
+      const b = ir.objectBounds;
+      b.min.x = b.min.y = b.min.z = Infinity;
+      b.max.x = b.max.y = b.max.z = -Infinity;
+      for (let i = 0; i < count; i++) {
+        if ((seg.kind[i] & MoveKind.Extrude) === 0 || seg.object[i] === 0) continue;
+        const sx = o.x + seg.x0[i];
+        const sy = o.y + seg.y0[i];
+        const sz = o.z + seg.z0[i];
+        const ex = o.x + seg.x1[i];
+        const ey = o.y + seg.y1[i];
+        const ez = o.z + seg.z1[i];
+        if (sx < b.min.x) b.min.x = sx;
+        if (sy < b.min.y) b.min.y = sy;
+        if (sz < b.min.z) b.min.z = sz;
+        if (sx > b.max.x) b.max.x = sx;
+        if (sy > b.max.y) b.max.y = sy;
+        if (sz > b.max.z) b.max.z = sz;
+        if (ex < b.min.x) b.min.x = ex;
+        if (ey < b.min.y) b.min.y = ey;
+        if (ez < b.min.z) b.min.z = ez;
+        if (ex > b.max.x) b.max.x = ex;
+        if (ey > b.max.y) b.max.y = ey;
+        if (ez > b.max.z) b.max.z = ez;
+      }
+    }
     // Object channel semantics (DD-001): value v > 0 indexes ir.objects[v-1].
     for (const [channelValue, name] of [...this.objects.entries()].sort((a, b) => a[0] - b[0])) {
       if (channelValue < 1) continue;

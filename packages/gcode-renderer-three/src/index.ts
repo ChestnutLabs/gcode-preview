@@ -5,7 +5,7 @@
  * math. No three.js import yet; the scene layer arrives in phase 2 (#57).
  * Consumes ToolpathIR only (never raw G-code, never parser internals).
  */
-export { buildChunks, autoDecimation } from './chunks.js';
+export { buildChunks, autoDecimation, TUBE_SEGMENT_BUDGET } from './chunks.js';
 export type { ChunkBuildOptions, ChunkBuildResult, GeometryChunk } from './chunks.js';
 export { buildChunkColors, feedrateRange } from './colors.js';
 export type { ColorMode, RGB } from './colors.js';
