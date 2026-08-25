@@ -116,6 +116,32 @@ describe('dialect wiring + geometry invariance (#73)', () => {
     without.dispose();
   });
 
+  it('objectBounds is refreshed after dialect annotation (parse-path #306/#6, regression)', async () => {
+    // The parse core computes objectBounds BEFORE dialects assign the object channel, so it is empty
+    // until annotation lands. The dialect apply must refresh it — otherwise frameContent:'object'
+    // silently falls back to 'all' on every dialect that labels objects (e.g. AnycubicSlicerNext).
+    const withAdapters = new GcodeParseSession({
+      worker: loopbackWorker({ dialects: createDialectRunner([testAdapter]) })
+    });
+    const without = new GcodeParseSession({ worker: loopbackWorker() });
+
+    const annotated = await withAdapters.parse(GCODE, { yieldIntervalMs: 5 });
+    const plain = await without.parse(GCODE, { yieldIntervalMs: 5 });
+
+    // Objects present → object-only bounds are finite (a consumer can frame the object).
+    expect(annotated.ir.header.capabilities.objects).toBe('known');
+    expect(Number.isFinite(annotated.ir.objectBounds.min.x)).toBe(true);
+    expect(Number.isFinite(annotated.ir.objectBounds.max.y)).toBe(true);
+    // objectBounds hugs the labeled object only, so it never exceeds the overall extrude bounds.
+    expect(annotated.ir.objectBounds.min.x).toBeGreaterThanOrEqual(annotated.ir.bounds.min.x);
+    expect(annotated.ir.objectBounds.max.x).toBeLessThanOrEqual(annotated.ir.bounds.max.x);
+    // No dialect / no labels → objectBounds stays empty (the honest "no object info" default).
+    expect(Number.isFinite(plain.ir.objectBounds.min.x)).toBe(false);
+
+    withAdapters.dispose();
+    without.dispose();
+  });
+
   it('worker/session: metadata + dialects header arrive; selection + config are wire-serializable', async () => {
     const session = new GcodeParseSession({ worker: loopbackWorker({ dialects: createDialectRunner([testAdapter]) }) });
     const result = await session.parse(GCODE, { yieldIntervalMs: 5, dialects: ['testslicer'] });
