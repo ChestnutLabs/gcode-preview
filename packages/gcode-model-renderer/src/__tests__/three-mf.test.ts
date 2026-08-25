@@ -296,6 +296,63 @@ describe('parse3mf', () => {
   });
 });
 
+describe('parse3mf fast-reject (DD-022 Phase 0)', () => {
+  // A tiny mesh object referenced by N build items → N instance placements.
+  const instanceBomb = (n: number): Uint8Array => {
+    const items = Array.from({ length: n }, () => '<item objectid="1"/>').join('');
+    const xml = `<?xml version="1.0"?>
+<model unit="millimeter"><resources>
+ <object id="1" type="model"><mesh>
+  <vertices><vertex x="0" y="0" z="0"/><vertex x="1" y="0" z="0"/><vertex x="0" y="1" z="0"/></vertices>
+  <triangles><triangle v1="0" v2="1" v3="2"/></triangles></mesh></object>
+</resources><build>${items}</build></model>`;
+    return threeMf(xml);
+  };
+
+  it('rejects an instance bomb by placement count (before baking)', async () => {
+    // 10 placements, limit 3 → structured reject, not a bake.
+    await expect(parse3mf(instanceBomb(10), { maxInstances: 3 })).rejects.toMatchObject({
+      code: 'E_MODEL_TOO_MANY_INSTANCES'
+    });
+    // Under the limit → parses normally (no false reject).
+    const scene = await parse3mf(instanceBomb(3), { maxInstances: 3 });
+    expect(scene.objects.length).toBeGreaterThan(0);
+  });
+
+  it('rejects an oversize plate from the byte estimate WITHOUT decompressing the external part', async () => {
+    // The external part is ~30 KB of XML but only ONE real triangle: if the estimate were bypassed and
+    // the part actually parsed+baked, totalTris would be 1 (well under the limit) and it would render.
+    // Getting E_MODEL_TOO_MANY_TRIANGLES therefore proves the reject came from the byte-size ESTIMATE.
+    const padding = `<!-- ${'x'.repeat(60_000)} -->`;
+    const bigExternal = `<?xml version="1.0"?>
+${padding}
+<model unit="millimeter"><resources>
+ <object id="1" type="model"><mesh>
+  <vertices><vertex x="0" y="0" z="0"/><vertex x="1" y="0" z="0"/><vertex x="0" y="1" z="0"/></vertices>
+  <triangles><triangle v1="0" v2="1" v3="2"/></triangles></mesh></object>
+</resources></model>`;
+    const shell = `<?xml version="1.0"?>
+<model unit="millimeter" requiredextensions="p" xmlns:p="http://schemas.microsoft.com/3dmanufacturing/production/2015/06">
+ <resources><object id="2" type="model"><components>
+  <component p:path="/3D/Objects/big.model" objectid="1"/>
+ </components></object></resources>
+ <build><item objectid="2"/></build></model>`;
+    const bytes = makeZip([
+      { name: '3D/3dmodel.model', data: new TextEncoder().encode(shell) },
+      { name: '3D/Objects/big.model', data: new TextEncoder().encode(bigExternal) }
+    ]);
+    // ~60 KB / 256 bytes-per-tri ≈ 234 estimated triangles; with the ×2 reject margin a maxTriangles of
+    // 50 (threshold 100) rejects on the estimate.
+    await expect(parse3mf(bytes, { maxTriangles: 50 })).rejects.toMatchObject({
+      code: 'E_MODEL_TOO_MANY_TRIANGLES'
+    });
+    // With a generous triangle budget the SAME file parses fine (its real geometry is one triangle) —
+    // proving the estimate is a fast pre-filter, not a hard cap on legitimate files.
+    const scene = await parse3mf(bytes, { maxTriangles: 5_000_000 });
+    expect(scene.objects).toHaveLength(1);
+  });
+});
+
 describe('renderModelStill (3mf)', () => {
   it('renders a multicolor 3MF → materials known, multi-object', async () => {
     const res = await renderModelStill(
