@@ -14,7 +14,7 @@ import type { Confidence } from '@chestnutlabs/toolpath-core';
 import type { GLRendererLike, RenderTargetCanvas } from '@chestnutlabs/gcode-renderer-three';
 import { ModelRenderer, type ModelBackground, type PresentationView } from './model-renderer.js';
 import { isModelScene, resolveModelScene } from './loaders.js';
-import type { ModelScene } from './scene-model.js';
+import { sceneInstanceCount, type ModelScene } from './scene-model.js';
 import { computeCacheKey } from './cache-key.js';
 import type { ModelLimits } from './limits.js';
 
@@ -55,6 +55,17 @@ export interface RenderModelStillResult {
   objectCount: number;
   /** Whether source colors/materials were real — `'unavailable'` means the neutral default was used. */
   materials: Confidence;
+  /**
+   * Total instance placements drawn (DD-022): > `objectCount` when the source reused geometry (a
+   * full-sheet plate of repeated copies), for an "N copies" badge. 1 per object when nothing is reused.
+   */
+  instancedCount: number;
+  /**
+   * Every-Nth-triangle decimation applied to fit the LOD budget (1 = none, layer/geometry detail full).
+   * Field-parallel to the toolpath `RenderStillResult.decimationApplied` so a card badges "simplified for
+   * size" the same way. Always 1 until model LOD lands (DD-022 Phase 2); reserved so the field is stable.
+   */
+  decimationApplied: number;
   /** Stable identity for caching: `hash(source) + options + envId`. */
   cacheKey: string;
 }
@@ -111,6 +122,8 @@ export async function renderModelStill(
       height,
       objectCount: scene.objects.length,
       materials: scene.capabilities.materials,
+      instancedCount: sceneInstanceCount(scene),
+      decimationApplied: 1,
       cacheKey
     };
   } finally {

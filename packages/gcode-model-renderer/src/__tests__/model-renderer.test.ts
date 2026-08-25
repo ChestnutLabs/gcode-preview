@@ -188,6 +188,27 @@ describe('renderModelStill', () => {
     const res = await renderModelStill(scene, { canvas: stubCanvas(), createRenderer: stubGL });
     expect(res.objectCount).toBe(1);
     expect(res.cacheKey.startsWith('mr1_')).toBe(true);
+    // Disclosure (DD-022): a single-placement scene → one placement, no decimation.
+    expect(res.instancedCount).toBe(1);
+    expect(res.decimationApplied).toBe(1);
+  });
+
+  it('reports instancedCount for a reused-master scene (DD-022)', async () => {
+    const scene: ModelScene = {
+      objects: [
+        {
+          id: 'm',
+          geometry: { positions: new Float32Array([0, 0, 0, 10, 0, 0, 0, 10, 0]) },
+          transform: IDENTITY_MAT4,
+          instances: [IDENTITY_MAT4, translateMat4(50, 0, 0), translateMat4(0, 50, 0)]
+        }
+      ],
+      bounds: { min: [0, 0, 0], max: [60, 60, 0] },
+      capabilities: { materials: 'unavailable', transforms: 'known', multiObject: 'unavailable', instanced: 'known' }
+    };
+    const res = await renderModelStill(scene, { canvas: stubCanvas(), createRenderer: stubGL });
+    expect(res.objectCount).toBe(1); // one unique master
+    expect(res.instancedCount).toBe(3); // three placements drawn
   });
 });
 
