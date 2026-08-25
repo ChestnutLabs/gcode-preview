@@ -22,6 +22,14 @@ export interface ChunkBuildOptions {
   targetSegmentsPerChunk?: number;
   /** Decimation factor N (keep every Nth extrusion segment) or 'auto' (§4.4 thresholds). */
   decimation?: number | 'auto';
+  /**
+   * Tube-mode memory budget (RR-006): when set, `'auto'` decimation is additionally raised so the kept
+   * extrusion-segment count stays ≤ this budget — tube geometry is ~23× the memory of lines, so a
+   * segment count that is harmless as lines OOMs as tubes. Ignored when an explicit numeric `decimation`
+   * is given (a caller override wins). Omit for lines mode → behavior unchanged. Disclosed via
+   * {@link ChunkBuildResult.decimationApplied} like any decimation.
+   */
+  tubeSegmentBudget?: number;
 }
 
 export interface GeometryChunk {
@@ -56,6 +64,14 @@ export function autoDecimation(extrudeSegmentCount: number): number {
 
 const DEFAULT_TARGET = 250_000;
 
+/**
+ * Default kept-tube-segment budget (RR-006). Above this, tubes decimate to bound memory: ≈400k tube
+ * segments measure ≈ 350 MB CPU + ~350 MB GPU (~700 MB peak with both copies live during upload),
+ * leaving real headroom inside a 2 GB render cgroup for the base heap, source bytes, and framework. The
+ * scene layer applies it only when a build resolves to tube geometry; a memory-rich host can raise it.
+ */
+export const TUBE_SEGMENT_BUDGET = 400_000;
+
 export function buildChunks(ir: ToolpathIR, opts: ChunkBuildOptions = {}): ChunkBuildResult {
   const seg = ir.segments;
   const target = opts.targetSegmentsPerChunk ?? DEFAULT_TARGET;
@@ -64,8 +80,18 @@ export function buildChunks(ir: ToolpathIR, opts: ChunkBuildOptions = {}): Chunk
   for (let i = 0; i < seg.count; i++) {
     if ((seg.kind[i] & MoveKind.Extrude) !== 0) extrudeCount++;
   }
-  const decimation =
-    opts.decimation === 'auto' || opts.decimation === undefined ? autoDecimation(extrudeCount) : opts.decimation;
+  let decimation: number;
+  if (typeof opts.decimation === 'number') {
+    decimation = opts.decimation; // explicit caller override wins
+  } else {
+    decimation = autoDecimation(extrudeCount);
+    // Tube memory budget (RR-006): raise decimation so kept segments ≤ the budget. Tubes cost ~23× lines
+    // per segment, so the lines-calibrated autoDecimation thresholds alone let large forced-tube builds
+    // OOM; this bounds them (and is disclosed via decimationApplied).
+    if (opts.tubeSegmentBudget !== undefined && opts.tubeSegmentBudget > 0 && extrudeCount > opts.tubeSegmentBudget) {
+      decimation = Math.max(decimation, Math.ceil(extrudeCount / opts.tubeSegmentBudget));
+    }
+  }
   const travelHidden = decimation > 1;
 
   // Layer-boundary segments are always kept (§4.4). A layer's segStart/segEnd may
