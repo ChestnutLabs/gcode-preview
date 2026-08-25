@@ -5,7 +5,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import { MoveKind, ToolpathIRBuilder, type ToolpathIR } from '@chestnutlabs/toolpath-core';
-import { autoDecimation, buildChunks, buildChunkColors, computeDrawState } from '../index.js';
+import { autoDecimation, buildChunks, buildChunkColors, computeDrawState, tubeRadialForBudget } from '../index.js';
 
 /** Build an IR with `layers` layers × `perLayer` extrude segments (+1 travel between layers). */
 function makeIR(layers: number, perLayer: number, tools = 1): ToolpathIR {
@@ -157,6 +157,30 @@ describe('buildChunks (§4.3/§4.4)', () => {
     const { chunks, totalSegmentsIncluded } = buildChunks(ir);
     expect(chunks).toHaveLength(0);
     expect(totalSegmentsIncluded).toBe(0);
+  });
+});
+
+describe('tubeRadialForBudget (RR-006 correction — coarsen the cross-section, never drop segments)', () => {
+  it('keeps full cross-section for a small file', () => {
+    expect(tubeRadialForBudget(100_000, 8)).toBe(8);
+  });
+
+  it('coarsens the cross-section (not the path) for a large file, down to the minimum', () => {
+    // ~1.14 M segments → a reduced-but-still-round cross-section that fits the budget.
+    const r = tubeRadialForBudget(1_140_000, 8);
+    expect(r).toBeGreaterThanOrEqual(3);
+    expect(r).toBeLessThan(8);
+    // ~1.76 M (the Dragon) → the minimum cross-section, still continuous (no dropped segments).
+    expect(tubeRadialForBudget(1_760_000, 8)).toBe(3);
+  });
+
+  it('returns null (→ lines fallback) only when even the minimum cross-section blows the budget', () => {
+    expect(tubeRadialForBudget(3_000_000, 8)).toBeNull();
+  });
+
+  it('never returns below the minimum cross-section', () => {
+    const r = tubeRadialForBudget(2_000_000, 8);
+    expect(r === null || r >= 3).toBe(true);
   });
 });
 

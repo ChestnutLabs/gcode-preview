@@ -229,6 +229,15 @@ function toBytes(input: Uint8Array | ArrayBuffer): Uint8Array {
   return input instanceof Uint8Array ? input : new Uint8Array(input);
 }
 
+/** English ordinal for the decimation disclosure ("every 3rd", not "every 3th"). */
+function ordinal(n: number): string {
+  const rem100 = n % 100;
+  const rem10 = n % 10;
+  const suffix =
+    rem100 >= 11 && rem100 <= 13 ? 'th' : rem10 === 1 ? 'st' : rem10 === 2 ? 'nd' : rem10 === 3 ? 'rd' : 'th';
+  return `${n}${suffix}`;
+}
+
 export function createPreviewController(options: PreviewControllerOptions = {}): PreviewController {
   let snapshot: GcodePreviewState = { ...INITIAL_STATE };
   const stateListeners = new Set<(s: GcodePreviewState) => void>();
@@ -271,7 +280,7 @@ export function createPreviewController(options: PreviewControllerOptions = {}):
         activeQuality: e.quality,
         disclosure:
           e.decimationApplied > 1
-            ? `Showing every ${e.decimationApplied}th extrusion segment (layer boundaries kept); ` +
+            ? `Showing every ${ordinal(e.decimationApplied)} extrusion segment (layer boundaries kept); ` +
               `travel hidden. ${e.segments.toLocaleString()} segments drawn.`
             : ''
       });
