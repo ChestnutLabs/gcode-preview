@@ -1,5 +1,28 @@
 # @chestnutlabs/gcode-model-renderer
 
+## 0.12.0
+
+### Patch Changes
+
+- [#353](https://github.com/ChestnutLabs/gcode-preview/pull/353) [`b710fa1`](https://github.com/ChestnutLabs/gcode-preview/commit/b710fa15b42be22277af4b733bf90bccdc2e1413) Thanks [@sobechestnut-dev](https://github.com/sobechestnut-dev)! - fix(model-renderer): the fast-reject estimate counts UNIQUE triangles, not baked-per-placement (DD-022)
+
+  The Phase 0 structural estimate summed an external master's triangle estimate **once per placement**, so a
+  full-sheet instanced plate (e.g. Baby_Opossum, ~40 reused copies) estimated ~26 M "baked" triangles and was
+  **wrongly rejected** with `E_MODEL_TOO_MANY_TRIANGLES` — even though Phase 1 instancing renders it from its
+  ~1.5 M **unique** triangles. The still path only escaped it by running with raised limits; the interactive
+  `createModelViewer` used defaults and rejected.
+
+  The estimate now counts each unique master (by objectid / external path) **once**, matching the instanced
+  render. The placement count still guards an instance bomb via `maxInstances`. So an instanced plate parses
+  and renders (interactive and headless) at default limits instead of falsely rejecting; a genuinely huge
+  _unique_ mesh is still bounded by the triangle limit. Fixes the "too large to show interactively" regression
+  on instanced source `.3mf` plates.
+
+- Updated dependencies [[`8bd6bbd`](https://github.com/ChestnutLabs/gcode-preview/commit/8bd6bbd1dfe7539ee4e3357f84de74c2eb703462)]:
+  - @chestnutlabs/gcode-renderer-three@0.12.0
+  - @chestnutlabs/gcode-containers@0.12.0
+  - @chestnutlabs/toolpath-core@0.12.0
+
 ## 0.11.0
 
 ### Minor Changes
