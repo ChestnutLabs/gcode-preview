@@ -67,6 +67,6 @@ viewer is reachable without switching APIs.
   [Live progress & motion model](concept-progress-motion.md).
 - **API reference** — pick a package in the sidebar (`toolpath-core`, `gcode-parser`, …).
 
-> **Status:** published — all fourteen `@chestnutlabs/*` packages are on npm (latest `v0.9.0`,
+> **Status:** published — all fourteen `@chestnutlabs/*` packages are on npm (latest `v0.10.0`,
 > lockstep-versioned with provenance). Governance and epic status live in the
 > [repository docs](https://github.com/ChestnutLabs/gcode-preview/tree/dev/docs).
