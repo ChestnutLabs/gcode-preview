@@ -9,25 +9,35 @@ export interface ModelLimits {
   maxObjects?: number;
   /** Max source bytes accepted before parsing. Default 256 MiB. */
   maxSourceBytes?: number;
+  /**
+   * Max total instance placements across the scene (DD-022): a source 3MF that reuses meshes via
+   * production-extension components / repeated build items is bounded on placement count, so an "instance
+   * bomb" (a tiny master referenced millions of times) is rejected cheaply from the structure — before any
+   * large geometry part is decompressed. Default 50,000.
+   */
+  maxInstances?: number;
 }
 
 export interface ResolvedLimits {
   maxTriangles: number;
   maxObjects: number;
   maxSourceBytes: number;
+  maxInstances: number;
 }
 
 export const DEFAULT_LIMITS: ResolvedLimits = {
   maxTriangles: 5_000_000,
   maxObjects: 10_000,
-  maxSourceBytes: 256 * 1024 * 1024
+  maxSourceBytes: 256 * 1024 * 1024,
+  maxInstances: 50_000
 };
 
 export function resolveLimits(limits?: ModelLimits): ResolvedLimits {
   return {
     maxTriangles: limits?.maxTriangles ?? DEFAULT_LIMITS.maxTriangles,
     maxObjects: limits?.maxObjects ?? DEFAULT_LIMITS.maxObjects,
-    maxSourceBytes: limits?.maxSourceBytes ?? DEFAULT_LIMITS.maxSourceBytes
+    maxSourceBytes: limits?.maxSourceBytes ?? DEFAULT_LIMITS.maxSourceBytes,
+    maxInstances: limits?.maxInstances ?? DEFAULT_LIMITS.maxInstances
   };
 }
 

@@ -388,6 +388,91 @@ export interface Parse3mfOptions {
 const hexPaletteToLinear = (hexes: readonly (string | undefined)[]): RGB[] =>
   hexes.map((hex) => (hex !== undefined ? (srgbHexToLinear(hex) ?? [0.8, 0.8, 0.82]) : [0.8, 0.8, 0.82]));
 
+/**
+ * Conservative UPPER bound on the XML bytes a single 3MF triangle (plus its amortized share of a shared
+ * vertex) occupies — used to turn an external part's uncompressed byte size into a LOWER bound on its
+ * triangle count (DD-022 §5/§13). Deliberately generous so the estimate never *over*-counts triangles and
+ * so never false-rejects a file that would actually fit; a file only fast-rejects when even this
+ * under-count exceeds the budget. Borderline files fall through to the exact parse.
+ */
+const EST_MAX_BYTES_PER_TRIANGLE = 256;
+
+/**
+ * Safety margin on the byte estimate (DD-022 §13): only *fast*-reject when the estimate is comfortably
+ * over the triangle budget, so a `.model` part padded with non-triangle bytes (comments/metadata) is not
+ * false-rejected. A file estimated between 1× and this multiple of the budget falls through to the exact
+ * per-triangle parse, which enforces the real limit. Genuinely oversize plates (many × a large master)
+ * are far past this and still reject in sub-second time.
+ */
+const EST_REJECT_MARGIN = 2;
+
+/**
+ * Fast structural cost estimate (DD-022 Phase 0), run after the (tiny, for production-extension files)
+ * main part is parsed but BEFORE any large external geometry part is decompressed. Walks the build-item /
+ * component tree counting instance placements and a lower-bound triangle estimate:
+ *   - a mesh object's own triangles are counted exactly (already parsed);
+ *   - an external `p:path` component is estimated from its ZIP-directory uncompressed size / the
+ *     conservative bytes-per-triangle bound, and treated as a leaf (not recursed) — a safe under-count.
+ * Throws {@link ModelParseError} for a clear instance-bomb / oversize file so it rejects in sub-second
+ * time instead of ~10 s of decompress-and-bake. Files near the budget do not reject here — the exact
+ * per-triangle limit in the real parse still applies.
+ */
+function estimateSceneCost(
+  mainPart: ModelPart,
+  entryByName: (nameLower: string) => ZipDirectory['entries'][number] | undefined,
+  lim: ResolvedLimits
+): void {
+  let instanceCount = 0;
+  let estTriangles = 0;
+
+  const visit = (part: ModelPart, objectid: string, depth: number): void => {
+    if (depth > MAX_DEPTH) return;
+    const obj = part.objects.get(objectid);
+    if (obj === undefined) return;
+    if (obj.tris.length > 0) {
+      instanceCount++;
+      estTriangles += obj.tris.length / 3;
+    }
+    for (const comp of obj.components) {
+      if (comp.path !== undefined) {
+        // External production-extension part: estimate from its directory size WITHOUT decompressing it.
+        const entry = entryByName(comp.path.replace(/^\//, '').toLowerCase());
+        if (entry !== undefined) {
+          instanceCount++;
+          estTriangles += entry.uncompressedSize / EST_MAX_BYTES_PER_TRIANGLE;
+        }
+      } else {
+        visit(part, comp.objectid, depth + 1); // local sub-object (already-parsed geometry)
+      }
+      if (instanceCount > lim.maxInstances) {
+        throw new ModelParseError(
+          'E_MODEL_TOO_MANY_INSTANCES',
+          `3MF declares more than ${lim.maxInstances} instance placements`
+        );
+      }
+    }
+  };
+
+  const roots =
+    mainPart.items.length > 0
+      ? mainPart.items
+      : [...mainPart.objects.keys()].map((objectid) => ({ objectid, transform: null }));
+  for (const inst of roots) visit(mainPart, inst.objectid, 0);
+
+  if (instanceCount > lim.maxInstances) {
+    throw new ModelParseError(
+      'E_MODEL_TOO_MANY_INSTANCES',
+      `3MF declares more than ${lim.maxInstances} instance placements`
+    );
+  }
+  if (estTriangles > lim.maxTriangles * EST_REJECT_MARGIN) {
+    throw new ModelParseError(
+      'E_MODEL_TOO_MANY_TRIANGLES',
+      `3MF's estimated ${Math.round(estTriangles)} triangles exceed the limit ${lim.maxTriangles}`
+    );
+  }
+}
+
 export async function parse3mf(
   source: Uint8Array | ArrayBuffer,
   limits?: ModelLimits,
@@ -450,6 +535,11 @@ export async function parse3mf(
     if (e instanceof ModelParseError) throw e;
     throw new ModelParseError('E_MODEL_PARSE', `3MF unzip failed: ${(e as Error).message}`);
   }
+
+  // Fast structural cost estimate (DD-022 Phase 0): reject a clear instance-bomb / oversize plate now,
+  // from the main part's structure + the ZIP directory, BEFORE decompressing any large external geometry
+  // part in `resolve` — sub-second instead of ~10 s of decompress-and-bake.
+  estimateSceneCost(mainPart, entryByName, lim);
 
   // Source-model filament palette for Bambu/Orca `paint_color`: it lives in `project_settings.config`
   // (`filament_colour`), NOT the model XML, so the render is self-contained and needs no slicer output.
