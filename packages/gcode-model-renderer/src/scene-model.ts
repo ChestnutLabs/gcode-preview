@@ -90,3 +90,14 @@ export interface ModelScene {
 
 /** The identity transform (column-major), for single-object sources. */
 export const IDENTITY_MAT4: Mat4 = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
+
+/**
+ * Total placements drawn across a scene (DD-022): the sum of each object's instance count (a reused
+ * master counts its `instances`, a single-placement object counts 1). Reported on `ready` / the still
+ * result so a consumer can badge "N copies".
+ */
+export function sceneInstanceCount(scene: ModelScene): number {
+  let n = 0;
+  for (const o of scene.objects) n += o.instances?.length ?? 1;
+  return n;
+}
