@@ -108,6 +108,11 @@ describe('.gcode.3mf through the worker pipeline (#74)', () => {
     // Machine geometry comes from the CONTAINER config ('known') — outranks comment inference.
     expect(result.metadata?.machine?.confidence).toBe('known');
     expect(result.metadata?.machine?.source.adapterId).toBe('gcode-3mf');
+    // Filament MERGE: both the dialect (gcode `; filament_colour/type`) and the container
+    // (project_settings.config) declare the same 2 slots — must dedupe by slot, not concatenate
+    // into 4 (`[0,0,1,1]`, which broke palette-by-tool indexing downstream).
+    expect(result.metadata?.filaments?.map((f) => f.slot)).toEqual([0, 1]);
+    expect(result.metadata?.filaments).toHaveLength(2);
     session.dispose();
   });
 

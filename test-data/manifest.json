@@ -370,8 +370,8 @@
     {
       "id": "container-mini-project",
       "path": "test-data/fixtures/containers/mini-project.gcode.3mf",
-      "sha256": "a7b6620cb730d15ce6db5d3f480066254aba0207252e3aaff6c2e43094da19a3",
-      "bytes": 2802,
+      "sha256": "a0b3e5ff6444d566e8e88afed655d52a1d47c38f40aaf60acd340cc905c5a242",
+      "bytes": 2910,
       "origin": "Chestnut-constructed container fixture (tools/fixtures/make-gcode-3mf.mjs, deterministic)",
       "contributor": "chestnutlabs",
       "redistribution": "chestnut-original-mit",

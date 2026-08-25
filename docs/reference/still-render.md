@@ -2,10 +2,14 @@
 
 **Status:** Live from `v0.1.0` (DD-008 §4.8, E7 phase 5, #132) · consumer: AnyBridge #791.
 
-`renderStill` produces a single non-interactive image of a toolpath in a headless/offscreen
+`renderStill` produces a single non-interactive image of a **toolpath** in a headless/offscreen
 environment — the reusable capability behind AnyBridge's `ThumbnailWorker` G-code backend. It is a
 **bounded adapter over the same engine** the interactive viewer uses (parse → `ToolpathIR` →
-`ToolpathRenderer`), not a second renderer.
+`ToolpathRenderer`); it reuses that renderer rather than adding a new one.
+
+> Rendering the **source model** (an STL/3MF mesh) instead of the toolpath is a separate job with its
+> own package — see [`renderModelStill`](../../packages/gcode-model-renderer/README.md) in
+> `@chestnutlabs/gcode-model-renderer`.
 
 ```ts
 import { renderStill } from '@chestnutlabs/gcode-preview-core';

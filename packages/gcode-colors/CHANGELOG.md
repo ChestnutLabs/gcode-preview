@@ -1,5 +1,19 @@
 # @chestnutlabs/gcode-colors
 
+## 0.8.1
+
+### Patch Changes
+
+- Updated dependencies []:
+  - @chestnutlabs/toolpath-core@0.8.1
+
+## 0.8.0
+
+### Patch Changes
+
+- Updated dependencies []:
+  - @chestnutlabs/toolpath-core@0.8.0
+
 ## 0.7.0
 
 ### Patch Changes

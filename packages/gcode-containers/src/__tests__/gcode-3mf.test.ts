@@ -6,7 +6,23 @@ import { describe, expect, it } from 'vitest';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { ContainerError, DEFAULT_CONTAINER_LIMITS, openGcode3mf, readDirectory, sniffGcode3mf } from '../index';
+import {
+  ContainerError,
+  DEFAULT_CONTAINER_LIMITS,
+  filamentColoursFromSettings,
+  openGcode3mf,
+  readDirectory,
+  sniffGcode3mf
+} from '../index';
+
+describe('filamentColoursFromSettings', () => {
+  it('returns the filament_colour palette by slot, undefined where absent, [] when missing', () => {
+    expect(filamentColoursFromSettings({ filament_colour: ['#8080FF', '#000000'] })).toEqual(['#8080FF', '#000000']);
+    expect(filamentColoursFromSettings({ filament_colour: ['#FFF', 42] })).toEqual(['#FFF', undefined]);
+    expect(filamentColoursFromSettings({})).toEqual([]);
+    expect(filamentColoursFromSettings({ filament_colour: 'nope' })).toEqual([]);
+  });
+});
 
 const fixtureDir = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
@@ -65,7 +81,7 @@ describe('.gcode.3mf container (#74)', () => {
     const text2 = await drain(opened.openPlate(1));
     expect(text1).toContain('; generated fixture plate 1');
     expect(text2).toContain('; generated fixture plate 2');
-    expect(text1.split('\n').length).toBe(405); // header + FEATURE markers + 400 moves
+    expect(text1.split('\n').length).toBe(407); // header (+2 filament comments) + FEATURE markers + 400 moves
     expect(() => opened.openPlate(9)).toThrow(ContainerError);
   });
 

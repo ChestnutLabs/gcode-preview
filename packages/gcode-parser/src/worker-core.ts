@@ -366,7 +366,22 @@ export function createWorkerHandler(
             metadata.machine = cm;
           }
           if (opened.metadata.filaments !== undefined && opened.metadata.filaments.length > 0) {
-            metadata.filaments = [...(metadata.filaments ?? []), ...opened.metadata.filaments];
+            // Both the dialect (gcode `; filament_*` comments) and the container config
+            // (project_settings.config) enumerate the same filament slots — merge by slot so each
+            // appears once (container config is authoritative per field) instead of concatenating
+            // into duplicates (`[0,0,1,1,…]`, which broke palette-by-tool indexing downstream).
+            const bySlot = new Map<number, (typeof opened.metadata.filaments)[number]>();
+            for (const f of metadata.filaments ?? []) bySlot.set(f.slot, f);
+            for (const f of opened.metadata.filaments) {
+              const prev = bySlot.get(f.slot);
+              bySlot.set(
+                f.slot,
+                prev === undefined
+                  ? f
+                  : { slot: f.slot, type: f.type ?? prev.type, color: f.color ?? prev.color, name: f.name ?? prev.name }
+              );
+            }
+            metadata.filaments = [...bySlot.values()].sort((a, b) => a.slot - b.slot);
           }
           if (Object.keys(opened.metadata.raw).length > 0) {
             metadata.raw = { ...opened.metadata.raw, ...(metadata.raw ?? {}) };

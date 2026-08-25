@@ -2,7 +2,7 @@
 
 **Status:** Live (DD-008 D1/D2/D3, #130) · applies from `v0.1.0`.
 
-All nine packages release in **lockstep** (one version line, one tag). Publication happens **only**
+All fourteen packages release in **lockstep** (one version line, one tag). Publication happens **only**
 from the protected `Release / publish` workflow on a tag from `main` — never from a workstation.
 
 ## Flow
@@ -25,7 +25,7 @@ from the protected `Release / publish` workflow on a tag from `main` — never f
    and nothing else — triggers publication.
 5. **`Release / publish` workflow:** verifies the tag is on `main`, fresh `npm ci`, then the full
    repository gate (build, root + package suites, typeCheck, lint, license, docs links, consumer
-   fixture, pack-check, sync-check) before a dependency-ordered `npm publish` ×9 with **npm
+   fixture, pack-check, sync-check) before a dependency-ordered `npm publish` ×14 with **npm
    provenance**. The orchestrator (`tools/release/publish.mjs`) refuses real publishes outside the
    workflow; `npm run release:dry-run` is the local rehearsal (it exercises the full pack +
    validation path without uploading).
@@ -37,7 +37,7 @@ from the protected `Release / publish` workflow on a tag from `main` — never f
 - **Intended:** npm **trusted publishing** (OIDC) — no long-lived token. Configured on npmjs
   against the **user-owned `@chestnutlabs` scope** for this repository + the
   `release-publish.yml` workflow (org conversion is deferred and not a `v0.1.0` blocker).
-- **Recorded fallback:** a granular automation token scoped to the nine packages, stored as the
+- **Recorded fallback:** a granular automation token scoped to the published packages, stored as the
   `NPM_TOKEN` secret (the workflow already wires it). If the registry cannot create *new* packages
   via OIDC at first publish, `v0.1.0` uses the token and later releases switch to OIDC.
 - **Token must bypass 2FA** (learned cutting `v0.1.0`): with 2FA-on-publish set, a plain token gets

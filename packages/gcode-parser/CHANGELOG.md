@@ -1,5 +1,34 @@
 # @chestnutlabs/gcode-parser
 
+## 0.8.1
+
+### Patch Changes
+
+- [#322](https://github.com/ChestnutLabs/gcode-preview/pull/322) [`92ae9a2`](https://github.com/ChestnutLabs/gcode-preview/commit/92ae9a2532e7ecc1a7b9938eda442d105e4f31b4) Thanks [@sobechestnut-dev](https://github.com/sobechestnut-dev)! - fix(parser): dedupe `metadata.filaments` by slot when a `.gcode.3mf` declares filaments twice
+
+  A sliced `.gcode.3mf` carries its filament palette in two places — the dialect reads it from the
+  G-code `; filament_colour` / `; filament_type` comments, and the container reads it from
+  `project_settings.config`. The worker was **concatenating** the two, emitting each slot twice
+  (`[0,0,1,1,…]`, e.g. 8 entries for a 4-colour file). That broke consumers building a palette indexed by
+  tool/slot (colours after the first N appeared to vanish). The two sources are now merged **by slot**
+  (container config authoritative per field), so `metadata.filaments` has exactly one entry per slot.
+
+- Updated dependencies []:
+  - @chestnutlabs/gcode-bgcode@0.8.1
+  - @chestnutlabs/gcode-containers@0.8.1
+  - @chestnutlabs/gcode-dialects@0.8.1
+  - @chestnutlabs/toolpath-core@0.8.1
+
+## 0.8.0
+
+### Patch Changes
+
+- Updated dependencies [[`959e507`](https://github.com/ChestnutLabs/gcode-preview/commit/959e50779f3e2f84672a10e0e9ec0bfc5174f691)]:
+  - @chestnutlabs/gcode-containers@0.8.0
+  - @chestnutlabs/gcode-bgcode@0.8.0
+  - @chestnutlabs/gcode-dialects@0.8.0
+  - @chestnutlabs/toolpath-core@0.8.0
+
 ## 0.7.0
 
 ### Minor Changes

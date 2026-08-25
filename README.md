@@ -92,6 +92,12 @@ signal deserves**:
   low-GPU / low-memory / WebGL-blocked devices. A 2D-only bundle never ships Three.js.
 - **Camera presets & saved views** — seven preset angles (top / bottom / front / back / left /
   right / iso), plus a serializable `CameraState` you can persist and restore.
+- **Frame what matters** — `frameContent` fits the camera to the printed *object* (excluding skirt,
+  prime line, and purge) instead of the whole machine volume; the build-volume cage is a separate
+  `showVolumeCage` toggle, independent of the bed/plate.
+- **Interaction-aware quality** — `interactionQuality: 'auto'` drops render detail while the camera
+  is moving and restores it when the view settles, keeping orbit responsive on big models without
+  giving up final-frame fidelity. The hard GPU/vertex-budget fallback still applies underneath.
 - **Degradation is disclosed** — over a large-file threshold the renderer decimates and *tells you*
   the exact reduction factor rather than dropping detail silently.
 
@@ -148,6 +154,46 @@ shared behavioral test suite that runs against all four in CI:
 - **Headless still render** — [`renderStill`](docs/reference/still-render.md) produces a single
   non-interactive image from an `OffscreenCanvas`, an Electron hidden window, or headless Chromium,
   for server-side thumbnails.
+
+## Two views, two jobs: toolpath vs. model
+
+Everything above renders the **toolpath** — the moves the machine makes. That answers *how the job
+runs*: where the seams are, which layer a retraction happens on, how travel threads between islands.
+But sometimes you don't want the toolpath at all — you want a clean picture of *what the object is*,
+the way a slicer's file browser shows a part. Those are two different jobs, so they're two different
+renderers:
+
+![Two presentation thumbnails from renderModelStill: left, a neutral gray two-tier part from an STL labeled "materials: unavailable"; right, a red/amber/green three-block tower from a 3MF labeled "materials: known"](docs/media/model-render-stl-3mf.png)
+
+| | Toolpath renderer | Model renderer |
+|---|---|---|
+| **Package** | `@chestnutlabs/gcode-renderer-three` (+ `-2d`) | `@chestnutlabs/gcode-model-renderer` |
+| **Input** | Parsed G-code (`ToolpathIR`) | The **source model** — `.stl` or `.3mf` mesh |
+| **Answers** | *How does this print/cut run?* | *What object is this?* |
+| **Looks like** | Extrusion tubes / lines, layers, travel, color modes | A solid, studio-lit part at a fixed 3/4 angle |
+| **Use it for** | Inspection, clip/scrub, live progress, seams | Thumbnails, cards, library grids, "what's in this file" |
+
+The model renderer is a presentation surface, not a second toolpath viewer. It takes an STL or a 3MF
+mesh, frames it, lights it with a neutral studio rig, and draws it — nothing about layers, moves, or
+print order. **3MF** brings its own multi-object structure and per-object / per-triangle material
+colors; a bare **STL** is a single object with no declared material.
+
+It keeps the same honesty rule as the rest of the library. When the source actually declares colors
+(3MF `basematerials`), the render uses them. When it doesn't — a plain STL, or a proprietary paint
+format the standard doesn't cover — it draws a neutral default and reports `materials: 'unavailable'`
+rather than inventing a color. The headless
+[`renderModelStill`](packages/gcode-model-renderer/README.md) mirrors `renderStill`: hand it bytes,
+get back a canvas plus a stable `cacheKey` and the `materials` confidence for that render.
+
+```ts
+import { renderModelStill } from '@chestnutlabs/gcode-model-renderer';
+
+const { canvas, materials, cacheKey } = await renderModelStill(
+  { kind: 'stl', bytes },                       // or { kind: '3mf', bytes }
+  { canvas: new OffscreenCanvas(512, 512), background: 'transparent' }
+);
+// materials: 'known' when the source carried colors, 'unavailable' when it didn't.
+```
 
 ## Quick start
 
@@ -231,8 +277,9 @@ attribute/property table.
 
 All four adapters share the same option surface — `source`, `parseOptions`, `buildVolume`,
 `quality`, `colorMode`, `layerRange`, `scrub`, `showTravel`, `progress`, `cameraMode`, `view`,
-`cameraState`, `theme`, `createWorker` — with matching events (`ready`, `parse-progress`,
-`build-complete`, `quality-fallback`, `error`, and more). The
+`cameraState`, `showVolumeCage`, `frameContent`, `interactionQuality`, `theme`, `createWorker` —
+with matching events (`ready` — now carrying parsed slice `metadata` when the dialect supplied it —
+`parse-progress`, `build-complete`, `quality-fallback`, `error`, and more). The
 [cross-adapter guide](docs/manual/adapters.md) and each package README are the canonical reference.
 
 ## Formats & compatibility
@@ -299,10 +346,17 @@ the packages exactly as an external consumer would.
 The stack is a pipeline of small packages, each doing one job:
 
 ```
- file  ─▶  parser (Web Worker)  ─▶  ToolpathIR  ─▶  renderer  ─▶  canvas
-           dialects · containers    (neutral,        three / 2d
-           · bgcode decode           versioned)      + colors
+ G-code  ─▶  parser (Web Worker)  ─▶  ToolpathIR  ─▶  toolpath renderer  ─▶  canvas
+             dialects · containers    (neutral,        three / 2d
+             · bgcode decode           versioned)      + colors
+
+ STL / 3MF mesh  ─────────────────▶  ModelScene  ─▶  model renderer  ─▶  canvas
+                                     (presentation)   (shared render stage)
 ```
+
+The two rows share the render "stage" (framing + GL builder) but are otherwise independent: the top
+row inspects the *toolpath*, the bottom row presents the *source model* (see
+[Two views, two jobs](#two-views-two-jobs-toolpath-vs-model)).
 
 - **[`@chestnutlabs/toolpath-core`](packages/toolpath-core)** — `ToolpathIR` (structure-of-arrays
   geometry + metadata + source index), the capability model, progress mapping, and time estimation.
@@ -317,12 +371,16 @@ The stack is a pipeline of small packages, each doing one job:
   MeatPack + heatshrink), registered as a container adapter so `.bgcode` "just works".
 - **[`@chestnutlabs/gcode-colors`](packages/gcode-colors)** — the renderer-agnostic `ColorMode`
   model (feature, speed, tool, object, layer-height, color-change, tool-power, cut-vs-rapid), shared
-  by both renderers.
-- **[`@chestnutlabs/gcode-renderer-three`](packages/gcode-renderer-three)** — the Three.js renderer
-  (peer: `three`): layer chunks, decimation disclosure, draw-range clip/scrub, cameras, themes,
-  live-progress overlay.
+  by both toolpath renderers.
+- **[`@chestnutlabs/gcode-renderer-three`](packages/gcode-renderer-three)** — the Three.js toolpath
+  renderer (peer: `three`): layer chunks, decimation disclosure, draw-range clip/scrub, cameras,
+  themes, live-progress overlay. Also exports the shared render "stage" (framing pose + GL builder).
 - **[`@chestnutlabs/gcode-renderer-2d`](packages/gcode-renderer-2d)** — the Canvas 2D `LayerView2D`
   (no WebGL, no `three`): current + adjacent "ghost" layers.
+- **[`@chestnutlabs/gcode-model-renderer`](packages/gcode-model-renderer)** — a **separate**
+  presentation renderer (peer: `three`) for the *source model* — STL and 3MF multi-object/material —
+  with headless `renderModelStill`. It answers "what object is this?", not "how does the toolpath
+  run?"; see [Two views, two jobs](#two-views-two-jobs-toolpath-vs-model).
 - **[`@chestnutlabs/gcode-preview-core`](packages/gcode-preview-core)** — the framework-neutral
   controller, immutable state model, `renderStill`, and the portable behavioral suite.
 - **[`-vue`](packages/gcode-preview-vue) · [`-react`](packages/gcode-preview-react) ·
@@ -330,8 +388,8 @@ The stack is a pipeline of small packages, each doing one job:
   four framework adapters.
 
 Design rationale, boundaries, and the accepted architecture live in
-[`docs/design/`](docs/design); the [docs index](docs/README.md) maps the whole set. Thirteen
-packages publish to npm in lockstep (currently **v0.5.0**) with npm provenance.
+[`docs/design/`](docs/design); the [docs index](docs/README.md) maps the whole set. Fourteen
+packages publish to npm in lockstep (currently **v0.7.0**) with npm provenance.
 
 ## Development
 

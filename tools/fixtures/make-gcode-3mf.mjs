@@ -103,15 +103,16 @@ function makeZip(entries) {
   return zip;
 }
 
-function plateGcode(plate, lines) {
+function plateGcode(plate, lines, opts = {}) {
   // Bambu-style header + FEATURE markers so the container + orca-bambu
   // dialect COMPOSITION path is exercised end to end (DD-005 phase 3).
-  const out = [
-    '; BambuStudio 01.09.00.60',
-    `; generated fixture plate ${plate}`,
-    'G0 X10 Y10 Z0.2',
-    '; FEATURE: Outer wall'
-  ];
+  const out = ['; BambuStudio 01.09.00.60', `; generated fixture plate ${plate}`];
+  // Optional dialect-side filament comments matching the container project_settings, so the
+  // container+dialect filament MERGE is exercised (must dedupe by slot, not concatenate).
+  if (opts.filaments) {
+    out.push('; filament_colour = #22AA55;#5566EE', '; filament_type = PLA;PLA');
+  }
+  out.push('G0 X10 Y10 Z0.2', '; FEATURE: Outer wall');
   const half = Math.floor(lines / 2);
   for (let i = 1; i <= lines; i++) {
     if (i === half) out.push('; FEATURE: Sparse infill');
@@ -143,8 +144,8 @@ const write = (name, buf) => {
 write(
   'mini-project.gcode.3mf',
   makeZip([
-    { name: 'Metadata/plate_1.gcode', data: plateGcode(1, 400), deflate: true },
-    { name: 'Metadata/plate_2.gcode', data: plateGcode(2, 250), deflate: true },
+    { name: 'Metadata/plate_1.gcode', data: plateGcode(1, 400, { filaments: true }), deflate: true },
+    { name: 'Metadata/plate_2.gcode', data: plateGcode(2, 250, { filaments: true }), deflate: true },
     { name: 'Metadata/project_settings.config', data: settings, deflate: true },
     { name: '3D/3dmodel.model', data: Buffer.from('<model/>'), deflate: false }
   ])
