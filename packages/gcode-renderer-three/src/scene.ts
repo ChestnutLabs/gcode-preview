@@ -43,7 +43,7 @@ import {
   Vector3
 } from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
-import type { MachineGeometry, MappedProgress, ToolpathIR, Vec3 } from '@chestnutlabs/toolpath-core';
+import type { MachineGeometry, MappedProgress, ToolpathIR } from '@chestnutlabs/toolpath-core';
 import { autoDecimation, buildChunks, type ChunkBuildResult, type GeometryChunk } from './chunks.js';
 import { buildChunkColors, type ColorMode } from './colors.js';
 import { computeDrawState, computeOverlayDrawStates } from './ranges.js';
@@ -57,50 +57,14 @@ import {
 } from './stage.js';
 import { resolveTheme, type Theme, type ResolvedTheme } from './theme.js';
 import { InteractionQualityController } from './interaction-quality.js';
+import { VIEW_DIRECTIONS, type CameraMode, type CameraView, type CameraState } from './interactive-stage.js';
 
 /** §4.3 quality tiers. `auto` picks by segment count (chooseQuality). */
 export type QualityMode = 'lines' | 'tubes';
 
-/**
- * Camera projection (#150, DD-009 D3). `perspective` is the default interactive
- * view; `orthographic` gives parallel-projection technical/dimensional views.
- * Switching preserves the view direction, target, and apparent framing.
- */
-export type CameraMode = 'perspective' | 'orthographic';
-
-/**
- * Preset orientations for {@link ToolpathRenderer.setView} (#268). `iso` is the standard
- * front-top-right corner; the six orthogonal views look along a principal axis.
- */
-export type CameraView = 'top' | 'bottom' | 'front' | 'back' | 'left' | 'right' | 'iso';
-
-/**
- * A serializable snapshot of the camera (#268), in **scene coordinates**. A stable contract a
- * dashboard may persist across sessions: {@link ToolpathRenderer.getCameraState} reads it and
- * {@link ToolpathRenderer.setCameraState} restores it verbatim (no re-fit to the current model —
- * restoring onto a different model is the caller's choice).
- */
-export interface CameraState {
-  position: Vec3;
-  target: Vec3;
-  /** Camera zoom factor (three's `camera.zoom`); mainly meaningful for the orthographic view. */
-  zoom: number;
-  cameraMode: CameraMode;
-}
-
-/**
- * Unit direction (scene coords) from the framed target to the camera for each preset (#268). The
- * root rotation maps printer (x,y,z) → scene (x, z, -y), so e.g. printer +Z "up" is scene +Y.
- */
-const VIEW_DIRECTIONS: Record<CameraView, readonly [number, number, number]> = {
-  top: [0, 1, 0],
-  bottom: [0, -1, 0],
-  front: [0, 0, 1],
-  back: [0, 0, -1],
-  left: [-1, 0, 0],
-  right: [1, 0, 0],
-  iso: [1, 1, 1]
-};
+// Camera types + the preset-view table live in the shared interactive stage (DD-021 Phase 0);
+// re-exported here so existing import paths (index re-exports them from './scene.js') keep working.
+export type { CameraMode, CameraView, CameraState } from './interactive-stage.js';
 
 /** §4.3 `auto` decision, exported for tests and consumers. */
 export function chooseQuality(requested: QualityMode | 'auto', totalSegments: number): QualityMode {
