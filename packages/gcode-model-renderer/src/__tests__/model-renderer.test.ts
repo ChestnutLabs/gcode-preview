@@ -6,7 +6,10 @@ import { ModelParseError } from '../limits.js';
 import { renderModelStill } from '../render-model-still.js';
 import { ModelRenderer } from '../model-renderer.js';
 import { computeCacheKey } from '../cache-key.js';
-import type { ModelScene } from '../scene-model.js';
+import { IDENTITY_MAT4, type Mat4, type ModelScene } from '../scene-model.js';
+
+/** A column-major translation {@link Mat4} (three layout) for instance-matrix tests. */
+const translateMat4 = (x: number, y: number, z: number): Mat4 => [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, x, y, z, 1];
 
 type Tri = [number[], number[], number[]];
 
@@ -73,7 +76,8 @@ describe('parseStl', () => {
     expect(scene.capabilities).toEqual({
       materials: 'unavailable',
       transforms: 'unavailable',
-      multiObject: 'unavailable'
+      multiObject: 'unavailable',
+      instanced: 'unavailable'
     });
     expect(scene.objects[0].material).toBeUndefined();
   });
@@ -118,6 +122,38 @@ describe('ModelRenderer background', () => {
     // Camera framed to a finite position away from the target.
     expect(Number.isFinite(r.camera.position.x)).toBe(true);
     expect(r.camera.position.length()).toBeGreaterThan(0);
+    r.dispose();
+  });
+
+  it('renders a reused master as a single InstancedMesh (DD-022)', () => {
+    // A master with three placements → one InstancedMesh (one geometry upload), not three meshes.
+    const scene: ModelScene = {
+      objects: [
+        {
+          id: 'm',
+          geometry: { positions: new Float32Array([0, 0, 0, 10, 0, 0, 0, 10, 0]) },
+          transform: IDENTITY_MAT4,
+          instances: [IDENTITY_MAT4, translateMat4(50, 0, 0), translateMat4(0, 50, 0)]
+        }
+      ],
+      bounds: { min: [0, 0, 0], max: [60, 60, 0] },
+      capabilities: {
+        materials: 'unavailable',
+        transforms: 'known',
+        multiObject: 'unavailable',
+        instanced: 'known'
+      }
+    };
+    const r = new ModelRenderer({ canvas: stubCanvas(), createRenderer: stubGL });
+    r.setScene(scene);
+    const built = r.scene.children.flatMap((c) => (c.type === 'Group' ? c.children : []));
+    const instanced = built.filter((m) => (m as { isInstancedMesh?: boolean }).isInstancedMesh);
+    expect(instanced).toHaveLength(1);
+    expect((instanced[0] as unknown as { count: number }).count).toBe(3);
+    // No PLAIN-mesh copies (InstancedMesh.type is also 'Mesh', so exclude the instanced one).
+    expect(
+      built.filter((m) => m.type === 'Mesh' && !(m as { isInstancedMesh?: boolean }).isInstancedMesh)
+    ).toHaveLength(0);
     r.dispose();
   });
 });

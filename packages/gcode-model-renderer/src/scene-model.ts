@@ -51,9 +51,21 @@ export interface ModelObject {
   id: string;
   /** Source-declared object name when present. */
   name?: string;
+  /**
+   * Geometry in the object's own local space when {@link instances} is present (the placements position
+   * it); otherwise positioned by {@link transform}. A bare STL / single-placement object leaves it as the
+   * source geometry.
+   */
   geometry: MeshGeometry;
-  /** Object→scene transform (identity for STL). */
+  /** Object→scene transform (identity for STL). For an instanced master, equals `instances[0]`. */
   transform: Mat4;
+  /**
+   * All scene-space placements of this master mesh — production-extension components / repeated build
+   * items that reuse the same geometry (DD-022). Present only when the source reused the mesh (length ≥ 2);
+   * absent ⇒ a single placement at {@link transform}. A renderer draws one geometry upload across these
+   * transforms (GPU instancing), so memory scales with unique geometry, not copy count.
+   */
+  instances?: Mat4[];
   /** Omitted ⇒ no source material ⇒ neutral default render + `capabilities.materials: 'unavailable'`. */
   material?: ModelMaterial;
 }
@@ -70,6 +82,9 @@ export interface ModelScene {
     transforms: Confidence;
     /** `'known'` when the source declared more than one object. */
     multiObject: Confidence;
+    /** `'known'` when the source reused geometry via instances (more placements than unique masters), so
+     *  the scene preserved it as GPU instancing (DD-022); `'unavailable'` otherwise. */
+    instanced: Confidence;
   };
 }
 

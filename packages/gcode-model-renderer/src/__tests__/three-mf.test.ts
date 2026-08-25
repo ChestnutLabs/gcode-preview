@@ -353,6 +353,44 @@ ${padding}
   });
 });
 
+describe('parse3mf instancing (DD-022 Phase 1)', () => {
+  // One master object placed by three build items at different positions.
+  const INSTANCED = `<?xml version="1.0"?>
+<model unit="millimeter"><resources>
+ <object id="1" type="model"><mesh>
+  <vertices><vertex x="0" y="0" z="0"/><vertex x="10" y="0" z="0"/><vertex x="0" y="10" z="0"/></vertices>
+  <triangles><triangle v1="0" v2="1" v3="2"/></triangles></mesh></object>
+</resources><build>
+ <item objectid="1"/>
+ <item objectid="1" transform="1 0 0 0 1 0 0 0 1 50 0 0"/>
+ <item objectid="1" transform="1 0 0 0 1 0 0 0 1 0 50 0"/>
+</build></model>`;
+
+  it('reuses one master across placements instead of baking copies', async () => {
+    const scene = await parse3mf(threeMf(INSTANCED));
+    // ONE unique master, not three baked objects.
+    expect(scene.objects).toHaveLength(1);
+    expect(scene.capabilities.instanced).toBe('known');
+    expect(scene.capabilities.multiObject).toBe('unavailable'); // one unique master
+    // Geometry is the single master (3 verts × 3 = 9 floats), NOT tripled.
+    expect(scene.objects[0].geometry.positions).toHaveLength(9);
+    // Three placements, incl. the identity one.
+    expect(scene.objects[0].instances).toHaveLength(3);
+    // Local geometry stays local; the instance matrices carry the placement.
+    expect(scene.objects[0].instances![1][12]).toBeCloseTo(50); // 2nd instance X translation (Mat4[12])
+    // World bounds span all three placements (0..10 master + 0 / +50x / +50y).
+    expect(scene.bounds.min[0]).toBeCloseTo(0);
+    expect(scene.bounds.max[0]).toBeCloseTo(60);
+    expect(scene.bounds.max[1]).toBeCloseTo(60);
+  });
+
+  it('a single-placement object omits instances (contract: present only when reused)', async () => {
+    const scene = await parse3mf(threeMf(SINGLE));
+    expect(scene.objects[0].instances).toBeUndefined();
+    expect(scene.capabilities.instanced).toBe('unavailable');
+  });
+});
+
 describe('renderModelStill (3mf)', () => {
   it('renders a multicolor 3MF → materials known, multi-object', async () => {
     const res = await renderModelStill(
