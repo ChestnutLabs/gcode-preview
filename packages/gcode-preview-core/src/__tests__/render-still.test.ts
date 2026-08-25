@@ -134,6 +134,7 @@ describe('renderStill (#132)', () => {
     expect(result.parsed).toBe(false);
     expect(result.segmentCount).toBe(12); // makeTestIR: 2 layers × 6 segments
     expect(result.layerCount).toBe(2);
+    expect(result.decimationApplied).toBe(1); // small IR → no decimation, disclosed as 1
     expect(result.width).toBe(400);
     expect(result.height).toBe(300);
     expect(counting.size()).toEqual([400, 300]);

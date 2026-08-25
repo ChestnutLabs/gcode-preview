@@ -95,6 +95,12 @@ export interface RenderStillResult {
   segmentCount: number;
   /** The quality tier actually rendered (resolves 'auto'). */
   quality: QualityMode;
+  /**
+   * Every-Nth extrusion decimation actually applied (1 = none). > 1 on large files — especially large
+   * `tubes` cards bounded by the tube-segment budget (RR-006) — so a card can disclose "simplified for
+   * size" honestly; layer boundaries are always kept. Pairs with `segmentCount` (segments drawn).
+   */
+  decimationApplied: number;
   /** True when the input was G-code bytes (a worker parse ran). */
   parsed: boolean;
 }
@@ -176,6 +182,7 @@ export async function renderStill(
   try {
     renderer.resize(width, height);
 
+    let decimationApplied = 1;
     await new Promise<void>((resolve) => {
       let settled = false;
       const finish = (): void => {
@@ -185,7 +192,10 @@ export async function renderStill(
         resolve();
       };
       const off = renderer.onEvent((e) => {
-        if (e.type === 'buildComplete') finish();
+        if (e.type === 'buildComplete') {
+          decimationApplied = e.decimationApplied;
+          finish();
+        }
       });
       renderer.setIR(ir);
       // An empty IR builds no chunks and may not emit buildComplete — guard on
@@ -231,6 +241,7 @@ export async function renderStill(
       layerCount: renderer.layerCount,
       segmentCount: renderer.segmentCount,
       quality: renderer.activeQuality,
+      decimationApplied,
       parsed
     };
   } finally {
