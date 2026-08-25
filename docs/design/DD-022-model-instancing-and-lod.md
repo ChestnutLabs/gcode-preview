@@ -1,6 +1,6 @@
 # DD-022 — Instance-aware source-model rendering (GPU instancing + LOD)
 
-**Status:** Draft <!-- Draft | Proposed | Accepted | Superseded | Rejected -->
+**Status:** Accepted <!-- Draft | Proposed | Accepted | Superseded | Rejected -->
 **Authors/Owners:** Nathaniel Chestnut (with Claude)
 **Date:** 2026-08-25 · **Last revised:** 2026-08-25
 **Owning Epic:** ModelRenderer (the DD-018 line) · **Milestone:** M3
@@ -22,6 +22,19 @@
 > **field parity** with the toolpath `decimationApplied` (§4.2); (3) **masked/empty** capability strings
 > degrade conservatively with the DD-020 throttle as the safety net, not optimistically to hardware (§8).
 > The AnyBridge owner's both-owner sign-off (§2 constraint 7) on §4 + §8 is still pending.
+
+> **Accepted** 2026-08-25 — the **both-owner** gate (§2 constraint 7) on §4 (API/disclosure) + §8
+> (degradation semantics) is **satisfied**. The **maintainer** accepted §4 + §8 as revised (additive
+> instancing / LOD-decimation disclosure / `instancedCount` / `decimationApplied` / `capabilityHint` seam;
+> and the revised semantics: classify software-vs-hardware from the actual WebGL renderer rather than
+> assuming the host has a GPU, default the SwiftShader/headless case to a conservative software budget
+> unless the consumer passes an explicit `capabilityHint`/`limits`). The **AnyBridge product owner**
+> approved the same §4 + §8 as revised (relayed via the AnyBridge session), explicitly endorsing the
+> headless/SwiftShader fix — "do not infer capability from the host; classify the actual renderer;
+> conservative defaults for software; honor an explicit hint/limits." Cleared to build Phase 0 → Phase 1;
+> the maintainer authorized proceeding autonomously (merge green increments; coordinate the consumption
+> boundary with AnyBridge when Phase 1 exposes it; return only for a genuinely new public-API / safety /
+> architecture decision).
 
 ---
 
