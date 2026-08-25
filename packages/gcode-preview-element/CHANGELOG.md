@@ -1,5 +1,15 @@
 # @chestnutlabs/gcode-preview-element
 
+## 0.9.0
+
+### Patch Changes
+
+- Updated dependencies [[`cc6e1f6`](https://github.com/ChestnutLabs/gcode-preview/commit/cc6e1f6b48e531bc991cb1c7c53846ccbf7ca522), [`dd535d6`](https://github.com/ChestnutLabs/gcode-preview/commit/dd535d64ac71bbd876e83e81dccc6dbb046bf689), [`3299760`](https://github.com/ChestnutLabs/gcode-preview/commit/32997607dbd30db79c91d14d2d8383d99be933af)]:
+  - @chestnutlabs/gcode-renderer-three@0.9.0
+  - @chestnutlabs/gcode-preview-core@0.9.0
+  - @chestnutlabs/gcode-parser@0.9.0
+  - @chestnutlabs/toolpath-core@0.9.0
+
 ## 0.8.1
 
 ### Patch Changes
