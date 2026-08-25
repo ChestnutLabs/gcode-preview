@@ -13,13 +13,16 @@
 import type { Confidence } from '@chestnutlabs/toolpath-core';
 import type { GLRendererLike, RenderTargetCanvas } from '@chestnutlabs/gcode-renderer-three';
 import { ModelRenderer, type ModelBackground, type PresentationView } from './model-renderer.js';
-import { parseStl } from './stl.js';
-import { parse3mf } from './three-mf.js';
+import { isModelScene, resolveModelScene } from './loaders.js';
 import type { ModelScene } from './scene-model.js';
 import { computeCacheKey } from './cache-key.js';
 import type { ModelLimits } from './limits.js';
 
-/** A source model: STL bytes, 3MF bytes, or a pre-built `ModelScene`. */
+/**
+ * A source model: STL bytes, 3MF bytes, or a pre-built `ModelScene`. This concrete union is the
+ * backward-compatible still-render input; it flows through the shared open-`kind` loader registry
+ * (`ModelSourceInput`, DD-021 §4.1), so any registered `kind` is also accepted.
+ */
 export type ModelSource =
   | { kind: 'stl'; bytes: Uint8Array | ArrayBuffer }
   | { kind: '3mf'; bytes: Uint8Array | ArrayBuffer }
@@ -56,10 +59,6 @@ export interface RenderModelStillResult {
   cacheKey: string;
 }
 
-function isModelScene(s: ModelSource): s is ModelScene {
-  return (s as ModelScene).objects !== undefined && (s as { kind?: string }).kind === undefined;
-}
-
 async function toScene(
   source: ModelSource,
   limits?: ModelLimits,
@@ -70,8 +69,9 @@ async function toScene(
     const summary = JSON.stringify({ n: source.objects.length, b: source.bounds, c: source.capabilities });
     return { scene: source, sourceBytes: new TextEncoder().encode(summary) };
   }
+  // Dispatch through the shared open-`kind` loader registry (DD-021 §4.1) — same parse result as before.
   const bytes = source.bytes instanceof Uint8Array ? source.bytes : new Uint8Array(source.bytes);
-  const scene = source.kind === '3mf' ? await parse3mf(bytes, limits, { filamentPalette }) : parseStl(bytes, limits);
+  const scene = await resolveModelScene(source, undefined, limits, filamentPalette ? { filamentPalette } : undefined);
   return { scene, sourceBytes: bytes };
 }
 
