@@ -496,13 +496,15 @@ const EST_REJECT_MARGIN = 2;
 /**
  * Fast structural cost estimate (DD-022 Phase 0), run after the (tiny, for production-extension files)
  * main part is parsed but BEFORE any large external geometry part is decompressed. Walks the build-item /
- * component tree counting instance placements and a lower-bound triangle estimate:
- *   - a mesh object's own triangles are counted exactly (already parsed);
- *   - an external `p:path` component is estimated from its ZIP-directory uncompressed size / the
- *     conservative bytes-per-triangle bound, and treated as a leaf (not recursed) — a safe under-count.
- * Throws {@link ModelParseError} for a clear instance-bomb / oversize file so it rejects in sub-second
- * time instead of ~10 s of decompress-and-bake. Files near the budget do not reject here — the exact
- * per-triangle limit in the real parse still applies.
+ * component tree counting **placements** (all of them) and a lower-bound **unique**-triangle estimate:
+ *   - a mesh master's triangles are counted **once per unique master** (already parsed), NOT per placement;
+ *   - an external `p:path` part is estimated from its ZIP-directory uncompressed size / the conservative
+ *     bytes-per-triangle bound, counted **once per unique path** (a safe under-count), treated as a leaf.
+ * Because instancing renders each master once (DD-022 Phase 1), the triangle estimate must be UNIQUE — a
+ * full-sheet plate of ~40 copies costs its ~1 master, not ~40× baked, so it is NOT rejected here. The
+ * placement count still guards an instance bomb (`maxInstances`). Throws {@link ModelParseError} for a
+ * clear instance-bomb / oversize file so it rejects in sub-second time instead of ~10 s of decompress-and-
+ * bake; files near the budget fall through to the exact per-triangle parse.
  */
 function estimateSceneCost(
   mainPart: ModelPart,
@@ -511,6 +513,18 @@ function estimateSceneCost(
 ): void {
   let instanceCount = 0;
   let estTriangles = 0;
+  // Unique masters already counted toward the triangle estimate (keyed by objectid / external path), so a
+  // reused master is counted once — matching the instanced render, not the old per-placement bake.
+  const countedMasters = new Set<string>();
+
+  const checkInstances = (): void => {
+    if (instanceCount > lim.maxInstances) {
+      throw new ModelParseError(
+        'E_MODEL_TOO_MANY_INSTANCES',
+        `3MF declares more than ${lim.maxInstances} instance placements`
+      );
+    }
+  };
 
   const visit = (part: ModelPart, objectid: string, depth: number): void => {
     if (depth > MAX_DEPTH) return;
@@ -518,24 +532,28 @@ function estimateSceneCost(
     if (obj === undefined) return;
     if (obj.tris.length > 0) {
       instanceCount++;
-      estTriangles += obj.tris.length / 3;
+      const key = `local:${objectid}`;
+      if (!countedMasters.has(key)) {
+        countedMasters.add(key);
+        estTriangles += obj.tris.length / 3;
+      }
+      checkInstances();
     }
     for (const comp of obj.components) {
       if (comp.path !== undefined) {
         // External production-extension part: estimate from its directory size WITHOUT decompressing it.
-        const entry = entryByName(comp.path.replace(/^\//, '').toLowerCase());
+        const norm = comp.path.replace(/^\//, '').toLowerCase();
+        const entry = entryByName(norm);
         if (entry !== undefined) {
           instanceCount++;
-          estTriangles += entry.uncompressedSize / EST_MAX_BYTES_PER_TRIANGLE;
+          if (!countedMasters.has(norm)) {
+            countedMasters.add(norm);
+            estTriangles += entry.uncompressedSize / EST_MAX_BYTES_PER_TRIANGLE;
+          }
+          checkInstances();
         }
       } else {
         visit(part, comp.objectid, depth + 1); // local sub-object (already-parsed geometry)
-      }
-      if (instanceCount > lim.maxInstances) {
-        throw new ModelParseError(
-          'E_MODEL_TOO_MANY_INSTANCES',
-          `3MF declares more than ${lim.maxInstances} instance placements`
-        );
       }
     }
   };
