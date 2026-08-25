@@ -1,11 +1,18 @@
 # DD-021 — Interactive source-model viewer (`ModelViewer`)
 
-**Status:** Proposed <!-- Draft | Proposed | Accepted | Superseded | Rejected -->
+**Status:** Accepted <!-- Draft | Proposed | Accepted | Superseded | Rejected -->
 **Authors/Owners:** Nathaniel Chestnut (with Claude)
 **Date:** 2026-08-24 · **Last revised:** 2026-08-24
 **Owning Epic:** ModelRenderer (the DD-018 line) · **Milestone:** M2
 **Supersedes / Superseded by:** none
 **Related:** [DD-018](DD-018-model-renderer.md) (ModelRenderer / presentation stills), [DD-020](DD-020-interaction-aware-quality.md) (interaction-aware quality), [DD-004](DD-004-threejs-rendering-geometry-layer-clipping-and-quality-modes.md) (toolpath renderer + camera controls), [RR-005](../research/RR-005-3mf-paint-color-facet-format.md) (3MF paint decode). Consumer: AnyBridge "View in 3D".
+
+> **Accepted** 2026-08-24 by the maintainer — all sections as drafted, including the two AnyBridge
+> boundary-review refinements (the reserved additive `ready.info.objects` parts-list field §4.2, and the
+> early-consumer-wraps-the-handle note §14). AnyBridge reviewed the §4.2 consumption seam end-to-end with
+> no blockers; the AnyBridge-owner product sign-off is relayed separately. Hard acceptance constraint
+> reaffirmed: **Phase 0 must leave the existing ToolpathRenderer behavior byte-for-byte / regression-
+> protected** while extracting the shared interactive infrastructure (§14 Phase 0, §15 criterion 6).
 
 ---
 
