@@ -11,6 +11,8 @@ export type { ModelSource, RenderModelStillOptions, RenderModelStillResult } fro
 export { parseStl } from './stl.js';
 export { parse3mf } from './three-mf.js';
 export type { Parse3mfOptions } from './three-mf.js';
+export { stlLoader, threeMfLoader, DEFAULT_MODEL_LOADERS, isModelScene, resolveModelScene } from './loaders.js';
+export type { ModelLoader, ModelLoadOptions, ModelSourceInput } from './loaders.js';
 export { computeCacheKey, defaultEnvId } from './cache-key.js';
 export { DEFAULT_LIMITS, resolveLimits, ModelParseError } from './limits.js';
 export type { ModelLimits, ResolvedLimits } from './limits.js';
