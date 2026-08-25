@@ -1,6 +1,6 @@
 {
   "name": "@chestnutlabs/gcode-dialects",
-  "version": "0.9.0",
+  "version": "0.10.0",
   "description": "Slicer/firmware dialect adapters for ToolpathIR annotation (DD-005). Adapters annotate metadata and optional channels — they can never alter geometry.",
   "keywords": [
     "gcode",
@@ -45,6 +45,6 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@chestnutlabs/toolpath-core": "0.9.0"
+    "@chestnutlabs/toolpath-core": "0.10.0"
   }
 }

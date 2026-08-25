@@ -1,5 +1,26 @@
 # @chestnutlabs/gcode-preview-core
 
+## 0.10.0
+
+### Minor Changes
+
+- [#339](https://github.com/ChestnutLabs/gcode-preview/pull/339) [`33c4652`](https://github.com/ChestnutLabs/gcode-preview/commit/33c46528967b88d5b67ab81e61a3ab7f7e1cdc79) Thanks [@sobechestnut-dev](https://github.com/sobechestnut-dev)! - feat(core): expose `decimationApplied` on `RenderStillResult` (honest disclosure for large tube cards)
+
+  `renderStill` now returns `decimationApplied` (1 = none, > 1 = every-Nth extrusion kept, layer boundaries
+  always preserved). The headless still path is where a farm renders thumbnail/cards, and the tube-segment
+  budget (RR-006, `gcode-renderer-three`) can now decimate a large card to bound memory — but the still
+  result carried no signal of it, so a card could be silently simplified. This closes that gap: a consumer
+  can disclose "simplified for size" on a decimated card, matching the interactive controller's existing
+  `state.disclosure`. Additive; small/normal renders report `decimationApplied: 1`.
+
+### Patch Changes
+
+- Updated dependencies [[`a6ae736`](https://github.com/ChestnutLabs/gcode-preview/commit/a6ae736dab468960939b477964790c6ce9130572)]:
+  - @chestnutlabs/gcode-renderer-three@0.10.0
+  - @chestnutlabs/gcode-parser@0.10.0
+  - @chestnutlabs/gcode-renderer-2d@0.10.0
+  - @chestnutlabs/toolpath-core@0.10.0
+
 ## 0.9.0
 
 ### Patch Changes
