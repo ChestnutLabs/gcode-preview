@@ -42,3 +42,11 @@ export { InteractiveStage } from './interactive-stage.js';
 export type { InteractiveStageOptions, ControlsLike } from './interactive-stage.js';
 export { DEFAULT_THEME, resolveTheme } from './theme.js';
 export type { Theme, MaterialPreset, ThemeColor, ResolvedTheme, BedSurface, BedTextureSource } from './theme.js';
+export { classifyRenderer, detectRenderCapability, resolveCapability } from './capability.js';
+export type {
+  RenderCapability,
+  CapabilityHint,
+  QualityPolicy,
+  RendererInfoContext,
+  DetectedCapability
+} from './capability.js';
