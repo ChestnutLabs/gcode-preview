@@ -29,5 +29,7 @@ export { createBuildVolume } from './build-volume.js';
 export type { BuildVolumeDef, BuildVolumeStyle } from './build-volume.js';
 export { framingFromCenterRadius, createDefaultGLRenderer } from './stage.js';
 export type { Framing, DefaultGLOptions } from './stage.js';
+export { InteractionQualityController } from './interaction-quality.js';
+export type { InteractionQualityDeps } from './interaction-quality.js';
 export { DEFAULT_THEME, resolveTheme } from './theme.js';
 export type { Theme, MaterialPreset, ThemeColor, ResolvedTheme, BedSurface, BedTextureSource } from './theme.js';
