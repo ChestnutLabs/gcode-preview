@@ -14,6 +14,15 @@
 > Microsoft Basic Render Driver — so a software client must degrade harder than a hardware one; a server
 > `/dev/dri` GPU only helps the headless `renderStill` path). Awaits **both-owner sign-off** before build.
 
+> **Review log (Draft, pre-acceptance).** 2026-08-25 — AnyBridge consumption-seam review (handle-level
+> consumer): §4 additive contract accepted, no objection. Three refinements folded into this draft: (1) the
+> **headless path is capability-aware too** — the AnyBridge thumbnail sidecar runs headless Chromium on
+> **SwiftShader** (`--use-angle=swiftshader`, software WebGL2, no `/dev/dri`), so "headless ≠ hardware"; a
+> heavy hardware budget on SwiftShader is the OOM case this DD targets (§8/§4.3 revised); (2) disclosure
+> **field parity** with the toolpath `decimationApplied` (§4.2); (3) **masked/empty** capability strings
+> degrade conservatively with the DD-020 throttle as the safety net, not optimistically to hardware (§8).
+> The AnyBridge owner's both-owner sign-off (§2 constraint 7) on §4 + §8 is still pending.
+
 ---
 
 ## 1. Problem
@@ -119,10 +128,18 @@ capabilities: {
 
 ### 4.2 Ready/result disclosure
 
-Both surfaces disclose what was reduced, mirroring the toolpath `decimationApplied` (RR-006 / #339):
+Both surfaces disclose what was reduced, **field-parallel to the toolpath `decimationApplied`** (RR-006 /
+#339) so a consumer badges model and toolpath cards the same way:
 
-- `ModelReadyInfo` (createModelViewer, DD-021 §4.2) gains **`lod?: { maxDecimation: number; decimatedObjects: number }`** and **`instancedCount?: number`** (total instances drawn) — reserved-additive, so a consumer can badge "simplified for size" and "N copies."
-- `RenderModelStillResult` (DD-018) gains the same two optional fields.
+- A **flat `decimationApplied: number`** (1 = none) — the primary field, the max decimation across the
+  scene's objects, named identically to the toolpath result so the "simplified for size" badge logic is
+  shared. (An earlier draft exposed only a nested `lod.maxDecimation`; the AnyBridge review asked for the
+  flat parallel field — the aggregate detail stays available below.)
+- An optional **`lod?: { maxDecimation: number; decimatedObjects: number }`** for the multi-object detail
+  (how many masters were decimated), and **`instancedCount?: number`** (total instances drawn, for an "N
+  copies" badge).
+- `ModelReadyInfo` (createModelViewer, DD-021 §4.2) and `RenderModelStillResult` (DD-018) gain the **same**
+  three optional fields.
 
 Capability tiers are still **passed through from the parse**, never recomputed (DD-001). Decimation is the
 one place the renderer *adds* a disclosure, and it does so explicitly.
@@ -148,6 +165,14 @@ The **hard ceiling** now measures **unique** triangles (master geometry), not ba
 instanced plate is measured at ~1.5 M, not ~26 M, and passes. A genuinely huge *unique* mesh above
 `lodTriangleBudget` is decimated to fit and disclosed; only if a single unique mesh still exceeds
 `maxTriangles` after LOD does it hard-reject.
+
+**Both entry points accept these budgets per call**, and both accept a capability hint — there is no
+"headless ⇒ hardware" default baked in (see §8). `renderModelStill(source, { limits, capabilityHint })`
+and `createModelViewer(canvas, { limits, capabilityHint })` take the same `ModelLimits` knobs plus
+`capabilityHint?: 'auto' | 'software' | 'hardware'` (default `'auto'`). A software-WebGL headless sidecar
+(e.g. ANGLE→SwiftShader) is classified as software by `'auto'` and gets the software budget — or passes
+`capabilityHint: 'software'` / a tighter `limits` explicitly. The knobs express **both** paths; neither is
+assumed to be on a hardware GPU.
 
 ## 5. Lifecycle
 
@@ -197,16 +222,25 @@ RR-006 bounds tube memory.
 - **Instancing** takes the proof case from ~26 M baked triangles (rejected) to ~1.5 M unique + ~80 instance
   transforms — one geometry upload per master, `InstancedMesh` drawing all copies in one draw call. Memory
   and upload scale with **unique** geometry, not copy count.
-- **Client-capability-aware interactive LOD (createModelViewer).** The interactive viewer must degrade off
-  the **client** GPU, not the server. It detects software rendering via the WebGL
-  `UNMASKED_RENDERER_WEBGL` string (e.g. "SwiftShader", "Basic Render Driver", "llvmpipe") and, on a
-  software client, applies a **harder** LOD budget (lower `lodTriangleBudget`, an instance cap for
-  interactivity) so orbit stays responsive. Exposed as a `ModelViewerOptions.capabilityHint?: 'auto' |
-  'software' | 'hardware'` (default `'auto'` = detect); a consumer that already knows can override. This
-  composes with DD-020 interaction-aware quality (which throttles pixel-ratio during motion).
-- **Headless still (renderModelStill)** assumes a **server GPU** and uses the full (hardware) budget — a
-  farm sidecar with `/dev/dri` renders at higher fidelity than a software-WebGL browser tab. The two paths
-  take **separate** budgets by design; the same `ModelLimits` knobs express both.
+- **Capability-aware LOD keys off the actual renderer, not the surface.** The budget is chosen from
+  whether the WebGL context is **software** or **hardware**, detected via the `UNMASKED_RENDERER_WEBGL`
+  string (e.g. "SwiftShader", "Basic Render Driver", "llvmpipe" ⇒ software) — the same check on both the
+  interactive and the headless path. A software context (a software-WebGL browser client **or** a headless
+  `--use-angle=swiftshader` sidecar) gets a **harder** budget (lower `lodTriangleBudget`, an instance cap
+  for responsiveness); a hardware context gets the full budget. `capabilityHint: 'auto'` (default) detects;
+  a consumer that knows its context can pass `'software'` / `'hardware'` or tighter `limits`.
+- **"Headless" is NOT assumed to be a hardware GPU** (AnyBridge review): the AnyBridge thumbnail sidecar
+  deliberately runs headless Chromium on **SwiftShader** (its supported Docker default — no `/dev/dri`), so
+  applying a heavy hardware budget there would reproduce the OOM/slow case on exactly the large instanced
+  plates this DD targets. The still path therefore takes the **same** capability detection + `capabilityHint`
+  as the viewer (§4.3), not a hardwired hardware budget. A farm sidecar that *does* have a GPU is detected
+  as hardware and gets the full budget; a SwiftShader sidecar is detected as software and gets the safe one.
+- **Detection is fail-safe, with DD-020 as the net.** `UNMASKED_RENDERER_WEBGL` can be empty/masked
+  (privacy-hardened browsers) and a consumer generally cannot know the client GPU server-side. On a
+  masked/unknown string, classify **conservatively** (lean toward the software/safer budget, never
+  optimistically to hardware — an over-degraded hardware client loses some static fidelity, but a
+  misclassified software client OOMs), and rely on DD-020 interaction-aware quality to keep motion
+  responsive regardless. A consumer that knows better overrides via `capabilityHint`.
 
 ## 9. Testing
 
@@ -229,7 +263,8 @@ RR-006 bounds tube memory.
 
 Additive. `instances` / `lod` / `instanced` are new optional fields; a consumer reading `ModelObject.
 transform` still sees the representative placement. `renderModelStill` and `createModelViewer` keep their
-signatures; their result/ready types gain optional `lod` / `instancedCount`. The **internal** change —
+signatures; their options gain an optional `capabilityHint` (and both already accept `limits`), and their
+result/ready types gain optional `decimationApplied` / `lod` / `instancedCount`. The **internal** change —
 `parse3mf` collecting instances instead of baking, and `ModelContent` emitting `InstancedMesh` — is not a
 public break. New `ModelLimits` fields default to safe values, so existing callers get the fix for free. No
 new lockstep package; the work lands in `@chestnutlabs/gcode-model-renderer` (+ possibly a small helper in
@@ -271,8 +306,11 @@ the shared stage for `InstancedMesh` disposal).
 - **`InstancedMesh` + picking / draw-range** — the model viewer has no scrub/draw-range (DD-021 §3), and
   picking is not a v1 model-viewer feature, so the instancing has no interaction contract to break; if
   model picking is added later it must resolve instance id (three supports `instanceId` on raycast).
-- **Capability detection variance** — `UNMASKED_RENDERER_WEBGL` strings vary by platform/driver; treat
-  unknown as hardware (optimistic) but let the consumer force `capabilityHint` when it knows better.
+- **Capability detection variance** — `UNMASKED_RENDERER_WEBGL` strings vary by platform/driver and can be
+  masked/empty on privacy-hardened browsers. Mitigate: on a masked/unknown string classify **conservatively**
+  (the safer/software budget — a misclassified software client OOMs, an over-degraded hardware client only
+  loses some static fidelity), lean on the DD-020 throttle as the safety net, and let a consumer force
+  `capabilityHint` when it knows its context (§8).
 - **Scope creep into a mesh-LOD engine** — v1 LOD is uniform decimation with disclosure; QEM/adaptive is
   explicitly out (§3).
 
@@ -301,9 +339,10 @@ the shared stage for `InstancedMesh` disposal).
    **disclosed** (`lod` / `ready.info.lod` / result); nothing is silently simplified.
 4. The **hard `maxTriangles` ceiling remains** as the final guardrail, now measured on unique geometry,
    after instancing + LOD.
-5. The interactive viewer degrades off **client** capability (a software-WebGL client uses a harder budget
-   than a hardware client); the headless still uses the server-GPU budget. Both are the same `ModelLimits`
-   knobs.
+5. Degradation keys off the **actual WebGL renderer** (software vs hardware), the same way on both paths: a
+   software context — a software-WebGL browser client **or** a `--use-angle=swiftshader` headless sidecar —
+   uses a harder budget than a hardware context; `capabilityHint` overrides; masked/unknown classifies
+   conservatively. Neither path assumes a hardware GPU. Both use the same `ModelLimits` knobs.
 6. STL and single-placement 3MF output is **unchanged** (the instancing/LOD path is inert below its
    budgets); `renderModelStill` / `createModelViewer` signatures are unchanged (result/ready gain optional
    fields only).
