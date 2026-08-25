@@ -1,6 +1,6 @@
 {
   "name": "@chestnutlabs/toolpath-core",
-  "version": "0.8.1",
+  "version": "0.9.0",
   "description": "Neutral ToolpathIR and capability model for the Chestnut Labs G-code Preview toolpath stack.",
   "keywords": [
     "gcode",

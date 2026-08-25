@@ -1,5 +1,43 @@
 # @chestnutlabs/gcode-renderer-three
 
+## 0.9.0
+
+### Patch Changes
+
+- [#325](https://github.com/ChestnutLabs/gcode-preview/pull/325) [`cc6e1f6`](https://github.com/ChestnutLabs/gcode-preview/commit/cc6e1f6b48e531bc991cb1c7c53846ccbf7ca522) Thanks [@sobechestnut-dev](https://github.com/sobechestnut-dev)! - refactor(renderer): extract the DD-020 interaction-quality controller (DD-021 Phase 0)
+
+  First step of the DD-021 shared-infrastructure extraction: the interaction-aware quality logic
+  (reduce device pixel ratio while the camera moves, restore on settle) moves out of `ToolpathRenderer`
+  into a small renderer-agnostic `InteractionQualityController`, so the upcoming interactive model viewer
+  reuses one implementation instead of a parallel copy. The `ToolpathRenderer` now delegates to it —
+  behavior is unchanged (its full test suite passes byte-for-byte), and the controller is covered by its
+  own unit tests. Additive export; no public API removed.
+
+- [#327](https://github.com/ChestnutLabs/gcode-preview/pull/327) [`dd535d6`](https://github.com/ChestnutLabs/gcode-preview/commit/dd535d64ac71bbd876e83e81dccc6dbb046bf689) Thanks [@sobechestnut-dev](https://github.com/sobechestnut-dev)! - feat(renderer): add the shared InteractiveStage viewport (DD-021 Phase 0)
+
+  Adds `InteractiveStage` — the shared interactive **viewport** the DD-021 model viewer will reuse: it
+  owns the WebGL renderer, the dual perspective/orthographic camera, orbit/zoom/pan controls (with a new
+  injectable `createControls` seam for headless tests), WebGL context-loss recovery, resize, the
+  damage-driven render, and the DD-020 interaction-quality controller. It renders a `Scene` the owner
+  provides and holds no scene content or IR of its own, so the toolpath renderer and the model viewer
+  can drive one implementation instead of parallel camera/controls stacks. The camera types
+  (`CameraMode`/`CameraView`/`CameraState`) now live here and are re-exported from the toolpath renderer
+  for import-path stability. Additive; the toolpath renderer is unchanged (its full suite passes
+  byte-for-byte) and adopts the stage in the next Phase 0 step.
+
+- [#328](https://github.com/ChestnutLabs/gcode-preview/pull/328) [`3299760`](https://github.com/ChestnutLabs/gcode-preview/commit/32997607dbd30db79c91d14d2d8383d99be933af) Thanks [@sobechestnut-dev](https://github.com/sobechestnut-dev)! - refactor(renderer): drive the ToolpathRenderer through the shared InteractiveStage (DD-021 Phase 0)
+
+  Completes the DD-021 Phase 0 extraction: the `ToolpathRenderer` no longer owns its own GL renderer,
+  camera pair, orbit controls, WebGL context-loss recovery, resize, render, or interaction-quality — it
+  delegates all of that to the shared `InteractiveStage` (added previously) and keeps only its scene
+  content (toolpath geometry, overlays, retractions, build volume, picking). Camera/render behavior is
+  unchanged — the full renderer suite passes byte-for-byte — so this removes the duplication the model
+  viewer would otherwise have inherited, leaving one camera/controls implementation for both renderers.
+
+- Updated dependencies []:
+  - @chestnutlabs/gcode-colors@0.9.0
+  - @chestnutlabs/toolpath-core@0.9.0
+
 ## 0.8.1
 
 ### Patch Changes
