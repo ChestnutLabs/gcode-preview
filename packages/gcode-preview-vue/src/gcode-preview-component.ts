@@ -17,6 +17,7 @@ import type {
   CameraView,
   ColorMode,
   QualityMode,
+  QualityPolicy,
   Theme,
   TubeOptions
 } from '@chestnutlabs/gcode-renderer-three';
@@ -45,6 +46,7 @@ export const GcodePreview = defineComponent({
     /** Consumer-configured volume — wins over file-discovered geometry (DD-005 precedence). */
     buildVolume: { type: Object as PropType<BuildVolumeDef | MachineGeometry>, default: undefined },
     quality: { type: String as PropType<QualityMode | 'auto'>, default: 'auto' },
+    qualityMode: { type: String as PropType<QualityPolicy>, default: undefined },
     /** #150 (DD-009 D3): camera projection. */
     cameraMode: { type: String as PropType<CameraMode>, default: 'perspective' },
     /** #306/#6: frame the printed 'object' (excl. skirt/prime) or 'all' extrusion. Default 'all'. */
@@ -87,6 +89,7 @@ export const GcodePreview = defineComponent({
           NonNullable<UseGcodePreviewOptions['renderer']>,
           | 'buildVolume'
           | 'quality'
+          | 'qualityMode'
           | 'cameraMode'
           | 'frameContent'
           | 'interactionQuality'
@@ -128,6 +131,7 @@ export const GcodePreview = defineComponent({
         mode: props.renderer,
         buildVolume: 'bed' in (props.buildVolume ?? {}) ? undefined : (props.buildVolume as BuildVolumeDef | undefined),
         quality: props.quality,
+        qualityMode: props.qualityMode,
         cameraMode: props.cameraMode,
         frameContent: props.frameContent,
         interactionQuality: props.interactionQuality,
@@ -262,6 +266,12 @@ export const GcodePreview = defineComponent({
     watch(
       () => props.quality,
       (quality) => preview.controls.setQuality(quality)
+    );
+    watch(
+      () => props.qualityMode,
+      (mode) => {
+        if (mode !== undefined) preview.controls.setQualityMode(mode);
+      }
     );
     watch(
       () => props.cameraMode,

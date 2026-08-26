@@ -27,6 +27,7 @@ import type {
   GLRendererLike,
   ProgressPresentationMode,
   QualityMode,
+  QualityPolicy,
   RenderTargetCanvas,
   Theme,
   TubeOptions
@@ -92,6 +93,12 @@ export interface PreviewControllerOptions {
     mode?: RendererMode;
     buildVolume?: BuildVolumeDef;
     quality?: QualityMode | 'auto';
+    /**
+     * Fidelity policy (DD-023 §4 D6): 'full' (complete representation, no auto-decimation / no tubes→lines),
+     * 'adaptive' (default; capability-aware auto reduction, disclosed), 'fast' (flat lines). Distinct from
+     * the geometry `quality` tier. 3D only.
+     */
+    qualityMode?: QualityPolicy;
     /** Camera projection (#150, DD-009 D3); default 'perspective'. 3D only. */
     cameraMode?: CameraMode;
     /** Framing target (#306/#6): 'all' extrusion (default) or the printed 'object'. 3D only. */
@@ -163,6 +170,8 @@ export interface GcodePreviewControls {
   setShowRetractions(visible: boolean): void;
   setColorMode(mode: ColorMode): boolean;
   setQuality(quality: QualityMode | 'auto'): void;
+  /** Set the fidelity policy (DD-023 §4 D6): 'full' | 'adaptive' | 'fast'. 3D only. */
+  setQualityMode(mode: QualityPolicy): void;
   /** Switch camera projection (#150, DD-009 D3). */
   setCameraMode(mode: CameraMode): void;
   /** Snap to a preset orientation — top/front/iso/… (#268). Instant; preserves the projection.
@@ -371,6 +380,7 @@ export function createPreviewController(options: PreviewControllerOptions = {}):
           canvas,
           buildVolume: r.buildVolume,
           quality: r.quality ?? 'auto',
+          qualityMode: r.qualityMode,
           cameraMode: r.cameraMode,
           frameContent: r.frameContent,
           interactionQuality: r.interactionQuality,
@@ -509,6 +519,7 @@ export function createPreviewController(options: PreviewControllerOptions = {}):
       return true;
     },
     setQuality: (q) => withRenderer((r) => r.setQuality(q)),
+    setQualityMode: (m) => withRenderer((r) => r.setQualityMode(m)),
     setCameraMode: (m) => withRenderer((r) => r.setCameraMode(m)),
     setView: (v) => withRenderer((r) => r.setView(v)),
     // Returns a value, so it can't queue: before the renderer is ready (or on 2D) there is no pose → null.
