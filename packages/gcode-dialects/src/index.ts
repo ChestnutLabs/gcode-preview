@@ -15,6 +15,7 @@ export { prusaSlicer } from './prusaslicer.js';
 export { orcaBambu } from './orca-bambu.js';
 export { cura } from './cura.js';
 export { ideaMaker } from './ideamaker.js';
+export { simplify3d } from './simplify3d.js';
 export { klipper, marlin, repRap } from './firmware.js';
 export { grblLaser, grblMill, linuxCnc } from './cnc.js';
 export type { ValidationTier, MachineClass } from './cnc.js';

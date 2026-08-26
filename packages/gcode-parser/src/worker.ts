@@ -21,7 +21,8 @@ import {
   marlin,
   orcaBambu,
   prusaSlicer,
-  repRap
+  repRap,
+  simplify3d
 } from '@chestnutlabs/gcode-dialects';
 import { openGcode3mf, sniffGcode3mf } from '@chestnutlabs/gcode-containers';
 import { openBgcodeContainer, sniffBgcode } from '@chestnutlabs/gcode-bgcode';
@@ -34,6 +35,7 @@ const BUILTIN_ADAPTERS: Parameters<typeof createDialectRunner>[0] = [
   orcaBambu(),
   cura(),
   ideaMaker(),
+  simplify3d(),
   klipper(),
   marlin(),
   repRap(),
