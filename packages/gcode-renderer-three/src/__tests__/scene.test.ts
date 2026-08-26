@@ -649,6 +649,17 @@ describe('tubes quality mode (phase 4)', () => {
     expect(full.renderer.chunkMeshes.some((m) => m instanceof Mesh)).toBe(true);
   });
 
+  it('tubes→lines fallback degrades to CONTINUOUS lines (decimationApplied 1), never chopped (DD-023)', () => {
+    // A tube build that can't fit the budget falls to lines — and those lines must be CONTINUOUS
+    // (undecimated), never segment-dropped, per the maintainer's degradation order.
+    const h = makeHarness({ quality: 'tubes', tubeByteBudget: 1 });
+    h.renderer.setIR(makeIR(2, 100));
+    h.runTicks();
+    expect(h.renderer.activeQuality).toBe('lines');
+    const complete = h.events.find((e) => e.type === 'buildComplete');
+    expect(complete && 'decimationApplied' in complete && complete.decimationApplied).toBe(1);
+  });
+
   it("qualityMode 'fast' renders flat lines regardless of the requested tubes tier (DD-023 Phase B)", () => {
     const h = makeHarness({ quality: 'tubes', qualityMode: 'fast' });
     h.renderer.setIR(makeIR(2, 5));
