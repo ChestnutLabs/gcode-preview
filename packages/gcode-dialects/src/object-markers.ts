@@ -46,24 +46,38 @@ export class PrintingObjectTracker {
   private readonly names = new Map<number, string>();
   private counter = 0;
 
-  /** Try to consume an object start/stop comment; returns true if it was one. */
+  /** Try to consume a `; printing object` / `; stop printing object` comment; true if it was one. */
   handle(trimmed: string, srcByte: number): boolean {
     const start = matchPrintingObjectStart(trimmed);
     if (start !== null) {
-      let value = this.idToValue.get(start.id);
-      if (value === undefined) {
-        value = ++this.counter;
-        this.idToValue.set(start.id, value);
-        if (start.name !== undefined) this.names.set(value, start.name);
-      }
-      this.markers.push({ srcByte, value });
+      this.markStart(start.id, start.name, srcByte);
       return true;
     }
     if (/^stop printing object/i.test(trimmed)) {
-      this.markers.push({ srcByte, value: 0 }); // range terminator
+      this.markEnd(srcByte);
       return true;
     }
     return false;
+  }
+
+  /**
+   * Open (or reopen) an object range by its stable slicer id — for adapters whose membership uses a
+   * non-comment marker convention (e.g. ideaMaker's `;PRINTING_ID:<n>` state). The id maps to a
+   * sequential 1-based channel value, reused if seen before.
+   */
+  markStart(id: string, name: string | undefined, srcByte: number): void {
+    let value = this.idToValue.get(id);
+    if (value === undefined) {
+      value = ++this.counter;
+      this.idToValue.set(id, value);
+      if (name !== undefined) this.names.set(value, name);
+    }
+    this.markers.push({ srcByte, value });
+  }
+
+  /** Close the current object range (back to "no object"). */
+  markEnd(srcByte: number): void {
+    this.markers.push({ srcByte, value: 0 });
   }
 
   /** Apply the collected object ranges + names; upgrades the `objects` capability if any resolved. */
