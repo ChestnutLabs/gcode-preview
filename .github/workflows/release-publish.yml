@@ -20,7 +20,7 @@ permissions:
 
 jobs:
   publish:
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Linux, X64]
     if: startsWith(github.event.release.tag_name, 'v') || github.event_name == 'workflow_dispatch'
     steps:
       - uses: actions/checkout@v4

@@ -11,7 +11,7 @@ on:
 
 jobs:
   changeset-check:
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Linux, X64]
     if: >
       github.head_ref != 'changeset-release/dev' &&
       !contains(github.event.pull_request.labels.*.name, 'no-changeset-needed')

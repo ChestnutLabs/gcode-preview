@@ -65,6 +65,22 @@ from the protected `Release / publish` workflow on a tag from `main` — never f
   Version Packages PR itself. Until then the workflow still pushes `changeset-release/dev`
   correctly and the PR is opened manually once — the flow is degraded, not broken.
 
+## CI runners
+
+Every workflow in `.github/workflows/` runs on the **Chestnut Labs self-hosted fleet** —
+`runs-on: [self-hosted, Linux, X64]` (the `Default` runner group; standard idle Linux/x64 nodes
+such as `GHR-03…08`, `root-system`, the `Acorn*` runners). GitHub-hosted runners are **not** used:
+the org's included Actions minutes are a small monthly allotment (3,000), and once exhausted every
+`ubuntu-latest` job queues indefinitely with nothing to run it — which is exactly what stalled the
+first `v0.15.0` release attempt. Ordinary Linux jobs must therefore target the self-hosted labels.
+
+- Use the plain triad `[self-hosted, Linux, X64]` for normal jobs. Do **not** add `XL`, `BareMetal`,
+  `Windows`, `klipper-sim`, or `go1.26` unless a job genuinely needs that hardware — those labels
+  reserve specialized nodes and would pin a routine build/test to scarce runners.
+- GitHub Actions has no native `ubuntu-latest` → self-hosted failover; a job runs on exactly the
+  labels it names. If GitHub-hosted is ever wanted as a deliberate fallback, it needs an explicit
+  design (a matrix or runner-group policy), not a bare `ubuntu-latest`.
+
 ## Branch-protection plan (documented per #130; applied at the phase-6 rehearsal)
 
 | Branch | Protection |
