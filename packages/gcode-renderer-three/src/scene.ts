@@ -55,6 +55,7 @@ import {
   type TubeOptions
 } from './tubes.js';
 import type { RenderTargetCanvas, GLRendererLike } from './stage.js';
+import type { QualityPolicy } from './capability.js';
 import { resolveTheme, type Theme, type ResolvedTheme } from './theme.js';
 import { InteractiveStage, type CameraMode, type CameraView, type CameraState } from './interactive-stage.js';
 
@@ -111,6 +112,19 @@ export interface ToolpathRendererOptions {
   colorMode?: ColorMode;
   /** §4.3 quality tier; 'auto' (default) picks tubes ≤ 1 M segments, else lines. */
   quality?: QualityMode | 'auto';
+  /**
+   * Fidelity POLICY (DD-023 §4 D6), distinct from the geometry `quality` tier (`lines`/`tubes`) — what the
+   * user/admin WANTS, not what the client is running on (`capabilityHint`). Modulates the two large-file
+   * ceilings within the chosen geometry mode:
+   *   - `'full'`: render the COMPLETE representation — no every-Nth decimation, full-radial continuous tubes,
+   *     no budget-driven tubes→lines fallback (only the per-chunk vertex safety net still applies, as an
+   *     honest last-resort). The hard job of failing gracefully when a client genuinely can't is a later
+   *     phase; today `'full'` attempts the full build.
+   *   - `'adaptive'` (default): the capability-aware auto path — `auto` decimation + the `tubeByteBudget`
+   *     cross-section coarsening, every reduction disclosed. Reproduces today's behaviour.
+   *   - `'fast'`: explicitly trade fidelity for responsiveness — render as flat lines.
+   */
+  qualityMode?: QualityPolicy;
   /** Camera projection (#150, DD-009 D3); default 'perspective'. */
   cameraMode?: CameraMode;
   /** Framing target (#306/#6): 'all' extrusion (default) or the printed 'object' (excludes skirt/prime). */
@@ -238,6 +252,8 @@ export class ToolpathRenderer {
   // §4.3 quality state: what the consumer asked for vs what is actually built.
   private requestedQuality: QualityMode | 'auto';
   private active: QualityMode = 'lines';
+  /** Fidelity policy (DD-023 §4 D6): 'adaptive' (default) | 'full' | 'fast'. */
+  private qualityMode: QualityPolicy;
   private readonly tubeOptions: TubeOptions;
   /** CPU byte budget that bounds tube memory by coarsening the cross-section (RR-006 correction). */
   private readonly tubeByteBudget: number;
@@ -304,6 +320,7 @@ export class ToolpathRenderer {
     // decimating segments shredded tubes into spikes (RR-006 correction). A consumer that set it as a
     // rough memory knob still gets bounded memory; the mechanism just changed to be continuity-preserving.
     this.tubeByteBudget = opts.tubeByteBudget ?? TUBE_CPU_BYTE_BUDGET;
+    this.qualityMode = opts.qualityMode ?? 'adaptive';
     // Default scheduler: rAF for frame alignment, with a timeout backstop so
     // work still progresses when rAF is suspended (hidden/throttled tabs —
     // otherwise a parse finishing in a background tab would never finish
@@ -470,18 +487,24 @@ export class ToolpathRenderer {
 
   private startBuild(ir: ToolpathIR): void {
     this.clearToolpathGeometry();
+    // Fidelity policy (DD-023 §4 D6): `full` renders the COMPLETE representation — never auto-decimate;
+    // `adaptive`/`fast` keep the capability-aware `auto` decimation. `fast` additionally prefers flat lines.
+    const decimation: 'auto' | number = this.qualityMode === 'full' ? 1 : 'auto';
     try {
-      this.buildResult = buildChunks(ir, { decimation: 'auto' });
+      this.buildResult = buildChunks(ir, { decimation });
     } catch (err) {
       this.emit({ type: 'error', code: 'E_GEOMETRY_BUILD', message: err instanceof Error ? err.message : String(err) });
       return;
     }
-    this.active = chooseQuality(this.requestedQuality, this.buildResult.totalSegmentsIncluded);
+    this.active =
+      this.qualityMode === 'fast'
+        ? 'lines'
+        : chooseQuality(this.requestedQuality, this.buildResult.totalSegmentsIncluded);
     if (this.active === 'tubes') {
       // Tube geometry is ~50× the build cost of lines: rebuild with a small
       // chunk target so no single chunk can exceed the §8 stall budget.
       try {
-        this.buildResult = buildChunks(ir, { decimation: 'auto', targetSegmentsPerChunk: TUBES_CHUNK_TARGET });
+        this.buildResult = buildChunks(ir, { decimation, targetSegmentsPerChunk: TUBES_CHUNK_TARGET });
       } catch (err) {
         this.emit({
           type: 'error',
@@ -501,7 +524,10 @@ export class ToolpathRenderer {
       // over-counts tube memory and falls to lines prematurely. Count the extrude (tube-eligible) segments.
       const tubeSegments = this.buildResult.chunks.reduce((n, c) => (c.kind === 'extrude' ? n + c.count : n), 0);
       const requestedRadial = this.tubeOptions.radialSegments ?? 8;
-      const radial = tubeRadialForBudget(tubeSegments, requestedRadial, this.tubeByteBudget);
+      // `full` policy: render full-radial continuous tubes — no budget-driven cross-section coarsening or
+      // tubes→lines fallback (only the per-chunk vertex safety net remains). `adaptive` uses the byte budget.
+      const budget = this.qualityMode === 'full' ? Number.POSITIVE_INFINITY : this.tubeByteBudget;
+      const radial = tubeRadialForBudget(tubeSegments, requestedRadial, budget);
       if (radial === null) {
         this.fallbackToLines(
           `tube memory budget: ${tubeSegments.toLocaleString()} extrusion segments exceed the budget even at minimum cross-section`
@@ -521,9 +547,10 @@ export class ToolpathRenderer {
     this.active = 'lines';
     this.clearToolpathGeometry();
     if (this.ir !== null) {
-      // Re-chunk at the lines-mode target (the tubes build used small chunks).
+      // Re-chunk at the lines-mode target (the tubes build used small chunks). Keep the policy's decimation
+      // so a `full`-mode lines fallback stays undecimated.
       try {
-        this.buildResult = buildChunks(this.ir, { decimation: 'auto' });
+        this.buildResult = buildChunks(this.ir, { decimation: this.qualityMode === 'full' ? 1 : 'auto' });
       } catch {
         this.buildResult = null;
       }
@@ -1267,6 +1294,16 @@ export class ToolpathRenderer {
   setQuality(quality: QualityMode | 'auto'): void {
     if (this.disposed) return;
     this.requestedQuality = quality;
+    if (this.ir !== null) {
+      this.startBuild(this.ir);
+      this.render();
+    }
+  }
+
+  /** Set the fidelity policy (DD-023 §4 D6) and rebuild: 'full' | 'adaptive' | 'fast'. */
+  setQualityMode(mode: QualityPolicy): void {
+    if (this.disposed) return;
+    this.qualityMode = mode;
     if (this.ir !== null) {
       this.startBuild(this.ir);
       this.render();

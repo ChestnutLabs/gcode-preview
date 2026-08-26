@@ -36,13 +36,22 @@ export type GcodePreviewSource = Uint8Array | ArrayBuffer | File | null;
 /** Advanced/test renderer injectables (pass-throughs of the controller's renderer contract). */
 export type ElementRendererOptions = Omit<
   NonNullable<PreviewControllerRenderer>,
-  'buildVolume' | 'quality' | 'cameraMode' | 'frameContent' | 'interactionQuality' | 'theme' | 'colorMode' | 'tube'
+  | 'buildVolume'
+  | 'quality'
+  | 'qualityMode'
+  | 'cameraMode'
+  | 'frameContent'
+  | 'interactionQuality'
+  | 'theme'
+  | 'colorMode'
+  | 'tube'
 >;
 type PreviewControllerRenderer = NonNullable<Parameters<typeof createPreviewController>[0]>['renderer'];
 
 /** Observed scalar/boolean/number attributes; rich options are property-only. */
 const OBSERVED = [
   'quality',
+  'quality-mode',
   'camera-mode',
   'frame-content',
   'interaction-quality',
@@ -146,6 +155,12 @@ export class GcodePreviewElement extends HTMLElement {
   }
   set quality(v: string | null) {
     this.reflect('quality', v);
+  }
+  get qualityMode(): string | null {
+    return this.getAttribute('quality-mode');
+  }
+  set qualityMode(v: string | null) {
+    this.reflect('quality-mode', v);
   }
   get cameraMode(): string | null {
     return this.getAttribute('camera-mode');
@@ -280,6 +295,7 @@ export class GcodePreviewElement extends HTMLElement {
         mode: (this.getAttribute('renderer') as RendererMode | null) ?? undefined,
         buildVolume: isMachine ? undefined : (this._buildVolume as BuildVolumeDef | undefined),
         quality: (this.getAttribute('quality') as 'auto' | 'lines' | 'tubes' | null) ?? 'auto',
+        qualityMode: (this.getAttribute('quality-mode') as 'full' | 'adaptive' | 'fast' | null) ?? undefined,
         cameraMode: (this.getAttribute('camera-mode') as CameraMode | null) ?? undefined,
         frameContent: (this.getAttribute('frame-content') as 'object' | 'all' | null) ?? undefined,
         interactionQuality: (this.getAttribute('interaction-quality') as 'off' | 'auto' | null) ?? undefined,
@@ -311,6 +327,9 @@ export class GcodePreviewElement extends HTMLElement {
     switch (name) {
       case 'quality':
         c.setQuality((value as 'auto' | 'lines' | 'tubes' | null) ?? 'auto');
+        break;
+      case 'quality-mode':
+        if (value !== null) c.setQualityMode(value as 'full' | 'adaptive' | 'fast');
         break;
       case 'camera-mode':
         if (value !== null) c.setCameraMode(value as CameraMode);

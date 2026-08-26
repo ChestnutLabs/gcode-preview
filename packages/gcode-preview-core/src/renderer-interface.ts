@@ -15,6 +15,7 @@ import type {
   CameraView,
   ColorMode,
   QualityMode,
+  QualityPolicy,
   RendererEvent,
   Theme
 } from '@chestnutlabs/gcode-renderer-three';
@@ -63,6 +64,8 @@ export interface PreviewRenderer {
   setShowRetractions(visible: boolean): void;
   setColorMode(mode: ColorMode): boolean;
   setQuality(quality: QualityMode | 'auto'): void;
+  /** Fidelity policy (DD-023 §4 D6): 'full' | 'adaptive' | 'fast'. 3D only; 2D is a no-op. */
+  setQualityMode(mode: QualityPolicy): void;
   setCameraMode(mode: CameraMode): void;
   /** Snap to a preset orientation (#268). 2D renderers disclose via `renderer-unsupported`. */
   setView(view: CameraView): void;
