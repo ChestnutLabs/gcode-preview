@@ -1,5 +1,53 @@
 # @chestnutlabs/gcode-model-renderer
 
+## 0.13.0
+
+### Minor Changes
+
+- [#363](https://github.com/ChestnutLabs/gcode-preview/pull/363) [`56ed874`](https://github.com/ChestnutLabs/gcode-preview/commit/56ed874f20ef590908f03229f5a40f53f8956da9) Thanks [@sobechestnut-dev](https://github.com/sobechestnut-dev)! - feat(model): decode Bambu/Orca per-object extruder colours (source-model colour convention)
+
+  `parse3mf` now renders the colour a Bambu/Orca source `.3mf` carries via its **project convention**:
+  per-object / per-part `<metadata key="extruder">` in `Metadata/model_settings.config` (1-based) indexing the
+  `filament_colour` palette in `Metadata/project_settings.config`. Each object/part with no
+  basematerials/colorgroup/`paint_color` colour of its own is solid-coloured by its assigned filament, and
+  `capabilities.materials` becomes `'known'`. A part's own extruder overrides its parent object's default.
+
+  Honesty preserved: colour is applied **only** when the source actually declares the extruder mapping AND the
+  palette resolves the slot — otherwise the object stays neutral (`materials: 'unavailable'`); nothing is
+  guessed. This fixes the "No colour data / neutral render" result on multi-part Bambu source models (e.g. the
+  Baby_Opossum sheet) whose colour lives in the project metadata rather than in basematerials or `paint_color`.
+  Validated against a real production multi-part Bambu `.3mf` (per-part extruder colours resolved correctly,
+  alongside parts that carry their own basematerials).
+
+- [#360](https://github.com/ChestnutLabs/gcode-preview/pull/360) [`a75e5cd`](https://github.com/ChestnutLabs/gcode-preview/commit/a75e5cdd075676924eb65ae20df50b1ad39c1264) Thanks [@sobechestnut-dev](https://github.com/sobechestnut-dev)! - feat(model): multi-plate model structure — plate identity as first-class API (DD-025 Phase A)
+
+  `parse3mf` now reads Bambu/Orca `Metadata/model_settings.config` and exposes declared plate structure on
+  `ModelScene`: a new `plates: { list: ModelPlateSummary[]; active? }`, a placement-level `plateIds` on each
+  `ModelObject` (aligned with `instances` — a reused master can appear on multiple plates, so membership lives
+  on the placement, not the master), and a `capabilities.plates` confidence tier (`'known'` only when the
+  source **explicitly** declares plates, incl. an explicit single plate; `'unavailable'` for
+  undeclared/implicit). `ModelReadyInfo` and `RenderModelStillResult` surface `plates` too, so a consumer can
+  build a plate selector. Plate grouping is derived from the source's own declaration (never geometric
+  guessing); a plate-less file is honestly one implicit plate. No render change yet — per-plate / all-plates
+  presentation is a later phase.
+
+- [#361](https://github.com/ChestnutLabs/gcode-preview/pull/361) [`b8dd6a7`](https://github.com/ChestnutLabs/gcode-preview/commit/b8dd6a7ce05add28f922a7f71641eebe0778a146) Thanks [@sobechestnut-dev](https://github.com/sobechestnut-dev)! - feat(model): staged loading progress on createModelViewer (DD-024 Phase A)
+
+  Adds the shared, typed, consumer-neutral loading-progress contract (`LoadStage` / `LoadUnit` / `LoadProgress`
+  in `gcode-renderer-three`) and wires it into `createModelViewer` via a new `onProgress` option — closing the
+  gap where the model renderer emitted no progress at all (large models "felt hung"). Events carry typed
+  `stage` / `done` / `total` / `unit` (or an honest `indeterminate`) and **no human-facing copy** — the
+  consumer owns all wording/i18n. `setSource` emits `parsing` (indeterminate) → `building-geometry` with real
+  per-object counts → `ready`. Every event is **generation-scoped**: a superseded/cancelled `setSource` can
+  never advance the next load's progress. No render behavior changes.
+
+### Patch Changes
+
+- Updated dependencies [[`377fc70`](https://github.com/ChestnutLabs/gcode-preview/commit/377fc7076e42a6044a9e10f2d4b27bd99fa133f3), [`b8dd6a7`](https://github.com/ChestnutLabs/gcode-preview/commit/b8dd6a7ce05add28f922a7f71641eebe0778a146), [`3be5312`](https://github.com/ChestnutLabs/gcode-preview/commit/3be531219cede19168ddf042ee7954c14d73d74c)]:
+  - @chestnutlabs/gcode-renderer-three@0.13.0
+  - @chestnutlabs/gcode-containers@0.13.0
+  - @chestnutlabs/toolpath-core@0.13.0
+
 ## 0.12.0
 
 ### Patch Changes
