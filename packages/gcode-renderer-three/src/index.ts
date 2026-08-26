@@ -28,6 +28,7 @@ export type {
   GLRendererLike,
   ProgressPresentationMode,
   QualityMode,
+  ProgressivePreview,
   CameraMode,
   CameraView,
   CameraState

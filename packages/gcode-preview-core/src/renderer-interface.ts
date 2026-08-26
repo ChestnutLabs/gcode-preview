@@ -14,6 +14,7 @@ import type {
   CameraState,
   CameraView,
   ColorMode,
+  ProgressivePreview,
   QualityMode,
   QualityPolicy,
   RendererEvent,
@@ -66,6 +67,11 @@ export interface PreviewRenderer {
   setQuality(quality: QualityMode | 'auto'): void;
   /** Fidelity policy (DD-023 §4 D6): 'full' | 'adaptive' | 'fast'. 3D only; 2D is a no-op. */
   setQualityMode(mode: QualityPolicy): void;
+  /**
+   * During-parse preview curtain (#60): 'lines' | 'hold' | 'off'. Applies to the NEXT parse.
+   * 3D only; 2D is a no-op.
+   */
+  setProgressivePreview(mode: ProgressivePreview): void;
   setCameraMode(mode: CameraMode): void;
   /** Snap to a preset orientation (#268). 2D renderers disclose via `renderer-unsupported`. */
   setView(view: CameraView): void;

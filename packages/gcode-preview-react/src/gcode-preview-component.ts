@@ -24,6 +24,7 @@ import type {
   CameraState,
   CameraView,
   ColorMode,
+  ProgressivePreview,
   QualityMode,
   QualityPolicy,
   Theme,
@@ -57,6 +58,8 @@ export interface GcodePreviewProps {
   quality?: QualityMode | 'auto';
   /** Fidelity policy (DD-023 §4 D6): 'full' | 'adaptive' | 'fast'. 3D only. */
   qualityMode?: QualityPolicy;
+  /** #60 curtain: 'lines' (default, stream the preview), 'hold' (reveal only the final build), or 'off'. 3D only. */
+  progressivePreview?: ProgressivePreview;
   /** #150 (DD-009 D3): camera projection. */
   cameraMode?: CameraMode;
   /** #306/#6: frame the printed 'object' (excl. skirt/prime) or 'all' extrusion. Default 'all'. */
@@ -94,6 +97,7 @@ export interface GcodePreviewProps {
     | 'buildVolume'
     | 'quality'
     | 'qualityMode'
+    | 'progressivePreview'
     | 'cameraMode'
     | 'frameContent'
     | 'interactionQuality'
@@ -132,6 +136,7 @@ function GcodePreviewImpl(props: GcodePreviewProps, ref: ForwardedRef<GcodePrevi
       buildVolume: isMachine ? undefined : (props.buildVolume as BuildVolumeDef | undefined),
       quality: props.quality ?? 'auto',
       qualityMode: props.qualityMode,
+      progressivePreview: props.progressivePreview,
       cameraMode: props.cameraMode ?? 'perspective',
       frameContent: props.frameContent ?? 'all',
       interactionQuality: props.interactionQuality ?? 'off',
@@ -212,6 +217,7 @@ function GcodePreviewImpl(props: GcodePreviewProps, ref: ForwardedRef<GcodePrevi
     colorMode,
     quality,
     qualityMode,
+    progressivePreview,
     cameraMode,
     frameContent,
     interactionQuality,
@@ -255,6 +261,9 @@ function GcodePreviewImpl(props: GcodePreviewProps, ref: ForwardedRef<GcodePrevi
   useEffect(() => {
     if (qualityMode !== undefined) preview.controls.setQualityMode(qualityMode);
   }, [qualityMode]);
+  useEffect(() => {
+    if (progressivePreview !== undefined) preview.controls.setProgressivePreview(progressivePreview);
+  }, [progressivePreview]);
   useEffect(() => {
     if (cameraMode !== undefined) preview.controls.setCameraMode(cameraMode);
   }, [cameraMode]);
