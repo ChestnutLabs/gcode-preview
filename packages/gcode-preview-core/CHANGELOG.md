@@ -1,5 +1,35 @@
 # @chestnutlabs/gcode-preview-core
 
+## 0.15.0
+
+### Minor Changes
+
+- [#373](https://github.com/ChestnutLabs/gcode-preview/pull/373) [`8229075`](https://github.com/ChestnutLabs/gcode-preview/commit/8229075e2737c360c5d255e438ce140f4fbb13da) Thanks [@sobechestnut-dev](https://github.com/sobechestnut-dev)! - `progressivePreview` — a during-parse preview curtain over the [#60](https://github.com/ChestnutLabs/gcode-preview/issues/60) streaming preview
+
+  New public option/prop/attribute (renderer + core controller + all four adapters), plus a
+  `setProgressivePreview` control. It governs only what shows WHILE parsing — orthogonal to
+  `quality`/`qualityMode`, which govern the FINAL representation:
+  - **`'lines'`** (default, backward-compatible): stream the progressive line preview as it parses,
+    then replace it with the final build. Existing behaviour — unchanged for current consumers.
+  - **`'hold'`**: keep parsing/building and keep emitting progress (`previewAppend`; `parse-progress`
+    flows in every mode), but reveal NO incomplete/neutral line preview — the first thing shown is the
+    final, correctly-coloured, policy-quality build. A single clean reveal with a live progress signal,
+    removing the "renders neutral, then re-renders coloured" double-take on streamed files.
+  - **`'off'`**: suppress the progressive preview entirely (no geometry, no `previewAppend`) — the
+    consumer supplies its own loading/progress treatment until the final build is revealed.
+
+  The revealed representation is always the policy-correct one (full tubes at `full`, disclosed lines
+  at `adaptive` per budget) — never a silent large-file lines fallback (DD-023 alignment). 3D only;
+  the 2D renderer is a no-op (it has its own low-resource progressive cut).
+
+### Patch Changes
+
+- Updated dependencies [[`8229075`](https://github.com/ChestnutLabs/gcode-preview/commit/8229075e2737c360c5d255e438ce140f4fbb13da)]:
+  - @chestnutlabs/gcode-renderer-three@0.15.0
+  - @chestnutlabs/gcode-parser@0.15.0
+  - @chestnutlabs/gcode-renderer-2d@0.15.0
+  - @chestnutlabs/toolpath-core@0.15.0
+
 ## 0.14.0
 
 ### Minor Changes

@@ -1,5 +1,13 @@
 # @chestnutlabs/gcode-renderer-2d
 
+## 0.15.0
+
+### Patch Changes
+
+- Updated dependencies []:
+  - @chestnutlabs/gcode-colors@0.15.0
+  - @chestnutlabs/toolpath-core@0.15.0
+
 ## 0.14.0
 
 ### Patch Changes
