@@ -33,9 +33,10 @@ module.exports = {
         '@typescript-eslint/no-require-imports': 'off'
       }
     },
-    // Node-side ESM tooling (release scripts, doc/link checks, etc.): Node globals, not browser.
+    // Node-side ESM release tooling: Node globals, not browser. Scoped to tools/release so it
+    // doesn't pull browser/benchmark .mjs elsewhere under different global expectations.
     {
-      files: ['tools/**/*.mjs'],
+      files: ['tools/release/**/*.mjs'],
       env: { node: true, browser: false },
       parserOptions: { sourceType: 'module' }
     },
