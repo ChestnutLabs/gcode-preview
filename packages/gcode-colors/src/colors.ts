@@ -21,6 +21,13 @@ export type ColorMode =
   | { mode: 'tool'; palette: RGB[]; fallback?: RGB }
   | { mode: 'feature'; palette: RGB[]; fallback: RGB }
   | { mode: 'colorChange'; palette: RGB[]; fallback: RGB }
+  // Color-by-the-file's-own-filament-colours: a SEMANTIC request to colour by tool using the source's own
+  // filament colours (`metadata.filaments[].color`), so a consumer needn't re-supply a palette the parser
+  // already knows. These colours live in parse METADATA, not the IR, so this mode is **resolved by the
+  // metadata-aware layer** (the `gcode-preview-core` controller) into a `tool` palette before the colorer
+  // sees it. Reaching the colorer unresolved (a direct renderer user with no metadata) is honestly neutral —
+  // never a fabricated colour.
+  | { mode: 'filament'; fallback?: RGB }
   // Color-by-speed (#177): map each segment's feedrate onto a ramp. Auto-ranged from the IR when
   // `range` is omitted (pass one to keep the scale stable across files). NaN feedrate → fallback.
   // Capability-gated by the caller on `feedrate` (as feature mode is on `featureRoles`).
@@ -166,6 +173,13 @@ export function createSegmentColorer(ir: ToolpathIR, mode: ColorMode): SegmentCo
       ir.colorChanges.length === 0 || mode.palette.length === 0
         ? mode.fallback
         : mode.palette[swapSlotAt(ir.colorChanges, i) % mode.palette.length];
+  }
+  if (mode.mode === 'filament') {
+    // Unresolved here: the file's filament colours live in parse METADATA, which the colorer has no access
+    // to. The metadata-aware layer (gcode-preview-core) resolves this to a `tool` palette before the colorer
+    // runs; if it reaches here it is honestly neutral (never a fabricated colour).
+    const fb = mode.fallback ?? DEFAULT_FALLBACK;
+    return () => fb;
   }
   if (mode.mode === 'feedrate') {
     const [lo, hi] = mode.range ?? feedrateRange(ir);
