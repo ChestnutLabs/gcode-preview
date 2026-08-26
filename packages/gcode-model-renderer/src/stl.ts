@@ -77,7 +77,8 @@ export function parseStl(source: Uint8Array | ArrayBuffer, limits?: ModelLimits)
       materials: 'unavailable',
       transforms: 'unavailable',
       multiObject: 'unavailable',
-      instanced: 'unavailable'
+      instanced: 'unavailable',
+      plates: 'unavailable'
     }
   };
 }

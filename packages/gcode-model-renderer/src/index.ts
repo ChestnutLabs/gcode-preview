@@ -21,4 +21,13 @@ export { computeCacheKey, defaultEnvId } from './cache-key.js';
 export { DEFAULT_LIMITS, resolveLimits, ModelParseError } from './limits.js';
 export type { ModelLimits, ResolvedLimits } from './limits.js';
 export { IDENTITY_MAT4 } from './scene-model.js';
-export type { ModelScene, ModelObject, ModelMaterial, MeshGeometry, ModelBounds, RGB, Mat4 } from './scene-model.js';
+export type {
+  ModelScene,
+  ModelObject,
+  ModelMaterial,
+  ModelPlateSummary,
+  MeshGeometry,
+  ModelBounds,
+  RGB,
+  Mat4
+} from './scene-model.js';

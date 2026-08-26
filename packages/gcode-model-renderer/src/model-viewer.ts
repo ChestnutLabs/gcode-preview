@@ -28,7 +28,7 @@ import { ModelContent } from './model-content.js';
 import { DEFAULT_MODEL_LOADERS, resolveModelScene, type ModelLoader, type ModelSourceInput } from './loaders.js';
 import { ModelParseError, type ModelLimits } from './limits.js';
 import type { ModelBackground, PresentationView } from './model-renderer.js';
-import { sceneInstanceCount, type ModelBounds, type ModelScene } from './scene-model.js';
+import { sceneInstanceCount, type ModelBounds, type ModelPlateSummary, type ModelScene } from './scene-model.js';
 
 export interface ModelViewerOptions {
   /** Loader registry (open `kind`). Default: `[stlLoader, threeMfLoader]`. */
@@ -65,6 +65,12 @@ export interface ModelReadyInfo {
    * (DD-022 Phase 2); reserved so the field is stable.
    */
   decimationApplied: number;
+  /**
+   * Declared plate structure (DD-025), present only when the source explicitly declares plates
+   * (`capabilities.plates === 'known'`). A consumer builds a plate selector from `plates.list`; absent for a
+   * single/plate-less source. `active` is the source's declared active plate id when present.
+   */
+  plates?: { list: ModelPlateSummary[]; active?: number };
   // Reserved additive extension (not v1): `objects?: { name?: string; materials?: Confidence }[]`.
 }
 
@@ -176,6 +182,7 @@ export function createModelViewer(canvas: RenderTargetCanvas, options: ModelView
         instancedCount: sceneInstanceCount(parsed),
         decimationApplied: 1
       };
+      if (parsed.plates !== undefined) info.plates = parsed.plates;
       // Last-wins: a newer setSource (or a dispose) superseded this one — discard without mutating.
       if (my !== sourceToken || disposed || stage === null) return info;
 

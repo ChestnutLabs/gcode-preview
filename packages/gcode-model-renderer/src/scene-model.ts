@@ -66,14 +66,47 @@ export interface ModelObject {
    * transforms (GPU instancing), so memory scales with unique geometry, not copy count.
    */
   instances?: Mat4[];
+  /**
+   * Per-**placement** plate membership (DD-025): `plateIds[i]` is the {@link ModelPlateSummary.id} (plater
+   * id) of placement `i` — aligned with {@link instances} when present, else index 0 is the single placement at
+   * {@link transform}. Plate membership lives on the placement, not the master, because the same reused
+   * master can be instantiated on more than one plate. Absent ⇒ the source declared no plate structure
+   * (`capabilities.plates: 'unavailable'`), never fabricated.
+   */
+  plateIds?: number[];
   /** Omitted ⇒ no source material ⇒ neutral default render + `capabilities.materials: 'unavailable'`. */
   material?: ModelMaterial;
+}
+
+/**
+ * One declared plate in a multi-plate source (DD-025), paralleling the toolpath-side `PlateSummary`.
+ * Present only when the source **explicitly** declares plate structure (Bambu/Orca
+ * `Metadata/model_settings.config`); an undeclared/implicit single plate is not summarized here.
+ */
+export interface ModelPlateSummary {
+  /** The source's plater id (`plater_id`), stable within the scene. */
+  id: number;
+  /** Source-declared plate name when present and non-empty. */
+  name?: string;
+  /** Distinct master objects referenced by this plate's placements (a master shared across plates counts in each). */
+  objectCount: number;
+  /** Placements assigned to this plate. */
+  instanceCount: number;
+  /** Axis-aligned bounds of this plate's placements, in scene units. */
+  bounds: ModelBounds;
 }
 
 /** A presentation scene: one or more objects plus capability honesty about what the source carried. */
 export interface ModelScene {
   objects: ModelObject[];
   bounds: ModelBounds;
+  /**
+   * Declared plate structure (DD-025). Present only when the source **explicitly** declares plates; a
+   * consumer shows a plate selector only when `capabilities.plates === 'known'`. `active` is the source's
+   * active/default plate id when declared (a consumer's natural initial selection — the renderer never
+   * forces all-plates).
+   */
+  plates?: { list: ModelPlateSummary[]; active?: number };
   /** What the source actually carried (DD-001 ethos — never fabricated). */
   capabilities: {
     /** `'known'` when the source assigned colors/materials, else `'unavailable'`. */
@@ -85,6 +118,9 @@ export interface ModelScene {
     /** `'known'` when the source reused geometry via instances (more placements than unique masters), so
      *  the scene preserved it as GPU instancing (DD-022); `'unavailable'` otherwise. */
     instanced: Confidence;
+    /** `'known'` when the source **explicitly** declares plate structure (incl. an explicit single plate);
+     *  `'unavailable'` for undeclared/implicit plate structure (DD-025). */
+    plates: Confidence;
   };
 }
 
