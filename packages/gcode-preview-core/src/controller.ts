@@ -47,6 +47,7 @@ import {
   type ToolpathTime,
   type Warning
 } from '@chestnutlabs/toolpath-core';
+import { resolveColorMode } from './color-resolve.js';
 
 /** Session/renderer events, re-emitted, plus the controller's own lifecycle events. */
 export type PreviewEvent =
@@ -254,6 +255,10 @@ export function createPreviewController(options: PreviewControllerOptions = {}):
   let timeAxis: ToolpathTime | null = null;
   let lastMachine: MachineGeometry | undefined;
   let mapper: ProgressMapper | null = null;
+  // The consumer's requested colour mode, kept so a `filament` request (colour by the file's own filament
+  // colours) can be resolved against the parse metadata as each file loads (DD-024 flash fix).
+  let requestedColorMode: ColorMode | undefined = options.renderer?.colorMode;
+  let lastMetadata: DialectMetadata | undefined;
   let consumerVolumeSet = options.renderer?.buildVolume !== undefined;
   let activeParse: Promise<unknown> | null = null;
   let resizeObserver: { disconnect(): void } | null = null;
@@ -351,7 +356,7 @@ export function createPreviewController(options: PreviewControllerOptions = {}):
       applyRendererReady(
         canvas,
         new LayerView2DRenderer(canvas, {
-          colorMode: r.colorMode,
+          colorMode: resolveColorMode(requestedColorMode, lastMetadata, lastIR),
           adjacentLayers: r.adjacentLayers,
           ghostOpacity: r.ghostOpacity
         })
@@ -369,7 +374,7 @@ export function createPreviewController(options: PreviewControllerOptions = {}):
           cameraMode: r.cameraMode,
           frameContent: r.frameContent,
           interactionQuality: r.interactionQuality,
-          colorMode: r.colorMode,
+          colorMode: resolveColorMode(requestedColorMode, lastMetadata, lastIR),
           tube: r.tube,
           theme: r.theme,
           createRenderer: r.createRenderer,
@@ -413,6 +418,7 @@ export function createPreviewController(options: PreviewControllerOptions = {}):
     try {
       const result = await run;
       lastIR = result.ir;
+      lastMetadata = result.metadata;
       lastMachine = result.metadata?.machine;
       mapper = createProgressMapper(result.ir, { fileSizeBytes: bytes });
       // Time axis (#181): prefer the slicer's own estimate (#183) for the total; the kinematic axis
@@ -425,7 +431,15 @@ export function createPreviewController(options: PreviewControllerOptions = {}):
         renderer !== null
           ? { layerCount: renderer.layerCount, segmentCount: renderer.segmentCount }
           : { layerCount: result.ir.layers.length, segmentCount: result.ir.segments.count };
-      if (renderer !== null) renderer.setIR(result.ir);
+      if (renderer !== null) {
+        // Resolve a `filament` colour request against THIS file's metadata BEFORE the build, so the first
+        // visible pass is already coloured from the source's own filament colours — no neutral-then-recolor
+        // flash (DD-024). A pass-through mode is unchanged.
+        if (requestedColorMode?.mode === 'filament') {
+          renderer.setColorMode(resolveColorMode(requestedColorMode, result.metadata, result.ir) as ColorMode);
+        }
+        renderer.setIR(result.ir);
+      }
       mutate({
         summary: {
           segments: result.ir.segments.count,
@@ -486,8 +500,12 @@ export function createPreviewController(options: PreviewControllerOptions = {}):
     // Availability is IR/renderer-dependent; before the renderer is ready we optimistically queue
     // and report true (the mode applies once bound). Callers can re-check after `parse-complete`.
     setColorMode: (m) => {
-      if (renderer !== null) return renderer.setColorMode(m);
-      pendingOps.push((r) => r.setColorMode(m));
+      // Remember the request so a `filament` mode re-resolves per file; resolve it against the current
+      // metadata before handing the concrete mode to the renderer (DD-024).
+      requestedColorMode = m;
+      const resolved = (resolveColorMode(m, lastMetadata, lastIR) ?? m) as ColorMode;
+      if (renderer !== null) return renderer.setColorMode(resolved);
+      pendingOps.push((r) => r.setColorMode(resolved));
       return true;
     },
     setQuality: (q) => withRenderer((r) => r.setQuality(q)),
