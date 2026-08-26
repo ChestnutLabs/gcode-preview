@@ -13,6 +13,7 @@ import { createDialectRunner } from '../registry';
 import { prusaSlicer } from '../prusaslicer';
 import { orcaBambu } from '../orca-bambu';
 import { cura } from '../cura';
+import { ideaMaker } from '../ideamaker';
 import { klipper, marlin, repRap } from '../firmware';
 import { decodeBase64, parseAreaPoints } from '../annotate';
 import { BufferedAnnotationSink } from '../sink';
@@ -28,7 +29,7 @@ const loadAnnotation = (name: string): string =>
     'utf8'
   );
 
-const ALL_ADAPTERS = () => [prusaSlicer(), orcaBambu(), cura(), klipper(), marlin(), repRap()];
+const ALL_ADAPTERS = () => [prusaSlicer(), orcaBambu(), cura(), ideaMaker(), klipper(), marlin(), repRap()];
 
 /** Run text through parse + a dialect run exactly like the worker does. */
 function annotatedParse(text: string) {
@@ -379,5 +380,52 @@ describe('wipe move annotation (DD-016, #182)', () => {
     expect(after & MoveKind.Extrude).toBe(MoveKind.Extrude);
     expect(after).toBe(base | MoveKind.Wipe);
     expect(ir.header.warnings.some((w) => w.code === 'dialect-kind-not-allowlisted')).toBe(true);
+  });
+});
+
+describe('ideaMaker adapter (DD-026 T1)', () => {
+  it('captures ;TYPE: roles + PRINTING_ID object/non-object state (RR-007 §5.6)', () => {
+    // ideaMaker marks membership with a `;PRINTING: <name>` + `;PRINTING_ID: <n>` STATE channel;
+    // `;PRINTING_ID: -1` (NON-OBJECT) is housekeeping, `n≥0` is the model.
+    const gcode = [
+      ';Sliced by ideaMaker 4.1.1.5050, 2026-01-01 00:00:00 UTC',
+      'G21',
+      'G90',
+      'M83',
+      ';PRINTING: NON-OBJECT',
+      ';PRINTING_ID: -1',
+      ';TYPE:RAFT',
+      'G1 X10 Y262 E1',
+      ';PRINTING: solution.STL',
+      ';PRINTING_ID: 0',
+      ';TYPE:WALL-OUTER',
+      'G1 X30 Y120 E1',
+      'G1 X35 Y140 E1',
+      ';PRINTING: NON-OBJECT',
+      ';PRINTING_ID: -1',
+      ';TYPE:WIPE-TOWER',
+      'G1 X60 Y260 E1'
+    ].join('\n');
+    const { ir } = annotatedParse(gcode);
+
+    expect(ir.header.dialects.some((d) => d.id === 'ideamaker')).toBe(true);
+    expect(ir.header.capabilities.featureRoles).toBe('known');
+    const roles = new Set(Array.from(ir.segments.feature));
+    expect(roles.has(FeatureRole.Brim)).toBe(true); // RAFT → Brim
+    expect(roles.has(FeatureRole.ExternalPerimeter)).toBe(true); // WALL-OUTER
+
+    // Object membership: only the PRINTING_ID:0 body is object!=0; RAFT/WIPE-TOWER (NON-OBJECT) are 0.
+    expect(ir.header.capabilities.objects).toBe('known');
+    expect(new Set(Array.from(ir.segments.object)).has(1)).toBe(true);
+    expect(ir.objects[0]).toEqual({ id: '1', name: 'solution.STL' });
+    // The raft extrude (before PRINTING_ID:0) and the wipe-tower extrude (after -1) are housekeeping.
+    const objForY = (targetY: number): number => {
+      for (let i = 0; i < ir.segments.count; i++)
+        if (Math.round(ir.segments.y1[i]) === targetY) return ir.segments.object[i];
+      return -99;
+    };
+    expect(objForY(262)).toBe(0); // raft (NON-OBJECT)
+    expect(objForY(260)).toBe(0); // wipe tower (NON-OBJECT)
+    expect(objForY(140)).toBe(1); // object body
   });
 });
