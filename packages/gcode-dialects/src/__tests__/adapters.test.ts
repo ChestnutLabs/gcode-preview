@@ -208,6 +208,41 @@ describe('Cura + firmware adapters (#76)', () => {
     expect(roles.has(FeatureRole.SolidInfill)).toBe(true); // SKIN
   });
 
+  it('Cura `;MESH:` is a hint, NOT membership — the prime tower is never framed as model (DD-026 T1, RR-007 §5.2)', () => {
+    // Cura has no hard object channel. `;MESH:<name>` marks a mesh-state transition, but a model mesh
+    // name stays active immediately *before* a `;TYPE:PRIME-TOWER` (RR-007 §5.2) — so wiring MESH to
+    // the object channel would wrongly pull the tower into the model's membership/bounds. This locks in
+    // the honest behavior: MESH fabricates NO membership, `objects` stays unavailable, and the object
+    // column is empty. Regression guard against a future naive `MESH → object` wiring.
+    const gcode = [
+      ';Generated with Cura_SteamEngine 5.8.1',
+      'G21',
+      'G90',
+      'M83',
+      ';MESH:chips.stl',
+      ';TYPE:WALL-OUTER',
+      'G1 X30 Y30 E1',
+      'G1 X40 Y30 E1',
+      // The dangerous case: the model mesh name is STILL active when the prime tower begins.
+      ';TYPE:PRIME-TOWER',
+      'G1 X70 Y70 E1',
+      ';MESH:NONMESH',
+      'G1 X5 Y5 E0'
+    ].join('\n');
+    const { ir } = annotatedParse(gcode);
+
+    // Cura detected; features captured (unchanged behavior).
+    expect(ir.header.dialects.some((d) => d.id === 'cura')).toBe(true);
+    expect(ir.header.capabilities.featureRoles).toBe('known');
+    const roles = new Set(Array.from(ir.segments.feature));
+    expect(roles.has(FeatureRole.ExternalPerimeter)).toBe(true); // WALL-OUTER
+    expect(roles.has(FeatureRole.Custom)).toBe(true); // PRIME-TOWER → generic, never model
+
+    // The guard: `;MESH:` created NO object membership.
+    expect(ir.header.capabilities.objects ?? 'unavailable').not.toBe('known');
+    expect(new Set(Array.from(ir.segments.object))).toEqual(new Set([0]));
+  });
+
   it('PrusaSlicer + Klipper COMPOSE on a Klipper-targeted file (acceptance case)', () => {
     const { ir, metadata } = annotatedParse(load('klipper-prusa-sample.gcode'));
     const ids = ir.header.dialects.map((d) => d.id).sort();
