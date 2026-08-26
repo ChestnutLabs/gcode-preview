@@ -17,6 +17,7 @@ import type {
   CameraView,
   ColorMode,
   QualityMode,
+  ProgressivePreview,
   QualityPolicy,
   Theme,
   TubeOptions
@@ -47,6 +48,8 @@ export const GcodePreview = defineComponent({
     buildVolume: { type: Object as PropType<BuildVolumeDef | MachineGeometry>, default: undefined },
     quality: { type: String as PropType<QualityMode | 'auto'>, default: 'auto' },
     qualityMode: { type: String as PropType<QualityPolicy>, default: undefined },
+    /** #60 curtain: 'lines' (default, stream the preview), 'hold' (reveal only the final build), or 'off'. */
+    progressivePreview: { type: String as PropType<ProgressivePreview>, default: undefined },
     /** #150 (DD-009 D3): camera projection. */
     cameraMode: { type: String as PropType<CameraMode>, default: 'perspective' },
     /** #306/#6: frame the printed 'object' (excl. skirt/prime) or 'all' extrusion. Default 'all'. */
@@ -90,6 +93,7 @@ export const GcodePreview = defineComponent({
           | 'buildVolume'
           | 'quality'
           | 'qualityMode'
+          | 'progressivePreview'
           | 'cameraMode'
           | 'frameContent'
           | 'interactionQuality'
@@ -132,6 +136,7 @@ export const GcodePreview = defineComponent({
         buildVolume: 'bed' in (props.buildVolume ?? {}) ? undefined : (props.buildVolume as BuildVolumeDef | undefined),
         quality: props.quality,
         qualityMode: props.qualityMode,
+        progressivePreview: props.progressivePreview,
         cameraMode: props.cameraMode,
         frameContent: props.frameContent,
         interactionQuality: props.interactionQuality,
@@ -271,6 +276,12 @@ export const GcodePreview = defineComponent({
       () => props.qualityMode,
       (mode) => {
         if (mode !== undefined) preview.controls.setQualityMode(mode);
+      }
+    );
+    watch(
+      () => props.progressivePreview,
+      (mode) => {
+        if (mode !== undefined) preview.controls.setProgressivePreview(mode);
       }
     );
     watch(

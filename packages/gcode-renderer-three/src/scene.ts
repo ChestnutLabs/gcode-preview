@@ -62,6 +62,20 @@ import { InteractiveStage, type CameraMode, type CameraView, type CameraState } 
 /** §4.3 quality tiers. `auto` picks by segment count (chooseQuality). */
 export type QualityMode = 'lines' | 'tubes';
 
+/**
+ * How the transient during-parse preview (#60) is presented — a curtain over the neutral streaming
+ * lines that get replaced by the final build. Orthogonal to `quality`/`qualityMode` (which govern the
+ * FINAL representation): this only affects what shows WHILE parsing.
+ *   - `'lines'` (default): stream the progressive line preview as it parses — a fast visual signal,
+ *     then replaced by the final build. Backward-compatible behaviour.
+ *   - `'hold'`: keep parsing/building and keep emitting progress (`previewAppend`), but DON'T reveal
+ *     the incomplete/neutral line preview — the first thing shown is the final, correctly-coloured,
+ *     policy-quality build. A single clean reveal with a live progress signal.
+ *   - `'off'`: suppress the progressive preview entirely and emit no preview progress — the consumer
+ *     supplies its own loading/progress treatment until the final build is revealed.
+ */
+export type ProgressivePreview = 'lines' | 'hold' | 'off';
+
 // Camera types + the preset-view table live in the shared interactive stage (DD-021 Phase 0);
 // re-exported here so existing import paths (index re-exports them from './scene.js') keep working.
 export type { CameraMode, CameraView, CameraState } from './interactive-stage.js';
@@ -125,6 +139,13 @@ export interface ToolpathRendererOptions {
    *   - `'fast'`: explicitly trade fidelity for responsiveness — render as flat lines.
    */
   qualityMode?: QualityPolicy;
+  /**
+   * During-parse preview presentation (#60 curtain): `'lines'` (default, stream the progressive line
+   * preview), `'hold'` (keep progress but reveal only the final coloured build — a single clean
+   * reveal), or `'off'` (no progressive geometry or preview progress; consumer drives its own
+   * loading treatment). Does not change the final representation.
+   */
+  progressivePreview?: ProgressivePreview;
   /** Camera projection (#150, DD-009 D3); default 'perspective'. */
   cameraMode?: CameraMode;
   /** Framing target (#306/#6): 'all' extrusion (default) or the printed 'object' (excludes skirt/prime). */
@@ -254,6 +275,8 @@ export class ToolpathRenderer {
   private active: QualityMode = 'lines';
   /** Fidelity policy (DD-023 §4 D6): 'adaptive' (default) | 'full' | 'fast'. */
   private qualityMode: QualityPolicy;
+  /** During-parse preview presentation (#60 curtain): 'lines' (default) | 'hold' | 'off'. */
+  private progressivePreview: ProgressivePreview;
   private readonly tubeOptions: TubeOptions;
   /** CPU byte budget that bounds tube memory by coarsening the cross-section (RR-006 correction). */
   private readonly tubeByteBudget: number;
@@ -321,6 +344,7 @@ export class ToolpathRenderer {
     // rough memory knob still gets bounded memory; the mechanism just changed to be continuity-preserving.
     this.tubeByteBudget = opts.tubeByteBudget ?? TUBE_CPU_BYTE_BUDGET;
     this.qualityMode = opts.qualityMode ?? 'adaptive';
+    this.progressivePreview = opts.progressivePreview ?? 'lines';
     // Default scheduler: rAF for frame alignment, with a timeout backstop so
     // work still progresses when rAF is suspended (hidden/throttled tabs —
     // otherwise a parse finishing in a background tab would never finish
@@ -403,14 +427,22 @@ export class ToolpathRenderer {
 
   /**
    * Progressive preview (#60): append a path-aligned partial slice as transient
-   * geometry. Slices always render as lines (cheap, allocation-light) with
-   * cumulative every-Nth decimation past the §4.4 thresholds; the eventual
-   * `setIR(finalIR)` REPLACES the whole preview set. Preview meshes ignore
-   * layer-range/scrub clipping (their indices are slice-local); kind visibility
-   * still applies.
+   * geometry. Presentation is governed by `progressivePreview` (the #60 curtain):
+   *   - `'lines'` (default): render the slice as lines (cheap, allocation-light) with
+   *     cumulative every-Nth decimation past the §4.4 thresholds; the eventual
+   *     `setIR(finalIR)` REPLACES the whole preview set. Preview meshes ignore
+   *     layer-range/scrub clipping (their indices are slice-local); kind visibility
+   *     still applies.
+   *   - `'hold'`: track progress and emit `previewAppend`, but build/reveal NO preview
+   *     geometry — the viewer sees nothing until the final, correctly-coloured build
+   *     from `setIR`. A single clean reveal with a live progress signal.
+   *   - `'off'`: no preview geometry and no `previewAppend` — the consumer drives its own
+   *     loading treatment; the old scene (if any) persists until `setIR` replaces it.
    */
   appendPartial(slice: ToolpathIR): void {
     if (this.disposed || slice.segments.count === 0) return;
+    // 'off': suppress the progressive preview entirely (no geometry, no progress event).
+    if (this.progressivePreview === 'off') return;
     if (this.ir !== null) {
       // Partials for a NEW parse while an old final IR is on screen: the old
       // scene is stale — drop it and start the preview fresh.
@@ -421,27 +453,35 @@ export class ToolpathRenderer {
     const firstPartial = this.previewSegments === 0;
     this.previewSegments += slice.segments.count;
     const decimation = autoDecimation(this.previewSegments);
-    let result: ChunkBuildResult;
-    try {
-      result = buildChunks(slice, { decimation });
-    } catch (err) {
-      this.emit({ type: 'error', code: 'E_PREVIEW_BUILD', message: err instanceof Error ? err.message : String(err) });
-      return;
+    // 'hold' keeps the progress signal but reveals no incomplete/neutral geometry — skip the
+    // line-preview build so the final coloured build (via setIR) is the first thing shown.
+    if (this.progressivePreview === 'lines') {
+      let result: ChunkBuildResult;
+      try {
+        result = buildChunks(slice, { decimation });
+      } catch (err) {
+        this.emit({
+          type: 'error',
+          code: 'E_PREVIEW_BUILD',
+          message: err instanceof Error ? err.message : String(err)
+        });
+        return;
+      }
+      for (const chunk of result.chunks) {
+        const geometry = new BufferGeometry();
+        geometry.setAttribute('position', new BufferAttribute(chunk.positions, 3));
+        geometry.setAttribute('color', new BufferAttribute(buildChunkColors(slice, chunk, this.colorMode), 3));
+        const mesh = new LineSegments(geometry, new LineBasicMaterial({ vertexColors: true }));
+        mesh.name = `preview:${chunk.kind}`;
+        mesh.userData.chunk = chunk;
+        mesh.userData.preview = true;
+        mesh.visible = this.kindVisible[chunk.kind];
+        this.toolpathGroup.add(mesh);
+      }
+      const o = slice.header.originOffset;
+      this.toolpathGroup.position.set(o.x, o.y, o.z);
     }
-    for (const chunk of result.chunks) {
-      const geometry = new BufferGeometry();
-      geometry.setAttribute('position', new BufferAttribute(chunk.positions, 3));
-      geometry.setAttribute('color', new BufferAttribute(buildChunkColors(slice, chunk, this.colorMode), 3));
-      const mesh = new LineSegments(geometry, new LineBasicMaterial({ vertexColors: true }));
-      mesh.name = `preview:${chunk.kind}`;
-      mesh.userData.chunk = chunk;
-      mesh.userData.preview = true;
-      mesh.visible = this.kindVisible[chunk.kind];
-      this.toolpathGroup.add(mesh);
-    }
-    const o = slice.header.originOffset;
-    this.toolpathGroup.position.set(o.x, o.y, o.z);
-    // Track bounds for camera framing before the final IR exists.
+    // Track bounds for camera framing before the final IR exists (both 'lines' and 'hold').
     const b = slice.boundsWithTravel;
     if (Number.isFinite(b.min.x)) {
       if (this.previewBounds === null) {
@@ -455,8 +495,11 @@ export class ToolpathRenderer {
       }
     }
     this.emit({ type: 'previewAppend', cumulativeSegments: this.previewSegments, decimationApplied: decimation });
-    if (firstPartial) this.frame();
-    else this.render();
+    // 'hold' reveals nothing here — no frame/render until setIR builds the final representation.
+    if (this.progressivePreview === 'lines') {
+      if (firstPartial) this.frame();
+      else this.render();
+    }
   }
 
   /** Retain the IR and (re)build the scene from it incrementally. */
@@ -1316,6 +1359,15 @@ export class ToolpathRenderer {
       this.startBuild(this.ir);
       this.render();
     }
+  }
+
+  /**
+   * Set the during-parse preview curtain (#60): 'lines' | 'hold' | 'off'. Governs only the transient
+   * preview during the NEXT parse; no effect on an already-built scene, so no rebuild.
+   */
+  setProgressivePreview(mode: ProgressivePreview): void {
+    if (this.disposed) return;
+    this.progressivePreview = mode;
   }
 
   /** Currently built chunk meshes: LineSegments (lines/travel) or Mesh (tubes). */

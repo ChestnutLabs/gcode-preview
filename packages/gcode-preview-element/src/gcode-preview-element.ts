@@ -39,6 +39,7 @@ export type ElementRendererOptions = Omit<
   | 'buildVolume'
   | 'quality'
   | 'qualityMode'
+  | 'progressivePreview'
   | 'cameraMode'
   | 'frameContent'
   | 'interactionQuality'
@@ -52,6 +53,7 @@ type PreviewControllerRenderer = NonNullable<Parameters<typeof createPreviewCont
 const OBSERVED = [
   'quality',
   'quality-mode',
+  'progressive-preview',
   'camera-mode',
   'frame-content',
   'interaction-quality',
@@ -161,6 +163,12 @@ export class GcodePreviewElement extends HTMLElement {
   }
   set qualityMode(v: string | null) {
     this.reflect('quality-mode', v);
+  }
+  get progressivePreview(): string | null {
+    return this.getAttribute('progressive-preview');
+  }
+  set progressivePreview(v: string | null) {
+    this.reflect('progressive-preview', v);
   }
   get cameraMode(): string | null {
     return this.getAttribute('camera-mode');
@@ -296,6 +304,7 @@ export class GcodePreviewElement extends HTMLElement {
         buildVolume: isMachine ? undefined : (this._buildVolume as BuildVolumeDef | undefined),
         quality: (this.getAttribute('quality') as 'auto' | 'lines' | 'tubes' | null) ?? 'auto',
         qualityMode: (this.getAttribute('quality-mode') as 'full' | 'adaptive' | 'fast' | null) ?? undefined,
+        progressivePreview: (this.getAttribute('progressive-preview') as 'lines' | 'hold' | 'off' | null) ?? undefined,
         cameraMode: (this.getAttribute('camera-mode') as CameraMode | null) ?? undefined,
         frameContent: (this.getAttribute('frame-content') as 'object' | 'all' | null) ?? undefined,
         interactionQuality: (this.getAttribute('interaction-quality') as 'off' | 'auto' | null) ?? undefined,
@@ -330,6 +339,9 @@ export class GcodePreviewElement extends HTMLElement {
         break;
       case 'quality-mode':
         if (value !== null) c.setQualityMode(value as 'full' | 'adaptive' | 'fast');
+        break;
+      case 'progressive-preview':
+        if (value !== null) c.setProgressivePreview(value as 'lines' | 'hold' | 'off');
         break;
       case 'camera-mode':
         if (value !== null) c.setCameraMode(value as CameraMode);

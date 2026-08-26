@@ -81,6 +81,7 @@ function makeHarness(
     target?: number;
     quality?: QualityMode | 'auto';
     qualityMode?: 'full' | 'adaptive' | 'fast';
+    progressivePreview?: 'lines' | 'hold' | 'off';
     tube?: TubeOptions;
     tubeByteBudget?: number;
     interactionQuality?: 'off' | 'auto';
@@ -104,6 +105,7 @@ function makeHarness(
     // opt into tubes/auto explicitly.
     quality: opts.quality ?? 'lines',
     qualityMode: opts.qualityMode,
+    progressivePreview: opts.progressivePreview,
     tube: opts.tube,
     tubeByteBudget: opts.tubeByteBudget,
     interactionQuality: opts.interactionQuality,
@@ -719,6 +721,48 @@ describe('tubes quality mode (phase 4)', () => {
     h.runTicks();
     expect(h.renderer.chunkMeshes.some((m) => m.userData.preview === true)).toBe(false);
     expect(h.renderer.chunkMeshes.length).toBeGreaterThan(0);
+  });
+
+  it("progressivePreview 'hold' reveals no preview geometry but keeps emitting progress (#60 curtain)", () => {
+    const h = makeHarness({ progressivePreview: 'hold' });
+    const camBefore = h.renderer.camera.position.clone();
+    h.renderer.appendPartial(makeIR(2, 5, { travelPerLayer: 1 }));
+    // No incomplete/neutral preview meshes are revealed...
+    expect(h.renderer.chunkMeshes.filter((m) => m.userData.preview === true).length).toBe(0);
+    // ...but the progress signal still flows, and the camera is NOT framed onto the hidden preview.
+    expect(h.events.some((e) => e.type === 'previewAppend')).toBe(true);
+    expect(h.renderer.camera.position.equals(camBefore)).toBe(true);
+
+    // The final build is the first thing shown — a single clean reveal.
+    h.renderer.setIR(makeIR(4, 6));
+    h.runTicks();
+    expect(h.renderer.chunkMeshes.some((m) => m.userData.preview === true)).toBe(false);
+    expect(h.renderer.chunkMeshes.length).toBeGreaterThan(0);
+  });
+
+  it("progressivePreview 'off' suppresses preview geometry AND preview progress", () => {
+    const h = makeHarness({ progressivePreview: 'off' });
+    h.renderer.appendPartial(makeIR(2, 5, { travelPerLayer: 1 }));
+    expect(h.renderer.chunkMeshes.filter((m) => m.userData.preview === true).length).toBe(0);
+    expect(h.events.some((e) => e.type === 'previewAppend')).toBe(false);
+    // The final build still reveals normally.
+    h.renderer.setIR(makeIR(4, 6));
+    h.runTicks();
+    expect(h.renderer.chunkMeshes.length).toBeGreaterThan(0);
+  });
+
+  it('setProgressivePreview switches the curtain for the next parse', () => {
+    const h = makeHarness(); // default 'lines'
+    h.renderer.appendPartial(makeIR(2, 5));
+    expect(h.renderer.chunkMeshes.filter((m) => m.userData.preview === true).length).toBeGreaterThan(0);
+    // Finalize the first parse.
+    h.renderer.setIR(makeIR(2, 5));
+    h.runTicks();
+
+    // Switch to 'hold'; the NEXT parse's preview reveals nothing (drops the old final, shows no lines).
+    h.renderer.setProgressivePreview('hold');
+    h.renderer.appendPartial(makeIR(2, 5));
+    expect(h.renderer.chunkMeshes.filter((m) => m.userData.preview === true).length).toBe(0);
   });
 
   it('appendPartial after a final IR starts a fresh preview (new parse)', () => {

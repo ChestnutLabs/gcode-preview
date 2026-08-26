@@ -26,6 +26,7 @@ import type {
   ColorMode,
   GLRendererLike,
   ProgressPresentationMode,
+  ProgressivePreview,
   QualityMode,
   QualityPolicy,
   RenderTargetCanvas,
@@ -99,6 +100,13 @@ export interface PreviewControllerOptions {
      * the geometry `quality` tier. 3D only.
      */
     qualityMode?: QualityPolicy;
+    /**
+     * During-parse preview presentation (#60 curtain): 'lines' (default, stream the progressive line
+     * preview), 'hold' (keep progress events but reveal only the final coloured build — a single clean
+     * reveal), or 'off' (no progressive geometry or preview progress; drive your own loading treatment).
+     * `parse-progress` events flow in every mode. 3D only.
+     */
+    progressivePreview?: ProgressivePreview;
     /** Camera projection (#150, DD-009 D3); default 'perspective'. 3D only. */
     cameraMode?: CameraMode;
     /** Framing target (#306/#6): 'all' extrusion (default) or the printed 'object'. 3D only. */
@@ -172,6 +180,8 @@ export interface GcodePreviewControls {
   setQuality(quality: QualityMode | 'auto'): void;
   /** Set the fidelity policy (DD-023 §4 D6): 'full' | 'adaptive' | 'fast'. 3D only. */
   setQualityMode(mode: QualityPolicy): void;
+  /** Set the during-parse preview curtain (#60): 'lines' | 'hold' | 'off'. Applies to the next parse. 3D only. */
+  setProgressivePreview(mode: ProgressivePreview): void;
   /** Switch camera projection (#150, DD-009 D3). */
   setCameraMode(mode: CameraMode): void;
   /** Snap to a preset orientation — top/front/iso/… (#268). Instant; preserves the projection.
@@ -381,6 +391,7 @@ export function createPreviewController(options: PreviewControllerOptions = {}):
           buildVolume: r.buildVolume,
           quality: r.quality ?? 'auto',
           qualityMode: r.qualityMode,
+          progressivePreview: r.progressivePreview,
           cameraMode: r.cameraMode,
           frameContent: r.frameContent,
           interactionQuality: r.interactionQuality,
@@ -520,6 +531,7 @@ export function createPreviewController(options: PreviewControllerOptions = {}):
     },
     setQuality: (q) => withRenderer((r) => r.setQuality(q)),
     setQualityMode: (m) => withRenderer((r) => r.setQualityMode(m)),
+    setProgressivePreview: (m) => withRenderer((r) => r.setProgressivePreview(m)),
     setCameraMode: (m) => withRenderer((r) => r.setCameraMode(m)),
     setView: (v) => withRenderer((r) => r.setView(v)),
     // Returns a value, so it can't queue: before the renderer is ready (or on 2D) there is no pose → null.

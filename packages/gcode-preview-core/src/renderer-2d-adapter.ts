@@ -23,6 +23,7 @@ import type {
   CameraMode,
   CameraState,
   CameraView,
+  ProgressivePreview,
   QualityMode,
   QualityPolicy,
   Theme
@@ -162,6 +163,11 @@ export class LayerView2DRenderer implements PreviewRenderer {
 
   setQualityMode(_mode: QualityPolicy): void {
     // The fidelity policy (tubes/decimation) is a 3D concern; the flat 2D layer view has no equivalent.
+  }
+
+  setProgressivePreview(_mode: ProgressivePreview): void {
+    // The #60 progressive-preview curtain governs the 3D streaming line preview; the 2D view has
+    // its own low-resource progressive "cut" (DD-014) and no equivalent knob.
   }
 
   setCameraMode(_mode: CameraMode): void {
