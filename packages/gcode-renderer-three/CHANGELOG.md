@@ -1,5 +1,45 @@
 # @chestnutlabs/gcode-renderer-three
 
+## 0.13.0
+
+### Minor Changes
+
+- [#358](https://github.com/ChestnutLabs/gcode-preview/pull/358) [`377fc70`](https://github.com/ChestnutLabs/gcode-preview/commit/377fc7076e42a6044a9e10f2d4b27bd99fa133f3) Thanks [@sobechestnut-dev](https://github.com/sobechestnut-dev)! - feat(renderer): shared client render-capability classifier (DD-023 Phase A)
+
+  Adds a pure, fail-safe WebGL render-capability classifier (`classifyRenderer`, `detectRenderCapability`,
+  `resolveCapability`) plus the `RenderCapability` / `CapabilityHint` / `QualityPolicy` types — the shared
+  seam a later phase uses to size a generous budget on hardware and a conservative one on software (DD-023 §4
+  D1). Classifies the **inner** renderer of an `ANGLE (...)` string (never the wrapper); an unrecognized
+  string or a blind `WEBGL_debug_renderer_info` extension resolves conservatively to software; a
+  GPU-fell-to-SwiftShader string classifies software (the safe direction). **No rendering behavior changes** —
+  this is the classifier + types only; the budget/`qualityMode` wiring lands in later phases.
+
+- [#361](https://github.com/ChestnutLabs/gcode-preview/pull/361) [`b8dd6a7`](https://github.com/ChestnutLabs/gcode-preview/commit/b8dd6a7ce05add28f922a7f71641eebe0778a146) Thanks [@sobechestnut-dev](https://github.com/sobechestnut-dev)! - feat(model): staged loading progress on createModelViewer (DD-024 Phase A)
+
+  Adds the shared, typed, consumer-neutral loading-progress contract (`LoadStage` / `LoadUnit` / `LoadProgress`
+  in `gcode-renderer-three`) and wires it into `createModelViewer` via a new `onProgress` option — closing the
+  gap where the model renderer emitted no progress at all (large models "felt hung"). Events carry typed
+  `stage` / `done` / `total` / `unit` (or an honest `indeterminate`) and **no human-facing copy** — the
+  consumer owns all wording/i18n. `setSource` emits `parsing` (indeterminate) → `building-geometry` with real
+  per-object counts → `ready`. Every event is **generation-scoped**: a superseded/cancelled `setSource` can
+  never advance the next load's progress. No render behavior changes.
+
+### Patch Changes
+
+- [#362](https://github.com/ChestnutLabs/gcode-preview/pull/362) [`3be5312`](https://github.com/ChestnutLabs/gcode-preview/commit/3be531219cede19168ddf042ee7954c14d73d74c) Thanks [@sobechestnut-dev](https://github.com/sobechestnut-dev)! - fix(renderer): tube memory budget counts only extrude segments, not travel/wipe (RR-006 correction)
+
+  The `tubes` budget check passed `totalSegmentsIncluded` — which sums extrude **and** travel/wipe segments —
+  to `tubeRadialForBudget`, but tube geometry is only built for `extrude` chunks (travel/wipe always render as
+  flat lines). On a plate with heavy inter-part travel (e.g. an 814-part full sheet), the non-tube travel
+  segments wildly inflated the count, so a file whose actual tube geometry would fit the budget fell back to
+  lines prematurely. The budget now counts only the extrude (tube-eligible) segments, so travel-heavy plates
+  render as continuous tubes instead of dropping to lines. `autoDecimation` was already extrude-only and is
+  unchanged; this only corrects the tube byte-budget check.
+
+- Updated dependencies [[`f14849d`](https://github.com/ChestnutLabs/gcode-preview/commit/f14849d5f88eb9957a75bccf2f14da75ebb44a4e)]:
+  - @chestnutlabs/gcode-colors@0.13.0
+  - @chestnutlabs/toolpath-core@0.13.0
+
 ## 0.12.0
 
 ### Minor Changes

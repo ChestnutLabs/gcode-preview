@@ -77,7 +77,8 @@ describe('parseStl', () => {
       materials: 'unavailable',
       transforms: 'unavailable',
       multiObject: 'unavailable',
-      instanced: 'unavailable'
+      instanced: 'unavailable',
+      plates: 'unavailable'
     });
     expect(scene.objects[0].material).toBeUndefined();
   });

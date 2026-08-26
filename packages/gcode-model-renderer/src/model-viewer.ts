@@ -21,6 +21,7 @@ import {
   type CameraView,
   type GLRendererLike,
   type InteractiveStageOptions,
+  type LoadProgress,
   type RenderTargetCanvas
 } from '@chestnutlabs/gcode-renderer-three';
 import type { Confidence } from '@chestnutlabs/toolpath-core';
@@ -28,7 +29,7 @@ import { ModelContent } from './model-content.js';
 import { DEFAULT_MODEL_LOADERS, resolveModelScene, type ModelLoader, type ModelSourceInput } from './loaders.js';
 import { ModelParseError, type ModelLimits } from './limits.js';
 import type { ModelBackground, PresentationView } from './model-renderer.js';
-import { sceneInstanceCount, type ModelBounds, type ModelScene } from './scene-model.js';
+import { sceneInstanceCount, type ModelBounds, type ModelPlateSummary, type ModelScene } from './scene-model.js';
 
 export interface ModelViewerOptions {
   /** Loader registry (open `kind`). Default: `[stlLoader, threeMfLoader]`. */
@@ -47,6 +48,12 @@ export interface ModelViewerOptions {
   createRenderer?: (canvas: RenderTargetCanvas) => GLRendererLike;
   /** Injected orbit controls (tests). Default: three `OrbitControls` via the stage. */
   createControls?: NonNullable<InteractiveStageOptions['createControls']>;
+  /**
+   * Staged loading-progress callback (DD-024): typed `stage`/`done`/`total`/`unit` events (no human copy),
+   * each tagged with the load `generation` so a consumer drops events from a superseded `setSource`. The
+   * consumer owns all wording/i18n. Events from a superseded load are not emitted.
+   */
+  onProgress?: (progress: LoadProgress) => void;
 }
 
 /** What the source actually carried, surfaced on `ready` (never fabricated — DD-001). */
@@ -65,6 +72,12 @@ export interface ModelReadyInfo {
    * (DD-022 Phase 2); reserved so the field is stable.
    */
   decimationApplied: number;
+  /**
+   * Declared plate structure (DD-025), present only when the source explicitly declares plates
+   * (`capabilities.plates === 'known'`). A consumer builds a plate selector from `plates.list`; absent for a
+   * single/plate-less source. `active` is the source's declared active plate id when present.
+   */
+  plates?: { list: ModelPlateSummary[]; active?: number };
   // Reserved additive extension (not v1): `objects?: { name?: string; materials?: Confidence }[]`.
 }
 
@@ -162,12 +175,22 @@ export function createModelViewer(canvas: RenderTargetCanvas, options: ModelView
 
   async function setSource(input: ModelSourceInput): Promise<ModelReadyInfo> {
     const my = ++sourceToken;
+    // Progress is generation-scoped (DD-024 §4 D5): only emit while THIS load is current, so a superseded
+    // load can never advance the next load's progress. Typed fields only — no human copy.
+    const onProgress = options.onProgress;
+    const progress = (p: Omit<LoadProgress, 'generation'>): void => {
+      if (onProgress !== undefined && my === sourceToken && !disposed) onProgress({ ...p, generation: my });
+    };
     if (stage === null || disposed) {
       const message = disposed ? 'model viewer is disposed' : 'WebGL renderer unavailable';
       emit({ type: 'error', code: 'E_MODEL_RENDERER_UNAVAILABLE', message });
       throw new ModelParseError('E_MODEL_RENDERER_UNAVAILABLE', message);
     }
     try {
+      // Parse/resolve is a single opaque async step here (unzip + XML parse); its total is unknown ⇒ honest
+      // indeterminate, not a fabricated bar. Finer parse-stage counts are a later phase (threading into the
+      // loader/parser); Phase A closes the biggest gap — the model renderer had NO progress at all.
+      progress({ stage: 'parsing', indeterminate: true });
       const parsed = await resolveModelScene(input, loaders, limits, filamentPalette ? { filamentPalette } : undefined);
       const info: ModelReadyInfo = {
         objectCount: parsed.objects.length,
@@ -176,13 +199,17 @@ export function createModelViewer(canvas: RenderTargetCanvas, options: ModelView
         instancedCount: sceneInstanceCount(parsed),
         decimationApplied: 1
       };
+      if (parsed.plates !== undefined) info.plates = parsed.plates;
       // Last-wins: a newer setSource (or a dispose) superseded this one — discard without mutating.
       if (my !== sourceToken || disposed || stage === null) return info;
 
-      content.setScene(parsed);
+      const total = parsed.objects.length;
+      progress({ stage: 'building-geometry', done: 0, total, unit: 'objects' });
+      content.setScene(parsed, (done) => progress({ stage: 'building-geometry', done, total, unit: 'objects' }));
       currentScene = parsed;
       const f = content.framing;
       if (f !== null) stage.frameTo(f.center, f.radius);
+      progress({ stage: 'ready' });
       emit({ type: 'ready', info });
       return info;
     } catch (err) {

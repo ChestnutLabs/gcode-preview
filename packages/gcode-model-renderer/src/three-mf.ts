@@ -25,6 +25,7 @@ import {
   type MeshGeometry,
   type ModelBounds,
   type ModelObject,
+  type ModelPlateSummary,
   type ModelScene,
   type RGB
 } from './scene-model.js';
@@ -344,6 +345,8 @@ function parseModelPart(xml: string, lim: ResolvedLimits): ModelPart {
 interface MasterRecord {
   object: ModelObject;
   instances: Mat4[];
+  /** Plate id of each placement (DD-025), aligned with {@link instances}; empty when no plates declared. */
+  plates: number[];
   localMin: [number, number, number];
   localMax: [number, number, number];
 }
@@ -367,6 +370,45 @@ interface BuildState {
   totalTris: number;
   /** Total placements across all masters. */
   totalInstances: number;
+  /** Declared plate structure (DD-025), or `null` when the source declares none. */
+  plateConfig: PlateConfig | null;
+  /** Per-object/part 1-based extruder assignments (Bambu/Orca colour convention), keyed by id. */
+  objectExtruders: Map<string, number>;
+  /** Plate id of the placement currently being resolved (DD-025); inherited by every `placeMaster` in it. */
+  currentPlateId: number | undefined;
+  /** Per-plate accumulators (DD-025), keyed by plater_id. */
+  plateBounds: Map<number, { min: [number, number, number]; max: [number, number, number] }>;
+  plateInstanceCount: Map<number, number>;
+  plateObjects: Map<number, Set<string>>;
+}
+
+/**
+ * Record a placement's plate membership (DD-025): bump the plate's instance count, note the master it
+ * references (distinct-object count), and expand the plate's bounds by this placement's transformed AABB.
+ * A no-op when no plate is active (source declares no plates).
+ */
+function recordPlacementPlate(
+  st: BuildState,
+  masterKey: string,
+  localMin: readonly [number, number, number],
+  localMax: readonly [number, number, number],
+  affine: number[]
+): void {
+  const p = st.currentPlateId;
+  if (p === undefined) return;
+  st.plateInstanceCount.set(p, (st.plateInstanceCount.get(p) ?? 0) + 1);
+  let objs = st.plateObjects.get(p);
+  if (objs === undefined) {
+    objs = new Set();
+    st.plateObjects.set(p, objs);
+  }
+  objs.add(masterKey);
+  let b = st.plateBounds.get(p);
+  if (b === undefined) {
+    b = { min: [Infinity, Infinity, Infinity], max: [-Infinity, -Infinity, -Infinity] };
+    st.plateBounds.set(p, b);
+  }
+  expandBoundsByBox(b, localMin, localMax, affine);
 }
 
 /**
@@ -389,8 +431,10 @@ function placeMaster(
   const existing = st.masters.get(key);
   if (existing !== undefined) {
     existing.instances.push(mat4);
+    if (st.currentPlateId !== undefined) existing.plates.push(st.currentPlateId);
     st.totalInstances++;
     expandBoundsByBox(st, existing.localMin, existing.localMax, affine);
+    recordPlacementPlate(st, key, existing.localMin, existing.localMax, affine);
     return;
   }
 
@@ -456,10 +500,33 @@ function placeMaster(
   const geometry: MeshGeometry = colors !== null ? { positions, colors } : { positions };
   const object: ModelObject = { id: key, geometry, transform: mat4 };
   if (obj.name !== undefined) object.name = obj.name;
-  st.masters.set(key, { object, instances: [mat4], localMin, localMax });
+  // Bambu/Orca per-object/part extruder solid colour (maintainer-approved): when the object declares no
+  // basematerials/colorgroup/paint colour, but the source assigns it an extruder and the project's
+  // `filament_colour` palette has that slot, colour the whole object with `palette[extruder - 1]` (a solid
+  // material colour). Honesty preserved: only when the source actually declares the mapping AND the palette
+  // resolves — otherwise the object stays neutral (`materials: 'unavailable'`). Never guessed.
+  if (!objHasColor && st.paintPalette.length > 0) {
+    const oid = key.substring(key.lastIndexOf('#') + 1);
+    const extruder = st.objectExtruders.get(oid);
+    if (extruder !== undefined) {
+      const col = st.paintPalette[extruder - 1];
+      if (col !== undefined) {
+        object.material = { color: col };
+        st.anyColor = true;
+      }
+    }
+  }
+  st.masters.set(key, {
+    object,
+    instances: [mat4],
+    plates: st.currentPlateId !== undefined ? [st.currentPlateId] : [],
+    localMin,
+    localMax
+  });
   st.built.push(object);
   st.totalInstances++;
   expandBoundsByBox(st, localMin, localMax, affine);
+  recordPlacementPlate(st, key, localMin, localMax, affine);
 }
 
 export interface Parse3mfOptions {
@@ -474,6 +541,73 @@ export interface Parse3mfOptions {
 
 const hexPaletteToLinear = (hexes: readonly (string | undefined)[]): RGB[] =>
   hexes.map((hex) => (hex !== undefined ? (srgbHexToLinear(hex) ?? [0.8, 0.8, 0.82]) : [0.8, 0.8, 0.82]));
+
+/** Declared plate structure parsed from `Metadata/model_settings.config` (Bambu/Orca) — DD-025. */
+interface PlateConfig {
+  /** `${object_id}#${instance_id}` → plater_id, mapping each declared model-instance to its plate. */
+  membership: Map<string, number>;
+  /** plater_id → declared plate name (only non-empty names). */
+  names: Map<number, string>;
+  /** Declared plater_ids in source order. */
+  order: number[];
+}
+
+/**
+ * Parse the `<plate>` elements of a Bambu/Orca `Metadata/model_settings.config` (DD-025). Each `<plate>`
+ * carries a `plater_id` and a list of `<model_instance>` (`object_id` + `instance_id`) assigning the Nth
+ * placement of a build-item object to that plate. Clean-room from the observed format (parity with the
+ * RR-005 `paint_color` approach); tolerant scan — a malformed/absent config yields an empty result so the
+ * scene honestly reports `capabilities.plates: 'unavailable'` rather than a fabricated split.
+ *
+ * Returns `null` when no `<plate>` is declared (⇒ implicit single plate, `'unavailable'`).
+ */
+export function parsePlateConfig(xml: string): PlateConfig | null {
+  const plateBlocks = xml.match(/<plate\b[\s\S]*?<\/plate>/gi);
+  if (plateBlocks === null || plateBlocks.length === 0) return null;
+  const membership = new Map<string, number>();
+  const names = new Map<number, string>();
+  const order: number[] = [];
+  for (const block of plateBlocks) {
+    const idM = /key="plater_id"\s+value="(\d+)"/i.exec(block);
+    if (idM === null) continue;
+    const plateId = parseInt(idM[1], 10);
+    if (!Number.isFinite(plateId)) continue;
+    order.push(plateId);
+    const nameM = /key="plater_name"\s+value="([^"]*)"/i.exec(block);
+    if (nameM !== null && nameM[1].length > 0) names.set(plateId, nameM[1]);
+    // Each <model_instance> declares object_id + instance_id (both required to key a placement).
+    for (const inst of block.match(/<model_instance\b[\s\S]*?<\/model_instance>/gi) ?? []) {
+      const objM = /key="object_id"\s+value="(\d+)"/i.exec(inst);
+      const insM = /key="instance_id"\s+value="(\d+)"/i.exec(inst);
+      if (objM === null || insM === null) continue;
+      membership.set(`${objM[1]}#${insM[1]}`, plateId);
+    }
+  }
+  return order.length > 0 ? { membership, names, order } : null;
+}
+
+/**
+ * Parse per-object / per-part extruder assignments from `Metadata/model_settings.config` (Bambu/Orca) — a
+ * source-model colour convention where each object/part is solid-coloured by its assigned filament
+ * (`<object id="X">…<metadata key="extruder" value="N"/>`, and the same on nested `<part id="Y">`),
+ * 1-based into the `filament_colour` palette. Returns a map of id → 1-based extruder. Each object/part's own
+ * extruder is the FIRST `key="extruder"` in the window from its header to the next object/part header (so a
+ * part's extruder overrides its parent object's default). Empty map ⇒ no assignments declared.
+ */
+export function parseObjectExtruders(xml: string): Map<string, number> {
+  const map = new Map<string, number>();
+  const headerRe = /<(?:object|part)\s+id="(\d+)"[^>]*>([\s\S]*?)(?=<(?:object|part)\s+id="|<\/config>|$)/g;
+  let m: RegExpExecArray | null;
+  while ((m = headerRe.exec(xml)) !== null) {
+    const id = m[1];
+    const ext = /key="extruder"\s+value="(\d+)"/i.exec(m[2]);
+    if (ext !== null) {
+      const n = parseInt(ext[1], 10);
+      if (Number.isFinite(n) && n >= 1) map.set(id, n);
+    }
+  }
+  return map;
+}
 
 /**
  * Conservative UPPER bound on the XML bytes a single 3MF triangle (plus its amortized share of a shared
@@ -666,8 +800,11 @@ export async function parse3mf(
       }
     }
   }
-  // Default extruder (1-based) for a painted mesh's unpainted facets; from `model_settings.config`, else 1.
+  // `model_settings.config` (Bambu/Orca) carries both the default extruder for unpainted facets AND the
+  // declared plate structure (DD-025) — read once.
   let defaultExtruderIdx = 0;
+  let plateConfig: PlateConfig | null = null;
+  let objectExtruders = new Map<string, number>();
   const modelSettingsEntry = entryByName('metadata/model_settings.config');
   if (modelSettingsEntry !== undefined) {
     try {
@@ -675,8 +812,12 @@ export async function parse3mf(
       const m = /key="extruder"\s+value="(\d+)"/i.exec(xml);
       const n = m !== null ? parseInt(m[1], 10) : NaN;
       if (Number.isFinite(n) && n >= 1) defaultExtruderIdx = n - 1;
+      plateConfig = parsePlateConfig(xml);
+      objectExtruders = parseObjectExtruders(xml);
     } catch {
       defaultExtruderIdx = 0;
+      plateConfig = null;
+      objectExtruders = new Map();
     }
   }
 
@@ -691,7 +832,13 @@ export async function parse3mf(
     min: [Infinity, Infinity, Infinity],
     max: [-Infinity, -Infinity, -Infinity],
     totalTris: 0,
-    totalInstances: 0
+    totalInstances: 0,
+    plateConfig,
+    objectExtruders,
+    currentPlateId: undefined,
+    plateBounds: new Map(),
+    plateInstanceCount: new Map(),
+    plateObjects: new Map()
   };
 
   // Resolve an object (mesh and/or components) within `part`, folding component transforms into the
@@ -725,21 +872,32 @@ export async function parse3mf(
     mainPart.items.length > 0
       ? mainPart.items
       : [...mainPart.objects.keys()].map((objectid) => ({ objectid, transform: null }));
+  // Per-object-id ordinal so the Nth build item of object X maps to plate `X#N` (DD-025).
+  const rootOrdinals = new Map<string, number>();
   for (const inst of roots) {
     if (inst.transform !== null) st.anyTransform = true;
+    if (st.plateConfig !== null) {
+      const ord = rootOrdinals.get(inst.objectid) ?? 0;
+      rootOrdinals.set(inst.objectid, ord + 1);
+      // Unmapped placement (declared plates but this one not listed) → the first declared plate, so
+      // plateIds stay complete and aligned; never fabricated silently beyond that fallback.
+      st.currentPlateId = st.plateConfig.membership.get(`${inst.objectid}#${ord}`) ?? st.plateConfig.order[0];
+    }
     await resolve(mainPart, inst.objectid, inst.transform, mainKey, 0);
   }
 
   if (st.built.length === 0) throw new ModelParseError('E_MODEL_EMPTY', '3MF contains no renderable geometry');
 
   // Attach the instance list to any master reached more than once (a single placement keeps its
-  // `transform` and omits `instances`, per the contract).
+  // `transform` and omits `instances`, per the contract). Plate ids (DD-025) attach per placement,
+  // aligned with `instances` when present, else the single placement.
   for (const rec of st.masters.values()) {
     if (rec.instances.length > 1) rec.object.instances = rec.instances;
+    if (rec.plates.length > 0) rec.object.plateIds = rec.plates;
   }
 
   const bounds: ModelBounds = { min: st.min, max: st.max };
-  return {
+  const scene: ModelScene = {
     objects: st.built,
     bounds,
     capabilities: {
@@ -748,7 +906,28 @@ export async function parse3mf(
       transforms: st.anyTransform ? 'known' : 'unavailable',
       multiObject: st.built.length > 1 ? 'known' : 'unavailable',
       // Instancing preserved when there are more placements than unique masters.
-      instanced: st.totalInstances > st.masters.size ? 'known' : 'unavailable'
+      instanced: st.totalInstances > st.masters.size ? 'known' : 'unavailable',
+      // Plate structure is `known` only when the source explicitly declared plates (DD-025).
+      plates: st.plateConfig !== null ? 'known' : 'unavailable'
     }
   };
+
+  const pc = st.plateConfig;
+  if (pc !== null) {
+    const list: ModelPlateSummary[] = pc.order.map((id) => {
+      const b = st.plateBounds.get(id);
+      const summary: ModelPlateSummary = {
+        id,
+        objectCount: st.plateObjects.get(id)?.size ?? 0,
+        instanceCount: st.plateInstanceCount.get(id) ?? 0,
+        bounds: b !== undefined ? { min: b.min, max: b.max } : { min: [0, 0, 0], max: [0, 0, 0] }
+      };
+      const name = pc.names.get(id);
+      if (name !== undefined) summary.name = name;
+      return summary;
+    });
+    scene.plates = { list };
+  }
+
+  return scene;
 }

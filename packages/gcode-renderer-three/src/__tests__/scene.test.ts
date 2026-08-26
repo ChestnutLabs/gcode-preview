@@ -81,6 +81,7 @@ function makeHarness(
     target?: number;
     quality?: QualityMode | 'auto';
     tube?: TubeOptions;
+    tubeByteBudget?: number;
     interactionQuality?: 'off' | 'auto';
   } = {}
 ): Harness {
@@ -102,6 +103,7 @@ function makeHarness(
     // opt into tubes/auto explicitly.
     quality: opts.quality ?? 'lines',
     tube: opts.tube,
+    tubeByteBudget: opts.tubeByteBudget,
     interactionQuality: opts.interactionQuality,
     createRenderer: () => stub,
     scheduleFrame: (cb) => ticks.push(cb)
@@ -626,6 +628,19 @@ describe('tubes quality mode (phase 4)', () => {
     expect(h.renderer.chunkMeshes.every((m) => !(m instanceof Mesh))).toBe(true);
     const complete = h.events.find((e) => e.type === 'buildComplete');
     expect(complete && 'quality' in complete && complete.quality).toBe('lines');
+  });
+
+  it('the tube memory budget counts only EXTRUDE segments, not travel/wipe (RR-006 correction)', () => {
+    // 200 extrude + 800 travel = 1000 total. Tubes are built only for extrude, so the budget should see
+    // 200 (fits at radial-8: 200×552 ≈ 110 KB ≤ 200 KB), NOT 1000 (which fails even at radial-3:
+    // 1000×232 ≈ 232 KB > 200 KB). The old code counted totalSegmentsIncluded and fell to lines on a
+    // travel-heavy plate (the 814-part Opossum symptom).
+    const h = makeHarness({ quality: 'tubes', tubeByteBudget: 200_000 });
+    h.renderer.setIR(makeIR(2, 100, 1, { travelPerLayer: 400 }));
+    h.runTicks();
+    expect(h.events.some((e) => e.type === 'qualityFallback')).toBe(false);
+    expect(h.renderer.activeQuality).toBe('tubes');
+    expect(h.renderer.chunkMeshes.some((m) => m instanceof Mesh)).toBe(true);
   });
 
   it('appendPartial streams preview meshes; setIR replaces them wholesale (#60)', () => {
