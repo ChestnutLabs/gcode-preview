@@ -372,6 +372,8 @@ interface BuildState {
   totalInstances: number;
   /** Declared plate structure (DD-025), or `null` when the source declares none. */
   plateConfig: PlateConfig | null;
+  /** Per-object/part 1-based extruder assignments (Bambu/Orca colour convention), keyed by id. */
+  objectExtruders: Map<string, number>;
   /** Plate id of the placement currently being resolved (DD-025); inherited by every `placeMaster` in it. */
   currentPlateId: number | undefined;
   /** Per-plate accumulators (DD-025), keyed by plater_id. */
@@ -498,6 +500,22 @@ function placeMaster(
   const geometry: MeshGeometry = colors !== null ? { positions, colors } : { positions };
   const object: ModelObject = { id: key, geometry, transform: mat4 };
   if (obj.name !== undefined) object.name = obj.name;
+  // Bambu/Orca per-object/part extruder solid colour (maintainer-approved): when the object declares no
+  // basematerials/colorgroup/paint colour, but the source assigns it an extruder and the project's
+  // `filament_colour` palette has that slot, colour the whole object with `palette[extruder - 1]` (a solid
+  // material colour). Honesty preserved: only when the source actually declares the mapping AND the palette
+  // resolves — otherwise the object stays neutral (`materials: 'unavailable'`). Never guessed.
+  if (!objHasColor && st.paintPalette.length > 0) {
+    const oid = key.substring(key.lastIndexOf('#') + 1);
+    const extruder = st.objectExtruders.get(oid);
+    if (extruder !== undefined) {
+      const col = st.paintPalette[extruder - 1];
+      if (col !== undefined) {
+        object.material = { color: col };
+        st.anyColor = true;
+      }
+    }
+  }
   st.masters.set(key, {
     object,
     instances: [mat4],
@@ -566,6 +584,29 @@ export function parsePlateConfig(xml: string): PlateConfig | null {
     }
   }
   return order.length > 0 ? { membership, names, order } : null;
+}
+
+/**
+ * Parse per-object / per-part extruder assignments from `Metadata/model_settings.config` (Bambu/Orca) — a
+ * source-model colour convention where each object/part is solid-coloured by its assigned filament
+ * (`<object id="X">…<metadata key="extruder" value="N"/>`, and the same on nested `<part id="Y">`),
+ * 1-based into the `filament_colour` palette. Returns a map of id → 1-based extruder. Each object/part's own
+ * extruder is the FIRST `key="extruder"` in the window from its header to the next object/part header (so a
+ * part's extruder overrides its parent object's default). Empty map ⇒ no assignments declared.
+ */
+export function parseObjectExtruders(xml: string): Map<string, number> {
+  const map = new Map<string, number>();
+  const headerRe = /<(?:object|part)\s+id="(\d+)"[^>]*>([\s\S]*?)(?=<(?:object|part)\s+id="|<\/config>|$)/g;
+  let m: RegExpExecArray | null;
+  while ((m = headerRe.exec(xml)) !== null) {
+    const id = m[1];
+    const ext = /key="extruder"\s+value="(\d+)"/i.exec(m[2]);
+    if (ext !== null) {
+      const n = parseInt(ext[1], 10);
+      if (Number.isFinite(n) && n >= 1) map.set(id, n);
+    }
+  }
+  return map;
 }
 
 /**
@@ -763,6 +804,7 @@ export async function parse3mf(
   // declared plate structure (DD-025) — read once.
   let defaultExtruderIdx = 0;
   let plateConfig: PlateConfig | null = null;
+  let objectExtruders = new Map<string, number>();
   const modelSettingsEntry = entryByName('metadata/model_settings.config');
   if (modelSettingsEntry !== undefined) {
     try {
@@ -771,9 +813,11 @@ export async function parse3mf(
       const n = m !== null ? parseInt(m[1], 10) : NaN;
       if (Number.isFinite(n) && n >= 1) defaultExtruderIdx = n - 1;
       plateConfig = parsePlateConfig(xml);
+      objectExtruders = parseObjectExtruders(xml);
     } catch {
       defaultExtruderIdx = 0;
       plateConfig = null;
+      objectExtruders = new Map();
     }
   }
 
@@ -790,6 +834,7 @@ export async function parse3mf(
     totalTris: 0,
     totalInstances: 0,
     plateConfig,
+    objectExtruders,
     currentPlateId: undefined,
     plateBounds: new Map(),
     plateInstanceCount: new Map(),

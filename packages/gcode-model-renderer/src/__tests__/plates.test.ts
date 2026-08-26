@@ -4,7 +4,7 @@
  * synthetic and MIT-clean (clean-room from the observed `<plate>` format, parity with the RR-005 approach).
  */
 import { describe, it, expect } from 'vitest';
-import { parse3mf, parsePlateConfig } from '../three-mf.js';
+import { parse3mf, parsePlateConfig, parseObjectExtruders } from '../three-mf.js';
 
 // --- minimal stored (uncompressed) ZIP writer, so fixtures need no zip dependency ---
 const CRC_TABLE = (() => {
@@ -216,5 +216,85 @@ describe('parse3mf plate exposure (DD-025)', () => {
     expect(scene.capabilities.plates).toBe('unavailable');
     expect(scene.plates).toBeUndefined();
     expect(scene.objects[0].plateIds).toBeUndefined();
+  });
+});
+
+// --- Bambu/Orca per-object extruder solid colour (maintainer-approved decode) ---
+
+// Two objects, NO basematerials / colorgroup / paint_color — so without the extruder convention they would
+// render neutral. The Baby_Opossum case (per-object/part extruder + project filament_colour palette).
+const NO_MATERIAL_OBJECTS = `<?xml version="1.0"?>
+<model unit="millimeter"><resources>
+ <object id="1" type="model"><mesh>
+  <vertices><vertex x="0" y="0" z="0"/><vertex x="10" y="0" z="0"/><vertex x="0" y="10" z="0"/></vertices>
+  <triangles><triangle v1="0" v2="1" v3="2"/></triangles></mesh></object>
+ <object id="2" type="model"><mesh>
+  <vertices><vertex x="0" y="0" z="0"/><vertex x="8" y="0" z="0"/><vertex x="0" y="8" z="0"/></vertices>
+  <triangles><triangle v1="0" v2="1" v3="2"/></triangles></mesh></object>
+</resources><build><item objectid="1"/><item objectid="2" transform="1 0 0 0 1 0 0 0 1 30 0 0"/></build></model>`;
+
+const FILAMENT_PALETTE = JSON.stringify({ filament_colour: ['#FF0000', '#00FF00'] }); // red slot0, green slot1
+const EXTRUDER_SETTINGS = `<?xml version="1.0"?><config>
+ <object id="1"><metadata key="extruder" value="1"/></object>
+ <object id="2"><metadata key="extruder" value="2"/></object>
+</config>`;
+
+describe('parseObjectExtruders (Bambu colour convention)', () => {
+  it('maps object AND part ids to 1-based extruder, part overriding its parent object', () => {
+    const xml = `<config>
+      <object id="10"><metadata key="extruder" value="1"/>
+        <part id="1"><metadata key="extruder" value="1"/></part>
+        <part id="9"><metadata key="extruder" value="2"/></part>
+      </object>
+    </config>`;
+    const m = parseObjectExtruders(xml);
+    expect(m.get('10')).toBe(1);
+    expect(m.get('1')).toBe(1);
+    expect(m.get('9')).toBe(2); // the part's own extruder, not the object default
+  });
+
+  it('is empty when no extruder metadata is declared', () => {
+    expect(parseObjectExtruders('<config><object id="1"/></config>').size).toBe(0);
+  });
+});
+
+describe('parse3mf per-object extruder colour (Bambu convention)', () => {
+  it('colours each object from its extruder + the filament palette; materials becomes known', async () => {
+    const scene = await parse3mf(
+      makeZip([
+        { name: '3D/3dmodel.model', data: enc(NO_MATERIAL_OBJECTS) },
+        { name: 'Metadata/project_settings.config', data: enc(FILAMENT_PALETTE) },
+        { name: 'Metadata/model_settings.config', data: enc(EXTRUDER_SETTINGS) }
+      ])
+    );
+    expect(scene.capabilities.materials).toBe('known');
+    const o1 = scene.objects.find((o) => o.id.endsWith('#1'))!;
+    const o2 = scene.objects.find((o) => o.id.endsWith('#2'))!;
+    // Linear-RGB of #FF0000 ≈ [1,0,0]; #00FF00 ≈ [0,1,0]. Assert the dominant channel per extruder slot.
+    expect(o1.material?.color?.[0]).toBeGreaterThan(0.5);
+    expect(o1.material?.color?.[1]).toBeLessThan(0.1);
+    expect(o2.material?.color?.[1]).toBeGreaterThan(0.5);
+    expect(o2.material?.color?.[0]).toBeLessThan(0.1);
+  });
+
+  it('stays neutral (unavailable) when the palette is absent — no fabricated colour', async () => {
+    const scene = await parse3mf(
+      makeZip([
+        { name: '3D/3dmodel.model', data: enc(NO_MATERIAL_OBJECTS) },
+        { name: 'Metadata/model_settings.config', data: enc(EXTRUDER_SETTINGS) } // extruder but NO palette
+      ])
+    );
+    expect(scene.capabilities.materials).toBe('unavailable');
+    expect(scene.objects.every((o) => o.material?.color === undefined)).toBe(true);
+  });
+
+  it('stays neutral when the source declares no extruder mapping', async () => {
+    const scene = await parse3mf(
+      makeZip([
+        { name: '3D/3dmodel.model', data: enc(NO_MATERIAL_OBJECTS) },
+        { name: 'Metadata/project_settings.config', data: enc(FILAMENT_PALETTE) } // palette but NO extruders
+      ])
+    );
+    expect(scene.capabilities.materials).toBe('unavailable');
   });
 });
