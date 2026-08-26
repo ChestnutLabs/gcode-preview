@@ -164,10 +164,14 @@ export async function renderStill(
       ? (c: RenderTargetCanvas) => createDefaultGLRenderer(c, { alpha: true, preserveDrawingBuffer: true })
       : undefined);
 
-  // Build to completion off the event loop (no rAF): microtask-scheduled ticks.
+  // Build to completion off the event loop (no rAF): microtask-scheduled ticks. `renderDuringBuild:
+  // false` suppresses the per-tick render — a still captures only the final frame, so rendering the
+  // partial scene on every one of the (potentially hundreds of) build ticks is pure waste and, in
+  // software WebGL, the dominant cost of a large still. The single frame()/render() below draws once.
   const renderer = new ToolpathRenderer({
     canvas,
     quality: options.quality ?? 'auto',
+    renderDuringBuild: false,
     ...(options.cameraMode ? { cameraMode: options.cameraMode } : {}),
     ...(options.frameContent ? { frameContent: options.frameContent } : {}),
     ...(resolvedTheme ? { theme: resolvedTheme } : {}),
