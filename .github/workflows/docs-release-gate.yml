@@ -1,0 +1,25 @@
+# Doc-freshness gate: a release cannot be promoted to `main` (the tag/publish branch)
+# while the user-facing docs still name the previous version. Promotion PRs (dev -> main)
+# are the only PRs that target `main`, so every run here is a release under review.
+# The deterministic version strings are stamped automatically in the Version PR
+# (tools/release/stamp-release-docs.mjs, via `npm run version`); this check enforces that
+# they — and the curated docs/README narrative + release-history list — agree with the
+# version being cut, and that the narrative draft was folded in and removed.
+# See docs/reference/release-process.md.
+name: Docs release gate
+
+on:
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  docs-release-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.x'
+      - name: Docs match the version being released
+        run: node tools/release/check-release-docs.mjs

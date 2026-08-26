@@ -18,9 +18,22 @@ from the protected `Release / publish` workflow on a tag from `main` — never f
    (`tools/release/sync-internal-ranges.mjs` — the dev-time `*` wildcard never reaches a tarball;
    `release:sync-check` guards it in the publish gate), and a refreshed lockfile. **Never
    hand-edit versions or changelogs.** Merging it versions `dev`.
+   - **Docs land with the release, not after it** (`tools/release/stamp-release-docs.mjs`, run in
+     the `version` script so its edits ride *this same PR*): the deterministic "vX.Y.Z is on npm"
+     strings — the root `README` lockstep-version note, the manual's published-status line, and the
+     `docs/README` published-to-npm line — are **stamped automatically**. The curated
+     `docs/README` **"Current state" narrative + release-history list are kept human-written**: the
+     stamper drops a `RELEASE_NOTES_DRAFT.md` (proposed lead + history line + deduped changelog
+     points) into the PR for the author to fold in, then delete. The single source of truth for
+     these surfaces is `tools/release/doc-surfaces.mjs`.
 3. **Promotion PR (`dev` → `main`):** a deliberate PR carrying the versioned state to `main`,
-   merged only with the required checks green. The first one (`v0.1.0`) ends the founding-baseline
-   freeze on `main`.
+   merged only with the required checks green — including the **`Docs release gate`**
+   (`npm run docs:release-check`), which fails the promotion if any version surface, the
+   `docs/README` current-state lead, or the release-history list disagrees with the version being
+   cut, or if `RELEASE_NOTES_DRAFT.md` is still present. It also prints a screenshots/guides review
+   reminder (the judgment call from CLAUDE.md's *Public-docs completion check*; confirmed via the
+   promotion PR-template checkbox, not hard-failed). The first promotion (`v0.1.0`) ended the
+   founding-baseline freeze on `main`.
 4. **Tag + GitHub Release:** tag `vX.Y.Z` on `main` and publish a GitHub Release for it. This —
    and nothing else — triggers publication.
 5. **`Release / publish` workflow:** verifies the tag is on `main`, fresh `npm ci`, then the full

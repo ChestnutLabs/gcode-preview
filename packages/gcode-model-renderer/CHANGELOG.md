@@ -1,5 +1,14 @@
 # @chestnutlabs/gcode-model-renderer
 
+## 0.15.0
+
+### Patch Changes
+
+- Updated dependencies [[`8229075`](https://github.com/ChestnutLabs/gcode-preview/commit/8229075e2737c360c5d255e438ce140f4fbb13da)]:
+  - @chestnutlabs/gcode-renderer-three@0.15.0
+  - @chestnutlabs/gcode-containers@0.15.0
+  - @chestnutlabs/toolpath-core@0.15.0
+
 ## 0.14.0
 
 ### Patch Changes
