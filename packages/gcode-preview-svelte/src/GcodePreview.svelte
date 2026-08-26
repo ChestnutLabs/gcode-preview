@@ -20,6 +20,8 @@
   /** Consumer-configured volume — wins over file-discovered geometry (DD-005). */
   export let buildVolume = undefined;
   export let quality = 'auto';
+  /** Fidelity policy (DD-023 §4 D6): 'full' | 'adaptive' | 'fast'. 3D only. */
+  export let qualityMode = undefined;
   /** #150 (DD-009 D3): camera projection ('perspective' | 'orthographic'). */
   export let cameraMode = 'perspective';
   /** #306/#6: frame the printed 'object' (excl. skirt/prime) or 'all' extrusion. Default 'all'. */
@@ -68,6 +70,7 @@
       mode: renderer,
       buildVolume: isMachine ? undefined : buildVolume,
       quality,
+      qualityMode,
       cameraMode,
       frameContent,
       interactionQuality,
@@ -146,6 +149,7 @@
   $: preview.controls.setBuildVolumeCage(showVolumeCage);
   $: if (colorMode !== undefined) preview.controls.setColorMode(colorMode);
   $: preview.controls.setQuality(quality);
+  $: if (qualityMode) preview.controls.setQualityMode(qualityMode);
   $: preview.controls.setCameraMode(cameraMode);
   $: preview.controls.setFrameContent(frameContent);
   $: preview.controls.setInteractionQuality(interactionQuality);

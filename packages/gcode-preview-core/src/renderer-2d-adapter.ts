@@ -24,6 +24,7 @@ import type {
   CameraState,
   CameraView,
   QualityMode,
+  QualityPolicy,
   Theme
 } from '@chestnutlabs/gcode-renderer-three';
 import type { MachineGeometry, MappedProgress, ToolpathIR } from '@chestnutlabs/toolpath-core';
@@ -157,6 +158,10 @@ export class LayerView2DRenderer implements PreviewRenderer {
 
   setQuality(_quality: QualityMode | 'auto'): void {
     this.disclose('quality', 'Quality/geometry modes apply only to the 3D renderer; the 2D view has none.');
+  }
+
+  setQualityMode(_mode: QualityPolicy): void {
+    // The fidelity policy (tubes/decimation) is a 3D concern; the flat 2D layer view has no equivalent.
   }
 
   setCameraMode(_mode: CameraMode): void {

@@ -80,6 +80,7 @@ function makeHarness(
     chunksPerTick?: number;
     target?: number;
     quality?: QualityMode | 'auto';
+    qualityMode?: 'full' | 'adaptive' | 'fast';
     tube?: TubeOptions;
     tubeByteBudget?: number;
     interactionQuality?: 'off' | 'auto';
@@ -102,6 +103,7 @@ function makeHarness(
     // Phase-2/3 assertions are written against GL_LINES layouts; phase-4 tests
     // opt into tubes/auto explicitly.
     quality: opts.quality ?? 'lines',
+    qualityMode: opts.qualityMode,
     tube: opts.tube,
     tubeByteBudget: opts.tubeByteBudget,
     interactionQuality: opts.interactionQuality,
@@ -628,6 +630,52 @@ describe('tubes quality mode (phase 4)', () => {
     expect(h.renderer.chunkMeshes.every((m) => !(m instanceof Mesh))).toBe(true);
     const complete = h.events.find((e) => e.type === 'buildComplete');
     expect(complete && 'quality' in complete && complete.quality).toBe('lines');
+  });
+
+  it("qualityMode 'full' renders full-radial tubes past the byte budget (no tubes→lines) — DD-023 Phase B", () => {
+    // A tiny byte budget that WOULD force lines under the adaptive policy...
+    const adaptive = makeHarness({ quality: 'tubes', tubeByteBudget: 1 });
+    adaptive.renderer.setIR(makeIR(2, 100));
+    adaptive.runTicks();
+    expect(adaptive.events.some((e) => e.type === 'qualityFallback')).toBe(true);
+    expect(adaptive.renderer.activeQuality).toBe('lines');
+
+    // ...is overridden by the 'full' policy: full-radial continuous tubes, no fallback.
+    const full = makeHarness({ quality: 'tubes', qualityMode: 'full', tubeByteBudget: 1 });
+    full.renderer.setIR(makeIR(2, 100));
+    full.runTicks();
+    expect(full.events.some((e) => e.type === 'qualityFallback')).toBe(false);
+    expect(full.renderer.activeQuality).toBe('tubes');
+    expect(full.renderer.chunkMeshes.some((m) => m instanceof Mesh)).toBe(true);
+  });
+
+  it('tubes→lines fallback degrades to CONTINUOUS lines (decimationApplied 1), never chopped (DD-023)', () => {
+    // A tube build that can't fit the budget falls to lines — and those lines must be CONTINUOUS
+    // (undecimated), never segment-dropped, per the maintainer's degradation order.
+    const h = makeHarness({ quality: 'tubes', tubeByteBudget: 1 });
+    h.renderer.setIR(makeIR(2, 100));
+    h.runTicks();
+    expect(h.renderer.activeQuality).toBe('lines');
+    const complete = h.events.find((e) => e.type === 'buildComplete');
+    expect(complete && 'decimationApplied' in complete && complete.decimationApplied).toBe(1);
+  });
+
+  it("qualityMode 'fast' renders flat lines regardless of the requested tubes tier (DD-023 Phase B)", () => {
+    const h = makeHarness({ quality: 'tubes', qualityMode: 'fast' });
+    h.renderer.setIR(makeIR(2, 5));
+    h.runTicks();
+    expect(h.renderer.activeQuality).toBe('lines');
+    expect(h.renderer.chunkMeshes.every((m) => !(m instanceof Mesh))).toBe(true);
+  });
+
+  it("setQualityMode('full') rebuilds and lifts the byte-budget lines fallback at runtime", () => {
+    const h = makeHarness({ quality: 'tubes', tubeByteBudget: 1 });
+    h.renderer.setIR(makeIR(2, 100));
+    h.runTicks();
+    expect(h.renderer.activeQuality).toBe('lines'); // adaptive → budget forces lines
+    h.renderer.setQualityMode('full');
+    h.runTicks();
+    expect(h.renderer.activeQuality).toBe('tubes'); // full → renders the tubes
   });
 
   it('the tube memory budget counts only EXTRUDE segments, not travel/wipe (RR-006 correction)', () => {

@@ -25,6 +25,7 @@ import type {
   CameraView,
   ColorMode,
   QualityMode,
+  QualityPolicy,
   Theme,
   TubeOptions
 } from '@chestnutlabs/gcode-renderer-three';
@@ -54,6 +55,8 @@ export interface GcodePreviewProps {
   /** Consumer-configured volume — wins over file-discovered geometry (DD-005 precedence). */
   buildVolume?: BuildVolumeDef | MachineGeometry;
   quality?: QualityMode | 'auto';
+  /** Fidelity policy (DD-023 §4 D6): 'full' | 'adaptive' | 'fast'. 3D only. */
+  qualityMode?: QualityPolicy;
   /** #150 (DD-009 D3): camera projection. */
   cameraMode?: CameraMode;
   /** #306/#6: frame the printed 'object' (excl. skirt/prime) or 'all' extrusion. Default 'all'. */
@@ -88,7 +91,15 @@ export interface GcodePreviewProps {
   /** Advanced/test renderer injectables (pass-throughs of the renderer contract). */
   rendererOptions?: Omit<
     NonNullable<UseGcodePreviewOptions['renderer']>,
-    'buildVolume' | 'quality' | 'cameraMode' | 'frameContent' | 'interactionQuality' | 'theme' | 'colorMode' | 'tube'
+    | 'buildVolume'
+    | 'quality'
+    | 'qualityMode'
+    | 'cameraMode'
+    | 'frameContent'
+    | 'interactionQuality'
+    | 'theme'
+    | 'colorMode'
+    | 'tube'
   >;
   onReady?: (summary: {
     segments: number;
@@ -120,6 +131,7 @@ function GcodePreviewImpl(props: GcodePreviewProps, ref: ForwardedRef<GcodePrevi
       mode: props.renderer,
       buildVolume: isMachine ? undefined : (props.buildVolume as BuildVolumeDef | undefined),
       quality: props.quality ?? 'auto',
+      qualityMode: props.qualityMode,
       cameraMode: props.cameraMode ?? 'perspective',
       frameContent: props.frameContent ?? 'all',
       interactionQuality: props.interactionQuality ?? 'off',
@@ -199,6 +211,7 @@ function GcodePreviewImpl(props: GcodePreviewProps, ref: ForwardedRef<GcodePrevi
     showVolumeCage,
     colorMode,
     quality,
+    qualityMode,
     cameraMode,
     frameContent,
     interactionQuality,
@@ -239,6 +252,9 @@ function GcodePreviewImpl(props: GcodePreviewProps, ref: ForwardedRef<GcodePrevi
   useEffect(() => {
     if (quality !== undefined) preview.controls.setQuality(quality);
   }, [quality]);
+  useEffect(() => {
+    if (qualityMode !== undefined) preview.controls.setQualityMode(qualityMode);
+  }, [qualityMode]);
   useEffect(() => {
     if (cameraMode !== undefined) preview.controls.setCameraMode(cameraMode);
   }, [cameraMode]);
