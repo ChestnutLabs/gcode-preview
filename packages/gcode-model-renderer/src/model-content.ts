@@ -60,10 +60,17 @@ export class ModelContent {
     this.scene.add(fill);
   }
 
-  /** Build meshes for the scene and record its framing. Replaces (and disposes) any previous meshes. */
-  setScene(scene: ModelScene): void {
+  /**
+   * Build meshes for the scene and record its framing. Replaces (and disposes) any previous meshes.
+   * `onObject(done)` (DD-024) is invoked after each object's mesh is built, with the running count, for
+   * real `building-geometry` progress.
+   */
+  setScene(scene: ModelScene, onObject?: (done: number) => void): void {
     this.clearMeshes();
-    for (const obj of scene.objects) this.root.add(this.buildMesh(obj));
+    for (let i = 0; i < scene.objects.length; i++) {
+      this.root.add(this.buildMesh(scene.objects[i]));
+      onObject?.(i + 1);
+    }
 
     const [minX, minY, minZ] = scene.bounds.min;
     const [maxX, maxY, maxZ] = scene.bounds.max;
