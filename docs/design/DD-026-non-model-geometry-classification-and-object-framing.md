@@ -3,9 +3,16 @@
 **Status:** Accepted <!-- Draft | Proposed | Accepted | Superseded | Rejected -->
 **Authors/Owners:** Nathaniel Chestnut (drafted by Claude)
 **Date:** 2026-08-26 · **Last revised:** 2026-08-26
-**Accepted:** 2026-08-26 — D1–D7 as recommended (D3a = `MoveKind.Purge` bitflag; D5 = new additive
-`modelBounds`, `objectBounds` contract unchanged; D6 = start-region heuristic opt-in + disclosed,
-never default). Phase 1 (T1 adapter-format corrections) authorized to build.
+**Accepted:** 2026-08-26 — D1–D7 as recommended (D5 = new additive `modelBounds`, `objectBounds`
+contract unchanged; D6 = start-region heuristic opt-in + disclosed, never default). Phase 1 (T1
+adapter-format corrections) authorized to build.
+**Revised:** 2026-08-26 — **D3a resolved to `FeatureRole.Purge`, NOT `MoveKind.Purge`.** `segments.kind`
+is a `Uint8Array` and `MoveKind.Cut = 1<<8`'s predecessor already fills bit 7; a `MoveKind.Purge`
+bitflag would force widening `kind` to `Uint16Array` (SoA/reader/golden churn) to encode a single
+semantic-purpose flag. The maintainer chose to keep purge as `MoveKind.Extrude` motion + a new
+`FeatureRole.Purge` — no channel widening, and consistent with towers/raft also being FeatureRoles
+(D2), so the classifier excludes the whole non-model set by one mechanism (feature role). T2 / Phases
+2–3 authorized to build with this encoding.
 **Owning Epic:** E9/E11 (renderer options + honesty model) · **Milestone:** —
 **Supersedes / Superseded by:** none
 **Related:** [RR-007](../research/RR-007-non-model-geometry-and-object-framing.md), DD-005 (dialect
@@ -64,11 +71,13 @@ Update adapters to the RR-007 §5 markers. Bug fix; no new public surface:
 - **simplify3d:** parse `; feature <lowercase>` roles (a new adapter); no object channel.
 - **superslicer:** already Prusa-lineage `;TYPE:` + `EXCLUDE_OBJECT` + `; object:{…}` footprint.
 
-### D2 — New `FeatureRole` values. **Recommendation: add `PrimeTower`, `WipeTower`, `Raft`.**
+### D2 — New `FeatureRole` values. **Recommendation: add `PrimeTower`, `WipeTower`, `Raft` (+ `Purge`, per resolved D3a).**
 `FeatureRole` (`toolpath-core/src/ir.ts:51`) currently folds towers into `Custom`. Add first-class
-`PrimeTower`, `WipeTower`, `Raft` (additive numeric-index values → **minor**). Map per family:
-PrusaSlicer/Super `Wipe tower`; Orca/Bambu `Prime tower`/`FEATURE: Prime tower`; Cura `PRIME-TOWER`;
-ideaMaker `WIPE-TOWER`; Simplify3D `prime pillar`; Cura/ideaMaker/Prusa raft/`RAFT`.
+`PrimeTower = 11`, `WipeTower = 12`, `Raft = 13`, and `Purge = 14` (resolved D3a — additive
+numeric-index values → **minor**). Map per family: PrusaSlicer/Super `Wipe tower`; Orca/Bambu `Prime
+tower`/`FEATURE: Prime tower`; Cura `PRIME-TOWER`; ideaMaker `WIPE-TOWER`; Simplify3D `prime pillar`;
+Cura/ideaMaker/Prusa raft/`RAFT`. Raft segments that previously reported `Brim` now report `Raft`
+(feature-channel value change; geometry unchanged).
 
 ### D3 — Purge/flush + tower brackets. **Recommendation: reuse the DD-016 bracket mechanism.**
 `WIPE_START/END` already becomes `MoveKind.Wipe` additively (`annotate.ts`). Extend the same
@@ -76,18 +85,22 @@ range-bracket path for the explicit housekeeping brackets RR-007 found — Bambu
 and `FLUSH_START/END` — mapping the enclosed range to the tower role (D2) and, for flush, a new
 `MoveKind.Purge` (a bitflag alongside `Wipe`) OR a `FeatureRole` — **decision below (D3a)**.
 
-- **D3a — purge/flush as MoveKind vs FeatureRole. Recommendation: `MoveKind.Purge` (bitflag).** Flush
-  is a *motion class* (like Wipe), not a print feature; a bitflag composes with `Extrude` and mirrors
-  `Wipe`. Additive; FDM byte-identical (a new capability key only). *Open for maintainer: acceptable
-  to add an 8th→9th MoveKind bit?*
+- **D3a — purge/flush as MoveKind vs FeatureRole. RESOLVED (2026-08-26): `FeatureRole.Purge`.** The
+  recommendation was a `MoveKind.Purge` bitflag, but `segments.kind` is a `Uint8Array` with bit 7
+  already taken by `Cut`, so a 9th bit forces a `Uint16Array` widening (SoA/reader/golden churn) for
+  one semantic-purpose flag. The maintainer chose to keep purge as `MoveKind.Extrude` motion + a new
+  `FeatureRole.Purge` (D2): no channel widening, and the classifier excludes towers, raft, and purge
+  by the same feature-role mechanism. `FLUSH_START/END` (and any purge bracket) maps the enclosed
+  range to `FeatureRole.Purge`, applied after `;TYPE:`/`; FEATURE:` markers so the explicit purge
+  bracket wins over the surrounding role.
 
 ### D4 — The precedence classifier (RR-007 §8), in `toolpath-core`.
 A pure function over the IR that labels each extrusion segment **model** or **housekeeping** by the
 first matching rule:
-1. explicit housekeeping bracket/role (tower roles D2, `MoveKind.Purge` D3, `Wipe`);
+1. explicit housekeeping role/bracket (tower roles D2, `FeatureRole.Purge` D3a, `MoveKind.Wipe`);
 2. explicit non-object state (`M486 S-1`, ideaMaker `PRINTING_ID:-1`, outside `EXCLUDE_OBJECT`/`M624`);
 3. explicit active-object membership (`object != 0`);
-4. feature fallback (exclude `Skirt`, `Brim`, `Raft`, `Support`, tower roles);
+4. feature fallback (exclude `Skirt`, `Brim`, `Raft`, `Support`, tower roles, `Purge`);
 5. (opt-in, D6) start-region fallback.
 
 ### D5 — Framing consumes a new `modelBounds`. **Recommendation: add `modelBounds`, don't redefine `objectBounds`.**

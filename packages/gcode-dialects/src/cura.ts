@@ -19,8 +19,8 @@ const TYPE_MAP: Record<string, number> = {
   support: FeatureRole.Support,
   'support-interface': FeatureRole.Support,
   skirt: FeatureRole.Skirt,
-  raft: FeatureRole.Brim,
-  'prime-tower': FeatureRole.Custom,
+  raft: FeatureRole.Raft,
+  'prime-tower': FeatureRole.PrimeTower,
   bridge: FeatureRole.Bridge
 };
 

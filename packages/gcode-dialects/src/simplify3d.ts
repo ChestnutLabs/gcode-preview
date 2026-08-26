@@ -16,7 +16,7 @@ import { applyMarkerRanges, type RangeMarker } from './annotate.js';
 const FEATURE_MAP: Record<string, number> = {
   skirt: FeatureRole.Skirt,
   brim: FeatureRole.Brim,
-  raft: FeatureRole.Brim,
+  raft: FeatureRole.Raft,
   'outer perimeter': FeatureRole.ExternalPerimeter,
   'inner perimeter': FeatureRole.Perimeter,
   perimeter: FeatureRole.Perimeter,
@@ -26,7 +26,9 @@ const FEATURE_MAP: Record<string, number> = {
   support: FeatureRole.Support,
   'dense support': FeatureRole.Support,
   bridge: FeatureRole.Bridge,
-  'prime pillar': FeatureRole.Custom,
+  'prime pillar': FeatureRole.PrimeTower,
+  // Ooze shield is an unmapped housekeeping wall — kept as generic `Custom` (stays in-frame, the safe
+  // direction per DD-026 §13) rather than guessed into a tower/purge role.
   'ooze shield': FeatureRole.Custom
 };
 

@@ -43,7 +43,8 @@ const FEATURE_MAP: Record<string, number> = {
   'support transition': FeatureRole.Support,
   skirt: FeatureRole.Skirt,
   brim: FeatureRole.Brim,
-  'prime tower': FeatureRole.Custom,
+  raft: FeatureRole.Raft,
+  'prime tower': FeatureRole.PrimeTower,
   'gap infill': FeatureRole.Infill,
   'internal bridge': FeatureRole.Bridge,
   custom: FeatureRole.Custom
