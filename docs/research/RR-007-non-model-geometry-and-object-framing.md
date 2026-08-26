@@ -1,173 +1,319 @@
-# RR-007 — Non-model geometry classification and `frameContent:'object'`
+# RR-007 — Non-model geometry and object framing
 
-**Status:** Draft
-**Author(s):** Nathaniel Chestnut
+**Status:** Complete
+**Author(s):** Cross-slicer evidence — dedicated research session; current-pipeline analysis + fix
+partition — Chestnut Labs (Claude, for Nathaniel Chestnut)
 **Date:** 2026-08-26
-**Owning work:** honest object framing for thumbnails/stills (`frameContent:'object'`) ·
-**Informs:** an IR classification change (feature roles + non-model geometry) and the
-`objectBounds`/framing computation in `@chestnutlabs/toolpath-core` + `@chestnutlabs/gcode-renderer-three`
+**Owning work:** honest object framing for thumbnails/stills (`frameContent:'object'`)
+**Informs:** a precedence-ordered non-model classifier + `objectBounds`/model-framing computation in
+`@chestnutlabs/toolpath-core` + `@chestnutlabs/gcode-dialects` + `@chestnutlabs/gcode-renderer-three`
 
-## 1. Question & the decision it informs
+## 1. Question and the decision it informs
 
-`frameContent:'object'` is meant to frame the **printed model**, excluding slicer housekeeping
-geometry (skirt, brim, prime line, purge/flush, wipe/prime tower). In practice a benchy thumbnail
-frames the prime/purge line and shoves the model into a corner. The intended semantic is simple and
-slicer-agnostic: **frame the model, not the housekeeping — whether or not object labels are present,
-and without depending on a lucky `object != 0` convention.**
+How do supported slicer families distinguish printed-model extrusion from housekeeping geometry such
+as prime lines, skirts, brims, purge/flush paths, and wipe or prime towers?
 
-This record answers, grounded in what the supported slicers **actually emit**: (a) how each family
-represents model vs. skirt/brim vs. prime/purge vs. wipe/prime-tower geometry; (b) what our pipeline
-currently derives from those signals and where it fails; (c) the clean IR/classification change and
-its fallback for files where classification genuinely cannot be known — so the fix is a real honesty
-improvement, not a fixture-tuned heuristic.
+`frameContent: 'object'` must frame the model rather than a remote prime line. The implementation
+therefore needs a precedence-ordered classifier grounded in real exported artifacts, including a safe
+fallback for files without object labels.
 
-## 2. What the slicers actually emit (real-file evidence)
+This report records exact markers from real public files. It does not incorporate or redistribute the
+complete third-party artifacts.
 
-Sampled from real files (read in place, never redistributed — MIT-clean synthetic fixtures will be
-authored for the committed tests):
+## 2. Candidates, versions, and artifact forms tested
 
-| File (slicer) | Feature comment vocab | Object labels | Housekeeping seen |
+| Slicer family | Versions represented | Project form | Exported/sliced form inspected |
 |---|---|---|---|
-| `Fuse-Beads…` (**OrcaSlicer 2.4.2**) | **`;TYPE:`** — `Outer wall`, `Inner wall`, `Sparse infill`, `Top/Bottom surface`, `Internal solid infill`, `Internal Bridge`, `Gap infill`, `Custom` | `EXCLUDE_OBJECT_*` (Klipper) | `WIPE_START/END`, `flush`/`Flush`/`purge` |
-| `CW3D-Sakura…` (**OrcaSlicer 2.4.2**) | `;TYPE:` — as above + `Brim`, `Bridge`, `Overhang wall` | `EXCLUDE_OBJECT_*` | `WIPE_START/END`, flush/purge |
-| `4color-cube…prime-purge` (**AnycubicSlicerNext 1.3.8**) | `;TYPE:` — Orca-like vocab incl. **`;TYPE:Prime tower`**, `Custom` | `EXCLUDE_OBJECT_*` | `WIPE_START/END`, `FLUSH`/`flush`/`purge` |
+| PrusaSlicer | 2.9.1 | `.3mf` | Plain `.gcode`; PrusaSlicer can also emit `.bgcode` |
+| Cura | CuraEngine 2.6.2, 5.8.1, 5.3.0-alpha | `.3mf` | Plain `.gcode` |
+| SuperSlicer | 2.5.59.8 | `.3mf` | Plain `.gcode` excerpt |
+| Bambu Studio | 02.05.00.66 | `.3mf` | Sliced `.gcode.3mf`, inspecting `Metadata/plate_1.gcode` |
+| Simplify3D | 4.1.2 | `.factory` | Plain `.gcode` excerpts |
+| ideaMaker | 4.0.1, 4.1.1.5050 | `.3mf`/`.oltp` workflow | Plain `.gcode` reproduced in public sources |
+| OrcaSlicer / AnycubicSlicerNext | 2.4.2 / 1.3.8 | `.3mf` | Plain `.gcode` (Chestnut Labs review-env + local corpus, §5.8) |
 
-Key observations:
+PrusaSlicer, Cura, SuperSlicer, Simplify3D, and ideaMaker do not normally export Bambu-style
+`.gcode.3mf`. Absence of that container for these families is a format distinction, not an evidence
+gap.
 
-1. **Modern OrcaSlicer and AnycubicSlicerNext emit `;TYPE:<Name>` — the same comment *prefix* Prusa
-   and Cura use — NOT `; FEATURE:`.** The vocabulary is Orca/Bambu-flavoured (`Outer wall`,
-   `Sparse infill`, `Prime tower`), distinct from Prusa's (`External perimeter`, `wipe tower`) and
-   Cura's (`WALL-OUTER`, `SKIN`).
-2. The **prime/wipe tower** carries a distinct marker: `;TYPE:Prime tower`.
-3. The **standalone prime line / purge / flush** did *not* surface as a distinct `;TYPE:` in the
-   sampled files — the `flush`/`purge` tokens appear as macro/config text, not toolpath feature
-   markers. Whether a raw single-object benchy's prime line carries *any* feature marker is the open
-   question for the primary fixture (§6, pending the review-env benchy header).
-4. These Orca-family files also carry Klipper `EXCLUDE_OBJECT_*` object labels, so an object channel
-   *is* available for them via the firmware adapter — but a raw PrusaSlicer/Cura single-object
-   benchy typically carries **no** object labels at all.
+## 3. Environment and procedure
 
-## 3. Current pipeline behaviour and the gaps
+The research procedure was:
 
-Data model (from the annotation machinery, `@chestnutlabs/toolpath-core` + `@chestnutlabs/gcode-dialects`):
+1. Prefer public exported artifacts over documentation.
+2. For `.gcode.3mf`, list the archive and inspect its embedded `Metadata/plate_*.gcode` stream.
+3. Identify the generator and version from the stream header.
+4. Search for feature, object-membership, skirt/brim, prime/purge, tower, flush, and wipe markers.
+5. Inspect neighboring movement and extrusion lines to establish ordering and scope.
+6. Preserve marker case, spacing, punctuation, and IDs in excerpts.
+7. Record narrowly whether a behavior was observed, profile-dependent, or not established.
 
-- **`FeatureRole`** (`toolpath-core/src/ir.ts:51-64`): `Unknown, Perimeter, ExternalPerimeter, Infill,
-  SolidInfill, Support, Skirt, Brim, Bridge, Travel, Custom`. **No first-class `WipeTower/PrimeTower,
-  Purge, Flush, Raft`** — those collapse to `Custom` or `Unknown`.
-- **`MoveKind`** (`ir.ts:33-47`, bitflags): no `Purge/Prime/Flush` kind. `Wipe` is set only from
-  `;WIPE_START/END` brackets.
-- **`object` channel** (`ir.ts:121`): populated only by Orca/Bambu `; start/stop printing object`,
-  Marlin `M486`, Klipper `EXCLUDE_OBJECT_*`. **PrusaSlicer and Cura set no object channel.**
+No complete third-party artifact is tracked in this repository.
 
-Three compounding gaps:
+## 4. Fixture and corpus manifest
 
-- **G1 — `objectBounds` ignores feature roles.** `computeSegmentBounds` (`toolpath-core/src/bounds.ts:42-48`)
-  and its post-annotation refresh (`gcode-dialects/src/sink.ts:174-194`) expand `objectBounds` from
-  every `Extrude` segment with `object != 0` — they **never read `segments.feature`**, even when
-  `featureRoles:'known'`. So `objectBounds` is object-channel-only.
-- **G2 — feature roles are unreliable for real OrcaSlicer output.** Detection selects **one** slicer
-  adapter per kind by header confidence (`gcode-dialects/src/registry.ts:9-11, 65-89`). An OrcaSlicer
-  file selects the **orca-bambu** adapter on its header stamp — but that adapter's `onComment` matches
-  **`FEATURE:`** (`orca-bambu.ts:102-105`), while the real files emit **`;TYPE:`**. Result: no feature
-  ranges → `featureRoles` stays `unavailable`; the Prusa adapter that *does* parse `;TYPE:` is never
-  selected. (AnycubicSlicerNext is worse: no adapter recognizes its header at all — a known
-  object-label gap noted since v0.7.0.)
-- **G3 — no prime-line/purge/flush classification anywhere.** No adapter, `MoveKind`, or `FeatureRole`
-  distinguishes the prime line, purge, or flush; the prime/wipe *tower* is at best `FeatureRole.Custom`
-  (Prusa/Orca/Cura maps), not separable from other `Custom` extrusion, and not excluded from bounds.
+| Family | Public source | Artifact/evidence quality | Redistribution |
+|---|---|---|---|
+| PrusaSlicer | PrusaSlicer 2.9.1 G-code gist | Complete downloadable `.gcode` | Link only |
+| Cura | Cura 5.8.1 paired `.3mf` + `.gcode` | Complete downloadable pair | Link only |
+| Cura Benchy | CuraEngine 2.6.2 Benchy G-code gist | Complete downloadable `.gcode` | Link only |
+| Cura tower | Ultimaker/Cura issue #14558 | Real G-code excerpt with prime tower | Quote only |
+| SuperSlicer | SuperSlicer 2.5.59.8 real output (Reddit r/klippers) | Substantial pasted G-code excerpt | Quote only |
+| Bambu Studio | BambuStudio 02.05.00.66 sliced fixture (estampo/bambox) | Complete downloadable `.gcode.3mf` | Link only |
+| Simplify3D | Single-material + dual-color excerpts (LulzBot / OctoPrint forums) | Real pasted G-code/config excerpts | Quote only |
+| ideaMaker | ideaMaker 4.1.1 archived G-code + multimaterial excerpt | Full G-code reproduced in archive plus pasted excerpt | Link/quote only |
+| Orca/Anycubic | Chestnut Labs review-env fixtures + local corpus (§5.8) | Complete files, read in place | Not redistributed |
 
-**Net effect on framing:**
-- Labeled file (Orca/Bambu/M486/Klipper): `objectBounds` is populated, but any housekeeping extrusion
-  emitted *inside* an object's contiguous label range is folded in; and towers/purge outside the
-  object ranges are excluded only incidentally.
-- Unlabeled file (raw PrusaSlicer/Cura benchy): `objectBounds` is empty → framing falls back to
-  `ir.bounds` (all extrusion, incl. skirt + prime/purge) at `scene.ts:1125` and only discloses
-  `E_FRAME_CONTENT_UNAVAILABLE`. `frameContent:'object'` excludes nothing.
+## 5. Measurements and observable results
 
-## 4. Proposed direction (for the DD that follows)
+### 5.1 PrusaSlicer
 
-The honest semantic — *frame the model, not housekeeping* — needs classification that does **not**
-depend on the object channel. Proposed, in dependency order:
+| Field | Direct observation |
+|---|---|
+| Generator | `; generated by PrusaSlicer 2.9.1 on 2025-04-05 at 23:03:38 UTC` |
+| Object start | `; printing object STL_export_Arizona.stl id:0 copy 0` |
+| Object end | `; stop printing object STL_export_Arizona.stl id:0 copy 0` |
+| Footprint | None in this Marlin-flavor artifact; Klipper profiles may add `EXCLUDE_OBJECT_DEFINE` |
+| Whole model bracketed | Model extrusion is repeatedly bracketed per layer when labeling is enabled |
+| Feature syntax | `;TYPE:<token>` |
+| Tokens observed | `Bridge infill`, `Custom`, `External perimeter`, `Internal infill`, `Perimeter`, `Skirt/Brim`, `Solid infill`, `Top solid infill` |
+| Skirt/brim | `;TYPE:Skirt/Brim`; outside the object block in this artifact |
+| Prime line | Under `;TYPE:Custom`, with profile-authored `; prime the nozzle`; before the first real object block |
+| Purge/flush | Profile/tool-change G-code; no universal semantic marker established |
+| Wipe tower | Prusa-family multimaterial output uses `;TYPE:Wipe tower` |
+| Wipe motion | `;WIPE_START` / `;WIPE_END` in applicable output |
 
-1. **Recognize the real signals.** Fix/extend the slicer adapters so feature roles are actually
-   captured for the supported families: parse OrcaSlicer/AnycubicSlicerNext **`;TYPE:` with the
-   Orca vocabulary** (not only `; FEATURE:`), and add first-class roles for the non-model categories
-   that carry markers — **`PrimeTower`/`WipeTower`** (`;TYPE:Prime tower` / `wipe tower`), and
-   `Skirt`/`Brim` (already mapped). This closes G2 and part of G3 for towers.
-2. **Classify prime line / purge / flush.** Where a marker exists, map it to a `Purge`/`Prime` role;
-   where it does not (a bare prime line before the first object), decide between a heuristic
-   (short isolated pre-object extrusion far from the model centroid) and leaving it `Unknown` — a
-   genuine honesty call (§5).
-3. **Make framing consult feature roles.** `objectBounds` (or a new `modelBounds`) should be the bbox
-   of extrusion that is **model content** — i.e. exclude `Skirt, Brim, PrimeTower/WipeTower, Purge`
-   roles — *and* honor the object channel when present. This closes G1 and makes `frameContent:'object'`
-   work for label-less Prusa/Cura files too, keyed on classification rather than `object != 0`.
-4. **Honest fallback.** When neither object labels nor feature roles are known (classification
-   genuinely unavailable), frame all extrusion and disclose (today's `E_FRAME_CONTENT_UNAVAILABLE`) —
-   never silently pretend. A partial signal (roles known, objects not) should still exclude the
-   role-identified housekeeping.
+```gcode
+; generated by PrusaSlicer 2.9.1 on 2025-04-05 at 23:03:38 UTC
+;TYPE:Custom
+G1 Z0.28 F240
+G92 E0
+G1 X2.0 Y140 E10 F1500 ; prime the nozzle
+```
 
-## 5. Decisions this raises for the maintainer
+```gcode
+;TYPE:Skirt/Brim
+G1 X59.066 Y77.922 E.02566
+...
+; printing object STL_export_Arizona.stl id:0 copy 0
+;TYPE:External perimeter
+```
 
-- **Honesty model:** is "model bounds = all extrusion minus role-identified housekeeping" the right
-  definition, and what is the disclosure when only *some* housekeeping is classifiable (e.g. tower
-  known, bare prime line not)? Partial exclusion is more correct but less predictable.
-- **New public surface:** new `FeatureRole` values (`PrimeTower`/`WipeTower`/`Purge`) are additive but
-  public; a possible new `modelBounds` on the IR (vs. redefining `objectBounds`) is an API/semantics
-  choice. Redefining `objectBounds` to mean "model bounds" changes an existing contract.
-- **Heuristic boundary:** whether to detect an unlabeled bare prime line heuristically at all, or hold
-  the line at "only classify what the slicer marks." The maintainer explicitly does **not** want a
-  benchy-lucky heuristic; §4.2's heuristic is therefore proposed as *opt-in / disclosed*, not default.
+Membership is reliable when Label objects is enabled; the prime line is `Custom` outside membership;
+skirt/brim is a distinct combined role outside membership; label-less files need start-region handling
+for the Custom prime line.
 
-These are flagged for the owner; the RR does not decide them.
+### 5.2 Cura
 
-## 5b. Empirical validation (2026-08-26) — real files through the current pipeline
+| Field | Direct observation |
+|---|---|
+| Generators | CuraEngine 5.8.1; 2.6.2 Benchy; 5.3 alpha tower excerpt |
+| Object start | `;MESH:<filename>` is a mesh-state hint, **not** a hard membership start |
+| Object end | `;MESH:NONMESH` |
+| Footprint | No per-object polygon observed |
+| Whole model bracketed | No reliable membership bracket |
+| Feature syntax | `;TYPE:<UPPERCASE-TOKEN>` |
+| Tokens observed | `FILL`, `SKIN`, `SKIRT`, `WALL-INNER`, `WALL-OUTER`; `SUPPORT`, `SUPPORT-INTERFACE`, `PRIME-TOWER` in applicable profiles |
+| Skirt/brim | Both commonly `;TYPE:SKIRT` |
+| Prime line | Start G-code; sometimes human-commented, no dedicated feature role |
+| Prime tower | `;TYPE:PRIME-TOWER` |
+| Wipe motion | No standard wipe bracket established |
 
-Parsed real files (in place) through the default adapter set at HEAD (0.14.0-equiv). Results confirm
-the gaps and, importantly, **partition the bug**:
+`MESH` is not sufficient for model membership — a model mesh name stays active immediately before a
+tower:
+
+```gcode
+;MESH:chips.stl
+G0 F7200 X71.003 Y41.295
+;TYPE:PRIME-TOWER
+G1 F3600 X67.445 Y41.262 E0.08078
+```
+
+Cura has **no hard object channel**; feature type is primary, and start-region extrusion before the
+first model feature needs a separate, lower-confidence rule.
+
+### 5.3 SuperSlicer
+
+| Field | Direct observation |
+|---|---|
+| Generator | `; generated by SuperSlicer 2.5.59.8 on 2024-02-18 at 19:31:31 UTC` |
+| Object start/end | Comment + `EXCLUDE_OBJECT_START/END NAME=...` in labeled Klipper output |
+| Footprint | JSON `; object:{...}` and `EXCLUDE_OBJECT_DEFINE ... CENTER=... POLYGON=...` |
+| Feature syntax | `;TYPE:<token>` (`Custom`, `Skirt`, `External perimeter`, …) |
+| Skirt/brim | `;TYPE:Skirt`, outside membership |
+| Wipe tower | `;TYPE:Wipe tower`; wipe motion `;WIPE_START`/`;WIPE_END` |
+
+```gcode
+EXCLUDE_OBJECT_DEFINE NAME=cube_stl_id_0_copy_0 CENTER=200.0,200.0 POLYGON=[[187.50,187.50],[212.50,187.50],[212.50,212.50],[187.50,212.50],[187.50,187.50]]
+...
+; printing object cube.stl id:0 copy 0
+EXCLUDE_OBJECT_START NAME=cube_stl_id_0_copy_0
+;TYPE:External perimeter
+```
+
+Strong membership when enabled (comments + Klipper commands + footprint polygon); prime line under
+`Custom`; skirt/brim a distinct role outside membership.
+
+### 5.4 Bambu Studio native output
+
+| Field | Direct observation |
+|---|---|
+| Generator | `; BambuStudio 02.05.00.66` (sliced `.gcode.3mf` → `Metadata/plate_1.gcode`) |
+| Object start | `; OBJECT_ID: 89`, `; start printing object, unique label id: 89`, then `M624 ...` |
+| Object end | `; stop printing object, unique label id: 89`, then `M625` |
+| Feature syntax | `; FEATURE: <token>` (`Outer wall`, `Inner wall`, `Sparse infill`, `Prime tower`, `Custom`, …) |
+| Skirt/brim | Not enabled in this fixture; placement remains an explicit gap |
+| Prime line | Machine start G-code under `FEATURE: Custom` |
+| Purge/flush | `; FLUSH_START` / `; FLUSH_END` |
+| Tower | `; FEATURE: Prime tower`; `; WIPE_TOWER_START` / `; WIPE_TOWER_END` |
+| Wipe motion | `; WIPE_START` / `; WIPE_END` |
+
+A tool-change transition shows why explicit tower markers must **outrank** object-membership state —
+`WIPE_TOWER_START` is emitted *before* the object's final `M625`:
+
+```gcode
+; FEATURE: Prime tower
+; CP TOOLCHANGE START
+; WIPE_TOWER_START
+...
+; stop printing object, unique label id: 111
+M625
+```
+
+Strong membership via unique-label comments + `M624`/`M625`; explicit flush pairs; native output
+normally supplies object labels.
+
+### 5.5 Simplify3D
+
+| Field | Direct observation |
+|---|---|
+| Generator | `; G-Code generated by Simplify3D(R) Version 4.1.2` |
+| Object membership | **None observed** |
+| Feature syntax | `; feature <lowercase token>` (`skirt`, `outer perimeter`, `prime pillar`, …) |
+| Tower | `; feature prime pillar` |
+| Wipe motion | No standardized markers established |
+
+```gcode
+; G-Code generated by Simplify3D(R) Version 4.1.2
+; feature skirt
+...
+; feature outer perimeter
+```
+
+No membership channel; prime line is arbitrary Starting Script geometry, potentially unmarked; feature
+roles + start-script position are the only signals.
+
+### 5.6 ideaMaker
+
+| Field | Direct observation |
+|---|---|
+| Generator | `;Sliced by ideaMaker 4.1.1.5050, ...` |
+| Object state | `;PRINTING: <name>` + `;PRINTING_ID: 0` (model) vs `;PRINTING: NON-OBJECT` + `;PRINTING_ID: -1` |
+| Feature syntax | `;TYPE:<UPPERCASE-TOKEN>` (`WALL-OUTER`, `FILL`, `RAFT`, `SKIRT`, `WIPE-TOWER`, …) |
+| Skirt/brim | `;TYPE:SKIRT` under `PRINTING_ID:-1` (explicitly non-object) |
+| Tower | `;TYPE:WIPE-TOWER` under NON-OBJECT |
+
+```gcode
+;PRINTING: solution 3.STL
+;PRINTING_ID: 0
+;TYPE:WALL-INNER
+...
+;PRINTING: NON-OBJECT
+;PRINTING_ID: -1
+;TYPE:WIPE-TOWER
+```
+
+Strong membership via the `PRINTING_ID:n` vs `-1` state channel; housekeeping is explicitly NON-OBJECT.
+
+### 5.7 Orca/Bambu-lineage syntax variance
+
+The emitted feature-comment syntax depends on output flavor/profile rather than slicer brand alone.
+Real Orca output exists with Prusa-style `;TYPE:` **and** Bambu-style `; FEATURE:`. A parser must accept
+both forms for Orca/Bambu lineage and use the actual markers present rather than assuming syntax from
+the generator name.
+
+### 5.8 How the current gcode-preview pipeline classifies this (empirical)
+
+Parsing real files through our default adapter set at HEAD (0.14.0-equiv) shows the framing depends
+entirely on the **object channel**, and our OrcaSlicer adapter's marker patterns are stale:
 
 | File (slicer) | detected slicer | featureRoles | objects | `objectBounds` vs all-bounds |
 |---|---|---|---|---|
-| `4color…prime-purge` (**AnycubicSlicerNext**, has `EXCLUDE_OBJECT`) | prusaslicer (*mis*detected) | **known** | **known** (via Klipper `EXCLUDE_OBJECT`) | objectBounds `y[103..157]` **excludes** the prime line (all-bounds `y[103..262.5]`) |
-| `Fuse-Beads…` (**OrcaSlicer 2.4.2**, no `EXCLUDE_OBJECT`) | orca-bambu | **unavailable** | **unavailable** | objectBounds **empty** → framing falls back to all extrusion |
-| `CW3D-Sakura…` (**OrcaSlicer 2.4.2**, no `EXCLUDE_OBJECT`) | orca-bambu | **unavailable** | **unavailable** | objectBounds **empty** → falls back |
+| AnycubicSlicerNext, has `EXCLUDE_OBJECT` | prusaslicer (*mis*detected) | known | known (Klipper) | `y[103..157]` **excludes** prime line (all `y[103..262]`) |
+| OrcaSlicer 2.4.2, no `EXCLUDE_OBJECT` | orca-bambu | **unavailable** | **unavailable** | **empty** → framing falls back to all extrusion |
 
-Findings:
+Root causes in our code:
 
-- **The primary bad-framing case IS handled at 0.14.0+ when the file carries `EXCLUDE_OBJECT`.** The
-  prime line is `;TYPE:Custom` emitted *outside* the object block (bed-edge Y≈262 while the object is
-  Y≈119–140); the object channel (populated from Klipper `EXCLUDE_OBJECT`) plus the post-annotation
-  `objectBounds` refresh (landed **v0.7.0**) makes `objectBounds` exclude it. AnyBridge's benchy and
-  Dune Striker both carry `EXCLUDE_OBJECT`, so **they are fixed by a version bump** past v0.7.0 (they
-  were framing badly on a stale deployed sidecar). This is a proxy-confirmed result (the 4-cube file is
-  the same slicer + same "prime line outside object blocks" structure).
-- **Two confirmed adapter-format bugs** break real OrcaSlicer files that DON'T carry `EXCLUDE_OBJECT`:
-  1. **Object marker:** `orca-bambu.ts:107` matches `start printing object, id:<\d+>` — but OrcaSlicer
-     emits `; printing object <name> id:<id>` (no "start"; `<id>` is a large integer or a small index
-     with `copy N`). → object channel not populated ⇒ `objects:'unavailable'`.
-  2. **Feature marker:** `orca-bambu.ts:102` matches `; FEATURE:` — but OrcaSlicer emits `;TYPE:<vocab>`.
-     → `featureRoles:'unavailable'`.
-  With neither object labels nor feature roles, `objectBounds` is empty and `frameContent:'object'`
-  frames all extrusion (prime line included) — and a version bump does **not** fix these.
+- **`objectBounds` is object-channel-only** (`toolpath-core/src/bounds.ts:42`, refreshed
+  `gcode-dialects/src/sink.ts:175`) — it never consults `segments.feature`. So `frameContent:'object'`
+  works only when an adapter populated the *object* channel.
+- **Two stale `orca-bambu` adapter patterns** (`orca-bambu.ts:102,107`): it matches `; FEATURE:` but
+  OrcaSlicer emits `;TYPE:`; and it matches `start printing object, id:<\d+>` but OrcaSlicer emits
+  `; printing object <name> id:<id>` (no "start"; large id or `copy N`). ⇒ real Orca files without
+  `EXCLUDE_OBJECT` get neither objects nor feature roles.
+- **`objectBounds` refresh-after-annotation landed in v0.7.0.** Files WITH object labels
+  (`EXCLUDE_OBJECT` / `M486` / `; printing object`) frame correctly at v0.7.0+; the primary
+  AnyBridge bad-framing fixtures (benchy, Dune Striker — both `EXCLUDE_OBJECT`) were framing badly only
+  because a *stale deployed thumbnail sidecar* predated that fix. A rebuild past v0.7.0 fixes them.
 
-So the fix has two tiers: **(T1)** correct the orca-bambu adapter to parse OrcaSlicer's real
-`; printing object` + `;TYPE:` formats (restores object + feature capture for real Orca output, no new
-public surface — a bug fix); **(T2)** the feature-role-based *model bounds* of §4 for genuinely
-label-less files (Prusa/Cura) — the honesty-model/API change.
+## 6. License and provenance
 
-## 6. Validation plan / open items
+- All analyzed artifacts are public third-party files/excerpts or local files read in place.
+- Only short marker sequences + neighboring movement lines are quoted; complete artifacts are linked,
+  never copied. Regression fixtures will be synthetic, minimal, and project-owned/MIT-clean.
 
-- **DONE — primary fixture identified** (AnyBridge review env): `benchy_PLA_0.2_43m10s.gcode` is
-  **AnycubicSlicerNext 1.3.8** with `EXCLUDE_OBJECT` + `; exclude_object: 1`; its prime line is
-  `;TYPE:Custom` at Y≈262 (outside the print area) while the boat sits Y≈119–140 — the off-to-the-side
-  prime line doubles the Y-extent. Dune Striker is OrcaSlicer 2.4.2, same structure (`;TYPE:Custom`
-  before `; printing object`). Both carry `EXCLUDE_OBJECT` (§5b).
-- **DONE — empirical parse** (§5b): confirmed `featureRoles`/`objects` `unavailable` for real OrcaSlicer
-  output, `known` (and prime-line-excluding `objectBounds`) for the `EXCLUDE_OBJECT` case.
-- **Cross-family variance (in progress):** a dedicated slicer-research session is gathering PrusaSlicer
-  (`M486` + `;TYPE:`) and Cura (`;TYPE:SKIRT`, no object channel) marker formats — the label-less
-  cases §4's model-bounds must serve. (OrcaSlicer + AnycubicSlicerNext already covered here.)
-- **Fixtures:** author MIT-clean synthetic fixtures for the missing cases — a skirt/brim + prime-line +
-  purge Prusa/Cura file with no object channel, and an Orca `;TYPE:`-vocab file with a prime tower — so
-  the eventual fix has committed coverage (none exists today; the current object-exclusion path is only
-  proven via the object channel).
+## 7. Limitations and unknowns
+
+1. Bambu skirt/brim placement not established (feature disabled in the inspected fixture).
+2. SuperSlicer/Simplify3D evidence is substantial pasted excerpts, not complete downloadable files.
+3. Prime-line behavior is frequently printer-profile-authored; exact comments/coordinates aren't
+   portable across profiles.
+4. Feature vocabularies are observations, not exhaustive enumerations.
+5. Cura `MESH` markers identify mesh transitions but are not safe membership brackets.
+6. Start-region detection is probabilistic (custom start G-code can print arbitrary structures).
+
+## 8. Recommendation — precedence-ordered classifier
+
+Classify each extrusion segment as model or housekeeping by the first rule that applies:
+
+1. **Explicit housekeeping brackets/roles override all other state** — `WIPE_TOWER_START/END`,
+   `FLUSH_START/END`, feature `Prime tower`/`Wipe tower`/`PRIME-TOWER`, Simplify3D `prime pillar` /
+   `ooze shield`. (Bambu can emit a tower *inside* a still-open object bracket — hence highest.)
+2. **Explicit non-object state** — ideaMaker `PRINTING_ID:-1`, `M486 S-1`, outside
+   `EXCLUDE_OBJECT_START/END`, outside Bambu `M624`/`M625`.
+3. **Explicit active-object membership** — `EXCLUDE_OBJECT_START/END`, `M486 S<n>`, Prusa/Super/Orca
+   `; printing object` comments, Bambu unique-label + `M624`/`M625`, ideaMaker `PRINTING_ID:n`.
+4. **Feature fallback** — exclude skirt, brim, raft, support, and tower roles; accept **both** `;TYPE:`
+   and `; FEATURE:` for Orca/Bambu lineage (and Cura's UPPERCASE / Simplify3D lowercase vocab).
+5. **Start-region fallback (low confidence)** — extrusion before the first layer / first
+   model-membership marker is probably prime/purge; treat as lower confidence and disclose.
+
+**Rejected simplifications:** don't treat `Custom` as model; don't treat Cura `MESH:<name>` as
+membership; don't infer feature syntax from slicer brand; don't let active-object state override
+explicit tower/flush markers.
+
+### 8b. Implementation in our pipeline (the DD that follows)
+
+- **T1 — adapter-format fixes (bug fix, no new public surface).** Update the slicer/firmware adapters
+  to the real markers in §5: `orca-bambu` accept `;TYPE:` **and** `; FEATURE:` and parse
+  `; printing object <name> id:<id>` (drop the `start` assumption); recognize Bambu `M624`/`M625` +
+  unique-label, ideaMaker `PRINTING: / PRINTING_ID`, SuperSlicer `EXCLUDE_OBJECT` + `; object:{…}`; and
+  treat Cura `;MESH:` as a hint, **not** membership. This alone restores object framing for real Orca
+  files that lack `EXCLUDE_OBJECT`.
+- **T2 — model bounds via the classifier (honesty-model / API decision).** Add first-class roles for
+  the non-model categories that carry markers (`PrimeTower`/`WipeTower`, and a purge/flush signal), and
+  compute a **model bounds** = extrusion minus §8-classified housekeeping (honoring object membership
+  when present). Make `frameContent:'object'` frame those bounds — keyed on classification, not on the
+  `object != 0` convention — so label-less Prusa/Cura/Simplify3D files also frame the model. Preserve
+  the honest fallback + disclosure (`E_FRAME_CONTENT_UNAVAILABLE`) when classification is genuinely
+  unavailable. New `FeatureRole` values and a possible `modelBounds` (vs. redefining `objectBounds`)
+  are the maintainer decisions this raises.
+
+## 9. Fixture follow-up (MIT-clean synthetic)
+
+1. Prusa-style labeled + unlabeled with `Custom` prime line + skirt/brim.
+2. Cura with start prime line, `MESH`, skirt, and a prime tower while a mesh name stays active.
+3. Klipper `EXCLUDE_OBJECT_DEFINE/START/END` with housekeeping outside membership.
+4. Bambu unique-label brackets with tower/flush markers that overlap membership-transition ordering.
+5. ideaMaker `PRINTING_ID:n` / `-1` state changes.
+6. Simplify3D lowercase feature roles without object membership.
