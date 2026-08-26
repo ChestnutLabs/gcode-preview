@@ -1,8 +1,11 @@
 /**
  * OrcaSlicer / Bambu Studio dialect adapter (DD-005 phase 3, issue #75).
  *
- * Annotates: `; FEATURE:` roles (→ `featureRoles: 'known'`), Bambu object
- * start/stop comments (→ `object` channel + `objects: 'known'`), bed geometry
+ * Annotates: feature roles from `; FEATURE:` (Bambu Studio) **or** `;TYPE:`
+ * (real OrcaSlicer / AnycubicSlicerNext — same vocabulary, different prefix;
+ * RR-007 §5.8) → `featureRoles: 'known'`; object start/stop comments across all
+ * lineage formats (Bambu `start printing object, unique label id:`, Orca
+ * `printing object <name> id:<id>`) → `object` channel + `objects: 'known'`; bed geometry
  * from `printable_area` config comments (bare .gcode files — inside a
  * `.gcode.3mf` the container's machine config already provides `known`
  * geometry and outranks this), and printer identity. Detection also accepts
@@ -41,14 +44,44 @@ const FEATURE_MAP: Record<string, number> = {
   brim: FeatureRole.Brim,
   'prime tower': FeatureRole.Custom,
   'gap infill': FeatureRole.Infill,
+  'internal bridge': FeatureRole.Bridge,
   custom: FeatureRole.Custom
 };
+
+/**
+ * Match an Orca/Bambu-lineage object-start comment across its real formats (RR-007 §5), returning the
+ * raw object id (stable per object) + optional name, or null:
+ *   `start printing object, unique label id: 89`      Bambu Studio (name absent here)
+ *   `printing object <name> id:729618461984033312`    OrcaSlicer — name before a large id
+ *   `printing object "benchy.stl" id:0 copy 0`        AnycubicSlicerNext / Prusa-lineage
+ * The leading `; ` is already stripped by the comment hook.
+ */
+function matchPrintingObjectStart(trimmed: string): { id: string; name?: string } | null {
+  if (!/^(?:start\s+)?printing object\b/i.test(trimmed)) return null;
+  const idm = /\bid:?\s*(\d+)/i.exec(trimmed);
+  if (idm === null) return null;
+  // Name: prefer an explicit `name:<...>` suffix (Bambu), else a quoted or bare name BEFORE the id
+  // (OrcaSlicer / Anycubic), rejecting `unique` / `unique label` filler.
+  let name = '';
+  const suffix = /\bname:\s*(.+?)\s*$/i.exec(trimmed);
+  if (suffix !== null) {
+    name = suffix[1].trim();
+  } else {
+    const pre = /printing object[,:]?\s*(?:"([^"]*)"|(.+?))\s+(?:unique\s+(?:label\s+)?)?id:?/i.exec(trimmed);
+    name = (pre?.[1] ?? pre?.[2] ?? '').trim();
+    if (/^unique(\s+label)?$/i.test(name)) name = '';
+  }
+  return { id: idm[1], name: name.length > 0 ? name : undefined };
+}
 
 interface OrcaState {
   features: RangeMarker[];
   objects: RangeMarker[];
   wipes: WipeMark[];
   objectNames: Map<number, string>;
+  /** Stable object id (from the comment) → sequential 1-based channel value (raw ids can exceed Uint32). */
+  objectIdToValue: Map<string, number>;
+  objectCounter: number;
   bedPoints: string | null;
   bedSrcByte?: number;
   heightMm?: number;
@@ -68,6 +101,8 @@ function stateFor(sink: AnnotationSink): OrcaState {
       objects: [],
       wipes: [],
       objectNames: new Map(),
+      objectIdToValue: new Map(),
+      objectCounter: 0,
       bedPoints: null,
       thumbs: new ThumbnailCollector()
     };
@@ -99,16 +134,30 @@ export function orcaBambu(): DialectAdapter {
     onComment(comment, srcByte, sink) {
       const s = stateFor(sink);
       const trimmed = comment.trim();
-      if (trimmed.startsWith('FEATURE:')) {
-        const role = FEATURE_MAP[trimmed.slice(8).trim().toLowerCase()];
+      // Feature roles: Bambu Studio emits `; FEATURE:<vocab>`; real OrcaSlicer / AnycubicSlicerNext
+      // emit `;TYPE:<vocab>` — the same Orca vocabulary, different prefix (RR-007 §5.8). Accept both.
+      const featureName = trimmed.startsWith('FEATURE:')
+        ? trimmed.slice(8)
+        : trimmed.startsWith('TYPE:')
+          ? trimmed.slice(5)
+          : null;
+      if (featureName !== null) {
+        const role = FEATURE_MAP[featureName.trim().toLowerCase()];
         s.features.push({ srcByte, value: role ?? FeatureRole.Custom });
         return;
       }
-      const start = /^start printing object,?\s*(?:unique\s+)?id:?\s*(\d+)(?:\s+name:\s*(.+))?/i.exec(trimmed);
+      // Object membership start (all lineage formats — see matchPrintingObjectStart). Assign a
+      // SEQUENTIAL 1-based channel value per distinct id (raw ids can exceed Uint32) and reuse it
+      // across per-layer re-bracketing of the same object.
+      const start = matchPrintingObjectStart(trimmed);
       if (start !== null) {
-        const value = parseInt(start[1]) + 1; // object channel is 1-based (0 = none)
+        let value = s.objectIdToValue.get(start.id);
+        if (value === undefined) {
+          value = ++s.objectCounter;
+          s.objectIdToValue.set(start.id, value);
+          if (start.name !== undefined) s.objectNames.set(value, start.name);
+        }
         s.objects.push({ srcByte, value });
-        if (start[2] !== undefined) s.objectNames.set(value, start[2].trim());
         return;
       }
       if (/^stop printing object/i.test(trimmed)) {
