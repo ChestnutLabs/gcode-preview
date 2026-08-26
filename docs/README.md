@@ -67,7 +67,7 @@ golden/native fixtures + manifest with CI validation, boundary lint, license CI 
 consumer smoke harnesses, plus the five framework adapters (`gcode-preview-core`/`-vue`/`-react`/
 `-svelte`/`-element`) and the presentation renderer (`gcode-model-renderer`). CI (`build`) is a
 required check on `main`/`dev`. **All fourteen `@chestnutlabs/*` packages are published to npm at
-`v0.14.0`** (lockstep, npm provenance); `main` is the release branch, publishing from tagged GitHub
+`v0.15.0`** (lockstep, npm provenance); `main` is the release branch, publishing from tagged GitHub
 Releases (`v0.1.0` E7/DD-008, `v0.2.0` E9/DD-009, `v0.3.0` E8/#188, `v0.4.0` #189 non-extrusion,
 `v0.5.x` hardening #279, `v0.6.0`/`v0.7.0` ModelRenderer + toolpath batch #296/#306, `v0.8.1` 3MF
 `paint_color` multicolor decode, `v0.9.0` interactive `createModelViewer` #296/DD-021, `v0.10.0`
