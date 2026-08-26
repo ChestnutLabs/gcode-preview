@@ -14,7 +14,7 @@ import type { Confidence } from '@chestnutlabs/toolpath-core';
 import type { GLRendererLike, RenderTargetCanvas } from '@chestnutlabs/gcode-renderer-three';
 import { ModelRenderer, type ModelBackground, type PresentationView } from './model-renderer.js';
 import { isModelScene, resolveModelScene } from './loaders.js';
-import { sceneInstanceCount, type ModelScene } from './scene-model.js';
+import { sceneInstanceCount, type ModelPlateSummary, type ModelScene } from './scene-model.js';
 import { computeCacheKey } from './cache-key.js';
 import type { ModelLimits } from './limits.js';
 
@@ -66,6 +66,12 @@ export interface RenderModelStillResult {
    * size" the same way. Always 1 until model LOD lands (DD-022 Phase 2); reserved so the field is stable.
    */
   decimationApplied: number;
+  /**
+   * Declared plate structure (DD-025), present only when the source explicitly declares plates
+   * (`capabilities.plates === 'known'`); absent for a single/plate-less source. `active` is the source's
+   * declared active plate id when present.
+   */
+  plates?: { list: ModelPlateSummary[]; active?: number };
   /** Stable identity for caching: `hash(source) + options + envId`. */
   cacheKey: string;
 }
@@ -124,6 +130,7 @@ export async function renderModelStill(
       materials: scene.capabilities.materials,
       instancedCount: sceneInstanceCount(scene),
       decimationApplied: 1,
+      ...(scene.plates !== undefined ? { plates: scene.plates } : {}),
       cacheKey
     };
   } finally {
