@@ -487,8 +487,9 @@ export class ToolpathRenderer {
 
   private startBuild(ir: ToolpathIR): void {
     this.clearToolpathGeometry();
-    // Fidelity policy (DD-023 §4 D6): `full` renders the COMPLETE representation — never auto-decimate;
-    // `adaptive`/`fast` keep the capability-aware `auto` decimation. `fast` additionally prefers flat lines.
+    // Fidelity policy (DD-023 §4 D6). `full` renders the COMPLETE representation (never auto-decimate);
+    // `fast` prefers flat lines; `adaptive` keeps the capability-aware `auto` decimation for the LINES
+    // overview only. Crucially, TUBE geometry is NEVER segment-decimated in any policy — see the tube branch.
     const decimation: 'auto' | number = this.qualityMode === 'full' ? 1 : 'auto';
     try {
       this.buildResult = buildChunks(ir, { decimation });
@@ -501,10 +502,14 @@ export class ToolpathRenderer {
         ? 'lines'
         : chooseQuality(this.requestedQuality, this.buildResult.totalSegmentsIncluded);
     if (this.active === 'tubes') {
-      // Tube geometry is ~50× the build cost of lines: rebuild with a small
-      // chunk target so no single chunk can exceed the §8 stall budget.
+      // Tube geometry is ~50× the build cost of lines: rebuild with a small chunk target so no single chunk
+      // exceeds the §8 stall budget. Tubes are built with **decimation 1 (never drop segments)** regardless
+      // of policy: dropping every-Nth extrusion segment leaves the survivors non-contiguous, so the tube
+      // path-builder splits them into disconnected capped stubs (chopped tubes — the RR-006 continuity break,
+      // via the autoDecimation lever). Tube memory is bounded ONLY by the continuity-preserving cross-section
+      // budget below; if even a 3-sided tube can't fit, we fall back to continuous LINES, never chopped tubes.
       try {
-        this.buildResult = buildChunks(ir, { decimation, targetSegmentsPerChunk: TUBES_CHUNK_TARGET });
+        this.buildResult = buildChunks(ir, { decimation: 1, targetSegmentsPerChunk: TUBES_CHUNK_TARGET });
       } catch (err) {
         this.emit({
           type: 'error',
@@ -547,10 +552,13 @@ export class ToolpathRenderer {
     this.active = 'lines';
     this.clearToolpathGeometry();
     if (this.ir !== null) {
-      // Re-chunk at the lines-mode target (the tubes build used small chunks). Keep the policy's decimation
-      // so a `full`-mode lines fallback stays undecimated.
+      // Re-chunk at the lines-mode target (the tubes build used small chunks). This is the honest tube→lines
+      // fallback — the requested TUBE representation couldn't fit, so we degrade to **continuous lines**
+      // (decimation 1), never segment-dropped: the maintainer's degradation order is full tubes → radial-
+      // reduced tubes → continuous lines, and dropping extrusion segments here would reintroduce the chopped
+      // look this fallback exists to avoid. Lines are position-only (cheap), so full segments are safe.
       try {
-        this.buildResult = buildChunks(this.ir, { decimation: this.qualityMode === 'full' ? 1 : 'auto' });
+        this.buildResult = buildChunks(this.ir, { decimation: 1 });
       } catch {
         this.buildResult = null;
       }
