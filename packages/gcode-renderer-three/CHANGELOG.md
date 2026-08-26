@@ -1,5 +1,44 @@
 # @chestnutlabs/gcode-renderer-three
 
+## 0.14.0
+
+### Minor Changes
+
+- [#367](https://github.com/ChestnutLabs/gcode-preview/pull/367) [`60e24e1`](https://github.com/ChestnutLabs/gcode-preview/commit/60e24e15b6b72e9aa097f4d2fd22b0c91a480cea) Thanks [@sobechestnut-dev](https://github.com/sobechestnut-dev)! - feat(renderer): `qualityMode` fidelity policy — Full / Adaptive / Fast (DD-023 §4 D6, Phase B)
+
+  Adds a `qualityMode` option/prop (and `setQualityMode`) across the toolpath renderer, the core controller,
+  and all four adapters — the fidelity **policy**, distinct from the geometry `quality` tier (`lines`/`tubes`):
+  - **`'full'`** — render the COMPLETE representation: no every-Nth decimation, full-radial continuous tubes,
+    and **no budget-driven tubes→lines fallback** (only the per-chunk vertex safety net remains). So a normal
+    large plate renders at full quality on capable hardware instead of being gated down by the static ceilings.
+  - **`'adaptive'`** (default) — the capability-aware auto path (`auto` decimation + `tubeByteBudget`
+    cross-section coarsening, disclosed). Reproduces today's behaviour exactly.
+  - **`'fast'`** — explicitly trade fidelity for responsiveness (flat lines).
+
+  This is the consumer control from the DD-023 Phase B contract: a user/admin picks the policy; `'full'` never
+  silently degrades. Capability-aware **auto** budget selection (classifier-driven Adaptive) and the
+  too-heavy-for-this-client signal land in a later increment. Additive — the default `'adaptive'` preserves
+  current behaviour.
+
+### Patch Changes
+
+- [#369](https://github.com/ChestnutLabs/gcode-preview/pull/369) [`c99b221`](https://github.com/ChestnutLabs/gcode-preview/commit/c99b2219566b6427c3d11d37be04876415db3bea) Thanks [@sobechestnut-dev](https://github.com/sobechestnut-dev)! - fix(renderer): tubes are never segment-decimated — continuous, never chopped (RR-006 / DD-023)
+
+  Tube geometry is now built with **decimation 1 regardless of policy**: `autoDecimation` drops every-Nth
+  extrusion segment, which for tubes leaves the survivors non-contiguous so the path-builder splits them into
+  disconnected capped stubs — visibly chopped tubes (the RR-006 continuity break, via the `autoDecimation`
+  lever that the v0.12.0 fix did not cover). Tube memory is bounded **only** by the continuity-preserving
+  cross-section (radial) budget; when even a 3-sided tube can't fit, the render degrades to **continuous
+  lines** (also undecimated) — never chopped tubes. This makes the honest degradation order full-radial tubes →
+  lower-radial tubes → continuous lines. On the current static budget a large forced-`tubes` file (≳ ~1.9 M
+  extrusion segments) now renders as continuous lines instead of chopped tubes; capability-aware budgets
+  (later) raise that ceiling so capable hardware renders continuous tubes. `qualityMode: 'full'` stays the
+  uncompromised reference (full-radial, no fallback).
+
+- Updated dependencies []:
+  - @chestnutlabs/gcode-colors@0.14.0
+  - @chestnutlabs/toolpath-core@0.14.0
+
 ## 0.13.0
 
 ### Minor Changes

@@ -1,5 +1,33 @@
 # @chestnutlabs/gcode-preview-vue
 
+## 0.14.0
+
+### Minor Changes
+
+- [#367](https://github.com/ChestnutLabs/gcode-preview/pull/367) [`60e24e1`](https://github.com/ChestnutLabs/gcode-preview/commit/60e24e15b6b72e9aa097f4d2fd22b0c91a480cea) Thanks [@sobechestnut-dev](https://github.com/sobechestnut-dev)! - feat(renderer): `qualityMode` fidelity policy — Full / Adaptive / Fast (DD-023 §4 D6, Phase B)
+
+  Adds a `qualityMode` option/prop (and `setQualityMode`) across the toolpath renderer, the core controller,
+  and all four adapters — the fidelity **policy**, distinct from the geometry `quality` tier (`lines`/`tubes`):
+  - **`'full'`** — render the COMPLETE representation: no every-Nth decimation, full-radial continuous tubes,
+    and **no budget-driven tubes→lines fallback** (only the per-chunk vertex safety net remains). So a normal
+    large plate renders at full quality on capable hardware instead of being gated down by the static ceilings.
+  - **`'adaptive'`** (default) — the capability-aware auto path (`auto` decimation + `tubeByteBudget`
+    cross-section coarsening, disclosed). Reproduces today's behaviour exactly.
+  - **`'fast'`** — explicitly trade fidelity for responsiveness (flat lines).
+
+  This is the consumer control from the DD-023 Phase B contract: a user/admin picks the policy; `'full'` never
+  silently degrades. Capability-aware **auto** budget selection (classifier-driven Adaptive) and the
+  too-heavy-for-this-client signal land in a later increment. Additive — the default `'adaptive'` preserves
+  current behaviour.
+
+### Patch Changes
+
+- Updated dependencies [[`60e24e1`](https://github.com/ChestnutLabs/gcode-preview/commit/60e24e15b6b72e9aa097f4d2fd22b0c91a480cea), [`c99b221`](https://github.com/ChestnutLabs/gcode-preview/commit/c99b2219566b6427c3d11d37be04876415db3bea)]:
+  - @chestnutlabs/gcode-renderer-three@0.14.0
+  - @chestnutlabs/gcode-preview-core@0.14.0
+  - @chestnutlabs/gcode-parser@0.14.0
+  - @chestnutlabs/toolpath-core@0.14.0
+
 ## 0.13.0
 
 ### Patch Changes
