@@ -19,8 +19,8 @@ const TYPE_MAP: Record<string, number> = {
   'solid-fill': FeatureRole.SolidInfill,
   support: FeatureRole.Support,
   skirt: FeatureRole.Skirt,
-  raft: FeatureRole.Brim,
-  'wipe-tower': FeatureRole.Custom,
+  raft: FeatureRole.Raft,
+  'wipe-tower': FeatureRole.WipeTower,
   bridge: FeatureRole.Bridge
 };
 

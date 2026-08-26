@@ -36,7 +36,8 @@ const TYPE_MAP: Record<string, number> = {
   'skirt/brim': FeatureRole.Skirt,
   skirt: FeatureRole.Skirt,
   brim: FeatureRole.Brim,
-  'wipe tower': FeatureRole.Custom,
+  raft: FeatureRole.Raft,
+  'wipe tower': FeatureRole.WipeTower,
   custom: FeatureRole.Custom
 };
 

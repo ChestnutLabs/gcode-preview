@@ -236,7 +236,7 @@ describe('Cura + firmware adapters (#76)', () => {
     expect(ir.header.capabilities.featureRoles).toBe('known');
     const roles = new Set(Array.from(ir.segments.feature));
     expect(roles.has(FeatureRole.ExternalPerimeter)).toBe(true); // WALL-OUTER
-    expect(roles.has(FeatureRole.Custom)).toBe(true); // PRIME-TOWER → generic, never model
+    expect(roles.has(FeatureRole.PrimeTower)).toBe(true); // PRIME-TOWER → first-class housekeeping role (DD-026 D2)
 
     // The guard: `;MESH:` created NO object membership.
     expect(ir.header.capabilities.objects ?? 'unavailable').not.toBe('known');
@@ -456,8 +456,9 @@ describe('ideaMaker adapter (DD-026 T1)', () => {
     expect(ir.header.dialects.some((d) => d.id === 'ideamaker')).toBe(true);
     expect(ir.header.capabilities.featureRoles).toBe('known');
     const roles = new Set(Array.from(ir.segments.feature));
-    expect(roles.has(FeatureRole.Brim)).toBe(true); // RAFT → Brim
+    expect(roles.has(FeatureRole.Raft)).toBe(true); // RAFT → first-class Raft role (DD-026 D2), not Brim
     expect(roles.has(FeatureRole.ExternalPerimeter)).toBe(true); // WALL-OUTER
+    expect(roles.has(FeatureRole.WipeTower)).toBe(true); // WIPE-TOWER → first-class WipeTower role
 
     // Object membership: only the PRINTING_ID:0 body is object!=0; RAFT/WIPE-TOWER (NON-OBJECT) are 0.
     expect(ir.header.capabilities.objects).toBe('known');
@@ -505,7 +506,7 @@ describe('Simplify3D adapter (DD-026 T1)', () => {
     expect(roles.has(FeatureRole.ExternalPerimeter)).toBe(true); // outer perimeter
     expect(roles.has(FeatureRole.Perimeter)).toBe(true); // inner perimeter
     expect(roles.has(FeatureRole.Infill)).toBe(true);
-    expect(roles.has(FeatureRole.Custom)).toBe(true); // prime pillar → generic Custom, not model
+    expect(roles.has(FeatureRole.PrimeTower)).toBe(true); // prime pillar → first-class PrimeTower, not model
 
     // No object channel in Simplify3D output — capability is honest, never fabricated membership.
     expect(ir.header.capabilities.objects ?? 'unavailable').not.toBe('known');
