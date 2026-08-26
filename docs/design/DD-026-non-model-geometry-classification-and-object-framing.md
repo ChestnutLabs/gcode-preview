@@ -1,8 +1,11 @@
 # DD-026 — Non-model geometry classification and object framing
 
-**Status:** Draft <!-- Draft | Proposed | Accepted | Superseded | Rejected -->
+**Status:** Accepted <!-- Draft | Proposed | Accepted | Superseded | Rejected -->
 **Authors/Owners:** Nathaniel Chestnut (drafted by Claude)
 **Date:** 2026-08-26 · **Last revised:** 2026-08-26
+**Accepted:** 2026-08-26 — D1–D7 as recommended (D3a = `MoveKind.Purge` bitflag; D5 = new additive
+`modelBounds`, `objectBounds` contract unchanged; D6 = start-region heuristic opt-in + disclosed,
+never default). Phase 1 (T1 adapter-format corrections) authorized to build.
 **Owning Epic:** E9/E11 (renderer options + honesty model) · **Milestone:** —
 **Supersedes / Superseded by:** none
 **Related:** [RR-007](../research/RR-007-non-model-geometry-and-object-framing.md), DD-005 (dialect
