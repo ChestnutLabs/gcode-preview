@@ -209,4 +209,80 @@ describe('createModelViewer', () => {
     expect(events).toHaveLength(0);
     v.dispose();
   });
+
+  // --- DD-024: staged loading progress ---
+
+  it('emits typed staged progress (parsing → building-geometry counts → ready), one generation', async () => {
+    const progress: import('@chestnutlabs/gcode-renderer-three').LoadProgress[] = [];
+    const v = createModelViewer(stubCanvas(), { createRenderer: stubGL, onProgress: (p) => progress.push(p) });
+    await v.setSource({ kind: 'stl', bytes: makeBinaryStl(ONE_TRI) });
+
+    // No human-copy fields, all one generation.
+    for (const p of progress) {
+      expect(p.generation).toBe(1);
+      expect(
+        Object.keys(p).every((k) => ['stage', 'done', 'total', 'unit', 'indeterminate', 'generation'].includes(k))
+      ).toBe(true);
+    }
+    const stages = progress.map((p) => p.stage);
+    expect(stages[0]).toBe('parsing');
+    expect(progress[0].indeterminate).toBe(true);
+    expect(stages).toContain('building-geometry');
+    expect(stages[stages.length - 1]).toBe('ready');
+    // Real building-geometry counts (1 object): 0/1 then 1/1, unit objects, no faked total.
+    const bg = progress.filter((p) => p.stage === 'building-geometry');
+    expect(bg[0]).toMatchObject({ done: 0, total: 1, unit: 'objects' });
+    expect(bg[bg.length - 1]).toMatchObject({ done: 1, total: 1, unit: 'objects' });
+    v.dispose();
+  });
+
+  it('progress is generation-scoped — a superseded load emits no building-geometry (DD-024 §4 D5)', async () => {
+    // A loader we can hold open, to interleave two setSource calls deterministically.
+    let releaseA: (() => void) | null = null;
+    const slow: ModelLoader = {
+      kind: 'slow',
+      parse: () =>
+        new Promise((resolve) => {
+          releaseA = () =>
+            resolve({
+              objects: [
+                {
+                  id: 's',
+                  geometry: { positions: new Float32Array([0, 0, 0, 1, 0, 0, 0, 1, 0]) },
+                  transform: IDENTITY_MAT4
+                }
+              ],
+              bounds: { min: [0, 0, 0], max: [1, 1, 0] },
+              capabilities: {
+                materials: 'unavailable',
+                transforms: 'unavailable',
+                multiObject: 'unavailable',
+                instanced: 'unavailable',
+                plates: 'unavailable'
+              }
+            });
+        })
+    };
+    const progress: import('@chestnutlabs/gcode-renderer-three').LoadProgress[] = [];
+    const v = createModelViewer(stubCanvas(), {
+      createRenderer: stubGL,
+      loaders: [slow],
+      onProgress: (p) => progress.push(p)
+    });
+
+    // Start load A (generation 1) — it parks in parse; then supersede with B (generation 2) via a scene.
+    const aPromise = v.setSource({ kind: 'slow', bytes: new Uint8Array([1]) });
+    await v.setSource(colouredScene()); // B completes (generation 2)
+    if (releaseA !== null) (releaseA as () => void)();
+    await aPromise; // A now resolves but is stale
+
+    // A emitted only its synchronous parsing(gen 1); its post-resolve building-geometry was suppressed.
+    const gen1 = progress.filter((p) => p.generation === 1);
+    const gen2 = progress.filter((p) => p.generation === 2);
+    expect(gen1.every((p) => p.stage === 'parsing')).toBe(true);
+    expect(gen1.some((p) => p.stage === 'building-geometry')).toBe(false);
+    expect(gen2.some((p) => p.stage === 'building-geometry')).toBe(true);
+    expect(gen2[gen2.length - 1].stage).toBe('ready');
+    v.dispose();
+  });
 });
