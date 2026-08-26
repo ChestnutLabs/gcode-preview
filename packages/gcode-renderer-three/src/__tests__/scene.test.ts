@@ -85,6 +85,7 @@ function makeHarness(
     tube?: TubeOptions;
     tubeByteBudget?: number;
     interactionQuality?: 'off' | 'auto';
+    renderDuringBuild?: boolean;
   } = {}
 ): Harness {
   const canvas = document.createElement('canvas');
@@ -109,6 +110,7 @@ function makeHarness(
     tube: opts.tube,
     tubeByteBudget: opts.tubeByteBudget,
     interactionQuality: opts.interactionQuality,
+    renderDuringBuild: opts.renderDuringBuild,
     createRenderer: () => stub,
     scheduleFrame: (cb) => ticks.push(cb)
   });
@@ -141,6 +143,31 @@ describe('ToolpathRenderer (phase 2)', () => {
     const pos = mesh.geometry.getAttribute('position');
     expect(pos.itemSize).toBe(3);
     expect(pos.count % 2).toBe(0); // 2 vertices per segment
+  });
+
+  it('renderDuringBuild:false suppresses the per-tick render (headless still), building once', () => {
+    const ir = makeIR(4, 20);
+    const on = makeHarness({ chunksPerTick: 1 }); // interactive default: renderDuringBuild=true
+    const off = makeHarness({ chunksPerTick: 1, renderDuringBuild: false }); // headless still
+    on.renderer.setIR(ir);
+    off.renderer.setIR(ir);
+    // Baseline AFTER setIR (its one framing render is not a per-tick build render).
+    const onBase = on.glCalls.render;
+    const offBase = off.glCalls.render;
+
+    on.runTicks();
+    off.runTicks();
+
+    // Identical geometry + completion — only intermediate rendering differs.
+    expect(off.events.find((e) => e.type === 'buildComplete')).toBeDefined();
+    expect(off.renderer.chunkMeshes.length).toBe(on.renderer.chunkMeshes.length);
+    expect(off.renderer.chunkMeshes.length).toBeGreaterThan(0);
+    // The interactive default renders during the build; the still renders ZERO times per tick.
+    expect(on.glCalls.render - onBase).toBeGreaterThan(0);
+    expect(off.glCalls.render - offBase).toBe(0);
+    // The still's single explicit final render still draws for capture.
+    off.renderer.render();
+    expect(off.glCalls.render - offBase).toBe(1);
   });
 
   it('applies the single Z-up→Y-up rotation at the root and positions by originOffset', () => {

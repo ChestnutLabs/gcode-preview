@@ -176,6 +176,15 @@ export interface ToolpathRendererOptions {
    * still-render path (#132) turns it on so a single render is capturable.
    */
   preserveDrawingBuffer?: boolean;
+  /**
+   * Render the scene after each incremental build tick (progressive-build feedback). Default `true`
+   * — the interactive viewer wants to watch geometry appear. A headless one-shot still sets this
+   * `false`: it builds geometry to completion and renders **once** at the end, avoiding the
+   * dozens-to-hundreds of discarded full-scene renders a large build would otherwise do (each an
+   * MSAA software rasterization of a growing tube mesh — the dominant cost of a big still in software
+   * WebGL). No visual difference; `buildComplete` and all build events still fire.
+   */
+  renderDuringBuild?: boolean;
   /** Injectables for tests / exotic hosts. */
   createRenderer?: (canvas: RenderTargetCanvas) => GLRendererLike;
   scheduleFrame?: (cb: () => void) => void;
@@ -242,6 +251,8 @@ export function resolveHitSegment(mesh: LineSegments | Mesh, vertexIndex: number
 export class ToolpathRenderer {
   private readonly scheduleFrame: (cb: () => void) => void;
   private readonly chunksPerTick: number | undefined;
+  /** Render after each build tick (progressive feedback). False for headless stills → one final render. */
+  private readonly renderDuringBuild: boolean;
 
   // The shared interactive viewport (DD-021 Phase 0): owns the GL renderer, camera, orbit controls,
   // context-loss recovery, resize, render, and interaction-aware quality. This renderer owns the scene
@@ -335,6 +346,7 @@ export class ToolpathRenderer {
 
   constructor(opts: ToolpathRendererOptions) {
     this.chunksPerTick = opts.chunksPerTick;
+    this.renderDuringBuild = opts.renderDuringBuild ?? true;
     this.colorMode = opts.colorMode ?? DEFAULT_COLOR;
     this.requestedQuality = opts.quality ?? 'auto';
     this.frameContentMode = opts.frameContent ?? 'all';
@@ -693,7 +705,9 @@ export class ToolpathRenderer {
       built++;
     }
     this.emit({ type: 'buildProgress', chunksBuilt: this.builtCount, chunksTotal: this.buildResult.chunks.length });
-    this.render();
+    // Headless stills (renderDuringBuild=false) skip the per-tick render — only the final frame is
+    // captured, so dozens-to-hundreds of intermediate full-scene software renders are pure waste.
+    if (this.renderDuringBuild) this.render();
     if (this.pendingChunks.length > 0) {
       this.scheduleFrame(() => this.buildTick());
     } else {
