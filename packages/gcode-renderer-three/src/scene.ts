@@ -494,11 +494,17 @@ export class ToolpathRenderer {
       // dropping segments breaks tube continuity into disconnected spiky stubs (the RR-006 correction).
       // Every segment is kept; the tube is just a bit lower-poly. If even the minimum cross-section
       // exceeds the budget, degrade to flat lines (continuous, honest) rather than a broken tube.
+      //
+      // The budget must count only the segments that actually become tubes — `makeChunkMesh` builds tube
+      // geometry solely for `extrude` chunks; travel/wipe always render as flat lines. `totalSegmentsIncluded`
+      // sums ALL kinds, so on a plate with heavy inter-part travel (e.g. an 814-part sheet) it wildly
+      // over-counts tube memory and falls to lines prematurely. Count the extrude (tube-eligible) segments.
+      const tubeSegments = this.buildResult.chunks.reduce((n, c) => (c.kind === 'extrude' ? n + c.count : n), 0);
       const requestedRadial = this.tubeOptions.radialSegments ?? 8;
-      const radial = tubeRadialForBudget(this.buildResult.totalSegmentsIncluded, requestedRadial, this.tubeByteBudget);
+      const radial = tubeRadialForBudget(tubeSegments, requestedRadial, this.tubeByteBudget);
       if (radial === null) {
         this.fallbackToLines(
-          `tube memory budget: ${this.buildResult.totalSegmentsIncluded.toLocaleString()} segments exceed the budget even at minimum cross-section`
+          `tube memory budget: ${tubeSegments.toLocaleString()} extrusion segments exceed the budget even at minimum cross-section`
         );
         return;
       }
