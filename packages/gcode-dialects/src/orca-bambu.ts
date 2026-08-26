@@ -14,6 +14,7 @@
 import { FeatureRole, type ToolpathIR } from '@chestnutlabs/toolpath-core';
 import type { AnnotationSink, DialectAdapter } from './contracts.js';
 import { parseFilamentTotals, parseHmsToSeconds } from './prusaslicer.js';
+import { PrintingObjectTracker } from './object-markers.js';
 import {
   ThumbnailCollector,
   applyMarkerRanges,
@@ -48,40 +49,10 @@ const FEATURE_MAP: Record<string, number> = {
   custom: FeatureRole.Custom
 };
 
-/**
- * Match an Orca/Bambu-lineage object-start comment across its real formats (RR-007 §5), returning the
- * raw object id (stable per object) + optional name, or null:
- *   `start printing object, unique label id: 89`      Bambu Studio (name absent here)
- *   `printing object <name> id:729618461984033312`    OrcaSlicer — name before a large id
- *   `printing object "benchy.stl" id:0 copy 0`        AnycubicSlicerNext / Prusa-lineage
- * The leading `; ` is already stripped by the comment hook.
- */
-function matchPrintingObjectStart(trimmed: string): { id: string; name?: string } | null {
-  if (!/^(?:start\s+)?printing object\b/i.test(trimmed)) return null;
-  const idm = /\bid:?\s*(\d+)/i.exec(trimmed);
-  if (idm === null) return null;
-  // Name: prefer an explicit `name:<...>` suffix (Bambu), else a quoted or bare name BEFORE the id
-  // (OrcaSlicer / Anycubic), rejecting `unique` / `unique label` filler.
-  let name = '';
-  const suffix = /\bname:\s*(.+?)\s*$/i.exec(trimmed);
-  if (suffix !== null) {
-    name = suffix[1].trim();
-  } else {
-    const pre = /printing object[,:]?\s*(?:"([^"]*)"|(.+?))\s+(?:unique\s+(?:label\s+)?)?id:?/i.exec(trimmed);
-    name = (pre?.[1] ?? pre?.[2] ?? '').trim();
-    if (/^unique(\s+label)?$/i.test(name)) name = '';
-  }
-  return { id: idm[1], name: name.length > 0 ? name : undefined };
-}
-
 interface OrcaState {
   features: RangeMarker[];
-  objects: RangeMarker[];
   wipes: WipeMark[];
-  objectNames: Map<number, string>;
-  /** Stable object id (from the comment) → sequential 1-based channel value (raw ids can exceed Uint32). */
-  objectIdToValue: Map<string, number>;
-  objectCounter: number;
+  objectTracker: PrintingObjectTracker;
   bedPoints: string | null;
   bedSrcByte?: number;
   heightMm?: number;
@@ -98,11 +69,8 @@ function stateFor(sink: AnnotationSink): OrcaState {
   if (s === undefined) {
     s = {
       features: [],
-      objects: [],
       wipes: [],
-      objectNames: new Map(),
-      objectIdToValue: new Map(),
-      objectCounter: 0,
+      objectTracker: new PrintingObjectTracker(),
       bedPoints: null,
       thumbs: new ThumbnailCollector()
     };
@@ -146,24 +114,8 @@ export function orcaBambu(): DialectAdapter {
         s.features.push({ srcByte, value: role ?? FeatureRole.Custom });
         return;
       }
-      // Object membership start (all lineage formats — see matchPrintingObjectStart). Assign a
-      // SEQUENTIAL 1-based channel value per distinct id (raw ids can exceed Uint32) and reuse it
-      // across per-layer re-bracketing of the same object.
-      const start = matchPrintingObjectStart(trimmed);
-      if (start !== null) {
-        let value = s.objectIdToValue.get(start.id);
-        if (value === undefined) {
-          value = ++s.objectCounter;
-          s.objectIdToValue.set(start.id, value);
-          if (start.name !== undefined) s.objectNames.set(value, start.name);
-        }
-        s.objects.push({ srcByte, value });
-        return;
-      }
-      if (/^stop printing object/i.test(trimmed)) {
-        s.objects.push({ srcByte, value: 0 }); // range terminator
-        return;
-      }
+      // Object membership across all lineage formats (shared object-marker parser).
+      if (s.objectTracker.handle(trimmed, srcByte)) return;
       const wipe = matchWipeComment(comment);
       if (wipe !== null) {
         s.wipes.push({ srcByte, open: wipe === 'start' });
@@ -206,11 +158,7 @@ export function orcaBambu(): DialectAdapter {
       const s = stateFor(sink);
       const features = applyMarkerRanges(ir, s.features, (a, b, v) => sink.setFeature(a, b, v));
       if (features > 0) sink.upgradeCapability('featureRoles', 'known');
-      const objects = applyMarkerRanges(ir, s.objects, (a, b, v) => sink.setObject(a, b, v));
-      if (objects > 0) {
-        for (const [value, name] of s.objectNames) sink.defineObject(value, name);
-        sink.upgradeCapability('objects', 'known');
-      }
+      s.objectTracker.apply(ir, sink);
       if (applyWipeRanges(ir, s.wipes, sink) > 0) sink.upgradeCapability('wipeMoves', 'known');
       if (s.bedPoints !== null) {
         const points = parseAreaPoints(s.bedPoints);
