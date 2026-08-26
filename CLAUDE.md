@@ -49,6 +49,14 @@ deliberate consideration is):
 If visible behavior changed, regenerate the affected media with
 [`tools/screenshots/`](tools/screenshots/README.md) rather than leaving a stale image in place.
 
+**Docs freshness is enforced at release time, not left as post-release cleanup.** The `version`
+script auto-stamps the deterministic "vX.Y.Z is on npm" strings into the generated Version PR and
+drops a `RELEASE_NOTES_DRAFT.md` to seed the `docs/README` "Current state" narrative + history
+(fold it in, then delete it). The `Docs release gate` (`npm run docs:release-check`) then **blocks
+the `dev` → `main` promotion** until every version surface, the current-state lead, and the
+history list name the version being cut. Surfaces live in `tools/release/doc-surfaces.mjs`; the
+flow is documented in [`docs/reference/release-process.md`](docs/reference/release-process.md).
+
 ## Repo orientation
 
 - `packages/*` — the 13 published packages (foundation → parse → color → render → adapters). Build

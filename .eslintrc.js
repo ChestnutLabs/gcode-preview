@@ -33,6 +33,12 @@ module.exports = {
         '@typescript-eslint/no-require-imports': 'off'
       }
     },
+    // Node-side ESM tooling (release scripts, doc/link checks, etc.): Node globals, not browser.
+    {
+      files: ['tools/**/*.mjs'],
+      env: { node: true, browser: false },
+      parserOptions: { sourceType: 'module' }
+    },
     // DD-002 §5 dependency guardrails — reusable packages must not import renderers,
     // frameworks, or consumer applications; lower layers never import higher layers.
     {

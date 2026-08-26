@@ -64,8 +64,9 @@
     "docs:api:watch": "typedoc --watch",
     "docs:build": "node tools/docs/build-api.mjs",
     "changeset": "changeset",
-    "version": "changeset version && node tools/release/sync-internal-ranges.mjs && npm install --package-lock-only --no-audit --no-fund",
+    "version": "changeset version && node tools/release/sync-internal-ranges.mjs && node tools/release/stamp-release-docs.mjs && npm install --package-lock-only --no-audit --no-fund",
     "release:sync-check": "node tools/release/sync-internal-ranges.mjs --check",
+    "docs:release-check": "node tools/release/check-release-docs.mjs",
     "release:dry-run": "node tools/release/publish.mjs --dry-run",
     "release:publish": "node tools/release/publish.mjs"
   },
