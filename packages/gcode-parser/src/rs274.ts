@@ -70,17 +70,43 @@ export type ParametricLine =
   | { kind: 'cmd'; codes: string[]; params: Record<string, number> };
 
 /**
- * The parameter store + expression evaluator for one program. Straight-line (Phase 1): a single scope,
- * assignments applied as they execute. Numbered params default to `0` on read-before-write (with a
- * one-time disclosure); named params likewise. A read-only allow-list resolves a few system parameters
- * (current position) from live engine state; any other system parameter reads `0` and is disclosed.
+ * One call-frame scope (DD-017 Phase 3). RS274NGC/LinuxCNC scoping: numbered parameters `#1`–`#30` and
+ * non-underscore named parameters (`#<local>`) are LOCAL to the current subroutine invocation; `#31`+
+ * and underscore-named (`#<_global>`) are GLOBAL. A fresh scope per `call` is what makes recursion
+ * correct (a callee's `#1` cannot clobber its caller's). The main program runs in the base scope.
+ */
+interface Rs274Scope {
+  localNumbered: Float64Array; // `#1`..`#30` (index 0 unused)
+  localWritten: Uint8Array; // 1 = assigned (so a computed NaN is distinguishable from never-written)
+  named: Map<string, number>; // non-underscore named params local to this frame
+}
+
+const LOCAL_NUMBERED_MAX = 30; // `#1`..`#30` are call-local (args); `#31`+ are global (LinuxCNC)
+
+/**
+ * The parameter store + expression evaluator for one program. A scope STACK (DD-017 Phase 3): the base
+ * scope is the main program; each subroutine `call` pushes a frame (`#1`–`#30` args + `#<local>` names)
+ * and `return`/`endsub` pops it. `#31`+ numbered and `#<_global>` names are shared across frames.
+ * Numbered/named params default to `0` on read-before-write (with a one-time disclosure). A read-only
+ * allow-list resolves a few system parameters (current position) from live engine state; any other
+ * system parameter reads `0` and is disclosed. With no subroutines the base scope reduces to the single
+ * flat store of Phases 1–2 (byte-identical).
  */
 export class Rs274Context {
+  // Global numbered store `#31`..`#5399` (indices ≤30 live per-scope; slots 1..30 here are unused).
   private readonly numbered = new Float64Array(NUMBERED_LEN);
   // 1 = the slot was assigned. Separate from the value so a legitimately computed NaN/Inf (e.g.
-  // `#1 = SQRT[-1]`) is distinguishable from "never written" (which reads 0 + discloses).
+  // `#31 = SQRT[-1]`) is distinguishable from "never written" (which reads 0 + discloses).
   private readonly numberedWritten = new Uint8Array(NUMBERED_LEN);
-  private readonly named = new Map<string, number>();
+  private readonly globalNamed = new Map<string, number>(); // underscore-named `#<_global>`
+  // The scope stack. The base scope (index 0) is the main program; `call` pushes, `return`/endsub pops.
+  private readonly scopes: Rs274Scope[] = [
+    {
+      localNumbered: new Float64Array(LOCAL_NUMBERED_MAX + 1),
+      localWritten: new Uint8Array(LOCAL_NUMBERED_MAX + 1),
+      named: new Map()
+    }
+  ];
   private uninitWarned = false;
   private paramLimitWarned = false;
   /** True once any parametric construct was executed — drives the `parametricProgram` capability. */
@@ -104,12 +130,43 @@ export class Rs274Context {
     this.warn(RS274_WARN.uninitializedParam, 'read of an uninitialized parameter (RS274NGC default 0)', srcByte);
   }
 
+  private get scope(): Rs274Scope {
+    return this.scopes[this.scopes.length - 1];
+  }
+
+  /**
+   * Push a fresh call-frame scope with `args` bound to `#1`..`#30` (DD-017 Phase 3 `call`). Args beyond
+   * 30 are ignored (RS274NGC passes at most 30). Balanced by `popScope` on `return`/`endsub`.
+   */
+  pushScope(args: readonly number[]): void {
+    const localNumbered = new Float64Array(LOCAL_NUMBERED_MAX + 1);
+    const localWritten = new Uint8Array(LOCAL_NUMBERED_MAX + 1);
+    for (let i = 0; i < args.length && i < LOCAL_NUMBERED_MAX; i++) {
+      localNumbered[i + 1] = args[i];
+      localWritten[i + 1] = 1;
+    }
+    this.scopes.push({ localNumbered, localWritten, named: new Map() });
+  }
+
+  /** Pop the current call-frame scope (never the base/main scope). */
+  popScope(): void {
+    if (this.scopes.length > 1) this.scopes.pop();
+  }
+
   private readNumbered(n: number, srcByte?: number): number {
     const idx = Math.round(n);
     if (idx >= NUMBERED_LEN) return this.readSystem(idx, srcByte);
     if (idx < 1) {
       this.warnUninit(srcByte);
       return 0;
+    }
+    if (idx <= LOCAL_NUMBERED_MAX) {
+      const s = this.scope;
+      if (s.localWritten[idx] === 0) {
+        this.warnUninit(srcByte);
+        return 0;
+      }
+      return s.localNumbered[idx];
     }
     if (this.numberedWritten[idx] === 0) {
       this.warnUninit(srcByte);
@@ -129,8 +186,13 @@ export class Rs274Context {
     return 0;
   }
 
+  /** The map a named parameter lives in: underscore-prefixed (`#<_global>`) → global, else scope-local. */
+  private namedMap(name: string): Map<string, number> {
+    return name[0] === '_' ? this.globalNamed : this.scope.named;
+  }
+
   private readNamed(name: string, srcByte?: number): number {
-    const v = this.named.get(name);
+    const v = this.namedMap(name).get(name);
     if (v === undefined) {
       this.warnUninit(srcByte);
       return 0;
@@ -140,14 +202,20 @@ export class Rs274Context {
 
   private writeNumbered(n: number, value: number): void {
     const idx = Math.round(n);
-    if (idx >= 1 && idx < NUMBERED_LEN) {
+    if (idx < 1 || idx >= NUMBERED_LEN) return;
+    if (idx <= LOCAL_NUMBERED_MAX) {
+      const s = this.scope;
+      s.localNumbered[idx] = value;
+      s.localWritten[idx] = 1;
+    } else {
       this.numbered[idx] = value;
       this.numberedWritten[idx] = 1;
     }
   }
 
   private writeNamed(name: string, value: number): void {
-    if (this.named.has(name) || this.named.size < MAX_NAMED_PARAMS) this.named.set(name, value);
+    const map = this.namedMap(name);
+    if (map.has(name) || map.size < MAX_NAMED_PARAMS) map.set(name, value);
     else if (!this.paramLimitWarned) {
       this.paramLimitWarned = true;
       this.warn(
@@ -157,9 +225,9 @@ export class Rs274Context {
     }
   }
 
-  /** `EXISTS[#<name>]` → 1 if the named parameter has been assigned, else 0. */
+  /** `EXISTS[#<name>]` → 1 if the named parameter has been assigned in its scope, else 0. */
   private exists(name: string): number {
-    return this.named.has(name) ? 1 : 0;
+    return this.namedMap(name).has(name) ? 1 : 0;
   }
 
   /**

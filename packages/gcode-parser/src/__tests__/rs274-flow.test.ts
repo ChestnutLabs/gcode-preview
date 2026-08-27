@@ -220,12 +220,11 @@ describe('rs274-flow honesty & robustness', () => {
     expect(ir.header.capabilities.parametricProgram).toBe('approximated');
   });
 
-  it('subroutines are disclosed unsupported and NOT executed inline (Phase 3)', () => {
+  it('a sub is not run inline but IS run on call (Phase 3 executes subroutines)', () => {
     const ir = run(['G90', 'o100 sub', 'G1 X5 Y0', 'o100 endsub', 'G1 X1 Y0', 'o100 call']);
-    expect(ir.segments.count).toBe(1); // only the top-level G1 X1 — the sub body did not run
-    expect(lastEnd(ir).x).toBeCloseTo(1);
-    expect(ir.header.warnings.some((w) => w.code === RS274_FLOW_WARN.unsupportedOword)).toBe(true);
-    expect(ir.header.capabilities.parametricProgram).toBe('approximated');
+    expect(ir.segments.count).toBe(2); // top-level G1 X1, then the call runs the sub body (G1 X5)
+    expect(lastEnd(ir).x).toBeCloseTo(5);
+    expect(ir.header.capabilities.parametricProgram).toBe('known'); // supported now — not degraded
   });
 
   it('a misplaced else (no enclosing if) is disclosed; following code still runs', () => {
@@ -329,5 +328,170 @@ describe('rs274-flow real LinuxCNC-idiom validation', () => {
     expect(hole(1)).toMatchObject({ x: expect.closeTo(50, 3), y: expect.closeTo(60, 3) }); // 90°
     expect(hole(2)).toMatchObject({ x: expect.closeTo(30, 3), y: expect.closeTo(40, 3) }); // 180°
     expect(hole(3)).toMatchObject({ x: expect.closeTo(50, 3), y: expect.closeTo(20, 3) }); // 270°
+  });
+});
+
+describe('rs274-flow subroutines (Phase 3)', () => {
+  it('defines a sub and runs it only on call; args bind to #1..#30', () => {
+    const ir = run(['G90', 'o100 sub', 'G1 X#1 Y#2 Z#3', 'o100 endsub', 'o100 call [10] [20] [30]']);
+    expect(ir.segments.count).toBe(1); // the sub body runs once, on the call — not inline
+    expect(lastEnd(ir)).toMatchObject({ x: expect.closeTo(10), y: expect.closeTo(20), z: expect.closeTo(30) });
+    expect(ir.header.capabilities.parametricProgram).toBe('known');
+  });
+
+  it('a sub body never runs where it is defined (only on call)', () => {
+    const ir = run(['G90', 'o100 sub', 'G1 X99 Y0', 'o100 endsub', 'G1 X1 Y0']);
+    expect(ir.segments.count).toBe(1); // only the top-level G1 X1 — the sub definition did not execute
+    expect(lastEnd(ir).x).toBeCloseTo(1);
+  });
+
+  it('numbered params #1..#30 are LOCAL to the call frame (recursion-safe)', () => {
+    // #1 is used AFTER the recursive call — proves the callee could not clobber the caller's #1.
+    const ir = run([
+      'G90',
+      'o100 sub',
+      'o1 if [#1 GT 0]',
+      'o100 call [#1 - 1]',
+      'o1 endif',
+      'G1 X#1 Y0', // after the recursive call — must still see this frame's #1
+      'o100 endsub',
+      'o100 call [3]'
+    ]);
+    expect(ir.segments.count).toBe(4); // X = 0,1,2,3 as the recursion unwinds
+    expect(lastEnd(ir).x).toBeCloseTo(3); // the OUTERMOST frame's #1 survived its recursive call
+  });
+
+  it('named params: #<local> is per-frame, #<_global> is shared', () => {
+    const ir = run([
+      'G90',
+      'o100 sub',
+      '#<n> = 99', // local to the sub — must not leak to the caller
+      '#<_g> = 7', // global — visible to the caller after return
+      'o100 endsub',
+      '#<n> = 1',
+      '#<_g> = 1',
+      'o100 call',
+      'G1 X#<n> Y#<_g>'
+    ]);
+    expect(lastEnd(ir)).toMatchObject({ x: expect.closeTo(1), y: expect.closeTo(7) });
+  });
+
+  it('#31+ numbered params are global (shared across frames)', () => {
+    const ir = run(['G90', 'o100 sub', '#100 = 42', 'o100 endsub', 'o100 call', 'G1 X#100 Y0']);
+    expect(lastEnd(ir).x).toBeCloseTo(42); // the sub wrote a global numbered param the caller reads
+  });
+
+  it('return exits the subroutine early', () => {
+    const ir = run([
+      'G90',
+      'o100 sub',
+      'G1 X1 Y0',
+      'o1 if [1]',
+      'o100 return',
+      'o1 endif',
+      'G1 X99 Y0', // after the return — skipped
+      'o100 endsub',
+      'o100 call'
+    ]);
+    expect(ir.segments.count).toBe(1);
+    expect(lastEnd(ir).x).toBeCloseTo(1);
+    expect(ir.header.capabilities.parametricProgram).toBe('known'); // a clean return is not degraded
+  });
+
+  it('a call can forward-reference a sub defined later in the file', () => {
+    const ir = run(['G90', 'o100 call [5]', 'o100 sub', 'G1 X#1 Y0', 'o100 endsub']);
+    expect(ir.segments.count).toBe(1);
+    expect(lastEnd(ir).x).toBeCloseTo(5);
+  });
+
+  it('a "stamp" sub called at several positions (real CAM idiom)', () => {
+    const ir = run([
+      'G90 G21',
+      'o<hole> sub',
+      'G0 X#1 Y#2',
+      'G1 Z-2',
+      'G0 Z5',
+      'o<hole> endsub',
+      'G0 Z5',
+      'o<hole> call [10] [10]',
+      'o<hole> call [20] [10]',
+      'o<hole> call [30] [10]'
+    ]);
+    expect(ir.header.capabilities.parametricProgram).toBe('known');
+    expect(ir.boundsWithTravel.max.x).toBeCloseTo(30); // last stamp
+    expect(ir.boundsWithTravel.min.z).toBeCloseTo(-2); // the plunge depth
+  });
+});
+
+describe('rs274-flow subroutine safety & honesty (Phase 3)', () => {
+  it('unbounded recursion stops at maxCallDepth and discloses (no stack overflow)', () => {
+    const ir = run(['G90', 'o100 sub', 'o100 call', 'o100 endsub', 'o100 call'], { maxCallDepth: 10 });
+    // The test completing at all proves no stack overflow escaped the parse.
+    expect(ir.header.warnings.some((w) => w.code === RS274_FLOW_WARN.callDepth)).toBe(true);
+    expect(ir.header.capabilities.parametricProgram).toBe('approximated');
+  });
+
+  it('a bounded recursion within maxCallDepth runs cleanly (known)', () => {
+    const ir = run([
+      'G90',
+      'o100 sub',
+      'G1 X#1 Y0',
+      'o1 if [#1 GT 0]',
+      'o100 call [#1 - 1]',
+      'o1 endif',
+      'o100 endsub',
+      'o100 call [5]'
+    ]);
+    expect(ir.segments.count).toBe(6); // X = 5,4,3,2,1,0
+    expect(ir.header.capabilities.parametricProgram).toBe('known');
+  });
+
+  it('calling an undefined subroutine is disclosed and skipped', () => {
+    const ir = run(['G90', 'o100 call', 'G1 X5 Y0']);
+    expect(ir.segments.count).toBe(1);
+    expect(lastEnd(ir).x).toBeCloseTo(5);
+    expect(ir.header.warnings.some((w) => w.code === RS274_FLOW_WARN.unknownSub)).toBe(true);
+    expect(ir.header.capabilities.parametricProgram).toBe('approximated');
+  });
+
+  it('a redefined subroutine keeps the first definition and discloses', () => {
+    const ir = run(['G90', 'o100 sub', 'G1 X1 Y0', 'o100 endsub', 'o100 sub', 'G1 X99 Y0', 'o100 endsub', 'o100 call']);
+    expect(lastEnd(ir).x).toBeCloseTo(1); // first definition won
+    expect(ir.header.warnings.some((w) => w.code === RS274_FLOW_WARN.duplicateSub)).toBe(true);
+  });
+
+  it('a return outside any subroutine is disclosed; following code still runs', () => {
+    const ir = run(['G90', 'o100 return', 'G1 X5 Y0']);
+    expect(ir.segments.count).toBe(1);
+    expect(ir.header.warnings.some((w) => w.code === RS274_FLOW_WARN.misplacedControl)).toBe(true);
+  });
+
+  it('a loop-free recursive fan-out is bounded by maxProgramIterations (no hang, no stack overflow)', () => {
+    // The sub calls itself TWICE with no base case — the call-tree is exponential in depth. maxCallDepth
+    // bounds only the DEPTH; the per-call charge bounds total call-tree SIZE. The test completing proves it.
+    const ir = run(['o100 sub', 'o100 call', 'o100 call', 'o100 endsub', 'o100 call'], {
+      maxProgramIterations: 1000
+    });
+    expect(ir.header.warnings.some((w) => w.code === RS274_FLOW_WARN.iterationLimit)).toBe(true);
+    expect(ir.header.capabilities.parametricProgram).toBe('approximated');
+  });
+
+  it('mutual recursion is bounded too', () => {
+    const ir = run(['o1 sub', 'o2 call', 'o1 endsub', 'o2 sub', 'o1 call', 'o2 endsub', 'o1 call'], {
+      maxCallDepth: 20
+    });
+    expect(ir.header.warnings.some((w) => w.code === RS274_FLOW_WARN.callDepth)).toBe(true);
+  });
+
+  it('an endsub whose id does not match its sub is disclosed', () => {
+    const ir = run(['G90', 'o100 sub', 'G1 X1 Y0', 'o200 endsub', 'o100 call']);
+    expect(ir.header.warnings.some((w) => w.code === RS274_FLOW_WARN.unbalancedOword)).toBe(true);
+    expect(lastEnd(ir).x).toBeCloseTo(1); // still registered under the sub's id, still callable
+  });
+
+  it('a malformed call argument is disclosed and dropped', () => {
+    const ir = run(['G90', 'o100 sub', 'G1 X#1 Y0', 'o100 endsub', 'o100 call [1] [2']);
+    expect(ir.header.warnings.some((w) => w.code === RS274_FLOW_WARN.unsupportedOword)).toBe(true);
+    expect(lastEnd(ir).x).toBeCloseTo(1); // the well-formed first arg still bound to #1
   });
 });
