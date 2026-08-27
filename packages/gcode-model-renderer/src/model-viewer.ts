@@ -14,11 +14,13 @@
  */
 import { Color, Scene } from 'three';
 import {
+  CaptureUnsupportedError,
   InteractiveStage,
   createDefaultGLRenderer,
   type CameraMode,
   type CameraState,
   type CameraView,
+  type CaptureOptions,
   type GLRendererLike,
   type InteractiveStageOptions,
   type LoadProgress,
@@ -117,6 +119,11 @@ export interface ModelViewer {
    * `{ plateId }` on the ready info's `plates` being present — an unmatched scope renders empty.
    */
   setRenderScope(scope: RenderScope | null): void;
+  /**
+   * Capture the current view as an image `Blob` (DD-030 D1) — for an operator-selected thumbnail or a
+   * large-file fallback. Rejects with `E_CAPTURE_UNSUPPORTED` when the renderer is unavailable.
+   */
+  capture(opts?: CaptureOptions): Promise<Blob>;
   onEvent(cb: (e: ModelViewerEvent) => void): () => void;
   dispose(): void;
 }
@@ -277,6 +284,12 @@ export function createModelViewer(canvas: RenderTargetCanvas, options: ModelView
       const f = content.framing;
       if (f !== null) stage.frameTo(f.center, f.radius);
       stage.render();
+    },
+    capture(opts) {
+      if (stage === null) {
+        return Promise.reject(new CaptureUnsupportedError('model viewer renderer unavailable'));
+      }
+      return stage.capture(opts);
     },
     onEvent(cb) {
       listeners.add(cb);

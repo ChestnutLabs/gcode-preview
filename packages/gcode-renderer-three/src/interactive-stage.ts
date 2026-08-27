@@ -9,15 +9,23 @@
  * The camera types live here (not in the toolpath renderer) so the stage has no dependency on
  * toolpath concepts; the toolpath renderer re-exports them for import-path stability.
  */
-import { OrthographicCamera, PerspectiveCamera, Scene, Vector3 } from 'three';
+import { Color, OrthographicCamera, PerspectiveCamera, Scene, Vector3, WebGLRenderTarget } from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import type { Vec3 } from '@chestnutlabs/toolpath-core';
 import {
   createDefaultGLRenderer,
   framingFromCenterRadius,
+  supportsCapture,
   type GLRendererLike,
   type RenderTargetCanvas
 } from './stage.js';
+import {
+  CaptureUnsupportedError,
+  encodeRGBAToBlob,
+  flipRowsRGBA,
+  resolveCaptureSize,
+  type CaptureOptions
+} from './capture.js';
 import { InteractionQualityController } from './interaction-quality.js';
 
 /**
@@ -332,6 +340,52 @@ export class InteractiveStage {
   render(): void {
     if (this.disposedFlag || this.contextLost) return;
     this.gl.render(this.scene, this.activeCameraRef);
+  }
+
+  /**
+   * Capture the currently displayed view as an image `Blob` (DD-030 D1). Renders the current scene +
+   * active camera into an off-screen target at the requested size (so it never disturbs the live view
+   * nor requires `preserveDrawingBuffer`), reads it back, and encodes it. Rejects with an
+   * `E_CAPTURE_UNSUPPORTED` error when the renderer cannot render-to-target (a stub GL / no WebGL) or the
+   * stage is disposed / context-lost. The caller owns the returned `Blob` — the library never downloads.
+   */
+  async capture(opts: CaptureOptions = {}): Promise<Blob> {
+    if (this.disposedFlag || this.contextLost || !supportsCapture(this.gl)) {
+      const why = this.disposedFlag
+        ? 'stage disposed'
+        : this.contextLost
+          ? 'WebGL context lost'
+          : 'renderer cannot render-to-target';
+      throw new CaptureUnsupportedError(`capture unavailable: ${why}`);
+    }
+    const gl = this.gl;
+    const { w, h } = resolveCaptureSize(opts, this.canvas.width, this.canvas.height);
+    const target = new WebGLRenderTarget(w, h);
+    // Frame the capture at its OWN aspect (not the viewport's) so a differently-shaped thumbnail is not
+    // distorted; reuse the stage's projection machinery, then restore the live aspect.
+    const prevAspect = this.aspect;
+    const prevBackground = this.scene.background;
+    const overrideBackground = opts.background !== undefined;
+    try {
+      if (overrideBackground) {
+        this.scene.background =
+          opts.background === 'transparent' ? null : new Color(opts.background as string | number);
+      }
+      this.aspect = w / h;
+      this.updateCameraProjection();
+      gl.setRenderTarget(target);
+      gl.render(this.scene, this.activeCameraRef);
+      const buffer = new Uint8Array(w * h * 4);
+      gl.readRenderTargetPixels(target, 0, 0, w, h, buffer);
+      gl.setRenderTarget(null);
+      return await encodeRGBAToBlob(flipRowsRGBA(buffer, w, h), w, h, opts.format ?? 'image/png', opts.quality);
+    } finally {
+      target.dispose();
+      if (overrideBackground) this.scene.background = prevBackground;
+      this.aspect = prevAspect;
+      this.updateCameraProjection();
+      this.render(); // repaint the live canvas (we redirected the renderer to a target)
+    }
   }
 
   dispose(): void {
