@@ -415,6 +415,11 @@ export function createPreviewController(options: PreviewControllerOptions = {}):
   const offProgress = session.onProgress((p) => {
     mutate({ parseProgress: p });
     emit({ type: 'parse-progress', progress: p });
+    // DD-029 staged progress: the parser's own phase maps to the preparation stage — `parsing` carries
+    // the real byte fraction; `finalizing` (where dialect annotation settles) surfaces as `classifying`.
+    // The renderer emits the later `building-geometry`/`preparing-gpu`/`ready` stages (forwarded below).
+    const fraction = p.totalBytes > 0 ? p.bytesProcessed / p.totalBytes : undefined;
+    emit({ type: 'stage', stage: p.phase === 'finalizing' ? 'classifying' : 'parsing', progress: fraction });
   });
   const offPartial = session.onPartial((slice) => {
     renderer?.appendPartial(slice);
