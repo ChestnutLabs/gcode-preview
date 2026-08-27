@@ -64,18 +64,23 @@ import { InteractiveStage, type CameraMode, type CameraView, type CameraState } 
 export type QualityMode = 'lines' | 'tubes';
 
 /**
- * How the transient during-parse preview (#60) is presented — a curtain over the neutral streaming
- * lines that get replaced by the final build. Orthogonal to `quality`/`qualityMode` (which govern the
- * FINAL representation): this only affects what shows WHILE parsing.
- *   - `'lines'` (default): stream the progressive line preview as it parses — a fast visual signal,
- *     then replaced by the final build. Backward-compatible behaviour.
- *   - `'hold'`: keep parsing/building and keep emitting progress (`previewAppend`), but DON'T reveal
- *     the incomplete/neutral line preview — the first thing shown is the final, correctly-coloured,
- *     policy-quality build. A single clean reveal with a live progress signal.
+ * How the transient preparation preview (#60, DD-029) is presented — what, if anything, shows WHILE the
+ * file parses and the geometry builds. Orthogonal to `quality`/`qualityMode` (which govern the FINAL
+ * representation): this NEVER drops extrusion segments or lowers final geometry — it only controls how
+ * often incomplete work is drawn to the screen.
+ *   - `'auto'` (the eventual default): the renderer chooses `'lines'` vs `'hold'` per build from the
+ *     render-cost/capability estimate (DD-029 §4 D1) — cheap scenes stream lines, expensive scenes take
+ *     the single-reveal `'hold'` path. Until that estimate lands it resolves to `'lines'`. An explicit
+ *     `'lines'`/`'hold'`/`'off'` always overrides.
+ *   - `'lines'`: stream the progressive line preview as it parses/builds, then replace it with the final
+ *     build. (Backward-compatible; its intermediate redraws are budget-throttled in a later phase.)
+ *   - `'hold'`: **single clean reveal** — keep emitting progress but reveal NOTHING incomplete: no line
+ *     preview AND no intermediate renders of the growing build; the first thing shown is the finished,
+ *     correctly-coloured build, revealed once at completion (DD-029 §4 D1).
  *   - `'off'`: suppress the progressive preview entirely and emit no preview progress — the consumer
  *     supplies its own loading/progress treatment until the final build is revealed.
  */
-export type ProgressivePreview = 'lines' | 'hold' | 'off';
+export type ProgressivePreview = 'auto' | 'lines' | 'hold' | 'off';
 
 // Camera types + the preset-view table live in the shared interactive stage (DD-021 Phase 0);
 // re-exported here so existing import paths (index re-exports them from './scene.js') keep working.
@@ -484,7 +489,7 @@ export class ToolpathRenderer {
   appendPartial(slice: ToolpathIR): void {
     if (this.disposed || slice.segments.count === 0) return;
     // 'off': suppress the progressive preview entirely (no geometry, no progress event).
-    if (this.progressivePreview === 'off') return;
+    if (this.effectivePreview() === 'off') return;
     if (this.ir !== null) {
       // Partials for a NEW parse while an old final IR is on screen: the old
       // scene is stale — drop it and start the preview fresh.
@@ -497,7 +502,7 @@ export class ToolpathRenderer {
     const decimation = autoDecimation(this.previewSegments);
     // 'hold' keeps the progress signal but reveals no incomplete/neutral geometry — skip the
     // line-preview build so the final coloured build (via setIR) is the first thing shown.
-    if (this.progressivePreview === 'lines') {
+    if (this.effectivePreview() === 'lines') {
       let result: ChunkBuildResult;
       try {
         result = buildChunks(slice, { decimation });
@@ -538,7 +543,7 @@ export class ToolpathRenderer {
     }
     this.emit({ type: 'previewAppend', cumulativeSegments: this.previewSegments, decimationApplied: decimation });
     // 'hold' reveals nothing here — no frame/render until setIR builds the final representation.
-    if (this.progressivePreview === 'lines') {
+    if (this.effectivePreview() === 'lines') {
       if (firstPartial) this.frame();
       else this.render();
     }
@@ -759,7 +764,10 @@ export class ToolpathRenderer {
     });
     // Headless stills (renderDuringBuild=false) skip the per-tick render — only the final frame is
     // captured, so dozens-to-hundreds of intermediate full-scene software renders are pure waste.
-    if (this.renderDuringBuild) this.render();
+    // DD-029: `'hold'` is a single clean reveal — no intermediate renders of the growing scene (the
+    // ~187-render waste RR-008 §8.1 measured); the sole reveal happens at completion below. Headless
+    // stills (renderDuringBuild=false) also skip per-tick renders and capture their own final frame.
+    if (this.renderDuringBuild && this.effectivePreview() !== 'hold') this.render();
     if (this.pendingChunks.length > 0) {
       this.scheduleFrame(() => this.buildTick());
     } else {
@@ -776,6 +784,9 @@ export class ToolpathRenderer {
       // DD-027: assemble + publish the render-diagnostics snapshot for this build.
       this.lastRenderStats = this.assembleRenderStats();
       this.emit({ type: 'renderStats', stats: this.lastRenderStats });
+      // DD-029: `'hold'` single reveal — the one and only render of the completed scene (suppressed
+      // per-tick above). Gated on renderDuringBuild so headless stills (false) still capture manually.
+      if (this.renderDuringBuild && this.effectivePreview() === 'hold') this.render();
       // DD-029: terminal preparation stage — coincident with `buildComplete` above.
       this.emit({ type: 'stage', stage: 'ready' });
     }
@@ -1514,6 +1525,15 @@ export class ToolpathRenderer {
   setProgressivePreview(mode: ProgressivePreview): void {
     if (this.disposed) return;
     this.progressivePreview = mode;
+  }
+
+  /**
+   * Resolve `progressivePreview` to a concrete `'lines' | 'hold' | 'off'` (DD-029 §4 D1). `'auto'`
+   * currently resolves to `'lines'`; the render-cost/capability estimate that will pick `'lines'` vs
+   * `'hold'` per build lands in DD-029 Phase D (shared with the DD-028 pool-activation estimate).
+   */
+  private effectivePreview(): 'lines' | 'hold' | 'off' {
+    return this.progressivePreview === 'auto' ? 'lines' : this.progressivePreview;
   }
 
   /** Currently built chunk meshes: LineSegments (lines/travel) or Mesh (tubes). */
