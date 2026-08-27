@@ -14,7 +14,13 @@ import type { Confidence } from '@chestnutlabs/toolpath-core';
 import type { GLRendererLike, RenderTargetCanvas } from '@chestnutlabs/gcode-renderer-three';
 import { ModelRenderer, type ModelBackground, type PresentationView } from './model-renderer.js';
 import { isModelScene, resolveModelScene } from './loaders.js';
-import { sceneInstanceCount, type ModelPlateSummary, type ModelScene } from './scene-model.js';
+import {
+  applyRenderScope,
+  sceneInstanceCount,
+  type ModelPlateSummary,
+  type ModelScene,
+  type RenderScope
+} from './scene-model.js';
 import { computeCacheKey } from './cache-key.js';
 import type { ModelLimits } from './limits.js';
 
@@ -46,6 +52,13 @@ export interface RenderModelStillOptions {
   filamentPalette?: readonly (string | undefined)[];
   /** Override the environment id folded into the cache key (default: the `three` revision). */
   envId?: string;
+  /**
+   * Render only a subset of a multi-plate / multi-object source (DD-030 D2) — e.g. `{ plateId: 3 }` to
+   * render just plate 3 of a project, framed to that plate. Omit to render the whole project (default).
+   * `{ plateId }` is meaningful only when the source declares plates (`plates: 'known'`); on a source
+   * without plate structure it matches nothing and renders empty (the honest result).
+   */
+  renderScope?: RenderScope;
 }
 
 export interface RenderModelStillResult {
@@ -97,6 +110,17 @@ async function toScene(
  * (`DecompressionStream`); the STL and pre-built-`ModelScene` paths resolve promptly. Mirrors the
  * async `renderStill` on the toolpath side.
  */
+/** Counter that makes an opaque `instanceFilter` scope's cache key unique (never a false cache hit). */
+let scopeKeyCounter = 0;
+
+/** A stable, serializable cache-key fragment for a render scope (DD-030 D2). */
+function scopeCacheKey(scope?: RenderScope): unknown {
+  if (!scope) return undefined;
+  if ('plateId' in scope) return { p: scope.plateId };
+  if ('objectIds' in scope) return { o: [...scope.objectIds].sort() };
+  return { fn: ++scopeKeyCounter }; // opaque predicate → non-cacheable, unique each call
+}
+
 export async function renderModelStill(
   source: ModelSource,
   options: RenderModelStillOptions
@@ -107,7 +131,9 @@ export async function renderModelStill(
   const background: ModelBackground = options.background ?? 'transparent';
   const view: PresentationView = options.view ?? 'iso';
 
-  const { scene, sourceBytes } = await toScene(source, options.limits, options.filamentPalette);
+  const { scene: fullScene, sourceBytes } = await toScene(source, options.limits, options.filamentPalette);
+  // DD-030 D2: narrow to the requested plate/object subset (framing follows the filtered bounds).
+  const scene = options.renderScope ? applyRenderScope(fullScene, options.renderScope) : fullScene;
 
   const renderer = new ModelRenderer({
     canvas,
@@ -120,7 +146,16 @@ export async function renderModelStill(
     renderer.setScene(scene);
     renderer.render();
 
-    const optionsJson = JSON.stringify({ width, height, background, view, palette: options.filamentPalette });
+    const optionsJson = JSON.stringify({
+      width,
+      height,
+      background,
+      view,
+      palette: options.filamentPalette,
+      // Fold the scope so plate-1 and plate-2 thumbnails key distinctly. An opaque `instanceFilter` can't
+      // be serialized — such a still is marked non-cacheable (consumers should not reuse it by key).
+      scope: scopeCacheKey(options.renderScope)
+    });
     const cacheKey = computeCacheKey(sourceBytes, optionsJson, options.envId);
     return {
       canvas,

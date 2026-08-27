@@ -20,7 +20,7 @@ export type { ModelLoader, ModelLoadOptions, ModelSourceInput } from './loaders.
 export { computeCacheKey, defaultEnvId } from './cache-key.js';
 export { DEFAULT_LIMITS, resolveLimits, ModelParseError } from './limits.js';
 export type { ModelLimits, ResolvedLimits } from './limits.js';
-export { IDENTITY_MAT4 } from './scene-model.js';
+export { IDENTITY_MAT4, applyRenderScope } from './scene-model.js';
 export type {
   ModelScene,
   ModelObject,
@@ -28,6 +28,7 @@ export type {
   ModelPlateSummary,
   MeshGeometry,
   ModelBounds,
+  RenderScope,
   RGB,
   Mat4
 } from './scene-model.js';
