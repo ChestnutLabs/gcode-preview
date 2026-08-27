@@ -1,5 +1,78 @@
 # @chestnutlabs/gcode-dialects
 
+## 0.16.0
+
+### Minor Changes
+
+- [#383](https://github.com/ChestnutLabs/gcode-preview/pull/383) [`affc879`](https://github.com/ChestnutLabs/gcode-preview/commit/affc8796583be309ce469969f2777a833253549a) Thanks [@sobechestnut-dev](https://github.com/sobechestnut-dev)! - feat(dialects): ideaMaker adapter — `;TYPE:` roles + `PRINTING_ID` object membership (DD-026 T1)
+
+  New `ideaMaker()` dialect adapter (RR-007 §5.6), registered in the built-in worker set. It captures
+  ideaMaker's UPPERCASE `;TYPE:` feature roles and — crucially for `frameContent:'object'` — object
+  membership from ideaMaker's `;PRINTING: <name>` + `;PRINTING_ID: <n>` STATE channel: `PRINTING_ID:
+-1` (with `;PRINTING: NON-OBJECT`) is housekeeping, `n≥0` is the printed object. Housekeeping (raft,
+  wipe tower) emitted under NON-OBJECT is correctly excluded from the object channel, so ideaMaker files
+  frame the model rather than the raft/tower. FDM geometry unchanged.
+
+- [#384](https://github.com/ChestnutLabs/gcode-preview/pull/384) [`41d2dcf`](https://github.com/ChestnutLabs/gcode-preview/commit/41d2dcf49d28268c13d4d1dbaf4604a9efaacfaf) Thanks [@sobechestnut-dev](https://github.com/sobechestnut-dev)! - feat(dialects): Simplify3D adapter — `; feature <lowercase>` roles (DD-026 T1)
+
+  New `simplify3d()` dialect adapter (RR-007 §5.5), registered in the built-in worker set. It captures
+  Simplify3D's lowercase `; feature <token>` vocabulary (`skirt`, `outer perimeter`, `inner perimeter`,
+  `infill`, `solid layer`, `support`, `raft`, `prime pillar`, `ooze shield`, …) as feature roles.
+  Simplify3D output has **no** object-membership channel, so `objects` stays honestly `unavailable`
+  rather than a fabricated membership — object framing falls back to feature-role classification
+  (DD-026 T2). Prime pillar / ooze shield map to the generic `Custom` role, never treated as model.
+  FDM geometry unchanged.
+
+- [#386](https://github.com/ChestnutLabs/gcode-preview/pull/386) [`bf032d2`](https://github.com/ChestnutLabs/gcode-preview/commit/bf032d2b4e0ce36dcbd8020caead2a512ca3b618) Thanks [@sobechestnut-dev](https://github.com/sobechestnut-dev)! - feat(core): first-class non-model FeatureRoles — PrimeTower, WipeTower, Raft, Purge (DD-026 T2)
+
+  Adds four additive `FeatureRole` values (`PrimeTower = 11`, `WipeTower = 12`, `Raft = 13`,
+  `Purge = 14`) so slicer housekeeping is a first-class role rather than being folded into the generic
+  `Custom`. This is the foundation for the DD-026 T2 model-bounds classifier, which excludes these
+  roles when framing the printed object.
+
+  Adapters now map their tower/raft vocabulary onto the new roles: OrcaSlicer/Bambu `Prime tower` →
+  `PrimeTower`; PrusaSlicer/ideaMaker `Wipe tower`/`WIPE-TOWER` → `WipeTower`; Cura `PRIME-TOWER` →
+  `PrimeTower`; Simplify3D `prime pillar` → `PrimeTower`; and `raft`/`RAFT` across Cura, ideaMaker,
+  OrcaSlicer, PrusaSlicer, and Simplify3D → `Raft` (previously reported as `Brim`). `Purge` is reserved
+  for the explicit `FLUSH_START/END` bracket landing in a follow-up. Unmapped housekeeping (e.g.
+  Simplify3D `ooze shield`) stays generic `Custom` — the safe, in-frame direction.
+
+  Additive numeric-index values only; FDM geometry is byte-identical. The affected raft/tower segments
+  report a more precise feature-channel value; no rendered geometry or default colours change.
+
+### Patch Changes
+
+- [#381](https://github.com/ChestnutLabs/gcode-preview/pull/381) [`3905178`](https://github.com/ChestnutLabs/gcode-preview/commit/39051787497610c9aec1c5950fe1d52bcd375582) Thanks [@sobechestnut-dev](https://github.com/sobechestnut-dev)! - fix(orca-bambu): capture real OrcaSlicer `;TYPE:` features and `; printing object` labels (DD-026 T1)
+
+  The Orca/Bambu adapter only matched Bambu Studio's `; FEATURE:` comments and a `; start printing
+object, id:<n>` object marker. Real OrcaSlicer / AnycubicSlicerNext output (RR-007 §5.8) uses
+  `;TYPE:<vocab>` for features and `; printing object <name> id:<id>` (no "start", and the id can
+  exceed Uint32) — so those files got **no** feature roles and **no** object channel, which left
+  `frameContent:'object'` with an empty `objectBounds` (it framed all extrusion, including a bed-edge
+  prime line).
+
+  The adapter now accepts `;TYPE:` in addition to `; FEATURE:` (same Orca vocabulary), and matches the
+  object-start marker across all lineage formats (Bambu `start printing object, unique label id:` with a
+  trailing `name:`; OrcaSlicer `printing object <name> id:<big id>`; AnycubicSlicer/Prusa-lineage
+  `printing object "<name>" id:<n> copy <m>`). Each distinct object id maps to a sequential 1-based
+  channel value (raw ids can exceed Uint32), reused across per-layer re-bracketing. Real OrcaSlicer
+  files without `EXCLUDE_OBJECT` now resolve `featureRoles:'known'` + `objects:'known'`, restoring
+  object-aware framing. FDM geometry unchanged.
+
+- [#382](https://github.com/ChestnutLabs/gcode-preview/pull/382) [`0ef33fe`](https://github.com/ChestnutLabs/gcode-preview/commit/0ef33fecfc08dcf5db2d3ce5c84bbe86fbb867fa) Thanks [@sobechestnut-dev](https://github.com/sobechestnut-dev)! - fix(prusaslicer): capture `; printing object` labels; share the object-marker parser (DD-026 T1)
+
+  The PrusaSlicer adapter captured feature roles but **no** object channel, so a Prusa file sliced with
+  _Label objects_ on (RR-007 §5.1 — `; printing object <name> id:<n> copy <m>`) left
+  `frameContent:'object'` with an empty `objectBounds`. It now tracks object membership.
+
+  The object-start parsing (across all Prusa/Orca/Bambu lineage formats) is extracted into a shared
+  `PrintingObjectTracker` (`object-markers.ts`); the OrcaSlicer/Bambu adapter is refactored onto it, so
+  the two adapters can't drift. Each distinct slicer id maps to a sequential 1-based channel value (raw
+  ids can exceed Uint32). FDM geometry unchanged.
+
+- Updated dependencies [[`bf032d2`](https://github.com/ChestnutLabs/gcode-preview/commit/bf032d2b4e0ce36dcbd8020caead2a512ca3b618)]:
+  - @chestnutlabs/toolpath-core@0.16.0
+
 ## 0.15.0
 
 ### Patch Changes

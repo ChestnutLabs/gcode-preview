@@ -1,5 +1,25 @@
 # @chestnutlabs/gcode-preview-react
 
+## 0.16.0
+
+### Minor Changes
+
+- [#395](https://github.com/ChestnutLabs/gcode-preview/pull/395) [`70b1f5b`](https://github.com/ChestnutLabs/gcode-preview/commit/70b1f5bae3458f21c44950d17fc8c6e413ea8570) Thanks [@sobechestnut-dev](https://github.com/sobechestnut-dev)! - feat(adapters): surface the staged-progress `stage` event (DD-029 Phase A)
+
+  All four framework adapters now forward the DD-029 `stage` event with identical semantics: Vue `@stage`,
+  React `onStage`, Svelte `dispatch('stage')`, Element `stage` CustomEvent — each carrying
+  `{ stage, progress?, detail? }` (`building-geometry` carries a real fraction + `{built,total}`). A
+  consumer can render honest `parsing → classifying → building-geometry → preparing-gpu → ready` status
+  without framework-specific hacks. Additive; existing events unchanged.
+
+### Patch Changes
+
+- Updated dependencies [[`6587d99`](https://github.com/ChestnutLabs/gcode-preview/commit/6587d9994dde77dd5488136e9b46257661c16c2e), [`1c54132`](https://github.com/ChestnutLabs/gcode-preview/commit/1c54132a39713c3c6d582e0b6820b411eff40d20), [`fdc9111`](https://github.com/ChestnutLabs/gcode-preview/commit/fdc9111c0917af55e41fff9d20464ebbc3444589), [`12deb4d`](https://github.com/ChestnutLabs/gcode-preview/commit/12deb4d79891cfab39b1a9c8d1f3f93665564a9e), [`ecfa56b`](https://github.com/ChestnutLabs/gcode-preview/commit/ecfa56b098d721cd5d636f594d07eda9ac2be067), [`70b1f5b`](https://github.com/ChestnutLabs/gcode-preview/commit/70b1f5bae3458f21c44950d17fc8c6e413ea8570), [`808dc56`](https://github.com/ChestnutLabs/gcode-preview/commit/808dc56bf377a435bc457d16fc51e195734e2bb5), [`affc879`](https://github.com/ChestnutLabs/gcode-preview/commit/affc8796583be309ce469969f2777a833253549a), [`f3ce24f`](https://github.com/ChestnutLabs/gcode-preview/commit/f3ce24ff5439ef44ca4bac8a12eda91d187f410f), [`de453cb`](https://github.com/ChestnutLabs/gcode-preview/commit/de453cb3a84275dc27c89c20381c7f91289a6a83), [`9cd66b2`](https://github.com/ChestnutLabs/gcode-preview/commit/9cd66b2f23aa32c8832d9e9da13c025cf86278b1), [`41d2dcf`](https://github.com/ChestnutLabs/gcode-preview/commit/41d2dcf49d28268c13d4d1dbaf4604a9efaacfaf), [`bf032d2`](https://github.com/ChestnutLabs/gcode-preview/commit/bf032d2b4e0ce36dcbd8020caead2a512ca3b618)]:
+  - @chestnutlabs/gcode-renderer-three@0.16.0
+  - @chestnutlabs/gcode-preview-core@0.16.0
+  - @chestnutlabs/gcode-parser@0.16.0
+  - @chestnutlabs/toolpath-core@0.16.0
+
 ## 0.15.0
 
 ### Minor Changes

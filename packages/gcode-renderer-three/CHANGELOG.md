@@ -1,5 +1,146 @@
 # @chestnutlabs/gcode-renderer-three
 
+## 0.16.0
+
+### Minor Changes
+
+- [#399](https://github.com/ChestnutLabs/gcode-preview/pull/399) [`6587d99`](https://github.com/ChestnutLabs/gcode-preview/commit/6587d9994dde77dd5488136e9b46257661c16c2e) Thanks [@sobechestnut-dev](https://github.com/sobechestnut-dev)! - feat(renderer): cost/capability-driven pool activation + `'auto'` single-reveal decision (DD-028 D4 / DD-029 Phase D)
+
+  Replaces the placeholder segment-count threshold with a **render-cost estimate** that scales with the
+  real work (ring vertices) and the detected capability (software rasterizers weighted heavier). One
+  estimate drives two decisions: whether the geometry worker pool is worth engaging, and whether
+  `progressivePreview:'auto'` takes the single-reveal `'hold'` path (expensive tube builds) or streams
+  `'lines'` (cheap builds, and always while parsing). Calibrated from the RR-008 Phase-0 measurements; a
+  relative classifier, never surfaced as a precise time.
+
+  Tuning validated (`results/dd-028-chunk-sweep-2026-08-26.md`): the renderer's existing 2048-segment
+  chunk target is near-optimal for the pool (**6.46×** at opossum scale on 8 cores) — small chunks keep
+  the memory cap generous, and large chunks degrade _gracefully_ to fewer workers (never an OOM). No
+  re-chunking needed. `'auto'` now functionally picks `lines`/`hold`; the option default still stays
+  `'lines'` pending the owner's hardware human-pass.
+
+- [#397](https://github.com/ChestnutLabs/gcode-preview/pull/397) [`1c54132`](https://github.com/ChestnutLabs/gcode-preview/commit/1c54132a39713c3c6d582e0b6820b411eff40d20) Thanks [@sobechestnut-dev](https://github.com/sobechestnut-dev)! - feat(renderer): geometry worker pool — parallel tube build (DD-028, first phase)
+
+  Adds a bounded, capability-aware `GeometryWorkerPool` that builds tube chunks across workers and returns
+  them in **deterministic chunk order**, byte-identical to a serial build. Because a tube chunk is
+  self-contained (RR-008 Phase 1), a chunk crosses the worker boundary as a single transferable
+  `positions` buffer — no `ToolpathIR`, no `SharedArrayBuffer`. Ships:
+  - `handleGeometryRequest` — the host-agnostic kernel (the same `buildTubeChunk`, fed the chunk payload).
+  - `GeometryWorkerPool` + `resolvePoolSize` — the bounded pool with backpressure + deterministic ordering.
+    Sizing is `clamp(coreBudget − 1, 1, MAX)` — `hardwareConcurrency` in the browser; a Node/sidecar caller
+    passes the **cgroup quota**, not `os.cpus()`.
+  - `geometry-worker.js` — the browser Web Worker entry (bundler-friendly, injectable factory for tests).
+
+  Measured (worker_threads, opossum-scale 2.67M segments): serial ~10.2 s → **~2.1 s at 8 workers (4.9×)**,
+  byte-identical at every worker count. The renderer build-path wiring, memory-aware in-flight cap,
+  cost/capability activation estimate, and the Node/sidecar adapter land in the follow-up phase against
+  this proven kernel. No change to the current build path yet (the pool is exported but not yet the default
+  build route); FDM geometry byte-identical.
+
+- [#398](https://github.com/ChestnutLabs/gcode-preview/pull/398) [`fdc9111`](https://github.com/ChestnutLabs/gcode-preview/commit/fdc9111c0917af55e41fff9d20464ebbc3444589) Thanks [@sobechestnut-dev](https://github.com/sobechestnut-dev)! - feat(renderer): wire the geometry worker pool into the build path (DD-028 [#1](https://github.com/ChestnutLabs/gcode-preview/issues/1)+[#2](https://github.com/ChestnutLabs/gcode-preview/issues/2))
+
+  The renderer now builds tube geometry across the worker pool when engaged: `geometryConcurrency:
+'auto'` (default) sizes a **capability- and memory-aware** pool and uses it for tube builds above a
+  cost threshold; `'off'` forces the synchronous path; a number pins the worker count. Extrude chunks
+  build on workers and stream back to the main thread (each wrapped + uploaded as it arrives, so peak
+  transient geometry is memory-bounded); travel/wipe/lines stay inline. Output is **byte-identical** to
+  the serial build — same kernel, same `positions` — with deterministic assembly.
+  - **Capability sizing:** `clamp(coreBudget − 1, 1, MAX)` (browser `hardwareConcurrency`; Node/sidecar
+    the cgroup quota), further capped by memory so `workers × maxChunkBytes ≤ geometryMemoryBudgetBytes`
+    (proactive — a cgroup OOM is uncatchable). Never oversubscribes cores or memory.
+  - **Safe fallbacks:** a worker failure degrades to continuous lines (never chopped); a newer `setIR`
+    or dispose invalidates a stale in-flight build via a generation guard.
+  - **Wiring:** `gcode-preview-core` defaults `createGeometryWorker` to the batteries-included browser
+    Web Worker (`createBrowserGeometryWorker`) in a browser; Node/headless stays synchronous. New
+    `geometryConcurrency` / `geometryMemoryBudgetBytes` options on both the renderer and the controller.
+  - **Diagnostics:** RenderStats gains `buildParallelism: 'main' | 'pool'` and `workerCount`.
+
+  FDM geometry byte-identical. The cost/capability activation estimate and the Node/sidecar worker_threads
+  adapter follow in the next phase.
+
+- [#396](https://github.com/ChestnutLabs/gcode-preview/pull/396) [`ecfa56b`](https://github.com/ChestnutLabs/gcode-preview/commit/ecfa56b098d721cd5d636f594d07eda9ac2be067) Thanks [@sobechestnut-dev](https://github.com/sobechestnut-dev)! - feat(renderer): single clean reveal — strengthen `progressivePreview:'hold'` + add `'auto'` (DD-029 Phase B)
+
+  `progressivePreview` gains `'auto'` (`'auto' | 'lines' | 'hold' | 'off'`), and `'hold'` becomes a **true
+  single clean reveal**: the growing scene is no longer rendered on every build tick (the ~187
+  intermediate renders RR-008 §8.1 measured) — the completed scene is rendered exactly **once**, at
+  completion. Previously `'hold'` only suppressed the line _preview_ but still re-rendered the growing tube
+  scene each tick.
+
+  `'auto'` (the eventual default) will pick `'lines'` vs `'hold'` per build from a render-cost/capability
+  estimate; until that estimate lands (DD-029 Phase D) it resolves to `'lines'`, so **no behavior changes
+  on upgrade** (the option default stays `'lines'`). No mode drops extrusion segments or lowers final
+  geometry quality — this only controls how often incomplete work is drawn. Headless `renderStill`
+  (`renderDuringBuild:false`) is unaffected. Consumers wanting the single reveal (e.g. AnyBridge) select
+  `'hold'` explicitly.
+
+- [#394](https://github.com/ChestnutLabs/gcode-preview/pull/394) [`808dc56`](https://github.com/ChestnutLabs/gcode-preview/commit/808dc56bf377a435bc457d16fc51e195734e2bb5) Thanks [@sobechestnut-dev](https://github.com/sobechestnut-dev)! - feat(renderer): staged preparation progress — `stage` event (DD-029 Phase A)
+
+  Adds a `stage` renderer event and `PreparationStage` type (DD-029 §4 D2) so consumers can show honest
+  preparation status instead of a bare spinner. The renderer emits `building-geometry` (with a real
+  `progress` fraction + `{built,total}` counts — the stage the user actually waits on), `preparing-gpu`,
+  and `ready`. `ready` coincides with `buildComplete` (never before it), and preparation failures still
+  terminate through the existing `error` path — there is no stage failure variant, so a consumer keys its
+  overlay off both terminals and never hangs.
+
+  Additive: `buildProgress`/`buildComplete`/`parse-progress` are untouched. (`parsing`/`classifying` are
+  emitted by `@chestnutlabs/gcode-preview-core` in a follow-up.) No geometry or render-policy change.
+
+- [#388](https://github.com/ChestnutLabs/gcode-preview/pull/388) [`f3ce24f`](https://github.com/ChestnutLabs/gcode-preview/commit/f3ce24ff5439ef44ca4bac8a12eda91d187f410f) Thanks [@sobechestnut-dev](https://github.com/sobechestnut-dev)! - feat(renderer): render diagnostics — `getRenderStats()` + `renderStats` event (DD-027 Phase 1)
+
+  Adds a capability-honest `RenderStats` snapshot so consumers can read _what the renderer is actually
+  running on_ and _why a build was slow or degraded_ instead of inferring it. `ToolpathRenderer` now
+  exposes `getRenderStats(): RenderStats | null` and emits a `renderStats` event at build-complete
+  carrying:
+  - **GPU:** `backend`, `webglVersion`, `capability` (hardware/software/unknown), and the raw
+    `gpuRenderer`/`gpuVendor` strings — the answer to "is my GPU actually being used, or is this a
+    software fallback?" (via the new best-effort `probeGpuInfo`, which reads the live context once).
+  - **Geometry:** `geometryMode`, source vs rendered segment counts, `decimationApplied`, `vertexCount`,
+    `drawCalls`, and `tubeBytes`/`tubeByteBudget` (the latter set only when the budget actually
+    constrained the build).
+  - **Timings:** `geometryBuildMs` and `firstRenderMs` (`parseMs`/`totalReadyMs` are `null` here — core
+    fills them when it re-emits, DD-027 Phase 2).
+  - **Policy:** `qualityMode` and `disclosures[]` (honest degradation reasons already emitted).
+
+  Every field is a real value or `null`/`'unknown'` — never fabricated when a backend genuinely can't
+  provide it (2D canvas, privacy-gated `WEBGL_debug_renderer_info`, parse timing the renderer never
+  sees). Read-only; FDM geometry byte-identical.
+
+- [#375](https://github.com/ChestnutLabs/gcode-preview/pull/375) [`de453cb`](https://github.com/ChestnutLabs/gcode-preview/commit/de453cb3a84275dc27c89c20381c7f91289a6a83) Thanks [@sobechestnut-dev](https://github.com/sobechestnut-dev)! - `renderStill` builds to completion and renders once — large headless stills no longer pay for dozens of discarded renders
+
+  A `renderStill` builds its geometry across many microtask ticks, and the incremental build rendered
+  the whole (growing) scene **on every tick** — for a big tube mesh in software WebGL that's
+  dozens-to-hundreds of full MSAA rasterizations, all discarded except the last. A still only needs the
+  final frame.
+
+  The `ToolpathRenderer` gains a **`renderDuringBuild`** option (default `true`, preserving the
+  interactive viewer's progressive-build feedback). `renderStill` now sets it `false`: it builds the
+  geometry to completion and renders **once**, cutting the per-tick render waste that dominates a large
+  still's time in software rendering. Output is pixel-identical; `buildComplete` and all build events
+  still fire.
+
+  Note: this is one lever; a large still still builds the full tube mesh. Defaulting thumbnails to
+  `lines`, capping segments, and reusing the GL context across stills remain follow-ups.
+
+- [#390](https://github.com/ChestnutLabs/gcode-preview/pull/390) [`9cd66b2`](https://github.com/ChestnutLabs/gcode-preview/commit/9cd66b2f23aa32c8832d9e9da13c025cf86278b1) Thanks [@sobechestnut-dev](https://github.com/sobechestnut-dev)! - refactor(renderer): self-contained tube-chunk kernel — `buildTubeChunk(chunk, opts)` (RR-008 Phase 1)
+
+  `buildTubeChunk` and `findPolylines` now read the chunk's own `positions` buffer instead of indexing
+  back into the `ToolpathIR`. Each `GeometryChunk` already carries its segment endpoints (6 floats/seg),
+  so the tube kernel becomes **fully self-contained** — a chunk can be handed to a worker as a single
+  transferable buffer with no IR reference and no `SharedArrayBuffer`. This is the low-risk enabler for
+  the RR-008 worker-pool phase; output is **byte-identical** to the previous implementation (the same
+  Float32 endpoints, read from a different source).
+
+  **Signature change (0.x minor):** the exported `buildTubeChunk(ir, chunk, opts)` drops its first
+  argument → `buildTubeChunk(chunk, opts)`. Consumers using the high-level `ToolpathRenderer` are
+  unaffected; only direct callers of the low-level primitive need to drop the `ir` argument. No rendered
+  geometry, ordering, continuity, or output changes.
+
+### Patch Changes
+
+- Updated dependencies [[`bf032d2`](https://github.com/ChestnutLabs/gcode-preview/commit/bf032d2b4e0ce36dcbd8020caead2a512ca3b618)]:
+  - @chestnutlabs/toolpath-core@0.16.0
+  - @chestnutlabs/gcode-colors@0.16.0
+
 ## 0.15.0
 
 ### Minor Changes
