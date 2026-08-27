@@ -17,7 +17,6 @@
  * Pure typed-array module: no three.js import (the scene layer wraps the output
  * in BufferGeometry), fully testable in Node — same stance as chunks.ts.
  */
-import type { ToolpathIR } from '@chestnutlabs/toolpath-core';
 import type { GeometryChunk } from './chunks.js';
 
 export interface TubeOptions {
@@ -86,27 +85,39 @@ export function tubeRadialForBudget(
 
 /**
  * Split a chunk's included segments into connected polylines: a new run starts
- * whenever the previous segment's end is not this segment's start (Float32
- * values copied verbatim from the IR, so exact comparison is sound).
+ * whenever the previous segment's end is not this segment's start. Reads only
+ * `chunk.positions` (6 floats/seg: x0,y0,z0,x1,y1,z1) — the same Float32 values
+ * `chunks.ts` copied verbatim from the IR, so exact comparison is sound AND the
+ * chunk is fully self-contained (no IR reference), the enabler for building a
+ * chunk on a worker thread (DD-026 successor RR-008 §4.1).
  */
-function findPolylines(ir: ToolpathIR, chunk: GeometryChunk): number[] {
-  const seg = ir.segments;
+function findPolylines(chunk: GeometryChunk): number[] {
+  const pos = chunk.positions;
   const starts: number[] = [];
   for (let k = 0; k < chunk.count; k++) {
     if (k === 0) {
       starts.push(0);
       continue;
     }
-    const prev = chunk.segIndices[k - 1];
-    const cur = chunk.segIndices[k];
-    if (seg.x1[prev] !== seg.x0[cur] || seg.y1[prev] !== seg.y0[cur] || seg.z1[prev] !== seg.z0[cur]) {
+    const prevEnd = (k - 1) * 6 + 3; // previous segment's end point (x1,y1,z1)
+    const curStart = k * 6; // this segment's start point (x0,y0,z0)
+    if (
+      pos[prevEnd] !== pos[curStart] ||
+      pos[prevEnd + 1] !== pos[curStart + 1] ||
+      pos[prevEnd + 2] !== pos[curStart + 2]
+    ) {
       starts.push(k);
     }
   }
   return starts;
 }
 
-export function buildTubeChunk(ir: ToolpathIR, chunk: GeometryChunk, opts: TubeOptions = {}): TubeChunkGeometry {
+/**
+ * Build tube geometry for one chunk. Reads ONLY `chunk.positions` (self-contained, no IR) so a chunk
+ * can be handed to a worker as a single transferable buffer (RR-008 §4.1) — output is byte-identical to
+ * the previous IR-indexed implementation, since `chunk.positions` carries the same endpoints.
+ */
+export function buildTubeChunk(chunk: GeometryChunk, opts: TubeOptions = {}): TubeChunkGeometry {
   const lineWidth = opts.lineWidth ?? 0.6;
   const lineHeight = opts.lineHeight ?? 0.2;
   const radialSegments = opts.radialSegments ?? 8;
@@ -114,7 +125,7 @@ export function buildTubeChunk(ir: ToolpathIR, chunk: GeometryChunk, opts: TubeO
   const ringSize = radialSegments + 1; // inherited seam-duplicate ring layout
   const indicesPerSegment = radialSegments * 6;
 
-  const starts = findPolylines(ir, chunk);
+  const starts = findPolylines(chunk);
   // Each polyline of n segments has n+1 rings.
   const ringCount = chunk.count + starts.length;
   const vertexCount = ringCount * ringSize;
@@ -129,7 +140,7 @@ export function buildTubeChunk(ir: ToolpathIR, chunk: GeometryChunk, opts: TubeO
   const indices = new Uint32Array(chunk.count * indicesPerSegment);
   const vertexSegment = new Uint32Array(vertexCount);
 
-  const seg = ir.segments;
+  const pos = chunk.positions; // 6 floats per included segment: x0,y0,z0,x1,y1,z1
   // Per-ring point of the active polyline (px/py/pz), with its neighbors for the
   // inherited corner-averaged tangent.
   let ringBase = 0; // vertex index of the ring being written
@@ -254,35 +265,35 @@ export function buildTubeChunk(ir: ToolpathIR, chunk: GeometryChunk, opts: TubeO
     const firstRingVertex = ringBase;
 
     for (let k = runStart; k < runEnd; k++) {
-      const i = chunk.segIndices[k];
-      const prevI = k > runStart ? chunk.segIndices[k - 1] : -1;
+      const b = k * 6; // this segment: start (b..b+2), end (b+3..b+5)
+      const pb = k > runStart ? (k - 1) * 6 : -1; // previous segment's start, or -1 at the run head
       // Ring at this segment's start point; neighbors: previous segment's start
       // (or the point itself at the run head) and this segment's end.
       writeRing(
-        seg.x0[i],
-        seg.y0[i],
-        seg.z0[i],
-        prevI >= 0 ? seg.x0[prevI] : seg.x0[i],
-        prevI >= 0 ? seg.y0[prevI] : seg.y0[i],
-        prevI >= 0 ? seg.z0[prevI] : seg.z0[i],
-        seg.x1[i],
-        seg.y1[i],
-        seg.z1[i],
+        pos[b],
+        pos[b + 1],
+        pos[b + 2],
+        pb >= 0 ? pos[pb] : pos[b],
+        pb >= 0 ? pos[pb + 1] : pos[b + 1],
+        pb >= 0 ? pos[pb + 2] : pos[b + 2],
+        pos[b + 3],
+        pos[b + 4],
+        pos[b + 5],
         k
       );
     }
     // Closing ring at the run's final endpoint.
-    const last = chunk.segIndices[runEnd - 1];
+    const lb = (runEnd - 1) * 6; // final segment: start (lb..lb+2), end (lb+3..lb+5)
     writeRing(
-      seg.x1[last],
-      seg.y1[last],
-      seg.z1[last],
-      seg.x0[last],
-      seg.y0[last],
-      seg.z0[last],
-      seg.x1[last],
-      seg.y1[last],
-      seg.z1[last],
+      pos[lb + 3],
+      pos[lb + 4],
+      pos[lb + 5],
+      pos[lb],
+      pos[lb + 1],
+      pos[lb + 2],
+      pos[lb + 3],
+      pos[lb + 4],
+      pos[lb + 5],
       runEnd - 1
     );
 
