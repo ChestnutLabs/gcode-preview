@@ -1,5 +1,12 @@
 # @chestnutlabs/gcode-colors
 
+## 0.17.0
+
+### Patch Changes
+
+- Updated dependencies [[`214b0db`](https://github.com/ChestnutLabs/gcode-preview/commit/214b0db2dd9d8aa177d80969bdb59173d33121a3)]:
+  - @chestnutlabs/toolpath-core@0.17.0
+
 ## 0.16.0
 
 ### Patch Changes
