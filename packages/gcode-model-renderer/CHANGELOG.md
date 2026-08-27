@@ -1,5 +1,67 @@
 # @chestnutlabs/gcode-model-renderer
 
+## 0.18.0
+
+### Minor Changes
+
+- [#418](https://github.com/ChestnutLabs/gcode-preview/pull/418) [`c950339`](https://github.com/ChestnutLabs/gcode-preview/commit/c95033908e3ebaeb07b6f7e6f2487672dcc463f0) Thanks [@sobechestnut-dev](https://github.com/sobechestnut-dev)! - feat(renderer): interactive view capture() → Blob (DD-030 D1)
+
+  The interactive viewer can now hand back **what is on screen right now** as an image `Blob` — for a
+  user-selected thumbnail, a large-file thumbnail fallback, or a screenshot. New `capture(opts?)` where
+  `opts` is `{ width?, height?, format?, quality?, background? }` (all optional; defaults match the live
+  view).
+
+  Available on every interactive surface: `GcodePreviewControls.capture()` (so the Vue, React, Svelte, and
+  Web-Component adapters all inherit it — the Web Component also exposes an imperative `capture()` method),
+  and `ModelViewer.capture()` on the model-viewer handle. The toolpath `ToolpathRenderer` and the shared
+  `InteractiveStage` carry the implementation.
+
+  **Mechanism (render-to-target).** Capture renders the current scene + active camera into an off-screen
+  `WebGLRenderTarget` at the requested size and reads it back, rather than flipping the interactive
+  context's `preserveDrawingBuffer` (which would tax every interactive frame). That gives an arbitrary
+  output size and an independent/transparent background **without** disturbing the live view, and reuses the
+  headless still path's "single render, then read pixels" recipe. The thumbnail is framed at its own aspect
+  so it isn't distorted; the live view is repainted afterward. The library returns the `Blob` and **never**
+  triggers a download — the caller owns the pixels (same contract as `renderStill`).
+
+  **Honest.** When the renderer cannot render-to-target (the 2D renderer, a stub GL / no WebGL) or the stage
+  is disposed / its context is lost, `capture()` rejects with a typed `CaptureUnsupportedError`
+  (`code: 'E_CAPTURE_UNSUPPORTED'`) — never fabricated output. Purely additive (a new optional method on the
+  renderer contract; no existing signature changed). Final increment of the DD-030 renderer/viewer
+  interoperability batch (bed + per-plate scope + capture).
+
+- [#417](https://github.com/ChestnutLabs/gcode-preview/pull/417) [`5dc8079`](https://github.com/ChestnutLabs/gcode-preview/commit/5dc80794444742beddafe1c37322db751af50020) Thanks [@sobechestnut-dev](https://github.com/sobechestnut-dev)! - feat(model-renderer): per-plate / object-subset render scope (DD-030 D2)
+
+  A caller can now render just **one plate** (or any object/placement subset) of a multi-plate / multi-object
+  source, instead of always the whole project — so a single-plate variant thumbnail looks like _that_ plate.
+
+  New `RenderScope` selector — `{ plateId }`, `{ objectIds }`, or `{ instanceFilter }` — with a pure,
+  three-free `applyRenderScope(scene, scope)` that returns a filtered `ModelScene` (dropping non-matching
+  objects/placements) with `bounds` recomputed from the kept placements, so framing follows the subset.
+  `{ plateId }` is sugar over the placement-level `plateIds` (DD-025); it's generic (a plate is just one way
+  to derive the subset) and vendor-neutral.
+
+  Wired into both surfaces:
+  - `renderModelStill` gains a `renderScope?` option; it also folds the scope into the still `cacheKey` so a
+    plate-1 and a plate-2 thumbnail of the same source key distinctly (an opaque `instanceFilter` is marked
+    non-cacheable).
+  - `createModelViewer` gains an initial `renderScope?` and a `setRenderScope(scope | null)` handle method
+    that rebuilds and reframes to the subset (`null` restores the whole source).
+
+  Honest and additive: omitting `renderScope` renders the whole project exactly as before. A `{ plateId }`
+  that matches nothing (e.g. a source with no declared plate structure, `capabilities.plates !== 'known'`)
+  renders an **empty** scene by design — the honest result of selecting a plate that isn't declared;
+  consumers gate `{ plateId }` on `plates: 'known'`. The source's declared `plates`/`capabilities` are
+  preserved (only what is _rendered_ is narrowed). Second increment of the DD-030 renderer/viewer interop
+  batch.
+
+### Patch Changes
+
+- Updated dependencies [[`0ebeadf`](https://github.com/ChestnutLabs/gcode-preview/commit/0ebeadfa839e52baf243ef07b5807f3974bbac7e), [`c950339`](https://github.com/ChestnutLabs/gcode-preview/commit/c95033908e3ebaeb07b6f7e6f2487672dcc463f0)]:
+  - @chestnutlabs/gcode-renderer-three@0.18.0
+  - @chestnutlabs/gcode-containers@0.18.0
+  - @chestnutlabs/toolpath-core@0.18.0
+
 ## 0.17.0
 
 ### Patch Changes

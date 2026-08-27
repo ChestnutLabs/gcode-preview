@@ -1,5 +1,99 @@
 # @chestnutlabs/gcode-parser
 
+## 0.18.0
+
+### Minor Changes
+
+- [#410](https://github.com/ChestnutLabs/gcode-preview/pull/410) [`5144890`](https://github.com/ChestnutLabs/gcode-preview/commit/51448906f87ca09f3ed11f1286f7b79356110a83) Thanks [@sobechestnut-dev](https://github.com/sobechestnut-dev)! - feat(parser): RS274NGC parameters + expressions (DD-017 Phase 1, [#189](https://github.com/ChestnutLabs/gcode-preview/issues/189) phase 7)
+
+  The parser now understands the RS274NGC _programming_ layer that FDM slicers never use but CAM /
+  LinuxCNC output routinely does: numbered/named/global parameters (`[#100](https://github.com/ChestnutLabs/gcode-preview/issues/100)`, `#<name>`, `#<_global>`),
+  assignment (`#n = <expr>`), and bracket expressions (`[ … ]`) usable wherever a numeric word value is
+  expected (`X[[#1](https://github.com/ChestnutLabs/gcode-preview/issues/1)+2]`, `F[#feed]`, `Z#<depth>`). Previously these were silently dropped, so parametric
+  programs rendered honest-but-**empty**; they now resolve to real geometry.
+
+  A new self-contained module (`rs274.ts`) provides a pure recursive-descent evaluator — the RS274NGC
+  operator + function set with correct precedence (`**` > `*/MOD` > `+-` > comparisons > logical),
+  **degree**-based trig, LinuxCNC `MOD`/`EQ` semantics, `FIX`/`FUP`/`ROUND`, indirect `##n` and computed
+  `#[expr]` references, and a read-only system-parameter allow-list (`[#5420](https://github.com/ChestnutLabs/gcode-preview/issues/5420)–[#5422](https://github.com/ChestnutLabs/gcode-preview/issues/5422)` = current position).
+  It is bounded and safe: a depth guard on nested brackets, **no `eval`/`Function`**, and a capped
+  parameter store, so a hostile program can waste only bounded CPU. Malformed input never throws out of
+  the parse — the offending word is dropped with a specific disclosure (`rs274-bad-expression`,
+  `rs274-uninitialized-param`, `rs274-unsupported-sysparam`) and parsing continues.
+
+  Honest and additive: a new `parametricProgram` capability (`known` when executed, `unavailable`
+  otherwise). Engaged only on lines that use `#`/`[` — every FDM and simple-CNC line takes the untouched
+  lexer and is **byte-identical** (native goldens regenerated for the additive capability key only; the
+  detection gate adds ~2.7% to a large FDM parse, geometry unchanged).
+
+  **Scope: Phase 1 (parameters + expressions) only.** O-word control flow (`if`/`while`/`sub`/`call`) is a
+  later phase and is not yet supported — such constructs are ignored (and will be disclosed) for now.
+
+- [#413](https://github.com/ChestnutLabs/gcode-preview/pull/413) [`bcb4b78`](https://github.com/ChestnutLabs/gcode-preview/commit/bcb4b786fcfc6a2e967d8bfff1d4fd3a06731681) Thanks [@sobechestnut-dev](https://github.com/sobechestnut-dev)! - feat(parser): RS274NGC O-word control flow (DD-017 Phase 2, [#189](https://github.com/ChestnutLabs/gcode-preview/issues/189) phase 7)
+
+  Building on Phase 1's parameters + expressions, the parser now **executes** the RS274NGC O-word control
+  structures that CAM / LinuxCNC programs use to generate geometry: `if`/`elseif`/`else`/`endif`,
+  `while`/`endwhile`, `do`/`while`, `repeat`/`endrepeat`, and `break`/`continue`. A bolt-circle written as
+  a `while` loop over a computed angle, a pocket cut by a `repeat`, an `if` that selects a tool path —
+  these previously ran once (or not at all) because the parser is forward-only; they now resolve to the
+  full, correct toolpath.
+
+  A new module (`rs274-flow.ts`) is the program-buffered interpreter of DD-017 D1: engaged **only** when a
+  program actually contains an O-word control line (a cheap detection scan), it buffers the program, builds
+  a block tree, and executes it — feeding every non-control line back through the same engine so
+  geometry/params/expressions stay on one code path. Loops evaluate their conditions/counts against the
+  same shared parameter store, so `#<i> = [#<i> + 1]` inside a loop body does what you expect.
+
+  **Bounded and safe (this is now a small interpreter).** A new `maxProgramIterations` limit (default
+  `1_000_000`) bounds **total loop work** — charged per loop pass _and_ per statement executed inside a
+  loop body, so a large body cannot multiply the real work past the cap — and stops a runaway `o while [1]`
+  with a partial result and a `rs274-iteration-limit` disclosure. Structural nesting is capped; loops are
+  ordinary iteration, not recursion, so an adversarial program can waste only bounded CPU — it cannot hang,
+  blow the stack, or OOM the worker. There is no `eval` and no I/O.
+
+  **Honest and additive.** Clean flow keeps `parametricProgram: 'known'`; a degraded run (a hit iteration
+  cap, an unbalanced or unsupported O-word, or a malformed condition) reports `'approximated'` and always
+  emits a specific disclosure — never silently wrong. Subroutines (`sub`/`call`/`return`) are a later phase
+  and are explicitly disclosed as unsupported and **not** executed inline. Non-parametric input never
+  enters the interpreter and stays **byte-identical** (both golden suites unchanged). Streaming input, which
+  cannot re-run a line range from a partial stream, discloses and runs linearly.
+
+- [#415](https://github.com/ChestnutLabs/gcode-preview/pull/415) [`dc89056`](https://github.com/ChestnutLabs/gcode-preview/commit/dc890568d45e59635b9994d8409ef6cdc0847f80) Thanks [@sobechestnut-dev](https://github.com/sobechestnut-dev)! - feat(parser): RS274NGC subroutines (DD-017 Phase 3, [#189](https://github.com/ChestnutLabs/gcode-preview/issues/189) phase 7)
+
+  Completes the RS274NGC programming layer: the parser now executes in-file O-word **subroutines** —
+  `o<id> sub`/`endsub`, `o<id> call [args]`, and `o<id> return`. A `call` binds its arguments to `[#1](https://github.com/ChestnutLabs/gcode-preview/issues/1)`..`[#30](https://github.com/ChestnutLabs/gcode-preview/issues/30)`
+  in a fresh call frame, runs the named sub's body, and returns; `return` exits early. Subroutines may be
+  forward-referenced (a `call` before the `sub` that defines it) and may recurse. This is how CAM/LinuxCNC
+  programs factor repeated geometry (a "stamp" drilled at many positions, a parametric feature reused
+  across a part).
+
+  **Correct scoping (recursion-safe).** Numbered parameters `[#1](https://github.com/ChestnutLabs/gcode-preview/issues/1)`..`[#30](https://github.com/ChestnutLabs/gcode-preview/issues/30)` and non-underscore named parameters
+  (`#<local>`) are LOCAL to each call frame; `[#31](https://github.com/ChestnutLabs/gcode-preview/issues/31)`+ and underscore-named (`#<_global>`) are shared globals —
+  matching LinuxCNC. A recursive sub's `[#1](https://github.com/ChestnutLabs/gcode-preview/issues/1)` therefore cannot clobber its caller's, and a sub's locals do not
+  leak out. The main program runs in the base scope, so a program that uses no subroutines behaves exactly
+  as before (byte-identical; both golden suites unchanged).
+
+  **Bounded and safe.** A new `maxCallDepth` limit (default `50`) caps subroutine recursion — an unbounded
+  or mutually-recursive `call` is disclosed (`rs274-call-depth`) and skipped, never a stack overflow. A
+  runtime execution-depth backstop additionally bounds the combined structural-nesting + call-depth JS
+  recursion. A sub called inside a loop still charges its body work against `maxProgramIterations`, so a huge
+  sub body cannot multiply work past the cap. `break`/`continue`/`return` are frame-local — they never jump
+  across a call boundary.
+
+  **Honest.** Clean subroutine execution keeps `parametricProgram: 'known'`; a degraded run (unknown sub,
+  recursion-limit hit, duplicate definition, misplaced `return`) reports `'approximated'` with a specific
+  disclosure — never silently wrong. Subroutine return VALUES are not yet propagated to the caller (a
+  documented Phase-3 limitation; `return` acts as an early exit). External subroutine files (`M98`,
+  `o<name> call` resolving to a separate `.ngc`) remain an explicit non-goal (no I/O in the parser).
+
+### Patch Changes
+
+- Updated dependencies []:
+  - @chestnutlabs/gcode-bgcode@0.18.0
+  - @chestnutlabs/gcode-containers@0.18.0
+  - @chestnutlabs/gcode-dialects@0.18.0
+  - @chestnutlabs/toolpath-core@0.18.0
+
 ## 0.17.0
 
 ### Minor Changes

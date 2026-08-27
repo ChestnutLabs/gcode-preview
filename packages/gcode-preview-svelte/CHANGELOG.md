@@ -1,5 +1,15 @@
 # @chestnutlabs/gcode-preview-svelte
 
+## 0.18.0
+
+### Patch Changes
+
+- Updated dependencies [[`5144890`](https://github.com/ChestnutLabs/gcode-preview/commit/51448906f87ca09f3ed11f1286f7b79356110a83), [`bcb4b78`](https://github.com/ChestnutLabs/gcode-preview/commit/bcb4b786fcfc6a2e967d8bfff1d4fd3a06731681), [`dc89056`](https://github.com/ChestnutLabs/gcode-preview/commit/dc890568d45e59635b9994d8409ef6cdc0847f80), [`0ebeadf`](https://github.com/ChestnutLabs/gcode-preview/commit/0ebeadfa839e52baf243ef07b5807f3974bbac7e), [`c950339`](https://github.com/ChestnutLabs/gcode-preview/commit/c95033908e3ebaeb07b6f7e6f2487672dcc463f0)]:
+  - @chestnutlabs/gcode-parser@0.18.0
+  - @chestnutlabs/gcode-renderer-three@0.18.0
+  - @chestnutlabs/gcode-preview-core@0.18.0
+  - @chestnutlabs/toolpath-core@0.18.0
+
 ## 0.17.0
 
 ### Patch Changes

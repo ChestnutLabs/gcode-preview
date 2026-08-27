@@ -1,5 +1,43 @@
 # @chestnutlabs/gcode-preview-element
 
+## 0.18.0
+
+### Minor Changes
+
+- [#418](https://github.com/ChestnutLabs/gcode-preview/pull/418) [`c950339`](https://github.com/ChestnutLabs/gcode-preview/commit/c95033908e3ebaeb07b6f7e6f2487672dcc463f0) Thanks [@sobechestnut-dev](https://github.com/sobechestnut-dev)! - feat(renderer): interactive view capture() → Blob (DD-030 D1)
+
+  The interactive viewer can now hand back **what is on screen right now** as an image `Blob` — for a
+  user-selected thumbnail, a large-file thumbnail fallback, or a screenshot. New `capture(opts?)` where
+  `opts` is `{ width?, height?, format?, quality?, background? }` (all optional; defaults match the live
+  view).
+
+  Available on every interactive surface: `GcodePreviewControls.capture()` (so the Vue, React, Svelte, and
+  Web-Component adapters all inherit it — the Web Component also exposes an imperative `capture()` method),
+  and `ModelViewer.capture()` on the model-viewer handle. The toolpath `ToolpathRenderer` and the shared
+  `InteractiveStage` carry the implementation.
+
+  **Mechanism (render-to-target).** Capture renders the current scene + active camera into an off-screen
+  `WebGLRenderTarget` at the requested size and reads it back, rather than flipping the interactive
+  context's `preserveDrawingBuffer` (which would tax every interactive frame). That gives an arbitrary
+  output size and an independent/transparent background **without** disturbing the live view, and reuses the
+  headless still path's "single render, then read pixels" recipe. The thumbnail is framed at its own aspect
+  so it isn't distorted; the live view is repainted afterward. The library returns the `Blob` and **never**
+  triggers a download — the caller owns the pixels (same contract as `renderStill`).
+
+  **Honest.** When the renderer cannot render-to-target (the 2D renderer, a stub GL / no WebGL) or the stage
+  is disposed / its context is lost, `capture()` rejects with a typed `CaptureUnsupportedError`
+  (`code: 'E_CAPTURE_UNSUPPORTED'`) — never fabricated output. Purely additive (a new optional method on the
+  renderer contract; no existing signature changed). Final increment of the DD-030 renderer/viewer
+  interoperability batch (bed + per-plate scope + capture).
+
+### Patch Changes
+
+- Updated dependencies [[`5144890`](https://github.com/ChestnutLabs/gcode-preview/commit/51448906f87ca09f3ed11f1286f7b79356110a83), [`bcb4b78`](https://github.com/ChestnutLabs/gcode-preview/commit/bcb4b786fcfc6a2e967d8bfff1d4fd3a06731681), [`dc89056`](https://github.com/ChestnutLabs/gcode-preview/commit/dc890568d45e59635b9994d8409ef6cdc0847f80), [`0ebeadf`](https://github.com/ChestnutLabs/gcode-preview/commit/0ebeadfa839e52baf243ef07b5807f3974bbac7e), [`c950339`](https://github.com/ChestnutLabs/gcode-preview/commit/c95033908e3ebaeb07b6f7e6f2487672dcc463f0)]:
+  - @chestnutlabs/gcode-parser@0.18.0
+  - @chestnutlabs/gcode-renderer-three@0.18.0
+  - @chestnutlabs/gcode-preview-core@0.18.0
+  - @chestnutlabs/toolpath-core@0.18.0
+
 ## 0.17.0
 
 ### Patch Changes
