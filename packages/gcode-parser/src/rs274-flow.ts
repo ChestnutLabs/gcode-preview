@@ -35,12 +35,24 @@ export const RS274_FLOW_WARN = {
   unsupportedOword: 'rs274-unsupported-oword',
   controlNesting: 'rs274-control-nesting',
   misplacedControl: 'rs274-misplaced-control',
-  streamingUnsupported: 'rs274-streaming-flow-unsupported'
+  streamingUnsupported: 'rs274-streaming-flow-unsupported',
+  callDepth: 'rs274-call-depth', // subroutine recursion exceeded maxCallDepth (Phase 3)
+  unknownSub: 'rs274-unknown-sub', // `call` of a subroutine that was never defined (Phase 3)
+  duplicateSub: 'rs274-duplicate-sub' // a subroutine id defined more than once (first wins, Phase 3)
 } as const;
 
 /** Structural nesting cap (adversarial `o if`/`o if`/… stacks). Real programs nest < 10; 256 is
- *  unambiguously hostile and bounds the interpreter's JS recursion (one small frame per nesting level). */
+ *  unambiguously hostile and bounds the block BUILD's structural depth (per opener frame). */
 const MAX_CONTROL_NESTING = 256;
+
+/**
+ * Runtime execution-recursion backstop (DD-017 Phase 3). With subroutines, JS `execBlock` recursion
+ * grows with BOTH structural nesting AND `call` depth combined, so neither `MAX_CONTROL_NESTING` nor
+ * `maxCallDepth` alone bounds the JS stack. This directly caps live `execBlock` nesting — real programs
+ * stay well under 50; 512 is an unambiguously adversarial combination that halts (disclosed) rather than
+ * risking a stack overflow escaping the parse.
+ */
+const MAX_EXEC_DEPTH = 512;
 
 /** The recognized O-word keywords. An `o<id>` line with any OTHER trailing word is NOT a control line
  *  (e.g. a stray `o5 g1`) — it falls through to the normal lexer, so detection never hijacks plain code. */
@@ -146,8 +158,14 @@ export interface FlowHost {
   stopped(): boolean;
   /** Evaluate a control expression against the shared parameter store; `null` = malformed/non-finite. */
   evalExpression(text: string, srcByte: number): number | null;
+  /** Push a subroutine call-frame scope with `args` bound to `#1`..`#30` (Phase 3). */
+  pushScope(args: readonly number[]): void;
+  /** Pop the current call-frame scope (Phase 3). */
+  popScope(): void;
   warn: WarnFn;
   maxProgramIterations: number;
+  /** Subroutine recursion depth cap (Phase 3); exceeding it discloses and skips the call. */
+  maxCallDepth: number;
 }
 
 export interface FlowOutcome {
@@ -163,9 +181,17 @@ type Node =
   | { t: 'line'; text: string; offset: number }
   | { t: 'if'; branches: IfBranch[] }
   | { t: 'loop'; kind: 'while' | 'do' | 'repeat'; expr: string; offset: number; body: Node[] }
+  | { t: 'call'; id: string; args: string[]; offset: number } // Phase 3: invoke a subroutine by id
+  | { t: 'return'; offset: number } // Phase 3: early-exit the current subroutine
   | { t: 'break'; offset: number }
   | { t: 'continue'; offset: number }
   | { t: 'noop' }; // an unsupported construct, already disclosed at build — a no-op at execution
+
+/** A collected subroutine definition (Phase 3): its body runs only on `call`, never inline. */
+interface SubDef {
+  body: Node[];
+  offset: number;
+}
 
 // --- build-time frames --------------------------------------------------------------------------
 
@@ -251,6 +277,37 @@ class BreakSignal {
 class ContinueSignal {
   constructor(readonly offset?: number) {}
 }
+/** `return` control signal (Phase 3) — caught by the nearest enclosing subroutine `call`. */
+class ReturnSignal {
+  constructor(readonly offset?: number) {}
+}
+
+/** Split a `call`'s argument text into its top-level bracket expressions, e.g. `[1] [2+3] [#5]`. */
+function splitBracketArgs(s: string): string[] {
+  const args: string[] = [];
+  let i = 0;
+  while (i < s.length) {
+    if (s[i] === '[') {
+      let depth = 0;
+      const start = i;
+      for (; i < s.length; i++) {
+        if (s[i] === '[') depth++;
+        else if (s[i] === ']') {
+          depth--;
+          if (depth === 0) {
+            i++;
+            break;
+          }
+        }
+      }
+      if (depth !== 0) break; // unbalanced trailing `[` — stop collecting
+      args.push(s.slice(start, i));
+    } else {
+      i++;
+    }
+  }
+  return args;
+}
 
 /**
  * Interpret a fully-buffered O-word program. Builds the block tree (tolerant of unbalanced O-words —
@@ -266,6 +323,9 @@ export function interpretOWordProgram(lines: readonly FlowLine[], host: FlowHost
 
   // --- build the block tree -------------------------------------------------------------------
   const root: Frame = { kind: 'root', id: '', offset: 0, body: [] };
+  // Subroutine definitions (Phase 3), collected during the build so a `call` can forward-reference a
+  // `sub` defined later in the file. A sub body is captured here and executed only on `call`, never inline.
+  const subs = new Map<string, SubDef>();
   const stack: Frame[] = [root];
   const top = (): Frame => stack[stack.length - 1];
   const pushChild = (n: Node): void => {
@@ -360,8 +420,8 @@ export function interpretOWordProgram(lines: readonly FlowLine[], host: FlowHost
         break;
       }
       case 'sub': {
-        // Phase 3. Open a frame so the body is captured and DISCARDED (not executed inline) — a sub
-        // definition must not run where it is written. Disclosed at the matching `endsub`.
+        // Phase 3: open a frame so the body is captured; it is stored (not inlined) at the matching
+        // `endsub` and runs only on `call`. A sub definition must never execute where it is written.
         openFrame({ kind: 'sub', id, offset: line.offset, body: [] });
         break;
       }
@@ -372,21 +432,19 @@ export function interpretOWordProgram(lines: readonly FlowLine[], host: FlowHost
           break;
         }
         stack.pop();
-        disclose(
-          RS274_FLOW_WARN.unsupportedOword,
-          `subroutine 'o${f.id}' is not executed (subroutines are a later phase)`,
-          f.offset
-        );
+        if (subs.has(f.id)) {
+          disclose(RS274_FLOW_WARN.duplicateSub, `subroutine 'o${f.id}' redefined; keeping the first`, f.offset);
+        } else {
+          subs.set(f.id, { body: f.body, offset: f.offset });
+        }
         break;
       }
-      case 'call':
+      case 'call': {
+        pushChild({ t: 'call', id, args: splitBracketArgs(expr), offset: line.offset });
+        break;
+      }
       case 'return': {
-        disclose(
-          RS274_FLOW_WARN.unsupportedOword,
-          `'o${id} ${keyword}' is not supported yet (subroutines are a later phase); ignored`,
-          line.offset
-        );
-        pushChild({ t: 'noop' });
+        pushChild({ t: 'return', offset: line.offset });
         break;
       }
       case 'break': {
@@ -454,7 +512,11 @@ export function interpretOWordProgram(lines: readonly FlowLine[], host: FlowHost
   let iterations = 0;
   let halted = false; // set by the iteration cap or a geometry stop; unwinds cleanly
   let iterationWarned = false;
-  let loopDepth = 0; // > 0 while executing inside any loop body — gates the per-statement charge
+  let loopDepth = 0; // > 0 anywhere inside a loop (stays elevated across calls) — gates the charge
+  let frameLoopDepth = 0; // loops in the CURRENT call frame (reset per call) — gates break/continue locality
+  let callDepth = 0; // active subroutine call frames (Phase 3) — bounded by host.maxCallDepth
+  let execDepth = 0; // live execBlock recursion — bounded by MAX_EXEC_DEPTH (JS-stack backstop)
+  let execDepthWarned = false;
 
   /**
    * Charge ONE unit of loop work against the shared budget; returns false (and halts) when exhausted.
@@ -490,44 +552,113 @@ export function interpretOWordProgram(lines: readonly FlowLine[], host: FlowHost
   };
 
   const execBlock = (nodes: readonly Node[]): void => {
-    for (const n of nodes) {
-      if (halted || host.stopped()) {
-        halted = true;
-        return;
+    // Runtime recursion backstop (Phase 3): structural nesting + call depth combine here, so cap live
+    // execBlock depth directly to keep the JS stack safe regardless of how they multiply.
+    if (execDepth >= MAX_EXEC_DEPTH) {
+      if (!execDepthWarned) {
+        execDepthWarned = true;
+        disclose(RS274_FLOW_WARN.controlNesting, `execution nesting exceeded ${MAX_EXEC_DEPTH}; program stopped`);
       }
-      // Inside a loop, every executed statement is charged — this is what bounds a large loop body
-      // (Finding: a per-pass-only charge lets `bodySize × iterations` exceed the advertised limit).
-      if (loopDepth > 0 && (n.t === 'line' || n.t === 'noop')) {
-        if (!charge(n.t === 'line' ? n.offset : undefined)) return;
-      }
-      switch (n.t) {
-        case 'line':
-          host.processLine(n.text, n.offset);
-          break;
-        case 'noop':
-          break;
-        case 'break':
-          throw new BreakSignal(n.offset);
-        case 'continue':
-          throw new ContinueSignal(n.offset);
-        case 'if': {
-          for (const br of n.branches) {
-            if (br.expr === null || truthy(br.expr, br.offset)) {
-              execBlock(br.body);
-              break;
-            }
-          }
-          break;
+      halted = true;
+      return;
+    }
+    execDepth++;
+    try {
+      for (const n of nodes) {
+        if (halted || host.stopped()) {
+          halted = true;
+          return;
         }
-        case 'loop':
-          execLoop(n);
-          break;
+        // Inside a loop, every executed statement is charged — this is what bounds a large loop body
+        // (a per-pass-only charge would let `bodySize × iterations` exceed the advertised limit).
+        if (loopDepth > 0 && n.t !== 'if' && n.t !== 'loop') {
+          if (!charge(n.t === 'line' || n.t === 'call' ? n.offset : undefined)) return;
+        }
+        switch (n.t) {
+          case 'line':
+            host.processLine(n.text, n.offset);
+            break;
+          case 'noop':
+            break;
+          case 'break':
+          case 'continue':
+            // Valid only inside a loop IN THE CURRENT frame. Outside one (top level, or a sub with no
+            // loop of its own) it is a disclosed no-op — never a cross-frame jump, never a program abort.
+            if (frameLoopDepth === 0) {
+              disclose(RS274_FLOW_WARN.misplacedControl, `'${n.t}' outside a loop; ignored`, n.offset);
+            } else if (n.t === 'break') {
+              throw new BreakSignal(n.offset);
+            } else {
+              throw new ContinueSignal(n.offset);
+            }
+            break;
+          case 'return':
+            // Valid only inside a subroutine. Outside one it is a disclosed no-op, not a program abort.
+            if (callDepth === 0) {
+              disclose(RS274_FLOW_WARN.misplacedControl, 'return outside a subroutine; ignored', n.offset);
+            } else {
+              throw new ReturnSignal(n.offset);
+            }
+            break;
+          case 'call':
+            execCall(n);
+            break;
+          case 'if': {
+            for (const br of n.branches) {
+              if (br.expr === null || truthy(br.expr, br.offset)) {
+                execBlock(br.body);
+                break;
+              }
+            }
+            break;
+          }
+          case 'loop':
+            execLoop(n);
+            break;
+        }
       }
+    } finally {
+      execDepth--;
+    }
+  };
+
+  /** Invoke a subroutine (Phase 3): bind args → a fresh scope, run its body, honor `return`, bound depth. */
+  const execCall = (n: { id: string; args: string[]; offset: number }): void => {
+    const sub = subs.get(n.id);
+    if (sub === undefined) {
+      disclose(RS274_FLOW_WARN.unknownSub, `call of undefined subroutine 'o${n.id}'; ignored`, n.offset);
+      return;
+    }
+    if (callDepth >= host.maxCallDepth) {
+      disclose(RS274_FLOW_WARN.callDepth, `subroutine recursion exceeded maxCallDepth ${host.maxCallDepth}`, n.offset);
+      return;
+    }
+    // Args evaluate in the CALLER's scope, then bind to `#1`..`#30` in the fresh callee scope.
+    const args = n.args.map((a) => {
+      const v = host.evalExpression(a, n.offset);
+      if (v === null) degraded = true; // malformed arg — disclosed by evalExpression; passes 0
+      return v ?? 0;
+    });
+    host.pushScope(args);
+    callDepth++;
+    // A subroutine's break/continue see only loops WITHIN the sub — reset frame-loop depth for the body
+    // (but NOT `loopDepth`, which stays elevated so a sub called inside a loop still charges its work).
+    const savedFrameLoopDepth = frameLoopDepth;
+    frameLoopDepth = 0;
+    try {
+      execBlock(sub.body);
+    } catch (e) {
+      if (!(e instanceof ReturnSignal)) throw e; // `return` = normal early exit; anything else propagates
+    } finally {
+      frameLoopDepth = savedFrameLoopDepth;
+      callDepth--;
+      host.popScope();
     }
   };
 
   const execLoop = (n: { kind: 'while' | 'do' | 'repeat'; expr: string; offset: number; body: Node[] }): void => {
     loopDepth++; // gate the per-statement charge in execBlock for this loop's body
+    frameLoopDepth++; // this loop can catch a break/continue in the current call frame
     try {
       if (n.kind === 'repeat') {
         const cv = host.evalExpression(n.expr, n.offset);
@@ -582,6 +713,7 @@ export function interpretOWordProgram(lines: readonly FlowLine[], host: FlowHost
       } while (!halted && !host.stopped() && truthy(n.expr, n.offset));
     } finally {
       loopDepth--;
+      frameLoopDepth--;
     }
   };
 
@@ -590,6 +722,8 @@ export function interpretOWordProgram(lines: readonly FlowLine[], host: FlowHost
   } catch (e) {
     if (e instanceof BreakSignal || e instanceof ContinueSignal) {
       disclose(RS274_FLOW_WARN.misplacedControl, 'break/continue outside a loop; ignored', e.offset);
+    } else if (e instanceof ReturnSignal) {
+      disclose(RS274_FLOW_WARN.misplacedControl, 'return outside a subroutine; ignored', e.offset);
     } else {
       throw e;
     }

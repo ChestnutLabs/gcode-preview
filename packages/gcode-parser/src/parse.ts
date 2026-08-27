@@ -52,13 +52,18 @@ export interface ParseLimits {
   maxLineLength: number;
   maxWarnings: number;
   /**
-   * Total loop-body executions across an RS274NGC O-word program (DD-017 §4.5, Phase 2). One counter is
-   * charged per pass of any `while`/`do`/`repeat`; exceeding it stops the program with a partial IR and a
+   * Total loop work across an RS274NGC O-word program (DD-017 §4.5, Phase 2). Charged per loop pass and
+   * per statement executed inside a loop body; exceeding it stops the program with a partial IR and a
    * `rs274-iteration-limit` disclosure, so a hostile `o while [1]` wastes only bounded CPU. Irrelevant to
-   * FDM / non-parametric input, which never enters the interpreter. (Subroutine recursion depth —
-   * `maxCallDepth` — is a Phase 3 concern and not yet a limit.)
+   * FDM / non-parametric input, which never enters the interpreter.
    */
   maxProgramIterations: number;
+  /**
+   * Subroutine call-recursion depth for an RS274NGC O-word program (DD-017 §4.5, Phase 3). A `call` that
+   * would exceed this depth is disclosed (`rs274-call-depth`) and skipped, so unbounded recursion cannot
+   * exhaust the stack. Irrelevant to FDM / non-parametric input.
+   */
+  maxCallDepth: number;
 }
 
 export const DEFAULT_LIMITS: ParseLimits = {
@@ -67,7 +72,8 @@ export const DEFAULT_LIMITS: ParseLimits = {
   maxBufferBytes: 1536 * 1024 * 1024,
   maxLineLength: 64 * 1024,
   maxWarnings: 10_000,
-  maxProgramIterations: 1_000_000
+  maxProgramIterations: 1_000_000,
+  maxCallDepth: 50
 };
 
 /**
@@ -1074,8 +1080,11 @@ export function createEngine(input: string | Uint8Array, opts: ParseOptions): En
       processLine,
       stopped: () => stopReason !== undefined,
       evalExpression: (t, b) => rs274.evalExpression(t, b),
+      pushScope: (args) => rs274.pushScope(args),
+      popScope: () => rs274.popScope(),
       warn,
-      maxProgramIterations: limits.maxProgramIterations
+      maxProgramIterations: limits.maxProgramIterations,
+      maxCallDepth: limits.maxCallDepth
     });
     if (degraded) rs274.degraded = true;
   };
