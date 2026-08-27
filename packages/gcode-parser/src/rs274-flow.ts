@@ -10,16 +10,18 @@
  * `processLine` (so geometry/params/expressions stay on one code path). Non-O-word input never reaches
  * here and stays byte-identical.
  *
- * SUPPORTED (Phase 2): `if`/`elseif`/`else`/`endif`, `while`/`endwhile`, `do`/`while`, `repeat`/
- * `endrepeat`, `break`/`continue`. Subroutines (`sub`/`call`/`return`) are Phase 3 — disclosed as
- * unsupported and NOT executed (a sub body is skipped, a call is a no-op), never silently mis-run.
+ * SUPPORTED: `if`/`elseif`/`else`/`endif`, `while`/`endwhile`, `do`/`while`, `repeat`/`endrepeat`,
+ * `break`/`continue` (Phase 2), and in-file subroutines `sub`/`endsub`/`call`/`return` (Phase 3 — a
+ * `call` binds args to `#1`..`#30` in a fresh scope, runs the named sub's body, and returns; subs may
+ * recurse and be forward-referenced). External subroutine files (`M98`) stay a non-goal (no I/O).
  *
- * BOUNDED EXECUTION (DD-017 §4.5 — this is now a small interpreter, so a hostile `o while [1]` must not
- * hang/OOM the worker): one shared iteration counter is charged per loop-body pass and stops the program
- * at `maxProgramIterations` (disclosed); structural nesting is capped at `MAX_CONTROL_NESTING`; the
- * engine's own geometry limits (`maxSegments`/`maxBufferBytes`) still halt emission. Loops are ordinary
- * JS `while`/`for` (NOT recursion) — only structural nesting consumes JS stack, and it is capped — so an
- * adversarial program can waste only bounded CPU. There is no `eval` and no I/O.
+ * BOUNDED EXECUTION (DD-017 §4.5 — this is a small interpreter, so a hostile `o while [1]` or an
+ * exponential recursive fan-out must not hang/OOM the worker): one shared counter is charged per loop
+ * pass AND per statement executed inside any loop OR subroutine, stopping the program at
+ * `maxProgramIterations` (disclosed) — this bounds both a large loop body and the total call-tree size.
+ * Subroutine recursion depth is separately bounded by `maxCallDepth`, and combined nesting + call-depth
+ * JS recursion by `MAX_EXEC_DEPTH`; the engine's geometry limits still halt emission. There is no `eval`
+ * and no I/O, so an adversarial program can waste only bounded CPU.
  *
  * We interpret a BLOCK TREE rather than a raw program-counter + jump table (both satisfy DD-017 D4's
  * "match each opener to its closer"): the tree makes `if`/`elseif`/`else` and nested loops correct by
