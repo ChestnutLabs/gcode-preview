@@ -56,6 +56,7 @@ import {
 } from './tubes.js';
 import type { RenderTargetCanvas, GLRendererLike } from './stage.js';
 import type { QualityPolicy } from './capability.js';
+import { probeGpuInfo, type GpuInfo, type RenderStats } from './render-stats.js';
 import { resolveTheme, type Theme, type ResolvedTheme } from './theme.js';
 import { InteractiveStage, type CameraMode, type CameraView, type CameraState } from './interactive-stage.js';
 
@@ -101,6 +102,9 @@ export type RendererEvent =
     }
   | { type: 'qualityFallback'; from: QualityMode; to: QualityMode; reason: string }
   | { type: 'previewAppend'; cumulativeSegments: number; decimationApplied: number }
+  /** A fresh render-diagnostics snapshot settled (DD-027) — fires at build-complete. `parseMs`/
+   *  `totalReadyMs` are null here; core fills them when it re-emits. */
+  | { type: 'renderStats'; stats: RenderStats }
   | { type: 'contextlost' }
   | { type: 'restored' }
   /** The camera settled after a user interaction (orbit/pan/zoom/key) — carries the new serializable
@@ -343,6 +347,20 @@ export class ToolpathRenderer {
   });
   private listeners = new Set<(e: RendererEvent) => void>();
   private disposed = false;
+  // ─── Render diagnostics (DD-027) ───
+  /** GPU facts, probed once lazily from the stage's live context (cached — a context's renderer string
+   *  never changes). `null` until first probed. */
+  private gpuInfo: GpuInfo | null = null;
+  /** Latest assembled snapshot, returned by {@link getRenderStats}; `null` before the first build. */
+  private lastRenderStats: RenderStats | null = null;
+  /** `performance.now()` at the start of the current build; `null` when no build has run. */
+  private buildStartMs: number | null = null;
+  /** ms from build start to first render for the current build; `null` until the first render lands. */
+  private firstRenderMs: number | null = null;
+  /** Honest degradation reasons accumulated during the current build (decimation, tubes→lines). */
+  private buildDisclosures: string[] = [];
+  /** The tube byte budget that actually constrained this build (coarsened / forced lines); else null. */
+  private constrainingTubeBudget: number | null = null;
 
   constructor(opts: ToolpathRendererOptions) {
     this.chunksPerTick = opts.chunksPerTick;
@@ -542,6 +560,11 @@ export class ToolpathRenderer {
 
   private startBuild(ir: ToolpathIR): void {
     this.clearToolpathGeometry();
+    // Render-diagnostics marks (DD-027): a fresh build resets the timing/disclosure accumulators.
+    this.buildStartMs = performance.now();
+    this.firstRenderMs = null;
+    this.buildDisclosures = [];
+    this.constrainingTubeBudget = null;
     // Fidelity policy (DD-023 §4 D6). `full` renders the COMPLETE representation (never auto-decimate);
     // `fast` prefers flat lines; `adaptive` keeps the capability-aware `auto` decimation for the LINES
     // overview only. Crucially, TUBE geometry is NEVER segment-decimated in any policy — see the tube branch.
@@ -594,6 +617,9 @@ export class ToolpathRenderer {
         );
         return;
       }
+      // DD-027: record when the byte budget actually bit (coarsened the cross-section below what was
+      // requested), so `RenderStats.tubeByteBudget` is set only when the budget genuinely constrained.
+      if (Number.isFinite(budget) && radial < requestedRadial) this.constrainingTubeBudget = budget;
       this.tubeRadialSegments = radial;
     }
     this.pendingChunks = [...this.buildResult.chunks];
@@ -603,6 +629,12 @@ export class ToolpathRenderer {
 
   /** A failed tubes build degrades to lines — evented, never silent (§6.1). */
   private fallbackToLines(reason: string): void {
+    // DD-027: capture the honest degradation for the diagnostics snapshot. A budget-driven fallback
+    // means the tube byte budget was the binding constraint that forced lines.
+    this.buildDisclosures.push(`tubes→lines: ${reason}`);
+    if (/budget/i.test(reason) && Number.isFinite(this.tubeByteBudget)) {
+      this.constrainingTubeBudget = this.tubeByteBudget;
+    }
     this.emit({ type: 'qualityFallback', from: 'tubes', to: 'lines', reason });
     this.active = 'lines';
     this.clearToolpathGeometry();
@@ -718,6 +750,9 @@ export class ToolpathRenderer {
         travelHidden: this.buildResult.travelHidden,
         quality: this.active
       });
+      // DD-027: assemble + publish the render-diagnostics snapshot for this build.
+      this.lastRenderStats = this.assembleRenderStats();
+      this.emit({ type: 'renderStats', stats: this.lastRenderStats });
     }
   }
 
@@ -1310,7 +1345,79 @@ export class ToolpathRenderer {
   }
 
   render(): void {
+    // DD-027: capture time-to-first-render for the current build (once, on the first frame after a build).
+    if (this.firstRenderMs === null && this.buildStartMs !== null) {
+      this.firstRenderMs = performance.now() - this.buildStartMs;
+    }
     this.stage.render();
+  }
+
+  /**
+   * The latest render-diagnostics snapshot (DD-027), or `null` before the first build. `parseMs` and
+   * `totalReadyMs` are `null` on this renderer-produced snapshot — core fills them when it re-emits.
+   */
+  getRenderStats(): RenderStats | null {
+    return this.lastRenderStats;
+  }
+
+  /** Probe the stage's live GL context once (cached); the renderer string never changes for a context. */
+  private ensureGpuInfo(): GpuInfo {
+    if (this.gpuInfo === null) {
+      this.gpuInfo = probeGpuInfo(this.stage.gl);
+    }
+    return this.gpuInfo;
+  }
+
+  /** Build a `RenderStats` snapshot from current build state + probed GPU info (DD-027 §4/§5). */
+  private assembleRenderStats(): RenderStats {
+    const gpu = this.gpuInfo ?? this.ensureGpuInfo();
+    const build = this.buildResult;
+    // Sum vertices + geometry bytes over the built chunk meshes (userData.chunk marks ours). This is the
+    // ACTUAL uploaded geometry — in tubes mode the ring vertices, not the pre-tube line vertices.
+    let vertexCount = 0;
+    let geometryBytes = 0;
+    let drawCalls = 0;
+    for (const child of this.toolpathGroup.children) {
+      const geom = (child as { geometry?: unknown }).geometry as
+        | {
+            attributes?: Record<string, { count?: number; array?: { byteLength?: number } }>;
+            index?: { array?: { byteLength?: number } };
+          }
+        | undefined;
+      if (geom === undefined || (child as { userData?: { chunk?: unknown } }).userData?.chunk === undefined) continue;
+      drawCalls++;
+      const pos = geom.attributes?.position;
+      if (typeof pos?.count === 'number') vertexCount += pos.count;
+      for (const key of Object.keys(geom.attributes ?? {})) {
+        const bl = geom.attributes?.[key]?.array?.byteLength;
+        if (typeof bl === 'number') geometryBytes += bl;
+      }
+      const idxBytes = geom.index?.array?.byteLength;
+      if (typeof idxBytes === 'number') geometryBytes += idxBytes;
+    }
+    const isTubes = this.active === 'tubes';
+    return {
+      backend: '3d-webgl',
+      webglVersion: gpu.webglVersion,
+      capability: gpu.capability,
+      gpuRenderer: gpu.gpuRenderer,
+      gpuVendor: gpu.gpuVendor,
+      geometryMode: this.active,
+      sourceSegmentCount: this.ir?.segments.count ?? 0,
+      renderedSegmentCount: build?.totalSegmentsIncluded ?? 0,
+      decimationApplied: build?.decimationApplied ?? 1,
+      vertexCount: drawCalls > 0 ? vertexCount : null,
+      drawCalls,
+      tubeBytes: isTubes ? geometryBytes : null,
+      tubeByteBudget: this.constrainingTubeBudget,
+      qualityMode: this.qualityMode,
+      disclosures: [...this.buildDisclosures],
+      // Renderer-side timings; parse-spanning ones are core's to fill (DD-027 Phase 2).
+      parseMs: null,
+      geometryBuildMs: this.buildStartMs === null ? null : performance.now() - this.buildStartMs,
+      firstRenderMs: this.firstRenderMs,
+      totalReadyMs: null
+    };
   }
 
   /**

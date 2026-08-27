@@ -44,6 +44,8 @@ export type { InteractiveStageOptions, ControlsLike } from './interactive-stage.
 export { DEFAULT_THEME, resolveTheme } from './theme.js';
 export type { Theme, MaterialPreset, ThemeColor, ResolvedTheme, BedSurface, BedTextureSource } from './theme.js';
 export type { LoadStage, LoadUnit, LoadProgress } from './progress.js';
+export { probeGpuInfo, UNKNOWN_GPU_INFO } from './render-stats.js';
+export type { RenderStats, GpuInfo } from './render-stats.js';
 export { classifyRenderer, detectRenderCapability, resolveCapability } from './capability.js';
 export type {
   RenderCapability,
