@@ -8,7 +8,13 @@
  */
 import { describe, expect, it, vi } from 'vitest';
 import { Mesh, MeshBasicMaterial, MeshLambertMaterial, type LineLoop, type LineSegments } from 'three';
-import { MoveKind, ToolpathIRBuilder, type Confidence, type ToolpathIR } from '@chestnutlabs/toolpath-core';
+import {
+  FeatureRole,
+  MoveKind,
+  ToolpathIRBuilder,
+  type Confidence,
+  type ToolpathIR
+} from '@chestnutlabs/toolpath-core';
 import {
   buildChunks,
   buildTubeChunk,
@@ -468,6 +474,61 @@ describe('ToolpathRenderer clipping/scrub/visibility/coloring (phase 3)', () => 
     h2.events.length = 0;
     h2.renderer.setFrameContent('object');
     expect(h2.events.some((e) => e.type === 'error' && e.code === 'E_FRAME_CONTENT_UNAVAILABLE')).toBe(true);
+  });
+
+  it('frameContent:object frames the model via modelBounds on a label-less file with a tower (DD-026 D5)', () => {
+    // No object channel, but a first-class PrimeTower role → the classifier yields modelBounds
+    // (inferred). Framing must use it, not fall back to full extrusion, and must NOT disclose.
+    const b = new ToolpathIRBuilder({ parserVersion: 'test', units: 'mm', unitsSource: 'known' });
+    b.setCapability('featureRoles', 'known');
+    // The model: a compact perimeter near (100,100).
+    b.addSegment({
+      x0: 100,
+      y0: 100,
+      z0: 0.2,
+      x1: 110,
+      y1: 110,
+      z1: 0.2,
+      e: 3,
+      kind: MoveKind.Extrude,
+      feature: FeatureRole.Perimeter,
+      layer: 0,
+      srcByte: 0
+    });
+    // A prime tower far out — housekeeping, must be excluded from the model frame.
+    b.addSegment({
+      x0: 300,
+      y0: 300,
+      z0: 0.2,
+      x1: 310,
+      y1: 310,
+      z1: 0.2,
+      e: 3,
+      kind: MoveKind.Extrude,
+      feature: FeatureRole.PrimeTower,
+      layer: 0,
+      srcByte: 10
+    });
+    const ir = b.finalize();
+    expect(ir.header.capabilities.nonModelClassification).toBe('inferred');
+    expect(Number.isFinite(ir.objectBounds.min.x)).toBe(false); // no object channel — objectBounds empty
+
+    const h = makeHarness();
+    h.renderer.setIR(ir);
+    h.runTicks();
+    h.events.length = 0;
+    h.renderer.setFrameContent('all');
+    const all = h.renderer.getCameraState();
+    h.renderer.setFrameContent('object');
+    const obj = h.renderer.getCameraState();
+    // Classifiable via the tower role → no disclosure (would fire only if we fell back to bounds).
+    expect(h.events.some((e) => e.type === 'error' && e.code === 'E_FRAME_CONTENT_UNAVAILABLE')).toBe(false);
+    // 'object' centers on the model (~105), not the tower-inflated centroid (~205); and frames tighter.
+    expect(obj.target.x).toBeLessThan(all.target.x);
+    expect(obj.target.x).toBeLessThan(150);
+    const dist = (s: typeof obj): number =>
+      Math.hypot(s.position.x - s.target.x, s.position.y - s.target.y, s.position.z - s.target.z);
+    expect(dist(obj)).toBeLessThan(dist(all));
   });
 
   it('interactionQuality:auto reduces pixel ratio while moving, restores on settle (#306/2, DD-020)', () => {
