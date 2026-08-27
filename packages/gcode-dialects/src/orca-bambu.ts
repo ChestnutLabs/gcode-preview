@@ -1,8 +1,11 @@
 /**
  * OrcaSlicer / Bambu Studio dialect adapter (DD-005 phase 3, issue #75).
  *
- * Annotates: `; FEATURE:` roles (→ `featureRoles: 'known'`), Bambu object
- * start/stop comments (→ `object` channel + `objects: 'known'`), bed geometry
+ * Annotates: feature roles from `; FEATURE:` (Bambu Studio) **or** `;TYPE:`
+ * (real OrcaSlicer / AnycubicSlicerNext — same vocabulary, different prefix;
+ * RR-007 §5.8) → `featureRoles: 'known'`; object start/stop comments across all
+ * lineage formats (Bambu `start printing object, unique label id:`, Orca
+ * `printing object <name> id:<id>`) → `object` channel + `objects: 'known'`; bed geometry
  * from `printable_area` config comments (bare .gcode files — inside a
  * `.gcode.3mf` the container's machine config already provides `known`
  * geometry and outranks this), and printer identity. Detection also accepts
@@ -11,6 +14,7 @@
 import { FeatureRole, type ToolpathIR } from '@chestnutlabs/toolpath-core';
 import type { AnnotationSink, DialectAdapter } from './contracts.js';
 import { parseFilamentTotals, parseHmsToSeconds } from './prusaslicer.js';
+import { PrintingObjectTracker } from './object-markers.js';
 import {
   ThumbnailCollector,
   applyMarkerRanges,
@@ -39,16 +43,17 @@ const FEATURE_MAP: Record<string, number> = {
   'support transition': FeatureRole.Support,
   skirt: FeatureRole.Skirt,
   brim: FeatureRole.Brim,
-  'prime tower': FeatureRole.Custom,
+  raft: FeatureRole.Raft,
+  'prime tower': FeatureRole.PrimeTower,
   'gap infill': FeatureRole.Infill,
+  'internal bridge': FeatureRole.Bridge,
   custom: FeatureRole.Custom
 };
 
 interface OrcaState {
   features: RangeMarker[];
-  objects: RangeMarker[];
   wipes: WipeMark[];
-  objectNames: Map<number, string>;
+  objectTracker: PrintingObjectTracker;
   bedPoints: string | null;
   bedSrcByte?: number;
   heightMm?: number;
@@ -65,9 +70,8 @@ function stateFor(sink: AnnotationSink): OrcaState {
   if (s === undefined) {
     s = {
       features: [],
-      objects: [],
       wipes: [],
-      objectNames: new Map(),
+      objectTracker: new PrintingObjectTracker(),
       bedPoints: null,
       thumbs: new ThumbnailCollector()
     };
@@ -99,22 +103,20 @@ export function orcaBambu(): DialectAdapter {
     onComment(comment, srcByte, sink) {
       const s = stateFor(sink);
       const trimmed = comment.trim();
-      if (trimmed.startsWith('FEATURE:')) {
-        const role = FEATURE_MAP[trimmed.slice(8).trim().toLowerCase()];
+      // Feature roles: Bambu Studio emits `; FEATURE:<vocab>`; real OrcaSlicer / AnycubicSlicerNext
+      // emit `;TYPE:<vocab>` — the same Orca vocabulary, different prefix (RR-007 §5.8). Accept both.
+      const featureName = trimmed.startsWith('FEATURE:')
+        ? trimmed.slice(8)
+        : trimmed.startsWith('TYPE:')
+          ? trimmed.slice(5)
+          : null;
+      if (featureName !== null) {
+        const role = FEATURE_MAP[featureName.trim().toLowerCase()];
         s.features.push({ srcByte, value: role ?? FeatureRole.Custom });
         return;
       }
-      const start = /^start printing object,?\s*(?:unique\s+)?id:?\s*(\d+)(?:\s+name:\s*(.+))?/i.exec(trimmed);
-      if (start !== null) {
-        const value = parseInt(start[1]) + 1; // object channel is 1-based (0 = none)
-        s.objects.push({ srcByte, value });
-        if (start[2] !== undefined) s.objectNames.set(value, start[2].trim());
-        return;
-      }
-      if (/^stop printing object/i.test(trimmed)) {
-        s.objects.push({ srcByte, value: 0 }); // range terminator
-        return;
-      }
+      // Object membership across all lineage formats (shared object-marker parser).
+      if (s.objectTracker.handle(trimmed, srcByte)) return;
       const wipe = matchWipeComment(comment);
       if (wipe !== null) {
         s.wipes.push({ srcByte, open: wipe === 'start' });
@@ -157,11 +159,7 @@ export function orcaBambu(): DialectAdapter {
       const s = stateFor(sink);
       const features = applyMarkerRanges(ir, s.features, (a, b, v) => sink.setFeature(a, b, v));
       if (features > 0) sink.upgradeCapability('featureRoles', 'known');
-      const objects = applyMarkerRanges(ir, s.objects, (a, b, v) => sink.setObject(a, b, v));
-      if (objects > 0) {
-        for (const [value, name] of s.objectNames) sink.defineObject(value, name);
-        sink.upgradeCapability('objects', 'known');
-      }
+      s.objectTracker.apply(ir, sink);
       if (applyWipeRanges(ir, s.wipes, sink) > 0) sink.upgradeCapability('wipeMoves', 'known');
       if (s.bedPoints !== null) {
         const points = parseAreaPoints(s.bedPoints);

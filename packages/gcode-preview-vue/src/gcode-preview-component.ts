@@ -18,6 +18,7 @@ import type {
   ColorMode,
   QualityMode,
   ProgressivePreview,
+  PreparationStage,
   QualityPolicy,
   Theme,
   TubeOptions
@@ -119,6 +120,7 @@ export const GcodePreview = defineComponent({
     'parse-error': (_e: { code: string; message: string }) => true,
     'parse-cancelled': () => true,
     'parse-progress': (_p: { bytesProcessed: number; totalBytes: number }) => true,
+    stage: (_e: { stage: PreparationStage; progress?: number; detail?: { built: number; total: number } }) => true,
     'build-complete': (_e: { segments: number; quality: QualityMode }) => true,
     'quality-fallback': (_e: { from: QualityMode; to: QualityMode; reason: string }) => true,
     'machine-geometry-mismatch': (_message: string) => true,
@@ -179,6 +181,9 @@ export const GcodePreview = defineComponent({
           break;
         case 'parse-progress':
           emit('parse-progress', { bytesProcessed: e.progress.bytesProcessed, totalBytes: e.progress.totalBytes });
+          break;
+        case 'stage':
+          emit('stage', { stage: e.stage, progress: e.progress, detail: e.detail });
           break;
         case 'buildComplete':
           emit('build-complete', { segments: e.segments, quality: e.quality });

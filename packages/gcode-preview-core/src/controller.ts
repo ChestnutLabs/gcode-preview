@@ -121,6 +121,11 @@ export interface PreviewControllerOptions {
     adjacentLayers?: number;
     /** 2D only: ghost-layer opacity (default 0.25). */
     ghostOpacity?: number;
+    /** Parallel tube-geometry build (DD-028). Default `'auto'` (engages a capability+memory-aware pool
+     *  for large tube builds in a browser); `'off'` forces the synchronous path. 3D only. */
+    geometryConcurrency?: 'auto' | 'off' | number;
+    /** Max in-flight tube-geometry bytes for the parallel build (DD-028 memory backpressure). 3D only. */
+    geometryMemoryBudgetBytes?: number;
     /** Advanced/test injectables — pass-throughs of the renderer's own contract (3D only). */
     createRenderer?: (canvas: RenderTargetCanvas) => GLRendererLike;
     scheduleFrame?: (cb: () => void) => void;
@@ -400,7 +405,17 @@ export function createPreviewController(options: PreviewControllerOptions = {}):
           theme: r.theme,
           createRenderer: r.createRenderer,
           scheduleFrame: r.scheduleFrame,
-          chunksPerTick: r.chunksPerTick
+          chunksPerTick: r.chunksPerTick,
+          // DD-028: parallel tube build. Default to the batteries-included browser Web Worker in a
+          // browser; Node/headless (no `Worker`) stays synchronous. A consumer can force `'off'`.
+          geometryConcurrency: r.geometryConcurrency,
+          geometryMemoryBudgetBytes: r.geometryMemoryBudgetBytes,
+          ...(typeof navigator !== 'undefined' && Number.isFinite(navigator.hardwareConcurrency)
+            ? { coreBudget: navigator.hardwareConcurrency }
+            : {}),
+          ...(typeof Worker !== 'undefined' && r.geometryConcurrency !== 'off'
+            ? { createGeometryWorker: mod.createBrowserGeometryWorker }
+            : {})
         });
         applyRendererReady(canvas, r3d);
       })
@@ -415,6 +430,11 @@ export function createPreviewController(options: PreviewControllerOptions = {}):
   const offProgress = session.onProgress((p) => {
     mutate({ parseProgress: p });
     emit({ type: 'parse-progress', progress: p });
+    // DD-029 staged progress: the parser's own phase maps to the preparation stage — `parsing` carries
+    // the real byte fraction; `finalizing` (where dialect annotation settles) surfaces as `classifying`.
+    // The renderer emits the later `building-geometry`/`preparing-gpu`/`ready` stages (forwarded below).
+    const fraction = p.totalBytes > 0 ? p.bytesProcessed / p.totalBytes : undefined;
+    emit({ type: 'stage', stage: p.phase === 'finalizing' ? 'classifying' : 'parsing', progress: fraction });
   });
   const offPartial = session.onPartial((slice) => {
     renderer?.appendPartial(slice);

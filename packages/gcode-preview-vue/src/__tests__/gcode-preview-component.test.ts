@@ -78,6 +78,7 @@ function mountPreview(
           },
           onReady: record('ready'),
           'onParse-error': record('parse-error'),
+          onStage: record('stage'),
           'onBuild-complete': record('build-complete'),
           'onMachine-geometry-discovered': record('machine-geometry-discovered'),
           'onProgress-presentation-changed': record('progress-presentation-changed'),
@@ -107,6 +108,15 @@ describe('<GcodePreview> — the :source-only thin path (D4)', () => {
     await settle();
     expect(m.emitted['ready']?.[0]).toMatchObject({ segments: 12, layers: 2, complete: true });
     expect(m.emitted['build-complete']?.[0]).toMatchObject({ quality: 'lines' });
+    // DD-029: the staged `stage` event surfaces through the adapter, with a building-geometry entry
+    // carrying a real fraction, and terminates at `ready`.
+    const stages = (m.emitted['stage'] ?? []).map((e) => (e as { stage: string }).stage);
+    expect(stages).toContain('building-geometry');
+    expect(stages[stages.length - 1]).toBe('ready');
+    const bg = (m.emitted['stage'] ?? []).find((e) => (e as { stage: string }).stage === 'building-geometry') as
+      | { progress?: number }
+      | undefined;
+    expect(typeof bg?.progress).toBe('number');
     m.app.unmount();
   });
 

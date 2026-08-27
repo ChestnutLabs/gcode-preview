@@ -59,7 +59,17 @@ export const FeatureRole = {
   Brim: 7,
   Bridge: 8,
   Travel: 9,
-  Custom: 10
+  Custom: 10,
+  // Non-model housekeeping roles (DD-026 D2/D3a). First-class so the model-bounds classifier can
+  // exclude them by role rather than folding them into the generic `Custom` (which stays in-frame).
+  /** Prime tower / prime pillar — the purge column built up alongside the model. */
+  PrimeTower: 11,
+  /** Wipe tower — the multi-material wipe/prime structure (PrusaSlicer/ideaMaker vocabulary). */
+  WipeTower: 12,
+  /** Raft — the sacrificial base under the model (distinct from `Brim`). */
+  Raft: 13,
+  /** Purge / flush material (e.g. Bambu `FLUSH_START/END`) — extruded but not part of the model. */
+  Purge: 14
 } as const;
 export type FeatureRoleName = keyof typeof FeatureRole;
 

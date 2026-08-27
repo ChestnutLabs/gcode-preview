@@ -50,12 +50,17 @@ import { createBuildVolume, type BuildVolumeDef, type BuildVolumeStyle } from '.
 import {
   buildTubeChunk,
   tubeRadialForBudget,
+  tubeSegmentBytes,
   TUBE_CPU_BYTE_BUDGET,
   TUBES_AUTO_MAX_SEGMENTS,
   type TubeOptions
 } from './tubes.js';
 import type { RenderTargetCanvas, GLRendererLike } from './stage.js';
 import type { QualityPolicy } from './capability.js';
+import { probeGpuInfo, type GpuInfo, type RenderStats } from './render-stats.js';
+import { GeometryWorkerPool, resolvePoolSize, type GeometryWorkerLike } from './geometry-pool.js';
+import type { GeometryBuildRequest, GeometryBuildResponse } from './geometry-worker-core.js';
+import { estimateTubeBuildMs, POOL_ENGAGE_MS, SINGLE_REVEAL_MS } from './render-cost.js';
 import { resolveTheme, type Theme, type ResolvedTheme } from './theme.js';
 import { InteractiveStage, type CameraMode, type CameraView, type CameraState } from './interactive-stage.js';
 
@@ -63,18 +68,23 @@ import { InteractiveStage, type CameraMode, type CameraView, type CameraState } 
 export type QualityMode = 'lines' | 'tubes';
 
 /**
- * How the transient during-parse preview (#60) is presented — a curtain over the neutral streaming
- * lines that get replaced by the final build. Orthogonal to `quality`/`qualityMode` (which govern the
- * FINAL representation): this only affects what shows WHILE parsing.
- *   - `'lines'` (default): stream the progressive line preview as it parses — a fast visual signal,
- *     then replaced by the final build. Backward-compatible behaviour.
- *   - `'hold'`: keep parsing/building and keep emitting progress (`previewAppend`), but DON'T reveal
- *     the incomplete/neutral line preview — the first thing shown is the final, correctly-coloured,
- *     policy-quality build. A single clean reveal with a live progress signal.
+ * How the transient preparation preview (#60, DD-029) is presented — what, if anything, shows WHILE the
+ * file parses and the geometry builds. Orthogonal to `quality`/`qualityMode` (which govern the FINAL
+ * representation): this NEVER drops extrusion segments or lowers final geometry — it only controls how
+ * often incomplete work is drawn to the screen.
+ *   - `'auto'` (the eventual default): the renderer chooses `'lines'` vs `'hold'` per build from the
+ *     render-cost/capability estimate (DD-029 §4 D1) — cheap scenes stream lines, expensive scenes take
+ *     the single-reveal `'hold'` path. Until that estimate lands it resolves to `'lines'`. An explicit
+ *     `'lines'`/`'hold'`/`'off'` always overrides.
+ *   - `'lines'`: stream the progressive line preview as it parses/builds, then replace it with the final
+ *     build. (Backward-compatible; its intermediate redraws are budget-throttled in a later phase.)
+ *   - `'hold'`: **single clean reveal** — keep emitting progress but reveal NOTHING incomplete: no line
+ *     preview AND no intermediate renders of the growing build; the first thing shown is the finished,
+ *     correctly-coloured build, revealed once at completion (DD-029 §4 D1).
  *   - `'off'`: suppress the progressive preview entirely and emit no preview progress — the consumer
  *     supplies its own loading/progress treatment until the final build is revealed.
  */
-export type ProgressivePreview = 'lines' | 'hold' | 'off';
+export type ProgressivePreview = 'auto' | 'lines' | 'hold' | 'off';
 
 // Camera types + the preset-view table live in the shared interactive stage (DD-021 Phase 0);
 // re-exported here so existing import paths (index re-exports them from './scene.js') keep working.
@@ -89,8 +99,20 @@ export function chooseQuality(requested: QualityMode | 'auto', totalSegments: nu
 /** How the live-progress overlay is currently presented (DD-006 §4.5). */
 export type ProgressPresentationMode = 'exact' | 'band' | 'stale' | 'hidden';
 
+/**
+ * Honest preparation stages (DD-029 §4 D2). `parsing`/`classifying` are emitted by
+ * `@chestnutlabs/gcode-preview-core` (the parse worker owns them); the renderer emits
+ * `building-geometry` (with a real fraction + counts — the stage the user waits on), `preparing-gpu`,
+ * and `ready`. `ready` coincides with `buildComplete` (never before it); a preparation failure
+ * terminates through the existing `error` path instead — there is no stage failure variant.
+ */
+export type PreparationStage = 'parsing' | 'classifying' | 'building-geometry' | 'preparing-gpu' | 'ready';
+
 export type RendererEvent =
   | { type: 'buildProgress'; chunksBuilt: number; chunksTotal: number }
+  /** Staged preparation progress (DD-029). `progress` (0..1) + `detail` are present for
+   *  `building-geometry`; `preparing-gpu`/`ready` are momentary (no fraction) in this renderer. */
+  | { type: 'stage'; stage: PreparationStage; progress?: number; detail?: { built: number; total: number } }
   | { type: 'progress-presentation-changed'; mode: ProgressPresentationMode; reason?: string }
   | {
       type: 'buildComplete';
@@ -101,6 +123,9 @@ export type RendererEvent =
     }
   | { type: 'qualityFallback'; from: QualityMode; to: QualityMode; reason: string }
   | { type: 'previewAppend'; cumulativeSegments: number; decimationApplied: number }
+  /** A fresh render-diagnostics snapshot settled (DD-027) — fires at build-complete. `parseMs`/
+   *  `totalReadyMs` are null here; core fills them when it re-emits. */
+  | { type: 'renderStats'; stats: RenderStats }
   | { type: 'contextlost' }
   | { type: 'restored' }
   /** The camera settled after a user interaction (orbit/pan/zoom/key) — carries the new serializable
@@ -176,6 +201,36 @@ export interface ToolpathRendererOptions {
    * still-render path (#132) turns it on so a single render is capturable.
    */
   preserveDrawingBuffer?: boolean;
+  /**
+   * Render the scene after each incremental build tick (progressive-build feedback). Default `true`
+   * — the interactive viewer wants to watch geometry appear. A headless one-shot still sets this
+   * `false`: it builds geometry to completion and renders **once** at the end, avoiding the
+   * dozens-to-hundreds of discarded full-scene renders a large build would otherwise do (each an
+   * MSAA software rasterization of a growing tube mesh — the dominant cost of a big still in software
+   * WebGL). No visual difference; `buildComplete` and all build events still fire.
+   */
+  renderDuringBuild?: boolean;
+  /**
+   * Parallel tube-geometry build across a worker pool (DD-028). `'auto'` (default) sizes a capability-
+   * and memory-aware pool and engages it only for tube builds above a cost threshold (small builds and
+   * lines stay on the synchronous main-thread path); `'off'` forces the synchronous path; a number pins
+   * the worker count (still bounded by the memory budget). Geometry is byte-identical either way. No
+   * effect without a `createGeometryWorker` factory (a bundler supplies one via the batteries-included
+   * worker entry; tests inject a stub).
+   */
+  geometryConcurrency?: 'auto' | 'off' | number;
+  /**
+   * Max bytes of tube geometry the parallel build may hold *in flight* at once (DD-028 memory
+   * backpressure). The pool shrinks so `workers × maxChunkBytes ≤ this`, bounding peak transient working
+   * set **proactively** (a cgroup OOM is uncatchable). Defaults to a fraction of the tube byte budget.
+   */
+  geometryMemoryBudgetBytes?: number;
+  /** Logical-core budget for pool sizing — `navigator.hardwareConcurrency` (browser) or the cgroup CPU
+   *  quota (Node/sidecar). Injected so the renderer stays platform-free; omitted → conservative default. */
+  coreBudget?: number;
+  /** Factory for a geometry-build worker (DD-028). A bundler passes the batteries-included
+   *  `geometry-worker.js`; tests inject a synchronous fake. Omitted → the pool never engages. */
+  createGeometryWorker?: () => GeometryWorkerLike;
   /** Injectables for tests / exotic hosts. */
   createRenderer?: (canvas: RenderTargetCanvas) => GLRendererLike;
   scheduleFrame?: (cb: () => void) => void;
@@ -242,6 +297,8 @@ export function resolveHitSegment(mesh: LineSegments | Mesh, vertexIndex: number
 export class ToolpathRenderer {
   private readonly scheduleFrame: (cb: () => void) => void;
   private readonly chunksPerTick: number | undefined;
+  /** Render after each build tick (progressive feedback). False for headless stills → one final render. */
+  private readonly renderDuringBuild: boolean;
 
   // The shared interactive viewport (DD-021 Phase 0): owns the GL renderer, camera, orbit controls,
   // context-loss recovery, resize, render, and interaction-aware quality. This renderer owns the scene
@@ -332,9 +389,36 @@ export class ToolpathRenderer {
   });
   private listeners = new Set<(e: RendererEvent) => void>();
   private disposed = false;
+  // ─── Render diagnostics (DD-027) ───
+  /** GPU facts, probed once lazily from the stage's live context (cached — a context's renderer string
+   *  never changes). `null` until first probed. */
+  private gpuInfo: GpuInfo | null = null;
+  /** Latest assembled snapshot, returned by {@link getRenderStats}; `null` before the first build. */
+  private lastRenderStats: RenderStats | null = null;
+  /** `performance.now()` at the start of the current build; `null` when no build has run. */
+  private buildStartMs: number | null = null;
+  /** ms from build start to first render for the current build; `null` until the first render lands. */
+  private firstRenderMs: number | null = null;
+  /** Honest degradation reasons accumulated during the current build (decimation, tubes→lines). */
+  private buildDisclosures: string[] = [];
+  /** The tube byte budget that actually constrained this build (coarsened / forced lines); else null. */
+  private constrainingTubeBudget: number | null = null;
+  // ─── Parallel geometry build (DD-028) ───
+  private readonly geometryConcurrency: 'auto' | 'off' | number;
+  private readonly geometryMemoryBudgetBytes: number;
+  private readonly coreBudget: number | undefined;
+  private readonly createGeometryWorker: (() => GeometryWorkerLike) | undefined;
+  /** Lazily-created pool, reused across builds; disposed with the renderer. */
+  private geometryPool: GeometryWorkerPool | null = null;
+  /** How this build's geometry was constructed (RenderStats); set per build. */
+  private buildParallelism: 'main' | 'pool' = 'main';
+  private poolWorkerCount = 0;
+  /** Generation guard so a stale async pool build can't apply after a newer setIR/dispose. */
+  private buildGeneration = 0;
 
   constructor(opts: ToolpathRendererOptions) {
     this.chunksPerTick = opts.chunksPerTick;
+    this.renderDuringBuild = opts.renderDuringBuild ?? true;
     this.colorMode = opts.colorMode ?? DEFAULT_COLOR;
     this.requestedQuality = opts.quality ?? 'auto';
     this.frameContentMode = opts.frameContent ?? 'all';
@@ -343,6 +427,13 @@ export class ToolpathRenderer {
     // decimating segments shredded tubes into spikes (RR-006 correction). A consumer that set it as a
     // rough memory knob still gets bounded memory; the mechanism just changed to be continuity-preserving.
     this.tubeByteBudget = opts.tubeByteBudget ?? TUBE_CPU_BYTE_BUDGET;
+    this.geometryConcurrency = opts.geometryConcurrency ?? 'auto';
+    // Default the parallel-build in-flight budget to half the tube byte budget: the final scene already
+    // fills up to `tubeByteBudget`, so the transient parallel working set gets the remaining headroom.
+    this.geometryMemoryBudgetBytes =
+      opts.geometryMemoryBudgetBytes ?? Math.floor((opts.tubeByteBudget ?? TUBE_CPU_BYTE_BUDGET) / 2);
+    this.coreBudget = opts.coreBudget;
+    this.createGeometryWorker = opts.createGeometryWorker;
     this.qualityMode = opts.qualityMode ?? 'adaptive';
     this.progressivePreview = opts.progressivePreview ?? 'lines';
     // Default scheduler: rAF for frame alignment, with a timeout backstop so
@@ -442,7 +533,7 @@ export class ToolpathRenderer {
   appendPartial(slice: ToolpathIR): void {
     if (this.disposed || slice.segments.count === 0) return;
     // 'off': suppress the progressive preview entirely (no geometry, no progress event).
-    if (this.progressivePreview === 'off') return;
+    if (this.effectivePreview() === 'off') return;
     if (this.ir !== null) {
       // Partials for a NEW parse while an old final IR is on screen: the old
       // scene is stale — drop it and start the preview fresh.
@@ -455,7 +546,7 @@ export class ToolpathRenderer {
     const decimation = autoDecimation(this.previewSegments);
     // 'hold' keeps the progress signal but reveals no incomplete/neutral geometry — skip the
     // line-preview build so the final coloured build (via setIR) is the first thing shown.
-    if (this.progressivePreview === 'lines') {
+    if (this.effectivePreview() === 'lines') {
       let result: ChunkBuildResult;
       try {
         result = buildChunks(slice, { decimation });
@@ -496,7 +587,7 @@ export class ToolpathRenderer {
     }
     this.emit({ type: 'previewAppend', cumulativeSegments: this.previewSegments, decimationApplied: decimation });
     // 'hold' reveals nothing here — no frame/render until setIR builds the final representation.
-    if (this.progressivePreview === 'lines') {
+    if (this.effectivePreview() === 'lines') {
       if (firstPartial) this.frame();
       else this.render();
     }
@@ -530,6 +621,13 @@ export class ToolpathRenderer {
 
   private startBuild(ir: ToolpathIR): void {
     this.clearToolpathGeometry();
+    // DD-028: invalidate any in-flight parallel build — a stale pool response must not apply to the new one.
+    this.buildGeneration++;
+    // Render-diagnostics marks (DD-027): a fresh build resets the timing/disclosure accumulators.
+    this.buildStartMs = performance.now();
+    this.firstRenderMs = null;
+    this.buildDisclosures = [];
+    this.constrainingTubeBudget = null;
     // Fidelity policy (DD-023 §4 D6). `full` renders the COMPLETE representation (never auto-decimate);
     // `fast` prefers flat lines; `adaptive` keeps the capability-aware `auto` decimation for the LINES
     // overview only. Crucially, TUBE geometry is NEVER segment-decimated in any policy — see the tube branch.
@@ -582,17 +680,174 @@ export class ToolpathRenderer {
         );
         return;
       }
+      // DD-027: record when the byte budget actually bit (coarsened the cross-section below what was
+      // requested), so `RenderStats.tubeByteBudget` is set only when the budget genuinely constrained.
+      if (Number.isFinite(budget) && radial < requestedRadial) this.constrainingTubeBudget = budget;
       this.tubeRadialSegments = radial;
+    }
+    // DD-028: build tube geometry across the worker pool when it's engaged and worth it; lines, small
+    // builds, and non-extrude chunks stay on the synchronous main-thread path below.
+    this.buildParallelism = 'main';
+    this.poolWorkerCount = 0;
+    if (this.active === 'tubes') {
+      const extrude = this.buildResult.chunks.filter((c) => c.kind === 'extrude');
+      const size = this.poolSizeFor(extrude);
+      if (size >= 1) {
+        this.buildParallelism = 'pool';
+        this.poolWorkerCount = size;
+        void this.buildTubesViaPool(size);
+        return;
+      }
     }
     this.pendingChunks = [...this.buildResult.chunks];
     this.builtCount = 0;
     this.scheduleFrame(() => this.buildTick());
   }
 
+  /**
+   * Effective pool size for a tube build (DD-028 D3/D4), or 0 to stay on the synchronous path. Bounded
+   * by BOTH the core budget and the memory budget (whichever is tighter), never oversubscribing either.
+   * `'auto'` engages only above the cost threshold and only when ≥ 2 workers are useful; an explicit
+   * number forces the pool (still memory-bounded).
+   */
+  private poolSizeFor(extrudeChunks: GeometryChunk[]): number {
+    if (this.geometryConcurrency === 'off' || this.createGeometryWorker === undefined) return 0;
+    const chunkCount = extrudeChunks.length;
+    if (chunkCount === 0) return 0;
+    const extrudeSegments = extrudeChunks.reduce((n, c) => n + c.count, 0);
+    // 'auto' engages only when the estimated serial build would stall noticeably (DD-028 D4 / DD-029
+    // Phase D — the cost/capability estimate, capability from the probed GL context); a number forces it.
+    if (
+      this.geometryConcurrency === 'auto' &&
+      estimateTubeBuildMs(extrudeSegments, this.tubeRadialSegments, this.ensureGpuInfo().capability) < POOL_ENGAGE_MS
+    ) {
+      return 0;
+    }
+    const cores = this.coreBudget ?? (typeof navigator !== 'undefined' ? navigator.hardwareConcurrency : undefined);
+    const base =
+      typeof this.geometryConcurrency === 'number'
+        ? Math.max(1, Math.floor(this.geometryConcurrency))
+        : resolvePoolSize(cores);
+    // Memory bound (proactive — a cgroup OOM is uncatchable): the largest single chunk's tube bytes, so
+    // `workers × maxChunkBytes ≤ budget`. Keeps parallelism from multiplying the transient working set.
+    const bytesPerSeg = tubeSegmentBytes(this.tubeRadialSegments);
+    const maxChunkBytes = extrudeChunks.reduce((m, c) => Math.max(m, bytesPerSeg * c.count), 1);
+    const memCap = Math.max(1, Math.floor(this.geometryMemoryBudgetBytes / maxChunkBytes));
+    const size = Math.max(1, Math.min(base, memCap, chunkCount));
+    // 'auto' with only a single effective worker isn't worth the async/transfer overhead.
+    if (this.geometryConcurrency === 'auto' && size < 2) return 0;
+    return size;
+  }
+
+  /** Create/reuse the pool at `size` (disposed with the renderer). */
+  private ensurePool(size: number): GeometryWorkerPool {
+    if (this.geometryPool !== null && this.geometryPool.size === size) return this.geometryPool;
+    this.geometryPool?.dispose();
+    this.geometryPool = new GeometryWorkerPool(size, this.createGeometryWorker as () => GeometryWorkerLike);
+    return this.geometryPool;
+  }
+
+  /**
+   * Parallel tube build (DD-028). Non-extrude chunks build inline; extrude chunks build across the pool,
+   * each response wrapped + uploaded on the main thread as it arrives (memory-bounded streaming). Output
+   * is byte-identical to the serial path — it is the same kernel, same `positions`. A worker failure falls
+   * back to lines, and a newer build (setIR) or dispose invalidates a stale in-flight run via `buildGeneration`.
+   */
+  private async buildTubesViaPool(size: number): Promise<void> {
+    const gen = this.buildGeneration;
+    const result = this.buildResult;
+    if (this.ir === null || result === null) return;
+    // Travel/wipe render as flat lines — cheap, build them inline up front.
+    let nonExtrude = 0;
+    for (const c of result.chunks) {
+      if (c.kind === 'extrude') continue;
+      const mesh = this.makeChunkMesh(c);
+      mesh.name = `chunk:${c.kind}:${c.layerStart}-${c.layerEnd}`;
+      mesh.userData.chunk = c;
+      this.applyDrawStateToMesh(mesh, c);
+      this.toolpathGroup.add(mesh);
+      nonExtrude++;
+    }
+    const extrude = result.chunks.filter((c) => c.kind === 'extrude');
+    const requests: GeometryBuildRequest[] = extrude.map((c, i) => ({
+      id: i,
+      // Copy the buffer — a real worker transfers it away, but the main thread keeps `chunk.positions`
+      // for picking and the lines fallback.
+      positions: c.positions.buffer.slice(0),
+      count: c.count,
+      radialSegments: this.tubeRadialSegments,
+      lineWidth: this.tubeOptions.lineWidth,
+      lineHeight: this.tubeOptions.lineHeight
+    }));
+    const pool = this.ensurePool(size);
+    const total = result.chunks.length;
+    this.builtCount = nonExtrude;
+    try {
+      await pool.buildStreaming(requests, (i, response) => {
+        if (this.disposed || gen !== this.buildGeneration) return;
+        this.toolpathGroup.add(this.makeTubeMeshFromResponse(extrude[i], response));
+        this.builtCount++;
+        this.emit({ type: 'buildProgress', chunksBuilt: this.builtCount, chunksTotal: total });
+        this.emit({
+          type: 'stage',
+          stage: 'building-geometry',
+          progress: total > 0 ? this.builtCount / total : 1,
+          detail: { built: this.builtCount, total }
+        });
+        if (this.renderDuringBuild && this.effectivePreview() !== 'hold') this.render();
+      });
+    } catch (err) {
+      if (this.disposed || gen !== this.buildGeneration) return;
+      // A worker failed (e.g. the kernel's vertex-budget RangeError) → honest degrade to continuous lines.
+      this.fallbackToLines(err instanceof Error ? err.message : String(err));
+      return;
+    }
+    if (this.disposed || gen !== this.buildGeneration) return;
+    // Terminal sequence — mirrors buildTick's completion (DD-027/DD-029).
+    this.emit({ type: 'stage', stage: 'preparing-gpu' });
+    this.emit({
+      type: 'buildComplete',
+      segments: result.totalSegmentsIncluded,
+      decimationApplied: result.decimationApplied,
+      travelHidden: result.travelHidden,
+      quality: this.active
+    });
+    this.lastRenderStats = this.assembleRenderStats();
+    this.emit({ type: 'renderStats', stats: this.lastRenderStats });
+    if (this.renderDuringBuild && this.effectivePreview() === 'hold') this.render();
+    this.emit({ type: 'stage', stage: 'ready' });
+  }
+
+  /** Wrap a pool response's transferred buffers into a tube mesh (colour mapped on the main thread). */
+  private makeTubeMeshFromResponse(chunk: GeometryChunk, response: GeometryBuildResponse): Mesh {
+    const vertexSegment = new Uint32Array(response.vertexSegment);
+    const geometry = new BufferGeometry();
+    geometry.setAttribute('position', new BufferAttribute(new Float32Array(response.positions), 3));
+    geometry.setAttribute('normal', new BufferAttribute(new Float32Array(response.normals), 3));
+    geometry.setAttribute('color', new BufferAttribute(this.tubeVertexColors(chunk, vertexSegment), 3));
+    geometry.setIndex(new BufferAttribute(new Uint32Array(response.indices), 1));
+    const mesh = new Mesh(geometry, this.makeExtrudeMaterial());
+    mesh.name = `chunk:${chunk.kind}:${chunk.layerStart}-${chunk.layerEnd}`;
+    mesh.userData.chunk = chunk;
+    mesh.userData.drawUnitsPerSegment = response.indicesPerSegment;
+    mesh.userData.vertexSegment = vertexSegment;
+    this.applyDrawStateToMesh(mesh, chunk);
+    return mesh;
+  }
+
   /** A failed tubes build degrades to lines — evented, never silent (§6.1). */
   private fallbackToLines(reason: string): void {
+    // DD-027: capture the honest degradation for the diagnostics snapshot. A budget-driven fallback
+    // means the tube byte budget was the binding constraint that forced lines.
+    this.buildDisclosures.push(`tubes→lines: ${reason}`);
+    if (/budget/i.test(reason) && Number.isFinite(this.tubeByteBudget)) {
+      this.constrainingTubeBudget = this.tubeByteBudget;
+    }
     this.emit({ type: 'qualityFallback', from: 'tubes', to: 'lines', reason });
     this.active = 'lines';
+    // The fallback rebuilds inline as lines — no longer a pool build (RenderStats reflects the truth).
+    this.buildParallelism = 'main';
+    this.poolWorkerCount = 0;
     this.clearToolpathGeometry();
     if (this.ir !== null) {
       // Re-chunk at the lines-mode target (the tubes build used small chunks). This is the honest tube→lines
@@ -630,7 +885,7 @@ export class ToolpathRenderer {
     if (this.active === 'tubes' && chunk.kind === 'extrude') {
       // Throws on budget overrun — caught by buildTick's fallback path.
       // Use the budget-resolved cross-section (RR-006): coarser tubes on large files, full continuity.
-      const tube = buildTubeChunk(this.ir as ToolpathIR, chunk, {
+      const tube = buildTubeChunk(chunk, {
         ...this.tubeOptions,
         radialSegments: this.tubeRadialSegments
       });
@@ -692,11 +947,27 @@ export class ToolpathRenderer {
       this.builtCount++;
       built++;
     }
-    this.emit({ type: 'buildProgress', chunksBuilt: this.builtCount, chunksTotal: this.buildResult.chunks.length });
-    this.render();
+    const chunkTotal = this.buildResult.chunks.length;
+    this.emit({ type: 'buildProgress', chunksBuilt: this.builtCount, chunksTotal: chunkTotal });
+    // DD-029: building-geometry is the stage the user waits on — carry a real fraction + counts.
+    this.emit({
+      type: 'stage',
+      stage: 'building-geometry',
+      progress: chunkTotal > 0 ? this.builtCount / chunkTotal : 1,
+      detail: { built: this.builtCount, total: chunkTotal }
+    });
+    // Headless stills (renderDuringBuild=false) skip the per-tick render — only the final frame is
+    // captured, so dozens-to-hundreds of intermediate full-scene software renders are pure waste.
+    // DD-029: `'hold'` is a single clean reveal — no intermediate renders of the growing scene (the
+    // ~187-render waste RR-008 §8.1 measured); the sole reveal happens at completion below. Headless
+    // stills (renderDuringBuild=false) also skip per-tick renders and capture their own final frame.
+    if (this.renderDuringBuild && this.effectivePreview() !== 'hold') this.render();
     if (this.pendingChunks.length > 0) {
       this.scheduleFrame(() => this.buildTick());
     } else {
+      // DD-029: geometry done → GPU-prep stage, then the reveal-authoritative `buildComplete`, then
+      // `ready` (which coincides with buildComplete, never precedes it).
+      this.emit({ type: 'stage', stage: 'preparing-gpu' });
       this.emit({
         type: 'buildComplete',
         segments: this.buildResult.totalSegmentsIncluded,
@@ -704,6 +975,14 @@ export class ToolpathRenderer {
         travelHidden: this.buildResult.travelHidden,
         quality: this.active
       });
+      // DD-027: assemble + publish the render-diagnostics snapshot for this build.
+      this.lastRenderStats = this.assembleRenderStats();
+      this.emit({ type: 'renderStats', stats: this.lastRenderStats });
+      // DD-029: `'hold'` single reveal — the one and only render of the completed scene (suppressed
+      // per-tick above). Gated on renderDuringBuild so headless stills (false) still capture manually.
+      if (this.renderDuringBuild && this.effectivePreview() === 'hold') this.render();
+      // DD-029: terminal preparation stage — coincident with `buildComplete` above.
+      this.emit({ type: 'stage', stage: 'ready' });
     }
   }
 
@@ -1296,7 +1575,81 @@ export class ToolpathRenderer {
   }
 
   render(): void {
+    // DD-027: capture time-to-first-render for the current build (once, on the first frame after a build).
+    if (this.firstRenderMs === null && this.buildStartMs !== null) {
+      this.firstRenderMs = performance.now() - this.buildStartMs;
+    }
     this.stage.render();
+  }
+
+  /**
+   * The latest render-diagnostics snapshot (DD-027), or `null` before the first build. `parseMs` and
+   * `totalReadyMs` are `null` on this renderer-produced snapshot — core fills them when it re-emits.
+   */
+  getRenderStats(): RenderStats | null {
+    return this.lastRenderStats;
+  }
+
+  /** Probe the stage's live GL context once (cached); the renderer string never changes for a context. */
+  private ensureGpuInfo(): GpuInfo {
+    if (this.gpuInfo === null) {
+      this.gpuInfo = probeGpuInfo(this.stage.gl);
+    }
+    return this.gpuInfo;
+  }
+
+  /** Build a `RenderStats` snapshot from current build state + probed GPU info (DD-027 §4/§5). */
+  private assembleRenderStats(): RenderStats {
+    const gpu = this.gpuInfo ?? this.ensureGpuInfo();
+    const build = this.buildResult;
+    // Sum vertices + geometry bytes over the built chunk meshes (userData.chunk marks ours). This is the
+    // ACTUAL uploaded geometry — in tubes mode the ring vertices, not the pre-tube line vertices.
+    let vertexCount = 0;
+    let geometryBytes = 0;
+    let drawCalls = 0;
+    for (const child of this.toolpathGroup.children) {
+      const geom = (child as { geometry?: unknown }).geometry as
+        | {
+            attributes?: Record<string, { count?: number; array?: { byteLength?: number } }>;
+            index?: { array?: { byteLength?: number } };
+          }
+        | undefined;
+      if (geom === undefined || (child as { userData?: { chunk?: unknown } }).userData?.chunk === undefined) continue;
+      drawCalls++;
+      const pos = geom.attributes?.position;
+      if (typeof pos?.count === 'number') vertexCount += pos.count;
+      for (const key of Object.keys(geom.attributes ?? {})) {
+        const bl = geom.attributes?.[key]?.array?.byteLength;
+        if (typeof bl === 'number') geometryBytes += bl;
+      }
+      const idxBytes = geom.index?.array?.byteLength;
+      if (typeof idxBytes === 'number') geometryBytes += idxBytes;
+    }
+    const isTubes = this.active === 'tubes';
+    return {
+      backend: '3d-webgl',
+      webglVersion: gpu.webglVersion,
+      capability: gpu.capability,
+      gpuRenderer: gpu.gpuRenderer,
+      gpuVendor: gpu.gpuVendor,
+      geometryMode: this.active,
+      sourceSegmentCount: this.ir?.segments.count ?? 0,
+      renderedSegmentCount: build?.totalSegmentsIncluded ?? 0,
+      decimationApplied: build?.decimationApplied ?? 1,
+      vertexCount: drawCalls > 0 ? vertexCount : null,
+      drawCalls,
+      tubeBytes: isTubes ? geometryBytes : null,
+      tubeByteBudget: this.constrainingTubeBudget,
+      buildParallelism: this.buildParallelism,
+      workerCount: this.poolWorkerCount,
+      qualityMode: this.qualityMode,
+      disclosures: [...this.buildDisclosures],
+      // Renderer-side timings; parse-spanning ones are core's to fill (DD-027 Phase 2).
+      parseMs: null,
+      geometryBuildMs: this.buildStartMs === null ? null : performance.now() - this.buildStartMs,
+      firstRenderMs: this.firstRenderMs,
+      totalReadyMs: null
+    };
   }
 
   /**
@@ -1370,6 +1723,22 @@ export class ToolpathRenderer {
     this.progressivePreview = mode;
   }
 
+  /**
+   * Resolve `progressivePreview` to a concrete `'lines' | 'hold' | 'off'` (DD-029 §4 D1). `'auto'` takes
+   * the single-reveal `'hold'` path when a TUBE build is expensive enough (the ~187-render waste bites) —
+   * decided from the shared render-cost/capability estimate, never byte size — and streams `'lines'`
+   * otherwise (and always while parsing, before the build's size is known).
+   */
+  private effectivePreview(): 'lines' | 'hold' | 'off' {
+    if (this.progressivePreview !== 'auto') return this.progressivePreview;
+    if (this.active === 'tubes' && this.buildResult !== null) {
+      const extrudeSegments = this.buildResult.chunks.reduce((n, c) => (c.kind === 'extrude' ? n + c.count : n), 0);
+      const cap = (this.gpuInfo ?? this.ensureGpuInfo()).capability;
+      if (estimateTubeBuildMs(extrudeSegments, this.tubeRadialSegments, cap) >= SINGLE_REVEAL_MS) return 'hold';
+    }
+    return 'lines';
+  }
+
   /** Currently built chunk meshes: LineSegments (lines/travel) or Mesh (tubes). */
   get chunkMeshes(): (LineSegments | Mesh)[] {
     return this.toolpathGroup.children.filter(
@@ -1399,6 +1768,9 @@ export class ToolpathRenderer {
   dispose(): void {
     if (this.disposed) return;
     this.disposed = true;
+    this.buildGeneration++; // invalidate any in-flight parallel build
+    this.geometryPool?.dispose();
+    this.geometryPool = null;
     this.clearToolpathGeometry();
     if (this.volumeGroup) {
       this.volumeGroup.traverse((obj) => {

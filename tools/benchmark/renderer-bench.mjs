@@ -183,7 +183,7 @@ function benchTubes(label, ir) {
   let vertices = 0;
   let bytes = 0;
   for (const chunk of built.chunks) {
-    const tube = buildTubeChunk(ir, chunk);
+    const tube = buildTubeChunk(chunk);
     vertices += tube.vertexCount;
     bytes += tube.positions.byteLength + tube.normals.byteLength + tube.indices.byteLength;
   }

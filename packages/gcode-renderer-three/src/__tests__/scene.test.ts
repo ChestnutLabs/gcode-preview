@@ -85,6 +85,7 @@ function makeHarness(
     tube?: TubeOptions;
     tubeByteBudget?: number;
     interactionQuality?: 'off' | 'auto';
+    renderDuringBuild?: boolean;
   } = {}
 ): Harness {
   const canvas = document.createElement('canvas');
@@ -109,6 +110,7 @@ function makeHarness(
     tube: opts.tube,
     tubeByteBudget: opts.tubeByteBudget,
     interactionQuality: opts.interactionQuality,
+    renderDuringBuild: opts.renderDuringBuild,
     createRenderer: () => stub,
     scheduleFrame: (cb) => ticks.push(cb)
   });
@@ -141,6 +143,31 @@ describe('ToolpathRenderer (phase 2)', () => {
     const pos = mesh.geometry.getAttribute('position');
     expect(pos.itemSize).toBe(3);
     expect(pos.count % 2).toBe(0); // 2 vertices per segment
+  });
+
+  it('renderDuringBuild:false suppresses the per-tick render (headless still), building once', () => {
+    const ir = makeIR(4, 20);
+    const on = makeHarness({ chunksPerTick: 1 }); // interactive default: renderDuringBuild=true
+    const off = makeHarness({ chunksPerTick: 1, renderDuringBuild: false }); // headless still
+    on.renderer.setIR(ir);
+    off.renderer.setIR(ir);
+    // Baseline AFTER setIR (its one framing render is not a per-tick build render).
+    const onBase = on.glCalls.render;
+    const offBase = off.glCalls.render;
+
+    on.runTicks();
+    off.runTicks();
+
+    // Identical geometry + completion — only intermediate rendering differs.
+    expect(off.events.find((e) => e.type === 'buildComplete')).toBeDefined();
+    expect(off.renderer.chunkMeshes.length).toBe(on.renderer.chunkMeshes.length);
+    expect(off.renderer.chunkMeshes.length).toBeGreaterThan(0);
+    // The interactive default renders during the build; the still renders ZERO times per tick.
+    expect(on.glCalls.render - onBase).toBeGreaterThan(0);
+    expect(off.glCalls.render - offBase).toBe(0);
+    // The still's single explicit final render still draws for capture.
+    off.renderer.render();
+    expect(off.glCalls.render - offBase).toBe(1);
   });
 
   it('applies the single Z-up→Y-up rotation at the root and positions by originOffset', () => {
@@ -549,7 +576,7 @@ describe('tubes quality mode (phase 4)', () => {
   it('buildTubeChunk: continuous run → shared rings, segment-uniform index blocks', () => {
     const ir = makeIR(1, 4); // 4 continuous extrusion segments, one polyline
     const chunk = buildChunks(ir).chunks[0];
-    const tube = buildTubeChunk(ir, chunk, { radialSegments: 8 });
+    const tube = buildTubeChunk(chunk, { radialSegments: 8 });
     // One polyline of 4 segments: 5 rings × (8+1) seam-duplicate vertices.
     expect(tube.vertexCount).toBe(5 * 9);
     expect(tube.indicesPerSegment).toBe(8 * 6);
@@ -564,7 +591,7 @@ describe('tubes quality mode (phase 4)', () => {
   it('buildTubeChunk: discontinuity (layer change) starts a new polyline', () => {
     const ir = makeIR(2, 3); // two layers → z jump between them breaks continuity
     const chunk = buildChunks(ir).chunks[0];
-    const tube = buildTubeChunk(ir, chunk, { radialSegments: 8 });
+    const tube = buildTubeChunk(chunk, { radialSegments: 8 });
     // Two polylines of 3 segments: (3+1)+(3+1) = 8 rings.
     expect(tube.vertexCount).toBe(8 * 9);
     expect(tube.indices.length).toBe(6 * 48);
@@ -573,7 +600,40 @@ describe('tubes quality mode (phase 4)', () => {
   it('buildTubeChunk: vertex budget overrun throws RangeError', () => {
     const ir = makeIR(1, 4);
     const chunk = buildChunks(ir).chunks[0];
-    expect(() => buildTubeChunk(ir, chunk, { maxVertices: 10 })).toThrow(RangeError);
+    expect(() => buildTubeChunk(chunk, { maxVertices: 10 })).toThrow(RangeError);
+  });
+
+  it('buildTubeChunk: self-contained — builds from a chunk with NO backing IR (RR-008 §4.1 worker unit)', () => {
+    // A hand-built chunk carrying only positions + segIndices (exactly what a worker would receive over
+    // a transferable buffer) — no ToolpathIR anywhere. Two continuous segments (end of seg0 == start of
+    // seg1) form one polyline of 3 rings, proving the kernel reads only chunk.positions.
+    const positions = new Float32Array([
+      0,
+      0,
+      0,
+      1,
+      0,
+      0, // seg 0: (0,0,0)->(1,0,0)
+      1,
+      0,
+      0,
+      2,
+      0,
+      0 //  seg 1: (1,0,0)->(2,0,0)  (continuous with seg 0)
+    ]);
+    const chunk = {
+      kind: 'extrude',
+      layerStart: 0,
+      layerEnd: 0,
+      count: 2,
+      positions,
+      segIndices: new Uint32Array([0, 1])
+    } as const;
+    const tube = buildTubeChunk(chunk, { radialSegments: 8 });
+    // One polyline of 2 segments → 3 rings × 9 seam-duplicate vertices; index integrity holds.
+    expect(tube.vertexCount).toBe(3 * 9);
+    expect(tube.indices.length).toBe(2 * 48);
+    for (const i of tube.indices) expect(i).toBeLessThan(tube.vertexCount);
   });
 
   it('chooseQuality: auto picks tubes ≤ 1M segments, lines above; explicit wins', () => {

@@ -1,5 +1,34 @@
 # @chestnutlabs/gcode-parser
 
+## 0.16.0
+
+### Patch Changes
+
+- [#383](https://github.com/ChestnutLabs/gcode-preview/pull/383) [`affc879`](https://github.com/ChestnutLabs/gcode-preview/commit/affc8796583be309ce469969f2777a833253549a) Thanks [@sobechestnut-dev](https://github.com/sobechestnut-dev)! - feat(dialects): ideaMaker adapter — `;TYPE:` roles + `PRINTING_ID` object membership (DD-026 T1)
+
+  New `ideaMaker()` dialect adapter (RR-007 §5.6), registered in the built-in worker set. It captures
+  ideaMaker's UPPERCASE `;TYPE:` feature roles and — crucially for `frameContent:'object'` — object
+  membership from ideaMaker's `;PRINTING: <name>` + `;PRINTING_ID: <n>` STATE channel: `PRINTING_ID:
+-1` (with `;PRINTING: NON-OBJECT`) is housekeeping, `n≥0` is the printed object. Housekeeping (raft,
+  wipe tower) emitted under NON-OBJECT is correctly excluded from the object channel, so ideaMaker files
+  frame the model rather than the raft/tower. FDM geometry unchanged.
+
+- [#384](https://github.com/ChestnutLabs/gcode-preview/pull/384) [`41d2dcf`](https://github.com/ChestnutLabs/gcode-preview/commit/41d2dcf49d28268c13d4d1dbaf4604a9efaacfaf) Thanks [@sobechestnut-dev](https://github.com/sobechestnut-dev)! - feat(dialects): Simplify3D adapter — `; feature <lowercase>` roles (DD-026 T1)
+
+  New `simplify3d()` dialect adapter (RR-007 §5.5), registered in the built-in worker set. It captures
+  Simplify3D's lowercase `; feature <token>` vocabulary (`skirt`, `outer perimeter`, `inner perimeter`,
+  `infill`, `solid layer`, `support`, `raft`, `prime pillar`, `ooze shield`, …) as feature roles.
+  Simplify3D output has **no** object-membership channel, so `objects` stays honestly `unavailable`
+  rather than a fabricated membership — object framing falls back to feature-role classification
+  (DD-026 T2). Prime pillar / ooze shield map to the generic `Custom` role, never treated as model.
+  FDM geometry unchanged.
+
+- Updated dependencies [[`affc879`](https://github.com/ChestnutLabs/gcode-preview/commit/affc8796583be309ce469969f2777a833253549a), [`3905178`](https://github.com/ChestnutLabs/gcode-preview/commit/39051787497610c9aec1c5950fe1d52bcd375582), [`0ef33fe`](https://github.com/ChestnutLabs/gcode-preview/commit/0ef33fecfc08dcf5db2d3ce5c84bbe86fbb867fa), [`41d2dcf`](https://github.com/ChestnutLabs/gcode-preview/commit/41d2dcf49d28268c13d4d1dbaf4604a9efaacfaf), [`bf032d2`](https://github.com/ChestnutLabs/gcode-preview/commit/bf032d2b4e0ce36dcbd8020caead2a512ca3b618)]:
+  - @chestnutlabs/gcode-dialects@0.16.0
+  - @chestnutlabs/toolpath-core@0.16.0
+  - @chestnutlabs/gcode-bgcode@0.16.0
+  - @chestnutlabs/gcode-containers@0.16.0
+
 ## 0.15.0
 
 ### Patch Changes

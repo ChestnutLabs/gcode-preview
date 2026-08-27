@@ -1,5 +1,14 @@
 # @chestnutlabs/gcode-model-renderer
 
+## 0.16.0
+
+### Patch Changes
+
+- Updated dependencies [[`6587d99`](https://github.com/ChestnutLabs/gcode-preview/commit/6587d9994dde77dd5488136e9b46257661c16c2e), [`1c54132`](https://github.com/ChestnutLabs/gcode-preview/commit/1c54132a39713c3c6d582e0b6820b411eff40d20), [`fdc9111`](https://github.com/ChestnutLabs/gcode-preview/commit/fdc9111c0917af55e41fff9d20464ebbc3444589), [`ecfa56b`](https://github.com/ChestnutLabs/gcode-preview/commit/ecfa56b098d721cd5d636f594d07eda9ac2be067), [`808dc56`](https://github.com/ChestnutLabs/gcode-preview/commit/808dc56bf377a435bc457d16fc51e195734e2bb5), [`f3ce24f`](https://github.com/ChestnutLabs/gcode-preview/commit/f3ce24ff5439ef44ca4bac8a12eda91d187f410f), [`de453cb`](https://github.com/ChestnutLabs/gcode-preview/commit/de453cb3a84275dc27c89c20381c7f91289a6a83), [`9cd66b2`](https://github.com/ChestnutLabs/gcode-preview/commit/9cd66b2f23aa32c8832d9e9da13c025cf86278b1), [`bf032d2`](https://github.com/ChestnutLabs/gcode-preview/commit/bf032d2b4e0ce36dcbd8020caead2a512ca3b618)]:
+  - @chestnutlabs/gcode-renderer-three@0.16.0
+  - @chestnutlabs/toolpath-core@0.16.0
+  - @chestnutlabs/gcode-containers@0.16.0
+
 ## 0.15.0
 
 ### Patch Changes

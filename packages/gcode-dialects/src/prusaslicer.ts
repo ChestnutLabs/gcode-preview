@@ -19,6 +19,7 @@ import {
   type RangeMarker,
   type WipeMark
 } from './annotate.js';
+import { PrintingObjectTracker } from './object-markers.js';
 
 /** Prusa `;TYPE:` names → DD-001 FeatureRole (unknown names → Custom, honestly generic). */
 const TYPE_MAP: Record<string, number> = {
@@ -35,7 +36,8 @@ const TYPE_MAP: Record<string, number> = {
   'skirt/brim': FeatureRole.Skirt,
   skirt: FeatureRole.Skirt,
   brim: FeatureRole.Brim,
-  'wipe tower': FeatureRole.Custom,
+  raft: FeatureRole.Raft,
+  'wipe tower': FeatureRole.WipeTower,
   custom: FeatureRole.Custom
 };
 
@@ -80,6 +82,7 @@ export function parseFilamentTotals(
 interface PrusaState {
   markers: RangeMarker[];
   wipes: WipeMark[];
+  objectTracker: PrintingObjectTracker;
   bedPoints: string | null;
   bedSrcByte?: number;
   heightMm?: number;
@@ -92,7 +95,13 @@ const state = new WeakMap<AnnotationSink, PrusaState>();
 function stateFor(sink: AnnotationSink): PrusaState {
   let s = state.get(sink);
   if (s === undefined) {
-    s = { markers: [], wipes: [], bedPoints: null, thumbs: new ThumbnailCollector() };
+    s = {
+      markers: [],
+      wipes: [],
+      objectTracker: new PrintingObjectTracker(),
+      bedPoints: null,
+      thumbs: new ThumbnailCollector()
+    };
     state.set(sink, s);
   }
   return s;
@@ -121,6 +130,9 @@ export function prusaSlicer(): DialectAdapter {
         s.markers.push({ srcByte, value: role ?? FeatureRole.Custom });
         return;
       }
+      // Object membership (`; printing object …` / `; stop printing object …`) when Label objects is
+      // enabled — RR-007 §5.1 / DD-026 T1. The comment retains a leading space, so trim for the parser.
+      if (s.objectTracker.handle(comment.trim(), srcByte)) return;
       const wipe = matchWipeComment(comment);
       if (wipe !== null) {
         s.wipes.push({ srcByte, open: wipe === 'start' });
@@ -160,6 +172,7 @@ export function prusaSlicer(): DialectAdapter {
       const s = stateFor(sink);
       const applied = applyMarkerRanges(ir, s.markers, (a, b, v) => sink.setFeature(a, b, v));
       if (applied > 0) sink.upgradeCapability('featureRoles', 'known');
+      s.objectTracker.apply(ir, sink);
       if (applyWipeRanges(ir, s.wipes, sink) > 0) sink.upgradeCapability('wipeMoves', 'known');
       if (s.bedPoints !== null) {
         const points = parseAreaPoints(s.bedPoints);
