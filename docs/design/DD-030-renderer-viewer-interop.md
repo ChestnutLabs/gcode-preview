@@ -1,7 +1,8 @@
 # DD-030 — Renderer/viewer interoperability: capture(), per-plate render scope & custom bed geometry
 
-**Status:** **Proposed** — the three capabilities are product-approved (maintainer, 2026-08-27); this DD
-brings the concrete **public-API shape** for sign-off before any breaking/public-surface commitment.
+**Status:** **Accepted** — capabilities and the public-API shape approved by the maintainer 2026-08-27
+(the four §7 open questions resolved in the decision log). Implementation proceeds in the §4.5 sequence
+(bed → render scope → capture); the accepted shape is the contract.
 <!-- Draft | Proposed | Accepted | Superseded | Rejected -->
 **Authors/Owners:** Nathaniel Chestnut (drafted by Claude, project lead)
 **Date:** 2026-08-27
@@ -269,14 +270,18 @@ Recorded from the first consumer (AnyBridge) so the shapes are grounded, not spe
 - **Overhang/support viz in this batch.** Rejected: no analysis substrate exists; it is a separate future
   capability with its own DD.
 
-## 7. Open questions (for acceptance)
+## 7. Open questions (resolved at acceptance — see the decision log)
 
-1. **capture() output ergonomics:** also expose `captureToCanvas()` (returning the `RenderTargetCanvas`,
-   mirroring `RenderStillResult.canvas`) for callers who want `readPixels` themselves, or `Blob`-only?
-2. **Bed cage on a non-rect bed:** polygon prism vs. keep the bounding-box cage (gated by `showCage`)?
-3. **`machineToVolume` behavior change:** gate the discovered-non-rect-bed rendering behind an opt-in, or
-   make it the default with a deliberate baseline regen + release note?
-4. **`{kind:'mesh'}` bed:** commit the field now (reserved) or omit until a real consumer needs it?
+1. **capture() output ergonomics** → **`Blob`-only** for now (covers every stated use-case: thumbnail
+   POST, large-file fallback). `captureToCanvas()` is a trivial additive follow-up if a consumer needs
+   raw pixels; not shipped in the first cut to keep the surface minimal.
+2. **Bed cage on a non-rect bed** → **keep the bounding-box cage** (gated by `showCage`). The bed
+   *outline* carries the honesty; a polygon prism is cosmetic and can come later.
+3. **`machineToVolume` behavior change** → **default** (render a discovered non-rect bed as its true
+   outline — the honest result) **with a deliberate visual-baseline + screenshot regen and a release
+   note**. The rectangular path stays byte-identical; only already-wrong bounding-rect renders change.
+4. **`{kind:'mesh'}` bed** → **omit for now** (YAGNI). Ship `polygon` + `circular`; reserve `mesh` in the
+   DD as the escape hatch, add the field only when a real consumer needs an arbitrary bed mesh.
 
 ## 8. Acceptance criteria
 
@@ -297,3 +302,4 @@ Recorded from the first consumer (AnyBridge) so the shapes are grounded, not spe
 |---|---|---|
 | 2026-08-27 | The three capabilities (interactive `capture()`, per-plate render scope, non-rectangular bed geometry) **product-approved** as one generic renderer/viewer interoperability batch — design together, keep vendor-neutral, no consumer semantics in the API. Overhang/support-need viz explicitly **deferred** (no analysis substrate; needs its own DD). Sliced-gcode variant thumbnails + rectangular bed/texture confirmed already-shipped and **out of scope**. | Chestnut Labs (maintainer) |
 | 2026-08-27 | DD-030 drafted **Proposed** with the concrete API shapes (D1 render-to-target `capture()` on `GcodePreviewControls` + `ModelViewer`; D2 generic `RenderScope` model-side with `{plateId}` sugar, toolpath stays parse-time; D3 `BedShape` polygon primitive + `machineToVolume` upgrade, `mesh` reserved). Brought for public-surface sign-off before implementation. | Chestnut Labs (lead) |
+| 2026-08-27 | **API shape accepted** by the maintainer. §7 open questions resolved: (1) `capture()` **`Blob`-only** first (`captureToCanvas()` deferred as a trivial follow-up); (2) **bounding-box cage** kept on non-rect beds (the outline carries honesty); (3) `machineToVolume` renders discovered non-rect beds honestly **by default** with a deliberate visual-baseline + screenshot regen and a release note (rectangular path byte-identical); (4) `{kind:'mesh'}` **omitted** for now (reserved in the DD; `polygon`+`circular` ship). Implementation authorized in the §4.5 sequence: bed → render scope → capture, each an independently-reviewable increment; flag the consumer with the version target on each landing. | Chestnut Labs (maintainer + lead) |
