@@ -227,5 +227,17 @@ export interface ToolpathIR {
    * "frame the printed object, not the skirt" (#306/#6); a consumer checks it is finite before use.
    */
   objectBounds: ToolpathBounds;
+  /**
+   * Bounds over the **printed model** — extrusion classified as model by the non-model classifier
+   * (DD-026 D4/D5): object membership when present, otherwise all extrusion minus explicit housekeeping
+   * roles (skirt, brim, raft, support, prime/wipe tower, purge) and wipe moves. Strictly additive to
+   * `objectBounds` (whose object-channel contract is unchanged): `modelBounds` also excludes housekeeping
+   * that carries an object label (e.g. a Bambu prime tower emitted inside an open object bracket) and
+   * works for label-less files that still mark their housekeeping. Empty (Infinity/-Infinity) when the
+   * model is unknowable (no membership and nothing excludable — an honest "cannot classify", never a
+   * guess). Framing precedence is `modelBounds → objectBounds → bounds`; see
+   * `header.capabilities.nonModelClassification` (`known` | `inferred` | `unavailable`) for confidence.
+   */
+  modelBounds: ToolpathBounds;
   sourceIndex: SourceIndex;
 }

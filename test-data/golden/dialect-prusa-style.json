@@ -41,7 +41,8 @@
     "feedrate": "unavailable",
     "sourcePositions": "unavailable",
     "featureRoles": "unavailable",
-    "objects": "unavailable"
+    "objects": "unavailable",
+    "nonModelClassification": "unavailable"
   },
   "warningCodes": [
     "adapter-lossy-source",
