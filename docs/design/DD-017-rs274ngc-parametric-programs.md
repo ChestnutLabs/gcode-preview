@@ -1,8 +1,10 @@
 # DD-017 — RS274NGC parametric programs: parameters, expressions & O-word flow (#189 phase 7)
 
-**Status:** **Proposed** <!-- Draft | Proposed | Accepted | Superseded | Rejected -->
+**Status:** **Accepted (Phase 1 only)** — Phase 1 (parameters + expressions, D2/D3, §5.1) accepted &
+built 2026-08-27; **Phases 2–4 (O-word control flow, subroutines) remain Proposed**, gated on measured
+Phase 1 results. <!-- Draft | Proposed | Accepted | Superseded | Rejected -->
 **Authors/Owners:** Nathaniel Chestnut
-**Date:** 2026-07-29 · **Last revised:** 2026-07-29
+**Date:** 2026-07-29 · **Last revised:** 2026-08-27
 **Owning Epic:** #189 (non-extrusion toolpath coverage), **phase 7** · **Milestone:** Future
 **Supersedes / Superseded by:** none
 **Related:** [DD-012](./DD-012-non-extrusion-toolpath-and-modal-tool-state.md) (non-extrusion move model — this extends its parser work; §16 spec anchors), [RR-004](../research/RR-004-non-extrusion-toolpath-coverage.md) §9 (spec landscape), DD-010 (motion interpreter this builds on), DD-003 (parser resource limits — this adds two), DD-001 (capability/confidence model). Reference spec: **RS274NGC / NIST IR 6556** (free), as-implemented by the **LinuxCNC G-code reference** (cited as behavioral parity, no text copied — RR-004 §6).
@@ -202,3 +204,4 @@ the existing SoA). No renderer/adapter/color changes (they consume the same segm
 | Date | Decision | By |
 |---|---|---|
 | 2026-07-29 | DD-017 drafted as **Proposed** (D1–D8 open). Phase 7 of #189; the spec-derivable RS274NGC programming layer (params/expressions/O-words) flagged during real-file validation. Follows DD-012 §16 (spec-anchored CNC). | Chestnut Labs |
+| 2026-08-27 | **Phase 1 accepted & built** (parameters + expressions only; D2/D3/§5.1). New `packages/gcode-parser/src/rs274.ts` — a pure recursive-descent evaluator (RS274NGC operator/function set, degree trig, LinuxCNC MOD/EQ semantics, `MAX_EXPR_DEPTH` guard, no `eval`) + parameter store (numbered/named/global, indirect `##`, computed `#[expr]`, read-only system-param allow-list `#5420–#5422`), gated on a per-line `#`/`[` scan (FDM byte-identical, native goldens regenerated for the additive `parametricProgram` capability only; ~2.7% parse overhead from the gate, measured on 3DBenchy). O-word control flow (D4, Phases 2–4) explicitly **not** authorized until Phase 1 results are reviewed. | Chestnut Labs (lead) |
