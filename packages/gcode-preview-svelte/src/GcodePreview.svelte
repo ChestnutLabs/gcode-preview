@@ -110,6 +110,9 @@
       case 'parse-progress':
         dispatch('parseprogress', { bytesProcessed: e.progress.bytesProcessed, totalBytes: e.progress.totalBytes });
         break;
+      case 'stage':
+        dispatch('stage', { stage: e.stage, progress: e.progress, detail: e.detail });
+        break;
       case 'buildComplete': {
         dispatch('buildcomplete', { segments: e.segments, quality: e.quality });
         let disclosure = '';

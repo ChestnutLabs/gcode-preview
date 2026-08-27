@@ -25,6 +25,7 @@ import type {
   CameraView,
   ColorMode,
   ProgressivePreview,
+  PreparationStage,
   QualityMode,
   QualityPolicy,
   Theme,
@@ -118,6 +119,8 @@ export interface GcodePreviewProps {
   onParseError?: (e: { code: string; message: string }) => void;
   onParseCancelled?: () => void;
   onParseProgress?: (p: { bytesProcessed: number; totalBytes: number }) => void;
+  /** DD-029 staged preparation progress (`building-geometry` carries a real `progress` + counts). */
+  onStage?: (e: { stage: PreparationStage; progress?: number; detail?: { built: number; total: number } }) => void;
   onBuildComplete?: (e: { segments: number; quality: QualityMode }) => void;
   onQualityFallback?: (e: { from: QualityMode; to: QualityMode; reason: string }) => void;
   onMachineGeometryMismatch?: (message: string) => void;
@@ -178,6 +181,9 @@ function GcodePreviewImpl(props: GcodePreviewProps, ref: ForwardedRef<GcodePrevi
           break;
         case 'parse-progress':
           p.onParseProgress?.({ bytesProcessed: e.progress.bytesProcessed, totalBytes: e.progress.totalBytes });
+          break;
+        case 'stage':
+          p.onStage?.({ stage: e.stage, progress: e.progress, detail: e.detail });
           break;
         case 'buildComplete':
           p.onBuildComplete?.({ segments: e.segments, quality: e.quality });
