@@ -1,5 +1,57 @@
 # @chestnutlabs/gcode-dialects
 
+## 0.17.0
+
+### Minor Changes
+
+- [#405](https://github.com/ChestnutLabs/gcode-preview/pull/405) [`a2f3d56`](https://github.com/ChestnutLabs/gcode-preview/commit/a2f3d56613ac27c3eed26cafcf913c9d8f23cec2) Thanks [@sobechestnut-dev](https://github.com/sobechestnut-dev)! - feat(orca-bambu): FLUSH/WIPE_TOWER housekeeping brackets (DD-026 D3)
+
+  The OrcaSlicer/Bambu adapter now recognises Bambu's bare `FLUSH_START/END` (multi-material purge) and
+  `WIPE_TOWER_START/END` comment brackets and maps the enclosed range to `FeatureRole.Purge` /
+  `FeatureRole.WipeTower` (RR-007 §5). The brackets are applied **after** the `;TYPE:` / `; FEATURE:`
+  markers so the explicit bracket wins over the surrounding role, and the non-model classifier (DD-026 D4)
+  then excludes them from `modelBounds` — so a plate whose flush/wipe-tower sits far from the parts frames
+  the model rather than the purge column, even without an object channel.
+
+  Shares the wipe bracket's balancing logic via a new internal `forEachBracketRange` helper (a stray END
+  is ignored, a second START folds in, an unclosed START closes at EOF) — `applyWipeRanges` is refactored
+  onto it with byte-identical behaviour. `matchBracketComment` / `applyFeatureBracketRanges` /
+  `BracketMark` are internal annotate helpers (not re-exported), mirroring the existing wipe bracket.
+
+  Additive feature-channel coverage only; FDM geometry unchanged (the golden corpus carries no
+  flush/wipe-tower brackets, so no goldens move).
+
+- [#402](https://github.com/ChestnutLabs/gcode-preview/pull/402) [`214b0db`](https://github.com/ChestnutLabs/gcode-preview/commit/214b0db2dd9d8aa177d80969bdb59173d33121a3) Thanks [@sobechestnut-dev](https://github.com/sobechestnut-dev)! - feat(core): non-model classifier + `modelBounds` + `nonModelClassification` capability (DD-026 T2)
+
+  Adds the precedence-ordered classifier that decides which extrusion is the **printed model** and which
+  is slicer housekeeping, and exposes its result as a new additive `ir.modelBounds` bounding box plus a
+  `nonModelClassification` capability (`known` | `inferred` | `unavailable`).
+
+  `classifyModelBounds(segments, origin)` (exported from `@chestnutlabs/toolpath-core`, alongside
+  `HOUSEKEEPING_ROLES` / `isHousekeepingRole`) applies DD-026 D4 per extrusion segment: an explicit
+  housekeeping role (skirt, brim, raft, support, prime/wipe tower, purge) or a wipe move is excluded
+  first — so a Bambu prime tower emitted **inside** an open object bracket is excluded even though it
+  carries a member label; then, when a membership channel exists, only members are kept (an unmarked
+  prime at `object 0` is dropped); otherwise all non-housekeeping extrusion is the model (role fallback).
+
+  Confidence is honest and never a guess: `known` when per-segment membership drove it, `inferred` when
+  only role exclusion applied, `unavailable` (empty `modelBounds`) when there is neither membership nor
+  anything excludable — the genuinely unclassifiable case (e.g. a Simplify3D single object with an
+  unmarked prime line), which must fall back to full-extrusion framing and disclose. `objectBounds` keeps
+  its existing object-channel contract unchanged; `modelBounds` is strictly additive beside it.
+
+  The classification is derived at parse time from whatever channels exist (usually `unavailable`) and
+  **refreshed authoritatively** by the dialect runner's `finalize` once adapters have settled the
+  object/feature channels (lifecycle §5). Renderer framing consumes `modelBounds` in a follow-up.
+
+  Additive capability key + additive IR field only; FDM geometry is byte-identical (native goldens
+  regenerated for the new capability key alone — every `segmentCount` unchanged).
+
+### Patch Changes
+
+- Updated dependencies [[`214b0db`](https://github.com/ChestnutLabs/gcode-preview/commit/214b0db2dd9d8aa177d80969bdb59173d33121a3)]:
+  - @chestnutlabs/toolpath-core@0.17.0
+
 ## 0.16.0
 
 ### Minor Changes
