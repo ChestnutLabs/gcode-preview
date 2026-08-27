@@ -282,10 +282,12 @@ class ReturnSignal {
   constructor(readonly offset?: number) {}
 }
 
-/** Split a `call`'s argument text into its top-level bracket expressions, e.g. `[1] [2+3] [#5]`. */
-function splitBracketArgs(s: string): string[] {
+/** Split a `call`'s argument text into its top-level bracket expressions, e.g. `[1] [2+3] [#5]`.
+ *  `malformed` is true when an unbalanced trailing `[` was found (and dropped) — the caller discloses it. */
+function splitBracketArgs(s: string): { args: string[]; malformed: boolean } {
   const args: string[] = [];
   let i = 0;
+  let malformed = false;
   while (i < s.length) {
     if (s[i] === '[') {
       let depth = 0;
@@ -300,13 +302,16 @@ function splitBracketArgs(s: string): string[] {
           }
         }
       }
-      if (depth !== 0) break; // unbalanced trailing `[` — stop collecting
+      if (depth !== 0) {
+        malformed = true; // unbalanced trailing `[` — drop it, disclosed by the caller
+        break;
+      }
       args.push(s.slice(start, i));
     } else {
       i++;
     }
   }
-  return args;
+  return { args, malformed };
 }
 
 /**
@@ -431,6 +436,9 @@ export function interpretOWordProgram(lines: readonly FlowLine[], host: FlowHost
           disclose(RS274_FLOW_WARN.unbalancedOword, `'o${id} endsub' without a matching sub`, line.offset);
           break;
         }
+        if (!idMatches(f.id, id)) {
+          disclose(RS274_FLOW_WARN.unbalancedOword, `'o${id} endsub' does not match 'o${f.id} sub'`, line.offset);
+        }
         stack.pop();
         if (subs.has(f.id)) {
           disclose(RS274_FLOW_WARN.duplicateSub, `subroutine 'o${f.id}' redefined; keeping the first`, f.offset);
@@ -440,7 +448,15 @@ export function interpretOWordProgram(lines: readonly FlowLine[], host: FlowHost
         break;
       }
       case 'call': {
-        pushChild({ t: 'call', id, args: splitBracketArgs(expr), offset: line.offset });
+        const { args, malformed } = splitBracketArgs(expr);
+        if (malformed) {
+          disclose(
+            RS274_FLOW_WARN.unsupportedOword,
+            `'o${id} call' has a malformed argument; it was dropped`,
+            line.offset
+          );
+        }
+        pushChild({ t: 'call', id, args, offset: line.offset });
         break;
       }
       case 'return': {
@@ -569,9 +585,12 @@ export function interpretOWordProgram(lines: readonly FlowLine[], host: FlowHost
           halted = true;
           return;
         }
-        // Inside a loop, every executed statement is charged — this is what bounds a large loop body
-        // (a per-pass-only charge would let `bodySize × iterations` exceed the advertised limit).
-        if (loopDepth > 0 && n.t !== 'if' && n.t !== 'loop') {
+        // Charge every executed statement inside a loop OR a subroutine. Loops bound `bodySize ×
+        // iterations`; subroutines bound the CALL-TREE SIZE — each `call` node is itself charged once
+        // callDepth > 0, so a loop-free fan-out (`o100 sub` calling `o100` twice) that maxCallDepth
+        // bounds only in DEPTH is bounded in total work here. Root-level statements (both depths 0) run
+        // once and stay bounded by input size, so a large straight-line program is not truncated.
+        if ((loopDepth > 0 || callDepth > 0) && n.t !== 'if' && n.t !== 'loop') {
           if (!charge(n.t === 'line' || n.t === 'call' ? n.offset : undefined)) return;
         }
         switch (n.t) {

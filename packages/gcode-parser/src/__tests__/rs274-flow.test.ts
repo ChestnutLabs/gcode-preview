@@ -465,4 +465,33 @@ describe('rs274-flow subroutine safety & honesty (Phase 3)', () => {
     expect(ir.segments.count).toBe(1);
     expect(ir.header.warnings.some((w) => w.code === RS274_FLOW_WARN.misplacedControl)).toBe(true);
   });
+
+  it('a loop-free recursive fan-out is bounded by maxProgramIterations (no hang, no stack overflow)', () => {
+    // The sub calls itself TWICE with no base case — the call-tree is exponential in depth. maxCallDepth
+    // bounds only the DEPTH; the per-call charge bounds total call-tree SIZE. The test completing proves it.
+    const ir = run(['o100 sub', 'o100 call', 'o100 call', 'o100 endsub', 'o100 call'], {
+      maxProgramIterations: 1000
+    });
+    expect(ir.header.warnings.some((w) => w.code === RS274_FLOW_WARN.iterationLimit)).toBe(true);
+    expect(ir.header.capabilities.parametricProgram).toBe('approximated');
+  });
+
+  it('mutual recursion is bounded too', () => {
+    const ir = run(['o1 sub', 'o2 call', 'o1 endsub', 'o2 sub', 'o1 call', 'o2 endsub', 'o1 call'], {
+      maxCallDepth: 20
+    });
+    expect(ir.header.warnings.some((w) => w.code === RS274_FLOW_WARN.callDepth)).toBe(true);
+  });
+
+  it('an endsub whose id does not match its sub is disclosed', () => {
+    const ir = run(['G90', 'o100 sub', 'G1 X1 Y0', 'o200 endsub', 'o100 call']);
+    expect(ir.header.warnings.some((w) => w.code === RS274_FLOW_WARN.unbalancedOword)).toBe(true);
+    expect(lastEnd(ir).x).toBeCloseTo(1); // still registered under the sub's id, still callable
+  });
+
+  it('a malformed call argument is disclosed and dropped', () => {
+    const ir = run(['G90', 'o100 sub', 'G1 X#1 Y0', 'o100 endsub', 'o100 call [1] [2']);
+    expect(ir.header.warnings.some((w) => w.code === RS274_FLOW_WARN.unsupportedOword)).toBe(true);
+    expect(lastEnd(ir).x).toBeCloseTo(1); // the well-formed first arg still bound to #1
+  });
 });
