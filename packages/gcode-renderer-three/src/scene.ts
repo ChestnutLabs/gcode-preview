@@ -674,7 +674,7 @@ export class ToolpathRenderer {
     if (this.active === 'tubes' && chunk.kind === 'extrude') {
       // Throws on budget overrun — caught by buildTick's fallback path.
       // Use the budget-resolved cross-section (RR-006): coarser tubes on large files, full continuity.
-      const tube = buildTubeChunk(this.ir as ToolpathIR, chunk, {
+      const tube = buildTubeChunk(chunk, {
         ...this.tubeOptions,
         radialSegments: this.tubeRadialSegments
       });
