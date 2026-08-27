@@ -60,10 +60,7 @@ import type { QualityPolicy } from './capability.js';
 import { probeGpuInfo, type GpuInfo, type RenderStats } from './render-stats.js';
 import { GeometryWorkerPool, resolvePoolSize, type GeometryWorkerLike } from './geometry-pool.js';
 import type { GeometryBuildRequest, GeometryBuildResponse } from './geometry-worker-core.js';
-
-/** Minimum extrude-segment count before the parallel pool is worth its worker/transfer overhead (DD-028
- *  D4 — a placeholder threshold; DD-029 Phase D replaces it with the cost/capability estimate). */
-const POOL_MIN_EXTRUDE_SEGMENTS = 200_000;
+import { estimateTubeBuildMs, POOL_ENGAGE_MS, SINGLE_REVEAL_MS } from './render-cost.js';
 import { resolveTheme, type Theme, type ResolvedTheme } from './theme.js';
 import { InteractiveStage, type CameraMode, type CameraView, type CameraState } from './interactive-stage.js';
 
@@ -718,7 +715,14 @@ export class ToolpathRenderer {
     const chunkCount = extrudeChunks.length;
     if (chunkCount === 0) return 0;
     const extrudeSegments = extrudeChunks.reduce((n, c) => n + c.count, 0);
-    if (this.geometryConcurrency === 'auto' && extrudeSegments < POOL_MIN_EXTRUDE_SEGMENTS) return 0;
+    // 'auto' engages only when the estimated serial build would stall noticeably (DD-028 D4 / DD-029
+    // Phase D — the cost/capability estimate, capability from the probed GL context); a number forces it.
+    if (
+      this.geometryConcurrency === 'auto' &&
+      estimateTubeBuildMs(extrudeSegments, this.tubeRadialSegments, this.ensureGpuInfo().capability) < POOL_ENGAGE_MS
+    ) {
+      return 0;
+    }
     const cores = this.coreBudget ?? (typeof navigator !== 'undefined' ? navigator.hardwareConcurrency : undefined);
     const base =
       typeof this.geometryConcurrency === 'number'
@@ -1720,12 +1724,19 @@ export class ToolpathRenderer {
   }
 
   /**
-   * Resolve `progressivePreview` to a concrete `'lines' | 'hold' | 'off'` (DD-029 §4 D1). `'auto'`
-   * currently resolves to `'lines'`; the render-cost/capability estimate that will pick `'lines'` vs
-   * `'hold'` per build lands in DD-029 Phase D (shared with the DD-028 pool-activation estimate).
+   * Resolve `progressivePreview` to a concrete `'lines' | 'hold' | 'off'` (DD-029 §4 D1). `'auto'` takes
+   * the single-reveal `'hold'` path when a TUBE build is expensive enough (the ~187-render waste bites) —
+   * decided from the shared render-cost/capability estimate, never byte size — and streams `'lines'`
+   * otherwise (and always while parsing, before the build's size is known).
    */
   private effectivePreview(): 'lines' | 'hold' | 'off' {
-    return this.progressivePreview === 'auto' ? 'lines' : this.progressivePreview;
+    if (this.progressivePreview !== 'auto') return this.progressivePreview;
+    if (this.active === 'tubes' && this.buildResult !== null) {
+      const extrudeSegments = this.buildResult.chunks.reduce((n, c) => (c.kind === 'extrude' ? n + c.count : n), 0);
+      const cap = (this.gpuInfo ?? this.ensureGpuInfo()).capability;
+      if (estimateTubeBuildMs(extrudeSegments, this.tubeRadialSegments, cap) >= SINGLE_REVEAL_MS) return 'hold';
+    }
+    return 'lines';
   }
 
   /** Currently built chunk meshes: LineSegments (lines/travel) or Mesh (tubes). */
