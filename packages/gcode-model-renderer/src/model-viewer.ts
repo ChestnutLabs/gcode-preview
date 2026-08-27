@@ -29,7 +29,14 @@ import { ModelContent } from './model-content.js';
 import { DEFAULT_MODEL_LOADERS, resolveModelScene, type ModelLoader, type ModelSourceInput } from './loaders.js';
 import { ModelParseError, type ModelLimits } from './limits.js';
 import type { ModelBackground, PresentationView } from './model-renderer.js';
-import { sceneInstanceCount, type ModelBounds, type ModelPlateSummary, type ModelScene } from './scene-model.js';
+import {
+  applyRenderScope,
+  sceneInstanceCount,
+  type ModelBounds,
+  type ModelPlateSummary,
+  type ModelScene,
+  type RenderScope
+} from './scene-model.js';
 
 export interface ModelViewerOptions {
   /** Loader registry (open `kind`). Default: `[stlLoader, threeMfLoader]`. */
@@ -48,6 +55,8 @@ export interface ModelViewerOptions {
   createRenderer?: (canvas: RenderTargetCanvas) => GLRendererLike;
   /** Injected orbit controls (tests). Default: three `OrbitControls` via the stage. */
   createControls?: NonNullable<InteractiveStageOptions['createControls']>;
+  /** Initial render scope (DD-030 D2) — e.g. `{ plateId: 3 }`. Omit to render the whole source. */
+  renderScope?: RenderScope;
   /**
    * Staged loading-progress callback (DD-024): typed `stage`/`done`/`total`/`unit` events (no human copy),
    * each tagged with the load `generation` so a consumer drops events from a superseded `setSource`. The
@@ -102,6 +111,12 @@ export interface ModelViewer {
   resize(width: number, height: number): void;
   /** Re-fit the camera to the current model bounds. */
   frame(): void;
+  /**
+   * Render only a subset of the current source (DD-030 D2): `{ plateId }`, `{ objectIds }`, or an
+   * `{ instanceFilter }`; `null` restores the whole source. Rebuilds and reframes to the subset. Gate a
+   * `{ plateId }` on the ready info's `plates` being present — an unmatched scope renders empty.
+   */
+  setRenderScope(scope: RenderScope | null): void;
   onEvent(cb: (e: ModelViewerEvent) => void): () => void;
   dispose(): void;
 }
@@ -139,7 +154,12 @@ export function createModelViewer(canvas: RenderTargetCanvas, options: ModelView
 
   // Retained so context-loss recovery can rebuild meshes from the last-set scene.
   let currentScene: ModelScene | null = null;
+  // Active render scope (DD-030 D2); applied to `currentScene` on build/reframe/restore. Null = whole source.
+  let currentScope: RenderScope | null = options.renderScope ?? null;
   let disposed = false;
+  /** The scene to actually build/render = the full source narrowed by the active scope. */
+  const scopedScene = (): ModelScene | null =>
+    currentScene === null ? null : currentScope ? applyRenderScope(currentScene, currentScope) : currentScene;
   // Monotonic token for last-wins overlapping setSource (stale async results are discarded).
   let sourceToken = 0;
 
@@ -157,8 +177,9 @@ export function createModelViewer(canvas: RenderTargetCanvas, options: ModelView
       onContextRestored: () => {
         // GPU resources are gone; rebuild meshes from the retained scene and reframe, mirroring the
         // toolpath renderer's recovery.
-        if (currentScene !== null && stage !== null) {
-          content.setScene(currentScene);
+        const shown = scopedScene();
+        if (shown !== null && stage !== null) {
+          content.setScene(shown);
           const f = content.framing;
           if (f !== null) stage.frameTo(f.center, f.radius);
         }
@@ -203,10 +224,11 @@ export function createModelViewer(canvas: RenderTargetCanvas, options: ModelView
       // Last-wins: a newer setSource (or a dispose) superseded this one — discard without mutating.
       if (my !== sourceToken || disposed || stage === null) return info;
 
-      const total = parsed.objects.length;
-      progress({ stage: 'building-geometry', done: 0, total, unit: 'objects' });
-      content.setScene(parsed, (done) => progress({ stage: 'building-geometry', done, total, unit: 'objects' }));
       currentScene = parsed;
+      const shown = scopedScene()!; // parsed just set → non-null
+      const total = shown.objects.length;
+      progress({ stage: 'building-geometry', done: 0, total, unit: 'objects' });
+      content.setScene(shown, (done) => progress({ stage: 'building-geometry', done, total, unit: 'objects' }));
       const f = content.framing;
       if (f !== null) stage.frameTo(f.center, f.radius);
       progress({ stage: 'ready' });
@@ -246,6 +268,15 @@ export function createModelViewer(canvas: RenderTargetCanvas, options: ModelView
     frame() {
       const f = content.framing;
       if (f !== null) stage?.frameTo(f.center, f.radius);
+    },
+    setRenderScope(scope) {
+      currentScope = scope;
+      const shown = scopedScene();
+      if (shown === null || stage === null) return; // no source yet — applied on the next setSource
+      content.setScene(shown);
+      const f = content.framing;
+      if (f !== null) stage.frameTo(f.center, f.radius);
+      stage.render();
     },
     onEvent(cb) {
       listeners.add(cb);

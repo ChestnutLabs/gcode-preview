@@ -124,6 +124,96 @@ export interface ModelScene {
   };
 }
 
+/**
+ * A render-scope selector (DD-030 D2): which objects/placements of a scene to render. Generic and
+ * vendor-neutral — a plate is one way to derive the subset. `{plateId}` is sugar over the placement's
+ * {@link ModelObject.plateIds} (meaningful only when `capabilities.plates === 'known'`; on a scene with
+ * no plate structure it matches nothing → an empty scene, the honest result of selecting a plate that
+ * isn't declared). `{objectIds}` and `{instanceFilter}` need no capability (ids are always known).
+ */
+export type RenderScope =
+  | { objectIds: string[] }
+  | { plateId: number }
+  | { instanceFilter: (objectId: string, placementIndex: number) => boolean };
+
+/** Local axis-aligned bounds of a geometry's positions. */
+function geometryAABB(positions: Float32Array): { min: [number, number, number]; max: [number, number, number] } {
+  const min: [number, number, number] = [Infinity, Infinity, Infinity];
+  const max: [number, number, number] = [-Infinity, -Infinity, -Infinity];
+  for (let i = 0; i + 2 < positions.length; i += 3) {
+    for (let a = 0; a < 3; a++) {
+      const v = positions[i + a];
+      if (v < min[a]) min[a] = v;
+      if (v > max[a]) max[a] = v;
+    }
+  }
+  return { min, max };
+}
+
+/** Transform a point by a column-major (three `Matrix4.elements`) affine Mat4. */
+function applyMat4(m: Mat4, x: number, y: number, z: number): [number, number, number] {
+  return [
+    m[0] * x + m[4] * y + m[8] * z + m[12],
+    m[1] * x + m[5] * y + m[9] * z + m[13],
+    m[2] * x + m[6] * y + m[10] * z + m[14]
+  ];
+}
+
+/** Union of the world AABBs of the given placements of an object's geometry, into `acc`. */
+function accumulatePlacementBounds(geom: MeshGeometry, placements: readonly Mat4[], acc: ModelBounds): void {
+  const { min: lmin, max: lmax } = geometryAABB(geom.positions);
+  if (lmin[0] > lmax[0]) return; // empty geometry
+  const mut = acc as { min: [number, number, number]; max: [number, number, number] };
+  for (const m of placements) {
+    for (let cx = 0; cx < 2; cx++) {
+      for (let cy = 0; cy < 2; cy++) {
+        for (let cz = 0; cz < 2; cz++) {
+          const w = applyMat4(m, cx ? lmax[0] : lmin[0], cy ? lmax[1] : lmin[1], cz ? lmax[2] : lmin[2]);
+          for (let a = 0; a < 3; a++) {
+            if (w[a] < mut.min[a]) mut.min[a] = w[a];
+            if (w[a] > mut.max[a]) mut.max[a] = w[a];
+          }
+        }
+      }
+    }
+  }
+}
+
+/**
+ * Return a filtered copy of `scene` containing only the objects/placements the scope selects, with
+ * `bounds` recomputed from the kept placements (so a consumer frames just the selected plate/subset).
+ * Pure and three-free. Objects with no kept placement are dropped; an empty result (nothing matched) is
+ * a valid, honest scene — a `{plateId}` that matches nothing renders empty by design (gate on
+ * `capabilities.plates === 'known'`). `scene.plates`/`capabilities` are preserved (the source's declared
+ * structure is unchanged; only what is *rendered* is narrowed).
+ */
+export function applyRenderScope(scene: ModelScene, scope: RenderScope): ModelScene {
+  const matches = (o: ModelObject, i: number): boolean => {
+    if ('objectIds' in scope) return scope.objectIds.includes(o.id);
+    if ('plateId' in scope) return o.plateIds?.[i] === scope.plateId;
+    return scope.instanceFilter(o.id, i);
+  };
+  const objects: ModelObject[] = [];
+  const bounds: ModelBounds = { min: [Infinity, Infinity, Infinity], max: [-Infinity, -Infinity, -Infinity] };
+  for (const o of scene.objects) {
+    const placements: readonly Mat4[] = o.instances ?? [o.transform];
+    const kept: number[] = [];
+    for (let i = 0; i < placements.length; i++) if (matches(o, i)) kept.push(i);
+    if (kept.length === 0) continue;
+    const keptPlacements = kept.map((i) => placements[i]);
+    const next: ModelObject = {
+      ...o,
+      transform: keptPlacements[0],
+      instances: keptPlacements.length > 1 ? keptPlacements.slice() : undefined,
+      plateIds: o.plateIds ? kept.map((i) => o.plateIds![i]) : undefined
+    };
+    objects.push(next);
+    accumulatePlacementBounds(o.geometry, keptPlacements, bounds);
+  }
+  const finalBounds: ModelBounds = objects.length === 0 ? { min: [0, 0, 0], max: [0, 0, 0] } : bounds;
+  return { ...scene, objects, bounds: finalBounds };
+}
+
 /** The identity transform (column-major), for single-object sources. */
 export const IDENTITY_MAT4: Mat4 = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
 
