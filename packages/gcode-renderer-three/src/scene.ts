@@ -695,7 +695,11 @@ export class ToolpathRenderer {
       if (size >= 1) {
         this.buildParallelism = 'pool';
         this.poolWorkerCount = size;
-        void this.buildTubesViaPool(size);
+        // Defense-in-depth: buildTubesViaPool degrades internally, but never let an unexpected escape
+        // become an unhandled rejection — fall back to serial tubes (DD-028).
+        void this.buildTubesViaPool(size).catch((err) => {
+          if (!this.disposed) this.fallbackToSerialTubes(err instanceof Error ? err.message : String(err));
+        });
         return;
       }
     }
@@ -779,7 +783,17 @@ export class ToolpathRenderer {
       lineWidth: this.tubeOptions.lineWidth,
       lineHeight: this.tubeOptions.lineHeight
     }));
-    const pool = this.ensurePool(size);
+    // Worker construction can fail synchronously (e.g. `new Worker(new URL(…, import.meta.url))` throwing
+    // when a bundler leaves `import.meta.url` undefined). Catch it here so it degrades like a runtime
+    // failure instead of rejecting this fire-and-forget promise (DD-028 robustness).
+    let pool: GeometryWorkerPool;
+    try {
+      pool = this.ensurePool(size);
+    } catch (err) {
+      if (this.disposed || gen !== this.buildGeneration) return;
+      this.fallbackToSerialTubes(err instanceof Error ? err.message : String(err));
+      return;
+    }
     const total = result.chunks.length;
     this.builtCount = nonExtrude;
     try {
@@ -798,8 +812,11 @@ export class ToolpathRenderer {
       });
     } catch (err) {
       if (this.disposed || gen !== this.buildGeneration) return;
-      // A worker failed (e.g. the kernel's vertex-budget RangeError) → honest degrade to continuous lines.
-      this.fallbackToLines(err instanceof Error ? err.message : String(err));
+      // A worker failed mid-build → degrade to a SERIAL main-thread tube build, not lines: the tube
+      // representation already fit the memory budget (the pool was sized against it), only the worker
+      // couldn't run, so quality is preserved. A genuine memory/budget limit still degrades to lines
+      // downstream via the serial build's own tube-budget path.
+      this.fallbackToSerialTubes(err instanceof Error ? err.message : String(err));
       return;
     }
     if (this.disposed || gen !== this.buildGeneration) return;
@@ -833,6 +850,28 @@ export class ToolpathRenderer {
     mesh.userData.vertexSegment = vertexSegment;
     this.applyDrawStateToMesh(mesh, chunk);
     return mesh;
+  }
+
+  /**
+   * A failed POOL build (worker construction OR a runtime worker error) degrades to a SERIAL
+   * main-thread tube build — the same TUBE representation, single-threaded. Deliberately NOT lines: the
+   * pool was sized against the memory budget, so the tubes already fit; only the worker couldn't run, so
+   * quality is preserved (this is what `geometryConcurrency:'off'` would have produced). The serial
+   * rebuild keeps its own tube-budget path, so a genuine memory limit still degrades to lines downstream.
+   * Recorded as a RenderStats disclosure (`buildParallelism` flips to `'main'`), never silent (DD-028).
+   */
+  private fallbackToSerialTubes(reason: string): void {
+    this.buildDisclosures.push(`pool→serial-tubes: ${reason}`);
+    this.buildParallelism = 'main';
+    this.poolWorkerCount = 0;
+    this.geometryPool?.dispose();
+    this.geometryPool = null;
+    this.clearToolpathGeometry();
+    if (this.buildResult !== null) {
+      this.builtCount = 0;
+      this.pendingChunks = [...this.buildResult.chunks];
+      this.scheduleFrame(() => this.buildTick());
+    }
   }
 
   /** A failed tubes build degrades to lines — evented, never silent (§6.1). */
