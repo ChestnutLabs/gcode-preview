@@ -115,4 +115,16 @@ describe('DD-028 renderer pool wiring', () => {
     expect(noWorker.getRenderStats()?.buildParallelism).toBe('main');
     noWorker.dispose();
   });
+
+  it("'auto' engages the pool once the cost estimate crosses the threshold", async () => {
+    // ~80k extrude segments — over the render-cost engage threshold (DD-028 D4), so 'auto' fans out.
+    const big = makeRenderer({ concurrency: 'auto' });
+    big.setIR(makeTubeIR(100, 800));
+    await settle();
+    const stats = big.getRenderStats();
+    expect(stats?.buildParallelism).toBe('pool');
+    expect(stats?.workerCount).toBeGreaterThanOrEqual(1);
+    expect(stats?.geometryMode).toBe('tubes');
+    big.dispose();
+  });
 });
