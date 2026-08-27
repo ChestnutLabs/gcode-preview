@@ -1,8 +1,12 @@
 # DD-028 — Parallel geometry construction (worker pool)
 
-**Status:** Proposed <!-- Draft | Proposed | Accepted | Superseded | Rejected -->
+**Status:** Accepted <!-- Draft | Proposed | Accepted | Superseded | Rejected -->
 **Authors/Owners:** Nathaniel Chestnut (drafted by Claude)
 **Date:** 2026-08-26 · **Last revised:** 2026-08-26
+**Accepted:** 2026-08-26 — as written. Reaffirmed: concurrency capability- **and** memory-aware; Node/
+sidecar sizes off the actual cgroup/container CPU quota, not host core count; geometry stays
+deterministic + byte-identical; peak working set must **not** grow just because more workers exist.
+Build the first pool phase and **bring measured worker-pool results before the larger threading phase**.
 **Owning Epic:** E9/E11 (renderer performance + honesty) · **Milestone:** —
 **Supersedes / Superseded by:** none
 **Related:** [RR-008](../research/RR-008-parallel-geometry-construction.md) (measurements + architecture),

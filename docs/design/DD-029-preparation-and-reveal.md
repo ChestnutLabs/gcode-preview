@@ -1,8 +1,16 @@
 # DD-029 — Preparation lifecycle & single clean reveal
 
-**Status:** Proposed <!-- Draft | Proposed | Accepted | Superseded | Rejected -->
+**Status:** Accepted <!-- Draft | Proposed | Accepted | Superseded | Rejected -->
 **Authors/Owners:** Nathaniel Chestnut (drafted by Claude)
 **Date:** 2026-08-26 · **Last revised:** 2026-08-26
+**Accepted:** 2026-08-26 — with one refinement: `progressivePreview` becomes
+`'auto' | 'lines' | 'hold' | 'off'`, `'auto'` the eventual default (D1). In `'auto'`, cheap scenes may
+progressively render lines and sufficiently expensive scenes automatically take the single-reveal
+`'hold'` path, decided on **actual/predicted render cost + capability, not file byte size**; explicit
+consumer selection always overrides. `buildComplete` stays reveal-authoritative, `ready` never precedes
+it, failures terminate through the normal error path. **No preview mode drops extrusion segments or
+lowers final geometry quality** — `lines` vs `hold` is only how often incomplete work is drawn; the
+final render policy is separate. AnyBridge explicitly requests `'hold'` for the product experience.
 **Owning Epic:** E9/E11 (renderer UX + honesty) · **Milestone:** —
 **Supersedes / Superseded by:** none
 **Related:** [RR-008 §8.1](../research/RR-008-parallel-geometry-construction.md) (the render-during-build
@@ -52,19 +60,34 @@ cheap visual to show during preparation.
 
 ### D1 — `progressivePreview` semantics, clarified + strengthened (additive/behavioral)
 
-The existing `progressivePreview: 'lines' | 'hold' | 'off'` gains a precise, first-class meaning:
+`progressivePreview` becomes `'auto' | 'lines' | 'hold' | 'off'`:
 
+- **`'auto'` (the eventual default)** = the renderer chooses **per build** between `'lines'` and `'hold'`
+  based on **actual/predicted render cost + capability** (see below), **never file byte size**. Cheap
+  scenes may progressively render lines; sufficiently expensive scenes take the single-reveal `'hold'`
+  path automatically. An **explicit** `'lines'`/`'hold'`/`'off'` selection always **overrides** `'auto'`.
 - **`'hold'` = single clean reveal.** Build the complete final geometry with **no intermediate scene
   renders**; reveal once at completion. (Strengthened: today `'hold'` suppresses the *line preview* but
   the build still renders the growing *tube* scene each tick — DD-029 suppresses those intermediate
-  renders too, the true single reveal.)
-- **`'lines'` (default, backward-compatible)** = progressive line overview during the build, but its
-  intermediate redraws are now **budget-throttled** (D3), not every tick.
+  renders too, the true single reveal.) This is the first-class large-file experience; AnyBridge selects
+  it explicitly for the product.
+- **`'lines'`** = progressive line overview during the build, its intermediate redraws **budget-throttled**
+  (D3), not every tick.
 - **`'off'`** = no geometry preview at all; the consumer owns the loading visual. Staged progress still
   flows.
 
-The reveal signal remains the existing `buildComplete` event, and `parse-progress` keeps flowing in
+**Default migration:** the option's default stays `'lines'` initially (backward-compatible) and moves to
+`'auto'` once the cost/capability estimate (below) is proven — so no consumer's behavior changes
+silently on upgrade. `buildComplete` stays reveal-authoritative and `parse-progress` keeps flowing in
 every mode — both are stable seam signals a consumer already depends on.
+
+**The `'auto'` lines-vs-hold decision** uses the **same render-cost/capability estimate** DD-028 uses to
+gate the worker pool (extrude-segment count × a per-segment build-cost estimate, against the detected
+`RenderCapability` and memory budget) — one estimate, two consumers. A scene predicted cheap to build +
+draw renders `'lines'`; one predicted expensive (where the ~187-render waste and weak-GPU cost bite)
+takes `'hold'`. Crucially, this decision is **only about how often incomplete work is drawn** — it
+**never** changes what geometry is built: every extrusion segment is built and the final render policy
+(`quality`/`qualityMode`, the tubes→lines ladder) is untouched in every mode (§3, §12).
 
 ### D2 — Staged progress event (additive)
 
@@ -216,9 +239,12 @@ difference is measurable.
   (interactive `renderDuringBuild:false` + a final reveal); make it the recommended mode for large files.
 - **Phase C — Budget-throttled progressive.** Time/render-cost-budgeted intermediate redraws for
   `'lines'`; every segment still built.
-- **Phase D — (optional) camera-handoff** for the rung-1 interactive-model case (D5).
-- **Phase E — Docs + consumer seam.** Document the ladder + the primitives; AnyBridge wires its
-  thumbnail-default placeholder + staged status behind its viewer.
+- **Phase D — `'auto'` mode.** Wire the shared render-cost/capability estimate (DD-028) to pick
+  `'lines'` vs `'hold'` per build; explicit selection overrides. Flip the option default to `'auto'`
+  once the estimate is proven (until then default stays `'lines'`).
+- **Phase E — (optional) camera-handoff** for the rung-1 interactive-model case (D5).
+- **Phase F — Docs + consumer seam.** Document the ladder + the primitives; AnyBridge wires its
+  thumbnail-default placeholder + staged status + explicit `'hold'` behind its viewer.
 
 ## 15. Acceptance criteria
 
@@ -229,6 +255,7 @@ difference is measurable.
 3. `stage` events fire in order with a real `building-geometry` percentage/count; `parse-progress` +
    `buildComplete` still fire; all four adapters surface `stage` identically.
 4. No mode drops segments; the reveal is the complete, correct final representation (tubes→lines ladder
-   only, never chopped).
+   only, never chopped). `'auto'` picks `'lines'`/`'hold'` from the render-cost/capability estimate (not
+   byte size) and an explicit selection overrides it — but the built geometry is identical in every mode.
 5. A consumer can drive the model-still / thumbnail / loading-canvas placeholder purely from the exposed
    primitives + progress; no renderer change is needed to pick a placeholder. No core dep on AnyBridge.
