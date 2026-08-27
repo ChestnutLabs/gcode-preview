@@ -29,10 +29,20 @@ not committed — reported anonymized by size + segment count.
 ## Findings
 
 1. **Tube-build is the main-thread bottleneck.** It is 37–60× the lines-build and grows with segment
-   count; at opossum-scale (2.67M) the kernel alone is ~10.7 s here, and the browser adds three.js
-   `BufferGeometry` creation + GPU upload + rAF slicing on top — consistent with the observed ~1-minute
-   end-to-end. **This is the stage RR-008 Phase 2 parallelizes**, and it is the work that currently
-   freezes and delays the main thread.
+   count; at opossum-scale (2.67M) the kernel alone is ~10.7 s here. **This is the stage RR-008 Phase 2
+   parallelizes**, and it is the work that currently freezes and delays the main thread.
+
+   **These kernel numbers are a FLOOR, not the on-screen wall-clock.** A follow-up on the same 50 MB /
+   1.73 M file measured the *full* renderer build path (color expansion + three.js `BufferGeometry`
+   construction + build ticks, still headless → **no** real GPU work): **5.1 s vs 3.7 s** for the bare
+   kernel (~35% more). And that still excludes three browser-only main-thread costs the Node bench can't
+   see: (a) **GPU upload** of the tube geometry (hundreds of MB); (b) **`renderDuringBuild` re-renders
+   the growing scene every tick — 187 real GPU renders** on this file (more at opossum-scale), each of an
+   increasingly-large tube scene (the headless stub `render()` is a no-op, so this is invisible here);
+   and (c) **rAF frame gaps** (~16 ms per tick × 185 ticks). The authoritative end-to-end split must come
+   from **DD-027 RenderStats in a real browser** (`uploadMs`/`firstRenderMs` + an intermediate-render
+   count). Finding (b) is independently actionable — it motivates DD-029's prepare → single-clean-reveal
+   path and time/cost-budgeted redraw throttling (RR-008 §8.1).
 
 2. **Parse is the single *largest* CPU stage (57–65%) — but it already runs off the main thread** in the
    parser Web Worker, so it does not freeze the UI. It is, however, a large serial component of total
