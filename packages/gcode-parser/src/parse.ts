@@ -42,6 +42,7 @@ import {
   type Warning
 } from '@chestnutlabs/toolpath-core';
 import { BudgetExceededError, SegmentWriter } from './growable.js';
+import { Rs274Context, lineUsesParametric } from './rs274.js';
 
 export interface ParseLimits {
   maxInputBytes: number;
@@ -363,6 +364,10 @@ export function createEngine(input: string | Uint8Array, opts: ParseOptions): En
   let cannedInitialZ = 0; // Z when the cycle activated — the G98 retract plane
   let cannedRetractInitial = true; // G98 (retract to initial Z) vs G99 (retract to R); modal, default G98
   let cannedCyclesSeen = false; // any G81/G82/G83 expanded → cannedCycles capability 'known'
+  // RS274NGC parametric programs (DD-017 Phase 1, #189 phase 7). The store + expression evaluator resolve
+  // `#params`/`[expr]` on any line that uses them; non-parametric lines never touch it (byte-identical).
+  // The system-parameter allow-list (#5420–#5422 = current position) reads live engine position.
+  const rs274 = new Rs274Context(warn, () => ({ x: sx, y: sy, z: sz }));
 
   // Per-axis position certainty (DD-010 D4 amendment, #158). A G31 probe endpoint is reached at
   // RUNTIME (workpiece contact), not the commanded value, so it marks the probed axes uncertain. A
@@ -761,7 +766,20 @@ export function createEngine(input: string | Uint8Array, opts: ParseOptions): En
       const ci = rawLine.indexOf(';');
       if (ci !== -1) onComment(rawLine.slice(ci + 1), offset);
     }
-    const cmd = lexLine(rawLine);
+    // RS274NGC parametric programs (DD-017 Phase 1): a line using `#`/`[` is resolved by the parameter +
+    // expression interpreter; a `#n = <expr>` assignment executes and the line ends there. Every other
+    // line (all FDM, all simple CNC) takes the untouched lexer below — byte-identical.
+    let cmd: Cmd;
+    // Hot-path gate: a cheap `#`/`[` scan of the RAW line — no allocation. Every FDM line fails this and
+    // takes the untouched lexer (byte-identical). A `#`/`[` that turns out to be only inside a comment
+    // routes through the resolver, which strips comments and returns 'plain' → the normal lexer.
+    if (lineUsesParametric(rawLine)) {
+      const r = rs274.lexLine(rawLine, offset);
+      if (r.kind === 'assign' || r.kind === 'empty') return; // assignment applied / nothing to do
+      cmd = r.kind === 'cmd' ? { codes: r.codes, params: r.params } : lexLine(rawLine); // 'plain' → normal
+    } else {
+      cmd = lexLine(rawLine);
+    }
     // Skip only genuinely empty lines. A line with no lexable words but real content (a dialect
     // extended command like `EXCLUDE_OBJECT_START NAME=cube`, a macro) must NOT be dropped — the
     // observer below still forwards its raw line. The body split runs only when there are no words.
@@ -1076,6 +1094,10 @@ export function createEngine(input: string | Uint8Array, opts: ParseOptions): En
       // Canned drilling cycles expanded to geometry (DD-012 phase 2, #189). 'known' once a G81/G82/G83
       // was seen (holes are real segments), else 'unavailable' (no cycles / FDM).
       cannedCycles: cannedCyclesSeen ? 'known' : 'unavailable',
+      // RS274NGC parametric programs (DD-017 Phase 1, #189 phase 7). 'known' once a `#param`/`[expr]`
+      // was executed (the interpreter computes deterministic geometry — it does not infer); 'unavailable'
+      // for a non-parametric file (all FDM). Phase 2 adds control flow; a hit resource limit → disclosed.
+      parametricProgram: rs274.used ? 'known' : 'unavailable',
       // Motion-model modes (DD-010 E10 phase 1). 'known' when the governing command was seen
       // (M82/M83, or a firmware-known G90/G91 for E); 'inferred' when defaulted (absolute).
       extrusionMode: eModeExplicit !== null || (extruderFollowsPositioning && positioningSeen) ? 'known' : 'inferred',
@@ -1198,6 +1220,7 @@ export function createEngine(input: string | Uint8Array, opts: ParseOptions): En
           seamMoves: 'unavailable',
           cutMoves: 'unavailable', // non-extrusion classification resolves on the final IR (DD-012)
           cannedCycles: 'unavailable', // canned-cycle expansion resolves on the final IR (DD-012)
+          parametricProgram: 'unavailable', // parametric resolution resolves on the final IR (DD-017)
           extrusionMode: 'inferred', // motion modes resolve fully on the final IR (E10)
           positioningMode: 'inferred',
           arcPlanes: 'inferred',
