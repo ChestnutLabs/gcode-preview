@@ -47,6 +47,10 @@ export type { Theme, MaterialPreset, ThemeColor, ResolvedTheme, BedSurface, BedT
 export type { LoadStage, LoadUnit, LoadProgress } from './progress.js';
 export { probeGpuInfo, UNKNOWN_GPU_INFO } from './render-stats.js';
 export type { RenderStats, GpuInfo } from './render-stats.js';
+export { GeometryWorkerPool, resolvePoolSize } from './geometry-pool.js';
+export type { GeometryWorkerLike } from './geometry-pool.js';
+export { handleGeometryRequest } from './geometry-worker-core.js';
+export type { GeometryBuildRequest, GeometryBuildResponse } from './geometry-worker-core.js';
 export { classifyRenderer, detectRenderCapability, resolveCapability } from './capability.js';
 export type {
   RenderCapability,
