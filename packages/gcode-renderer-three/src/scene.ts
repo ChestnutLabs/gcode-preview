@@ -258,7 +258,9 @@ export function machineToVolume(m: MachineGeometry): BuildVolumeDef {
       y: bed.diameter,
       z: m.heightMm ?? 250,
       min: { x: bed.center.x - r, y: bed.center.y - r },
-      excludedRegions
+      excludedRegions,
+      // DD-030 D3: draw the true round outline instead of collapsing it to the bounding square.
+      shape: { kind: 'circular', center: { ...bed.center }, diameter: bed.diameter }
     };
   }
   let minX = Infinity;
@@ -271,7 +273,15 @@ export function machineToVolume(m: MachineGeometry): BuildVolumeDef {
     maxX = Math.max(maxX, p.x);
     maxY = Math.max(maxY, p.y);
   }
-  return { x: maxX - minX, y: maxY - minY, z: m.heightMm ?? 250, min: { x: minX, y: minY }, excludedRegions };
+  return {
+    x: maxX - minX,
+    y: maxY - minY,
+    z: m.heightMm ?? 250,
+    min: { x: minX, y: minY },
+    excludedRegions,
+    // DD-030 D3: draw the true (delta/irregular) outline instead of its bounding rectangle.
+    shape: { kind: 'polygon', points: bed.points.map((p) => ({ x: p.x, y: p.y })) }
+  };
 }
 
 /** §8-derived tick budget: half the 16 ms stall budget, leaving frame headroom. */
