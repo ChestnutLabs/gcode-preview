@@ -17,12 +17,15 @@ import { parseFilamentTotals, parseHmsToSeconds } from './prusaslicer.js';
 import { PrintingObjectTracker } from './object-markers.js';
 import {
   ThumbnailCollector,
+  applyFeatureBracketRanges,
   applyMarkerRanges,
   applyWipeRanges,
   bedFromPoints,
+  matchBracketComment,
   matchWipeComment,
   parseAreaPoints,
   parseKeyValue,
+  type BracketMark,
   type RangeMarker,
   type WipeMark
 } from './annotate.js';
@@ -53,6 +56,11 @@ const FEATURE_MAP: Record<string, number> = {
 interface OrcaState {
   features: RangeMarker[];
   wipes: WipeMark[];
+  // DD-026 D3 housekeeping brackets — Bambu emits bare `FLUSH_START/END` (multi-material purge) and
+  // `WIPE_TOWER_START/END`. Applied as FeatureRole.Purge / WipeTower AFTER the ;TYPE: markers so the
+  // explicit bracket wins over the surrounding role, and the classifier excludes them from modelBounds.
+  flushes: BracketMark[];
+  wipeTowers: BracketMark[];
   objectTracker: PrintingObjectTracker;
   bedPoints: string | null;
   bedSrcByte?: number;
@@ -71,6 +79,8 @@ function stateFor(sink: AnnotationSink): OrcaState {
     s = {
       features: [],
       wipes: [],
+      flushes: [],
+      wipeTowers: [],
       objectTracker: new PrintingObjectTracker(),
       bedPoints: null,
       thumbs: new ThumbnailCollector()
@@ -122,6 +132,17 @@ export function orcaBambu(): DialectAdapter {
         s.wipes.push({ srcByte, open: wipe === 'start' });
         return;
       }
+      // DD-026 D3 housekeeping brackets (checked after WIPE — WIPE_TOWER is a distinct token).
+      const flush = matchBracketComment(comment, 'FLUSH');
+      if (flush !== null) {
+        s.flushes.push({ srcByte, open: flush === 'start' });
+        return;
+      }
+      const wipeTower = matchBracketComment(comment, 'WIPE_TOWER');
+      if (wipeTower !== null) {
+        s.wipeTowers.push({ srcByte, open: wipeTower === 'start' });
+        return;
+      }
       if (s.thumbs.isActive || trimmed.toLowerCase().startsWith('thumbnail')) {
         s.thumbs.feed(comment, sink);
         return;
@@ -158,7 +179,11 @@ export function orcaBambu(): DialectAdapter {
     finalize(ir: ToolpathIR, sink) {
       const s = stateFor(sink);
       const features = applyMarkerRanges(ir, s.features, (a, b, v) => sink.setFeature(a, b, v));
-      if (features > 0) sink.upgradeCapability('featureRoles', 'known');
+      // Housekeeping brackets (DD-026 D3) override the surrounding ;TYPE: role — apply them AFTER the
+      // feature markers so the bracket range wins (setFeature fills, last write per segment holds).
+      const flush = applyFeatureBracketRanges(ir, s.flushes, FeatureRole.Purge, sink);
+      const wipeTower = applyFeatureBracketRanges(ir, s.wipeTowers, FeatureRole.WipeTower, sink);
+      if (features + flush + wipeTower > 0) sink.upgradeCapability('featureRoles', 'known');
       s.objectTracker.apply(ir, sink);
       if (applyWipeRanges(ir, s.wipes, sink) > 0) sink.upgradeCapability('wipeMoves', 'known');
       if (s.bedPoints !== null) {
