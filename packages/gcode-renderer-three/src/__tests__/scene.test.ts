@@ -20,6 +20,7 @@ import {
   buildTubeChunk,
   chooseQuality,
   createBuildVolume,
+  machineToVolume,
   ToolpathRenderer,
   type GLRendererLike,
   type QualityMode,
@@ -590,6 +591,73 @@ describe('ToolpathRenderer clipping/scrub/visibility/coloring (phase 3)', () => 
     expect(bb.min.x).toBeCloseTo(0);
     expect(bb.max.x).toBeCloseTo(200);
     expect(bb.min.z).toBeLessThan(0);
+  });
+
+  it('a rectangular bed (no shape) is byte-identical: no bedOutline, a full rectangular grid (DD-030)', () => {
+    const rect = createBuildVolume({ x: 200, y: 200, z: 250 });
+    expect(rect.children.find((c) => c.name === 'bedOutline')).toBeUndefined();
+    // The rectangular grid spans the full bounding box (a vertex reaches the corner).
+    const grid = rect.children.find((c) => c.type === 'LineSegments' && c.name !== 'volumeCage') as LineSegments;
+    grid.geometry.computeBoundingBox();
+    const bb = grid.geometry.boundingBox!;
+    expect(bb.max.x).toBeCloseTo(200);
+    expect(bb.max.y).toBeCloseTo(200);
+  });
+
+  it('a circular bed draws a round outline and clips the grid inside it (DD-030)', () => {
+    const vol = createBuildVolume({
+      x: 200,
+      y: 200,
+      z: 250,
+      min: { x: 0, y: 0 },
+      shape: { kind: 'circular', center: { x: 100, y: 100 }, diameter: 200 }
+    });
+    const outline = vol.children.find((c) => c.name === 'bedOutline') as LineLoop | undefined;
+    expect(outline).toBeDefined();
+    // Every grid vertex lies within the disc (radius 100 about the center) — the grid was clipped.
+    const grid = vol.children.find((c) => c.type === 'LineSegments' && c.name !== 'volumeCage') as LineSegments;
+    const pos = grid.geometry.getAttribute('position');
+    expect(pos.count).toBeGreaterThan(0);
+    for (let i = 0; i < pos.count; i++) {
+      const dx = pos.getX(i) - 100;
+      const dy = pos.getY(i) - 100;
+      expect(Math.hypot(dx, dy)).toBeLessThanOrEqual(100 + 1e-6);
+    }
+  });
+
+  it('a solid surface on a non-rect bed fills the outline (a ShapeGeometry, not a full plane) (DD-030)', () => {
+    const vol = createBuildVolume(
+      { x: 200, y: 200, z: 250, shape: { kind: 'circular', center: { x: 100, y: 100 }, diameter: 200 } },
+      { bedSurface: { mode: 'solid' } }
+    );
+    const plate = vol.children.find((c) => c.name === 'bedSurface') as Mesh | undefined;
+    expect(plate).toBeDefined();
+    // A round fill's area is ~π·r² (≈31416), well under the 200×200 bounding square (40000).
+    (plate as Mesh).geometry.computeBoundingBox();
+    const bb = (plate as Mesh).geometry.boundingBox!;
+    expect(bb.min.x).toBeCloseTo(0);
+    expect(bb.max.x).toBeCloseTo(200);
+    expect((plate as Mesh).renderOrder).toBe(-1);
+  });
+
+  it('machineToVolume maps bed kind to a shape: rect→none, circular/polygon→outline (DD-030)', () => {
+    const base = { origin: { x: 0, y: 0 }, confidence: 'known' as const, source: { adapterId: 't', evidence: 'e' } };
+    const rect = machineToVolume({ ...base, bed: { kind: 'rect', min: { x: 0, y: 0 }, max: { x: 200, y: 200 } } });
+    expect(rect.shape).toBeUndefined(); // rectangular stays shapeless → byte-identical
+    const circ = machineToVolume({ ...base, bed: { kind: 'circular', center: { x: 90, y: 90 }, diameter: 180 } });
+    expect(circ.shape).toEqual({ kind: 'circular', center: { x: 90, y: 90 }, diameter: 180 });
+    const poly = machineToVolume({
+      ...base,
+      bed: {
+        kind: 'polygon',
+        points: [
+          { x: 0, y: 0 },
+          { x: 100, y: 0 },
+          { x: 50, y: 100 }
+        ]
+      }
+    });
+    expect(poly.shape?.kind).toBe('polygon');
   });
 
   it('excludedRegions render keep-out outlines above the plate (#185)', () => {
