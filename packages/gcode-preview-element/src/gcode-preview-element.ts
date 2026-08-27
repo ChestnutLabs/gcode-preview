@@ -446,6 +446,9 @@ export class GcodePreviewElement extends HTMLElement {
       case 'parse-progress':
         emit('parse-progress', { bytesProcessed: e.progress.bytesProcessed, totalBytes: e.progress.totalBytes });
         break;
+      case 'stage':
+        emit('stage', { stage: e.stage, progress: e.progress, detail: e.detail });
+        break;
       case 'buildComplete':
         emit('build-complete', { segments: e.segments, quality: e.quality });
         emit('disclosure', { text: this.controller?.getState().disclosure ?? '' });
