@@ -36,6 +36,8 @@ export type {
 } from './scene.js';
 export { createBuildVolume } from './build-volume.js';
 export type { BuildVolumeDef, BuildVolumeStyle, BedShape } from './build-volume.js';
+export { CaptureUnsupportedError } from './capture.js';
+export type { CaptureOptions } from './capture.js';
 export { framingFromCenterRadius, createDefaultGLRenderer } from './stage.js';
 export type { Framing, DefaultGLOptions } from './stage.js';
 export { InteractionQualityController } from './interaction-quality.js';

@@ -63,6 +63,7 @@ import type { GeometryBuildRequest, GeometryBuildResponse } from './geometry-wor
 import { estimateTubeBuildMs, POOL_ENGAGE_MS, SINGLE_REVEAL_MS } from './render-cost.js';
 import { resolveTheme, type Theme, type ResolvedTheme } from './theme.js';
 import { InteractiveStage, type CameraMode, type CameraView, type CameraState } from './interactive-stage.js';
+import type { CaptureOptions } from './capture.js';
 
 /** §4.3 quality tiers. `auto` picks by segment count (chooseQuality). */
 export type QualityMode = 'lines' | 'tubes';
@@ -1440,6 +1441,11 @@ export class ToolpathRenderer {
   /** Restore a {@link CameraState} verbatim (#268) — no re-fit to the current model's bounds. */
   setCameraState(state: CameraState): void {
     this.stage.setCameraState(state);
+  }
+
+  /** Capture the current view as an image `Blob` (DD-030 D1) — delegates to the shared stage. */
+  capture(opts?: CaptureOptions): Promise<Blob> {
+    return this.stage.capture(opts);
   }
 
   /**

@@ -13,3 +13,6 @@ export { renderStill, type RenderStillOptions, type RenderStillResult, type Stil
 export type { Theme, MaterialPreset, ThemeColor } from '@chestnutlabs/gcode-renderer-three';
 // Camera contracts (three-free type re-exports): projection + preset views + serializable state (#268).
 export type { CameraMode, CameraView, CameraState } from '@chestnutlabs/gcode-renderer-three';
+// Interactive view capture (DD-030 D1): the options type + the typed unsupported error for consumers.
+export type { CaptureOptions } from '@chestnutlabs/gcode-renderer-three';
+export { CaptureUnsupportedError } from '@chestnutlabs/gcode-renderer-three';

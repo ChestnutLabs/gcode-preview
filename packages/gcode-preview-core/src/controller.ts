@@ -23,6 +23,7 @@ import type {
   CameraMode,
   CameraState,
   CameraView,
+  CaptureOptions,
   ColorMode,
   GLRendererLike,
   ProgressPresentationMode,
@@ -33,6 +34,7 @@ import type {
   Theme,
   TubeOptions
 } from '@chestnutlabs/gcode-renderer-three';
+import { CaptureUnsupportedError } from '@chestnutlabs/gcode-renderer-three';
 import { LayerView2DRenderer } from './renderer-2d-adapter.js';
 import type { MoveKindToggle, PreviewRenderer, PreviewRendererEvent, RendererMode } from './renderer-interface.js';
 import {
@@ -208,6 +210,12 @@ export interface GcodePreviewControls {
   /** Interaction-aware quality: 'auto' reduces detail while the camera moves (#306/2, DD-020). */
   setInteractionQuality(mode: 'off' | 'auto'): void;
   frame(): void;
+  /**
+   * Capture the currently displayed view as an image `Blob` (DD-030 D1) — for a user-selected thumbnail,
+   * a large-file fallback, or a screenshot. Rejects with `E_CAPTURE_UNSUPPORTED` before the 3D renderer
+   * is ready or on the 2D renderer (which cannot render-to-target). The caller owns the `Blob`.
+   */
+  capture(opts?: CaptureOptions): Promise<Blob>;
 }
 
 export interface PreviewController {
@@ -556,6 +564,10 @@ export function createPreviewController(options: PreviewControllerOptions = {}):
     setView: (v) => withRenderer((r) => r.setView(v)),
     // Returns a value, so it can't queue: before the renderer is ready (or on 2D) there is no pose → null.
     getCameraState: () => (renderer !== null ? renderer.getCameraState() : null),
+    capture: (opts) =>
+      renderer !== null && typeof renderer.capture === 'function'
+        ? renderer.capture(opts)
+        : Promise.reject(new CaptureUnsupportedError('capture unavailable: renderer not ready or unsupported')),
     setCameraState: (s) => withRenderer((r) => r.setCameraState(s)),
     setTheme: (t) => withRenderer((r) => r.setTheme(t)),
     setBuildVolume: (def) => {
