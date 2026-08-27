@@ -1394,14 +1394,20 @@ export class ToolpathRenderer {
   }
 
   /**
-   * Choose the bounds to frame to (#306/#6): `frameContent: 'object'` frames the printed object,
-   * excluding skirt/prime/purge, when the file has object labels; otherwise (or `'all'`) the full
-   * extrude bounds. Returns null when neither is finite (empty IR).
+   * Choose the bounds to frame to (#306/#6, DD-026 D5). `frameContent: 'object'` frames the printed
+   * **model**, excluding skirt/prime/purge/tower, using the classifier's `modelBounds` when available,
+   * then the object-channel `objectBounds`, then (or for `'all'`) the full extrude bounds. The
+   * `modelBounds → objectBounds → bounds` precedence means a label-less file that still marks its
+   * housekeeping frames the model, and a Bambu tower inside an object bracket no longer inflates the
+   * frame. Returns null when nothing is finite (empty IR).
    */
   private frameBounds(): { min: { x: number; y: number; z: number }; max: { x: number; y: number; z: number } } | null {
     const ir = this.ir;
     if (ir === null) return null;
-    if (this.frameContentMode === 'object' && Number.isFinite(ir.objectBounds.min.x)) return ir.objectBounds;
+    if (this.frameContentMode === 'object') {
+      if (Number.isFinite(ir.modelBounds.min.x)) return ir.modelBounds;
+      if (Number.isFinite(ir.objectBounds.min.x)) return ir.objectBounds;
+    }
     return Number.isFinite(ir.bounds.min.x) ? ir.bounds : null;
   }
 
@@ -1491,18 +1497,26 @@ export class ToolpathRenderer {
   }
 
   /**
-   * Frame the printed **object** vs. **all** extrusion (#306/#6). `'object'` excludes skirt/prime/purge
-   * so a prime line at the bed edge doesn't shrink the object in view — but only when the file carries
-   * object labels; otherwise it discloses (an honest `error` event) and frames all extrusion. Re-frames.
+   * Frame the printed **model** vs. **all** extrusion (#306/#6, DD-026 D5/D6). `'object'` excludes
+   * skirt/prime/purge/tower via the `modelBounds → objectBounds` precedence so housekeeping doesn't
+   * shrink the model in view — but only when the file is classifiable; when neither is available (a
+   * genuinely unclassifiable file, e.g. an unmarked prime with no object channel) it discloses an
+   * honest `error` and frames all extrusion. Re-frames.
    */
   setFrameContent(mode: 'object' | 'all'): void {
     if (this.disposed) return;
     this.frameContentMode = mode;
-    if (mode === 'object' && this.ir !== null && !Number.isFinite(this.ir.objectBounds.min.x)) {
+    if (
+      mode === 'object' &&
+      this.ir !== null &&
+      !Number.isFinite(this.ir.modelBounds.min.x) &&
+      !Number.isFinite(this.ir.objectBounds.min.x)
+    ) {
+      const confidence = this.ir.header.capabilities.nonModelClassification ?? 'unavailable';
       this.emit({
         type: 'error',
         code: 'E_FRAME_CONTENT_UNAVAILABLE',
-        message: "frameContent 'object' has no object-labeled geometry; framing all extrusion"
+        message: `frameContent 'object' cannot isolate the model (nonModelClassification: ${confidence}); framing all extrusion`
       });
     }
     this.frame();
