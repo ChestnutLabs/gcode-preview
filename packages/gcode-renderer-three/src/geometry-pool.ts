@@ -21,16 +21,32 @@ export interface GeometryWorkerLike {
  * `os.cpus().length` (see DD-028 §7 — a quota-limited container over-reports host cores). An
  * unknown/invalid core count falls back conservatively.
  */
+/**
+ * The batteries-included browser Web Worker factory (DD-028). A bundler resolves `./geometry-worker.js`
+ * relative to this module (the same pattern the parser worker uses). Pass it as `createGeometryWorker`
+ * (core wires it by default in a browser); a consumer with an exotic host can inject their own.
+ */
+export function createBrowserGeometryWorker(): GeometryWorkerLike {
+  return new Worker(new URL('./geometry-worker.js', import.meta.url), {
+    type: 'module'
+  }) as unknown as GeometryWorkerLike;
+}
+
 export function resolvePoolSize(coreBudget: number | undefined, max = 8): number {
   const cores =
     typeof coreBudget === 'number' && Number.isFinite(coreBudget) && coreBudget > 0 ? Math.floor(coreBudget) : 2;
   return Math.max(1, Math.min(max, cores - 1));
 }
 
+interface Pending {
+  resolve: (r: GeometryBuildResponse) => void;
+  reject: (err: unknown) => void;
+}
+
 export class GeometryWorkerPool {
   private readonly workers: GeometryWorkerLike[] = [];
-  /** Per-worker resolver for its single in-flight request (a worker builds one chunk at a time). */
-  private readonly current = new Map<GeometryWorkerLike, (r: GeometryBuildResponse) => void>();
+  /** Per-worker settler for its single in-flight request (a worker builds one chunk at a time). */
+  private readonly current = new Map<GeometryWorkerLike, Pending>();
   private disposed = false;
 
   constructor(
@@ -40,38 +56,61 @@ export class GeometryWorkerPool {
     for (let i = 0; i < Math.max(1, size); i++) {
       const w = createWorker();
       w.onmessage = (ev) => {
-        const resolve = this.current.get(w);
+        const p = this.current.get(w);
         this.current.delete(w);
-        resolve?.(ev.data);
+        p?.resolve(ev.data);
+      };
+      w.onerror = (err) => {
+        const p = this.current.get(w);
+        this.current.delete(w);
+        p?.reject(err instanceof Error ? err : new Error(String(err)));
       };
       this.workers.push(w);
     }
   }
 
-  /** Dispatch one request to one worker; resolves when that worker replies. */
+  /** Dispatch one request to one worker; settles when that worker replies or errors. */
   private dispatch(worker: GeometryWorkerLike, req: GeometryBuildRequest): Promise<GeometryBuildResponse> {
-    return new Promise((resolve) => {
-      this.current.set(worker, resolve);
+    return new Promise((resolve, reject) => {
+      this.current.set(worker, { resolve, reject });
       worker.postMessage(req, [req.positions]);
     });
   }
 
   /**
-   * Build every request across the pool with backpressure (at most `size` in flight — each worker pulls
-   * the next index only when its previous chunk returns), and return responses in the **input order**.
-   * A `null` slot means the build was skipped (disposed mid-run).
+   * Stream builds across the pool with backpressure (at most `size` in flight — each worker pulls the
+   * next index only when its previous chunk returns), invoking `onResult(index, response)` as each
+   * completes. Memory-friendly: the caller uploads + drops each response immediately, so peak transient
+   * geometry is bounded by `size` (not the whole batch). Rejects on the first worker error; resolves
+   * when every request has been delivered (or the pool was disposed mid-run).
    */
-  async buildAll(requests: GeometryBuildRequest[]): Promise<(GeometryBuildResponse | null)[]> {
-    const results: (GeometryBuildResponse | null)[] = new Array(requests.length).fill(null);
+  async buildStreaming(
+    requests: GeometryBuildRequest[],
+    onResult: (index: number, response: GeometryBuildResponse) => void
+  ): Promise<void> {
     let next = 0;
     const pump = async (worker: GeometryWorkerLike): Promise<void> => {
       while (!this.disposed) {
         const i = next++;
         if (i >= requests.length) return;
-        results[i] = await this.dispatch(worker, requests[i]);
+        const response = await this.dispatch(worker, requests[i]);
+        if (this.disposed) return;
+        onResult(i, response);
       }
     };
     await Promise.all(this.workers.map((w) => pump(w)));
+  }
+
+  /**
+   * Build every request and return responses in **input order**. Convenience over {@link buildStreaming}
+   * for callers that want the whole batch (holds all responses — not memory-bounded; the renderer uses
+   * the streaming form). A `null` slot means the build was skipped (disposed mid-run).
+   */
+  async buildAll(requests: GeometryBuildRequest[]): Promise<(GeometryBuildResponse | null)[]> {
+    const results: (GeometryBuildResponse | null)[] = new Array(requests.length).fill(null);
+    await this.buildStreaming(requests, (i, r) => {
+      results[i] = r;
+    });
     return results;
   }
 
