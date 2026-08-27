@@ -43,8 +43,33 @@ ring vertices, each requiring corner-averaged tangent + smallest-axis normal + `
 normalize (`writeRing`, `tubes.ts:138`). For the opossum that is ≈2.67M segments × (8+1) ring vertices
 × several transcendental ops — tens of millions of trig evaluations on one thread. `buildChunks` for
 lines (`chunks.ts:127`) is only SoA→interleaved **copies** (cheap). So tubes are the target; lines are
-already near-free. (Exact split to be confirmed by DD-027 `geometryBuildMs` and the AnyBridge manual
-capture — §7 unknown.)
+already near-free.
+
+**Measured (Phase 0, 2026-08-26 — see `tools/benchmark/results/rr-008-pipeline-split-2026-08-26.md`).**
+Tube-build is 37–60× the lines-build; at 2.67M segments the bare kernel is ~10.7 s and its geometry is
+1,858 MB (≈ the 2 GiB sidecar cap → the observed `OOMKilled`). On a real 50 MB / 1.73 M-segment file:
+parse 6.5 s (57%, in the worker), classify 1.4 s, bare tube-kernel 3.5 s.
+
+**Correction — the kernel number is a FLOOR, not the on-screen wall-clock.** A follow-up measurement of
+the *full* renderer build path on that same file (color expansion + three.js `BufferGeometry`
+construction + build ticks, still headless so **no** real GPU work) was **5.1 s vs 3.7 s** for the bare
+kernel — ~35% more. And even that excludes three browser-only main-thread costs the Node bench
+structurally cannot see:
+
+1. **GPU upload** of the tube geometry (hundreds of MB) — main-thread, on first draw of each chunk.
+2. **`renderDuringBuild` re-renders the *growing* scene every tick** — 187 real GPU renders on that
+   1.73M file (more at opossum-scale), each of an increasingly-large tube scene. The interactive
+   default renders during the build; the headless stub `render()` is a no-op, so this is invisible in
+   every Node number here.
+3. **rAF frame gaps** — the build yields to a ~16 ms browser frame each tick (185 ticks ≈ ≥3 s of
+   frame-boundary latency, more when a frame's render exceeds the budget).
+
+So the on-screen ~1 minute for the opossum = parse (worker, ~17 s at 136 MB) + full main-thread build +
+GPU upload + ~hundreds of intermediate scene renders + rAF gaps. **The authoritative end-to-end split
+must come from DD-027 RenderStats in a real browser** (with `uploadMs`, `firstRenderMs`, and an
+intermediate-render count) — the Node kernel numbers are the inner floor that motivated the threading
+direction, not the wall-clock. Finding (2) is independently actionable and cheaper than threading: see
+§8.1.
 
 ## 4. Parallelization analysis, stage by stage
 
@@ -147,6 +172,27 @@ whole IR. This:
     timings applied to the headless path.)
 
 ## 8. Later multipliers (independent of the pool)
+
+### 8.1 Render-during-build — a cheaper, independent win (feeds DD-029)
+
+Phase 0 surfaced a cost that is **not** threading and is cheaper to fix: with `renderDuringBuild=true`
+(the interactive default), `buildTick` re-renders the **growing** scene every tick — ~187 real GPU
+renders for a 1.73M file, more at opossum-scale — each of an increasingly-large tube scene. The user
+cannot meaningfully inspect a half-built toolpath, and repeatedly rendering it is expensive, worst on
+weaker machines. Two levers, both independent of the worker pool:
+
+1. **Make prepare → single clean reveal a first-class path** (not just the existing `progressivePreview:
+   'hold'`, which suppresses the *line preview* but still renders the growing *tube* scene each tick).
+   The interactive build should be able to render **once**, at completion, with honest staged progress
+   in the meantime — the `renderDuringBuild:false` path (#375, today headless-only) generalized to
+   interactive. **This is the subject of DD-029 (preparation & reveal).**
+2. **When progressive preview *is* used** (cheap/small workloads), throttle **screen redraws** by a
+   time / render-cost budget rather than blindly every tick — never by dropping geometry work. Every
+   extrusion segment is still built; only the number of intermediate *draws* is bounded.
+
+Neither drops segments. Both reduce on-screen time before (and on top of) the worker pool.
+
+### 8.2 WASM/SIMD and OffscreenCanvas
 
 - **WASM + SIMD kernel.** `writeRing`'s trig/normalize is a natural `f32x4` SIMD target; a WASM kernel
   processing ring vertices in lanes would speed each worker further. Sequence it **after** the JS worker
