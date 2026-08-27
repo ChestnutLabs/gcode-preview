@@ -48,6 +48,10 @@ export interface RenderStats {
   /** The tube byte budget that actually constrained the build (coarsened the cross-section or forced
    *  the tubes→lines fallback); `null` when the budget did not bind. */
   tubeByteBudget: number | null;
+  /** How the geometry was built (DD-028): `'main'` = synchronous main thread; `'pool'` = worker pool. */
+  buildParallelism: 'main' | 'pool';
+  /** Worker count when `buildParallelism === 'pool'`, else 0. */
+  workerCount: number;
   /** The fidelity policy in force (DD-023). */
   qualityMode: 'full' | 'adaptive' | 'fast';
   /** Honest degradation reasons already emitted for this build (decimation, tubes→lines fallback); may
