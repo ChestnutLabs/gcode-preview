@@ -88,6 +88,16 @@ else a spinner; `classifying` a spinner (fast); `ready` is terminal. The event i
 not replace `parse-progress`/`buildComplete`; a consumer can adopt the unified vocabulary or keep the
 existing events.
 
+**Reveal-authoritative signal + terminal ordering (seam precision).** `buildComplete` remains **the
+reveal-authoritative signal** — a consumer should gate its overlay-clear / colour-picker / placeholder
+swap on it, unchanged. `stage:'ready'` is emitted **together with `buildComplete`** at the single reveal
+(the same synchronous step: geometry complete → the one reveal render is issued → both fire), so the two
+coincide and a consumer may gate on either; `buildComplete` stays the recommended one. `stage:'ready'`
+is never emitted *before* `buildComplete`. There is **no `stage` failure state** — the terminal is
+**exactly one of**: (success) `stage:'ready'` + `buildComplete`, or (failure) the existing structured
+`error` / `parse-error` events (§6). A consumer clears its preparation overlay on **either** terminal,
+so it never hangs waiting for a `buildComplete` that a failure will not send.
+
 ### D3 — Progressive redraw throttle (when `'lines'`)
 
 Intermediate redraws are bounded by a **time/render-cost budget** — e.g. render at most once per
@@ -127,9 +137,14 @@ budget-throttled in `'lines'`) → `preparing-gpu` (first geometry upload) → *
 
 ## 6. Errors & failure behavior
 
-A stage failure emits the existing structured error (e.g. `E_GEOMETRY_BUILD`) and **does not reveal** —
-the consumer keeps its placeholder + shows the error. No partial/incorrect toolpath is ever presented as
-final. The tubes→lines degradation ladder still applies to *how* the complete geometry is built.
+A stage failure emits the existing structured error (`error` / `parse-error`, e.g. `E_GEOMETRY_BUILD`)
+as the **terminal**, and **does not reveal** — neither `stage:'ready'` nor `buildComplete` fires. The
+consumer keeps its placeholder (thumbnail/model/canvas) + shows the error. The `stage` event carries no
+failure variant (D2): success and failure are distinguished by *which* terminal fires — `ready` +
+`buildComplete` vs `error` / `parse-error` — so a consumer's overlay state machine keys off both and
+never hangs on a `buildComplete` that a failed preparation will not send. No partial/incorrect toolpath
+is ever presented as final. The tubes→lines degradation ladder still applies to *how* the complete
+geometry is built.
 
 ## 7. Security & resource limits
 
@@ -148,6 +163,9 @@ intermediate draws by the budget. Neither changes the final build cost (DD-028 a
   progressive path's final geometry.
 - **Staged progress:** `stage` events fire in order `parsing→classifying→building-geometry→preparing-gpu→
   ready`; `building-geometry` carries a monotonic `progress` + `{built,total}` reaching `total`.
+- **Terminal ordering:** `stage:'ready'` coincides with `buildComplete` (never before it) on success;
+  a forced stage failure emits `error`/`parse-error` and **neither** `ready` **nor** `buildComplete`
+  fires — so both terminals are observable and mutually exclusive.
 - **Backward-compat:** `parse-progress` and `buildComplete` still fire in every mode.
 - **Redraw throttle:** in `'lines'`, intermediate render count is bounded by the budget (≪ tick count)
   while **every** extrude chunk is still built.
