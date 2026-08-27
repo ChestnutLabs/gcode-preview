@@ -12,6 +12,7 @@
  */
 import {
   createPreviewController,
+  type CaptureOptions,
   type GcodePreviewControls,
   type GcodePreviewState,
   type ParseOutcome,
@@ -268,6 +269,10 @@ export class GcodePreviewElement extends HTMLElement {
   }
   parse(input: Uint8Array | ArrayBuffer | File, opts?: WireParseOptions): Promise<ParseOutcome> {
     return this.requireController().parse(input, opts);
+  }
+  /** Capture the current view as an image `Blob` (DD-030 D1). Delegates to `controls.capture`. */
+  capture(opts?: CaptureOptions): Promise<Blob> {
+    return this.requireController().controls.capture(opts);
   }
   observeProgress(obs: ProgressObservation): MappedProgress | null {
     return this.controller?.observeProgress(obs) ?? null;

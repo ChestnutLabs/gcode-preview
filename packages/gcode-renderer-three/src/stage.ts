@@ -9,7 +9,7 @@
  * It is grown incrementally and each move is gated by the toolpath renderer's existing golden/visual
  * parity (the extraction must be behavior-preserving for the toolpath side).
  */
-import { Camera, Scene, Vector3, WebGLRenderer } from 'three';
+import { Camera, Scene, Vector3, WebGLRenderer, type WebGLRenderTarget } from 'three';
 
 /**
  * Render target: a DOM canvas (interactive hosts) or an OffscreenCanvas (workers / headless
@@ -26,6 +26,24 @@ export interface GLRendererLike {
   setPixelRatio?(ratio: number): void;
   dispose(): void;
   domElement: RenderTargetCanvas;
+  // Render-target readback for interactive `capture()` (DD-030 D1). Optional: a real `WebGLRenderer`
+  // provides both; a stub GL (tests / no WebGL) provides neither, so `capture()` reports unsupported.
+  setRenderTarget?(target: WebGLRenderTarget | null): void;
+  readRenderTargetPixels?(
+    target: WebGLRenderTarget,
+    x: number,
+    y: number,
+    width: number,
+    height: number,
+    buffer: Uint8Array
+  ): void;
+}
+
+/** True when the renderer can render-to-target + read back — the requirement for `capture()`. */
+export function supportsCapture(
+  gl: GLRendererLike
+): gl is GLRendererLike & Required<Pick<GLRendererLike, 'setRenderTarget' | 'readRenderTargetPixels'>> {
+  return typeof gl.setRenderTarget === 'function' && typeof gl.readRenderTargetPixels === 'function';
 }
 
 /** Options for {@link createDefaultGLRenderer}. */

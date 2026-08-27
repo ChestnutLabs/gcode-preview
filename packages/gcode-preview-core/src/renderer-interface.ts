@@ -13,6 +13,7 @@ import type {
   CameraMode,
   CameraState,
   CameraView,
+  CaptureOptions,
   ColorMode,
   ProgressivePreview,
   QualityMode,
@@ -21,7 +22,7 @@ import type {
   Theme
 } from '@chestnutlabs/gcode-renderer-three';
 
-export type { CameraState, CameraView } from '@chestnutlabs/gcode-renderer-three';
+export type { CameraState, CameraView, CaptureOptions } from '@chestnutlabs/gcode-renderer-three';
 import type { MachineGeometry, MappedProgress, ToolpathIR } from '@chestnutlabs/toolpath-core';
 
 /** Which renderer implementation backs the preview. `'3d'` is the default (Three.js). */
@@ -87,5 +88,11 @@ export interface PreviewRenderer {
    */
   pickSegment(ndcX: number, ndcY: number, threshold?: number): number | null;
   frame(): void;
+  /**
+   * Capture the current view as an image `Blob` (DD-030 D1). Optional: the 3D renderer implements it via
+   * render-to-target; a renderer that cannot (the 2D renderer) omits it, and the controller reports
+   * `renderer-unsupported` / rejects. Never fabricated output.
+   */
+  capture?(opts?: CaptureOptions): Promise<Blob>;
   dispose(): void;
 }

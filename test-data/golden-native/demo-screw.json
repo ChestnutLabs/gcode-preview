@@ -21,6 +21,7 @@
     "seamMoves": "unavailable",
     "cutMoves": "unavailable",
     "cannedCycles": "unavailable",
+    "parametricProgram": "unavailable",
     "extrusionMode": "known",
     "positioningMode": "known",
     "arcPlanes": "inferred",
