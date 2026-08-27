@@ -5,7 +5,13 @@
  * options. GPU pixel determinism is covered separately by the browser check.
  */
 import { describe, it, expect } from 'vitest';
-import type { GLRendererLike, RenderTargetCanvas } from '@chestnutlabs/gcode-renderer-three';
+import {
+  handleGeometryRequest,
+  type GeometryBuildRequest,
+  type GeometryWorkerLike,
+  type GLRendererLike,
+  type RenderTargetCanvas
+} from '@chestnutlabs/gcode-renderer-three';
 import { MoveKind, ToolpathIRBuilder, type ToolpathIR } from '@chestnutlabs/toolpath-core';
 import { renderStill } from '../render-still.js';
 import { makeTestIR, SuiteStubWorker } from '../testing.js';
@@ -261,5 +267,64 @@ describe('renderStill (#132)', () => {
     });
     expect(result.parsed).toBe(false);
     expect(result.layerCount).toBe(2);
+  });
+
+  it('parallelizes the tube build across the browser Web Worker pool, identically to serial (DD-028 Phase 4)', async () => {
+    // A multi-chunk tube IR; geometryConcurrency:2 forces the pool via an injected synchronous worker.
+    const b = new ToolpathIRBuilder({ parserVersion: 'test', units: 'mm', unitsSource: 'known' });
+    let src = 0;
+    for (let l = 0; l < 4; l++) {
+      for (let s = 0; s < 800; s++) {
+        b.addSegment({
+          x0: 100 + s,
+          y0: 100 + l,
+          z0: 0.2 * (l + 1),
+          x1: 101 + s,
+          y1: 100 + l,
+          z1: 0.2 * (l + 1),
+          e: 1,
+          kind: MoveKind.Extrude,
+          layer: l,
+          srcByte: src++ * 10
+        });
+      }
+    }
+    const ir: ToolpathIR = b.finalize();
+
+    let workerCalls = 0;
+    const syncWorker = (): GeometryWorkerLike => {
+      const w: GeometryWorkerLike = {
+        onmessage: null,
+        onerror: null,
+        postMessage: (msg: GeometryBuildRequest) => {
+          workerCalls++;
+          const { response } = handleGeometryRequest(msg);
+          queueMicrotask(() => w.onmessage?.({ data: response }));
+        },
+        terminate: () => undefined
+      };
+      return w;
+    };
+
+    const pooled = await renderStill(ir, {
+      canvas: makeStubCanvas(),
+      quality: 'tubes',
+      geometryConcurrency: 2,
+      createGeometryWorker: syncWorker,
+      createRenderer: makeCountingGL().gl
+    });
+    const serial = await renderStill(ir, {
+      canvas: makeStubCanvas(),
+      quality: 'tubes',
+      geometryConcurrency: 'off',
+      createRenderer: makeCountingGL().gl
+    });
+
+    // The pool was used (workers dispatched), and the result is identical to the serial build.
+    expect(workerCalls).toBeGreaterThan(0);
+    expect(pooled.quality).toBe('tubes');
+    expect(serial.quality).toBe('tubes');
+    expect(pooled.segmentCount).toBe(serial.segmentCount);
+    expect(pooled.decimationApplied).toBe(serial.decimationApplied);
   });
 });

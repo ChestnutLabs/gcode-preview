@@ -22,10 +22,12 @@ import { GcodeParseSession, type SessionOptions, type WireParseOptions } from '@
 import {
   ToolpathRenderer,
   createDefaultGLRenderer,
+  createBrowserGeometryWorker,
   machineToVolume,
   type BuildVolumeDef,
   type CameraMode,
   type ColorMode,
+  type GeometryWorkerLike,
   type GLRendererLike,
   type QualityMode,
   type RenderTargetCanvas,
@@ -84,6 +86,26 @@ export interface RenderStillOptions {
   parseOptions?: WireParseOptions;
   /** GL backend injection (tests / exotic hosts). Default: WebGLRenderer. */
   createRenderer?: (canvas: RenderTargetCanvas) => GLRendererLike;
+  /**
+   * Parallel tube-geometry build for a big-plate still (DD-028 Phase 4). Default `'auto'` — in a
+   * browser-class context with `Worker` (the headless-Chromium sidecar, an Electron window) the batteries
+   * -included browser Web Worker pool builds tube chunks in parallel, byte-identical to serial. `'off'`
+   * forces the synchronous path. No effect where `Worker` is absent.
+   */
+  geometryConcurrency?: 'auto' | 'off' | number;
+  /**
+   * Concurrency cap from the deployment's ACTUAL CPU grant (DD-028). `navigator.hardwareConcurrency`
+   * reports the visible cores, which over-reports a CFS-throttled container (e.g. 4 visible / 2.0-CPU
+   * quota → 2× oversubscription). A containerized caller (the sidecar) reads its cgroup `cpu.max` and
+   * passes the quota here; the pool sizes to `min(hardwareConcurrency, this) − 1`. Omit off-container.
+   */
+  coreBudget?: number;
+  /** Max in-flight tube-geometry bytes for the parallel build (DD-028 memory backpressure). A memory-
+   *  limited container (e.g. 2 GiB) passes a fraction of its limit; the pool never exceeds it. */
+  geometryMemoryBudgetBytes?: number;
+  /** Geometry-worker factory override (tests / exotic hosts). Defaults to the browser Web Worker when
+   *  `Worker` is available and `geometryConcurrency !== 'off'`. */
+  createGeometryWorker?: () => GeometryWorkerLike;
 }
 
 export interface RenderStillResult {
@@ -168,10 +190,35 @@ export async function renderStill(
   // false` suppresses the per-tick render — a still captures only the final frame, so rendering the
   // partial scene on every one of the (potentially hundreds of) build ticks is pure waste and, in
   // software WebGL, the dominant cost of a large still. The single frame()/render() below draws once.
+  // DD-028 Phase 4: parallelize the tube build for a big-plate still. renderStill runs in a browser-class
+  // WebGL2 context (headless Chromium / Electron / OffscreenCanvas worker — never raw Node), so the pool
+  // uses browser Web Workers. Default the batteries-included factory when `Worker` exists; a containerized
+  // caller passes `coreBudget` (its cgroup CPU quota) so the pool sizes to the throttle, not the visible
+  // core count — `navigator.hardwareConcurrency` over-reports a CFS-limited container.
+  const geometryPoolOpts: {
+    geometryConcurrency?: 'auto' | 'off' | number;
+    coreBudget?: number;
+    geometryMemoryBudgetBytes?: number;
+    createGeometryWorker?: () => GeometryWorkerLike;
+  } = {};
+  if (options.geometryConcurrency !== 'off') {
+    const factory =
+      options.createGeometryWorker ?? (typeof Worker !== 'undefined' ? createBrowserGeometryWorker : undefined);
+    if (factory !== undefined) {
+      geometryPoolOpts.geometryConcurrency = options.geometryConcurrency ?? 'auto';
+      geometryPoolOpts.createGeometryWorker = factory;
+      if (options.coreBudget !== undefined) geometryPoolOpts.coreBudget = options.coreBudget;
+      if (options.geometryMemoryBudgetBytes !== undefined) {
+        geometryPoolOpts.geometryMemoryBudgetBytes = options.geometryMemoryBudgetBytes;
+      }
+    }
+  }
+
   const renderer = new ToolpathRenderer({
     canvas,
     quality: options.quality ?? 'auto',
     renderDuringBuild: false,
+    ...geometryPoolOpts,
     ...(options.cameraMode ? { cameraMode: options.cameraMode } : {}),
     ...(options.frameContent ? { frameContent: options.frameContent } : {}),
     ...(resolvedTheme ? { theme: resolvedTheme } : {}),
