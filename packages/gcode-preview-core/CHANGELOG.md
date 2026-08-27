@@ -1,5 +1,83 @@
 # @chestnutlabs/gcode-preview-core
 
+## 0.16.0
+
+### Minor Changes
+
+- [#398](https://github.com/ChestnutLabs/gcode-preview/pull/398) [`fdc9111`](https://github.com/ChestnutLabs/gcode-preview/commit/fdc9111c0917af55e41fff9d20464ebbc3444589) Thanks [@sobechestnut-dev](https://github.com/sobechestnut-dev)! - feat(renderer): wire the geometry worker pool into the build path (DD-028 [#1](https://github.com/ChestnutLabs/gcode-preview/issues/1)+[#2](https://github.com/ChestnutLabs/gcode-preview/issues/2))
+
+  The renderer now builds tube geometry across the worker pool when engaged: `geometryConcurrency:
+'auto'` (default) sizes a **capability- and memory-aware** pool and uses it for tube builds above a
+  cost threshold; `'off'` forces the synchronous path; a number pins the worker count. Extrude chunks
+  build on workers and stream back to the main thread (each wrapped + uploaded as it arrives, so peak
+  transient geometry is memory-bounded); travel/wipe/lines stay inline. Output is **byte-identical** to
+  the serial build — same kernel, same `positions` — with deterministic assembly.
+  - **Capability sizing:** `clamp(coreBudget − 1, 1, MAX)` (browser `hardwareConcurrency`; Node/sidecar
+    the cgroup quota), further capped by memory so `workers × maxChunkBytes ≤ geometryMemoryBudgetBytes`
+    (proactive — a cgroup OOM is uncatchable). Never oversubscribes cores or memory.
+  - **Safe fallbacks:** a worker failure degrades to continuous lines (never chopped); a newer `setIR`
+    or dispose invalidates a stale in-flight build via a generation guard.
+  - **Wiring:** `gcode-preview-core` defaults `createGeometryWorker` to the batteries-included browser
+    Web Worker (`createBrowserGeometryWorker`) in a browser; Node/headless stays synchronous. New
+    `geometryConcurrency` / `geometryMemoryBudgetBytes` options on both the renderer and the controller.
+  - **Diagnostics:** RenderStats gains `buildParallelism: 'main' | 'pool'` and `workerCount`.
+
+  FDM geometry byte-identical. The cost/capability activation estimate and the Node/sidecar worker_threads
+  adapter follow in the next phase.
+
+- [#400](https://github.com/ChestnutLabs/gcode-preview/pull/400) [`12deb4d`](https://github.com/ChestnutLabs/gcode-preview/commit/12deb4d79891cfab39b1a9c8d1f3f93665564a9e) Thanks [@sobechestnut-dev](https://github.com/sobechestnut-dev)! - feat(core): parallel tube build for renderStill via the browser Web Worker pool (DD-028 Phase 4)
+
+  `renderStill` now parallelizes big-plate tube geometry across the browser Web Worker pool — the same
+  byte-identical kernel the interactive path uses. `renderStill` runs in a browser-class WebGL2 context
+  (headless Chromium / Electron / OffscreenCanvas worker — never raw Node; "pure-Node GPU rendering is out
+  of scope"), so this is Web Workers, **not** `worker_threads`, and it stays DD-007-clean (no `node:`
+  imports, no filesystem).
+  - New `renderStill` options: `geometryConcurrency: 'auto' | 'off' | number` (default `'auto'`),
+    `coreBudget`, `geometryMemoryBudgetBytes`, `createGeometryWorker` (override). The batteries-included
+    browser Web Worker is the default factory when `Worker` is available.
+  - **Container-throttle-aware:** `navigator.hardwareConcurrency` over-reports a CFS-throttled container
+    (e.g. 4 visible cores / 2.0-CPU quota), so a containerized caller (the sidecar) reads its cgroup
+    `cpu.max` in its own Node host and passes the quota as `coreBudget`; the pool sizes to
+    `min(hardwareConcurrency, coreBudget) − 1`, further bounded by `geometryMemoryBudgetBytes`. At a 2-CPU
+    grant this honestly resolves to ~serial; a larger grant is used automatically.
+
+  FDM geometry byte-identical.
+
+- [#395](https://github.com/ChestnutLabs/gcode-preview/pull/395) [`70b1f5b`](https://github.com/ChestnutLabs/gcode-preview/commit/70b1f5bae3458f21c44950d17fc8c6e413ea8570) Thanks [@sobechestnut-dev](https://github.com/sobechestnut-dev)! - feat(core): staged preparation progress — `parsing`/`classifying` stages (DD-029 Phase A)
+
+  The controller now maps the parser's own phase to the DD-029 `stage` vocabulary: the `parsing` phase
+  emits `stage:'parsing'` with the real byte fraction, and the `finalizing` phase (where dialect
+  annotation settles) emits `stage:'classifying'`. The renderer's later `building-geometry`/`preparing-gpu`/
+  `ready` stages already forward through the controller, so a consumer sees the full ordered vocabulary
+  `parsing → classifying → building-geometry → preparing-gpu → ready`.
+
+  Additive: `parse-progress`/`parse-complete`/`buildComplete` are untouched. No geometry or render-policy
+  change.
+
+- [#375](https://github.com/ChestnutLabs/gcode-preview/pull/375) [`de453cb`](https://github.com/ChestnutLabs/gcode-preview/commit/de453cb3a84275dc27c89c20381c7f91289a6a83) Thanks [@sobechestnut-dev](https://github.com/sobechestnut-dev)! - `renderStill` builds to completion and renders once — large headless stills no longer pay for dozens of discarded renders
+
+  A `renderStill` builds its geometry across many microtask ticks, and the incremental build rendered
+  the whole (growing) scene **on every tick** — for a big tube mesh in software WebGL that's
+  dozens-to-hundreds of full MSAA rasterizations, all discarded except the last. A still only needs the
+  final frame.
+
+  The `ToolpathRenderer` gains a **`renderDuringBuild`** option (default `true`, preserving the
+  interactive viewer's progressive-build feedback). `renderStill` now sets it `false`: it builds the
+  geometry to completion and renders **once**, cutting the per-tick render waste that dominates a large
+  still's time in software rendering. Output is pixel-identical; `buildComplete` and all build events
+  still fire.
+
+  Note: this is one lever; a large still still builds the full tube mesh. Defaulting thumbnails to
+  `lines`, capping segments, and reusing the GL context across stills remain follow-ups.
+
+### Patch Changes
+
+- Updated dependencies [[`6587d99`](https://github.com/ChestnutLabs/gcode-preview/commit/6587d9994dde77dd5488136e9b46257661c16c2e), [`1c54132`](https://github.com/ChestnutLabs/gcode-preview/commit/1c54132a39713c3c6d582e0b6820b411eff40d20), [`fdc9111`](https://github.com/ChestnutLabs/gcode-preview/commit/fdc9111c0917af55e41fff9d20464ebbc3444589), [`ecfa56b`](https://github.com/ChestnutLabs/gcode-preview/commit/ecfa56b098d721cd5d636f594d07eda9ac2be067), [`808dc56`](https://github.com/ChestnutLabs/gcode-preview/commit/808dc56bf377a435bc457d16fc51e195734e2bb5), [`affc879`](https://github.com/ChestnutLabs/gcode-preview/commit/affc8796583be309ce469969f2777a833253549a), [`f3ce24f`](https://github.com/ChestnutLabs/gcode-preview/commit/f3ce24ff5439ef44ca4bac8a12eda91d187f410f), [`de453cb`](https://github.com/ChestnutLabs/gcode-preview/commit/de453cb3a84275dc27c89c20381c7f91289a6a83), [`9cd66b2`](https://github.com/ChestnutLabs/gcode-preview/commit/9cd66b2f23aa32c8832d9e9da13c025cf86278b1), [`41d2dcf`](https://github.com/ChestnutLabs/gcode-preview/commit/41d2dcf49d28268c13d4d1dbaf4604a9efaacfaf), [`bf032d2`](https://github.com/ChestnutLabs/gcode-preview/commit/bf032d2b4e0ce36dcbd8020caead2a512ca3b618)]:
+  - @chestnutlabs/gcode-renderer-three@0.16.0
+  - @chestnutlabs/gcode-parser@0.16.0
+  - @chestnutlabs/toolpath-core@0.16.0
+  - @chestnutlabs/gcode-renderer-2d@0.16.0
+
 ## 0.15.0
 
 ### Minor Changes
