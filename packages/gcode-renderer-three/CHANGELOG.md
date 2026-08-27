@@ -1,5 +1,48 @@
 # @chestnutlabs/gcode-renderer-three
 
+## 0.17.0
+
+### Minor Changes
+
+- [#404](https://github.com/ChestnutLabs/gcode-preview/pull/404) [`b362f9a`](https://github.com/ChestnutLabs/gcode-preview/commit/b362f9a81232a21ff35a4a23d84c6300db83f28f) Thanks [@sobechestnut-dev](https://github.com/sobechestnut-dev)! - feat(renderer): frame the printed model via `modelBounds` precedence (DD-026 D5/D6)
+
+  `frameContent: 'object'` now frames the classifier's model bounds, using the precedence
+  `modelBounds → objectBounds → bounds`. A label-less file that still marks its housekeeping (a prime
+  tower with no object channel) now frames the model, and a Bambu prime tower emitted inside an open
+  object bracket no longer inflates the frame (it is excluded from `modelBounds` even though it carries a
+  member label). `objectBounds` remains the second choice so nothing regresses for files that only label
+  objects.
+
+  The `E_FRAME_CONTENT_UNAVAILABLE` disclosure now fires only when **both** `modelBounds` and
+  `objectBounds` are empty — i.e. the file is genuinely unclassifiable and framing falls back to all
+  extrusion — and the message reports the `nonModelClassification` confidence. No geometry, colour, or
+  quality change; framing target only.
+
+### Patch Changes
+
+- [#406](https://github.com/ChestnutLabs/gcode-preview/pull/406) [`d1de1b4`](https://github.com/ChestnutLabs/gcode-preview/commit/d1de1b407389321442289a5be5d3104c60b68060) Thanks [@sobechestnut-dev](https://github.com/sobechestnut-dev)! - fix(renderer): geometry-pool failure degrades to serial tubes, never an unhandled rejection (DD-028)
+
+  A tube build that engaged the worker pool could fail two ways that weren't both handled: a **runtime**
+  worker error fell back to _lines_, and a **synchronous construction** failure — `new Worker(new
+URL('./geometry-worker.js', import.meta.url), { type: 'module' })` throwing when a bundler leaves
+  `import.meta.url` undefined (e.g. an esbuild `format: 'iife'` bundle) — escaped the build's try/catch on
+  a fire-and-forget call and surfaced as an **unhandled promise rejection**, with no fallback at all.
+
+  Both failure modes now degrade to a **serial main-thread tube build** via the new internal
+  `fallbackToSerialTubes`, not to lines: the pool was sized against the memory budget, so the tubes
+  already fit — only the worker couldn't run — so the quality is preserved (identical scene to
+  `geometryConcurrency: 'off'`). A genuine memory/budget limit still degrades to lines downstream through
+  the serial build's own tube-budget path. The degradation is recorded as a `RenderStats` disclosure
+  (`pool→serial-tubes: …`) and `buildParallelism` flips to `'main'` — never silent. A defensive `.catch`
+  at the call site guarantees no unhandled rejection can escape.
+
+  This makes the DD-028 pool safe to enable in headless bundlers that can't construct the module-worker
+  URL: a failed/absent worker now costs single-threaded tube quality, not a broken render.
+
+- Updated dependencies [[`214b0db`](https://github.com/ChestnutLabs/gcode-preview/commit/214b0db2dd9d8aa177d80969bdb59173d33121a3)]:
+  - @chestnutlabs/toolpath-core@0.17.0
+  - @chestnutlabs/gcode-colors@0.17.0
+
 ## 0.16.0
 
 ### Minor Changes

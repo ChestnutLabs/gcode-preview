@@ -327,4 +327,25 @@ describe('renderStill (#132)', () => {
     expect(pooled.segmentCount).toBe(serial.segmentCount);
     expect(pooled.decimationApplied).toBe(serial.decimationApplied);
   });
+
+  it('forwards tubeByteBudget: a generous budget keeps tubes, a tiny one degrades to lines (RR-006)', async () => {
+    // Exposes the final-geometry budget through renderStill so a deployment with RAM to spare can retain
+    // tubes on a large plate instead of silently falling to lines (the default budget is conservative).
+    // Separate axis from geometryMemoryBudgetBytes (the parallel-build transient cap).
+    const generous = await renderStill(makeTestIR(), {
+      canvas: makeStubCanvas(),
+      quality: 'tubes',
+      tubeByteBudget: 1_000_000_000,
+      createRenderer: makeCountingGL().gl
+    });
+    expect(generous.quality).toBe('tubes');
+
+    const starved = await renderStill(makeTestIR(), {
+      canvas: makeStubCanvas(),
+      quality: 'tubes',
+      tubeByteBudget: 1000, // even a 3-sided tube for these segments exceeds this → honest lines fallback
+      createRenderer: makeCountingGL().gl
+    });
+    expect(starved.quality).toBe('lines');
+  });
 });

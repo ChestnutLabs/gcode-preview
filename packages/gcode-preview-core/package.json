@@ -1,6 +1,6 @@
 {
   "name": "@chestnutlabs/gcode-preview-core",
-  "version": "0.16.0",
+  "version": "0.17.0",
   "description": "Framework-neutral preview controller for the Chestnut Labs G-code viewer (DD-007 §4.6): the shared engine glue, state model, and TypeScript contracts beneath the Vue/React/Svelte adapters.",
   "keywords": [
     "gcode",
@@ -52,9 +52,9 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@chestnutlabs/gcode-parser": "0.16.0",
-    "@chestnutlabs/gcode-renderer-2d": "0.16.0",
-    "@chestnutlabs/gcode-renderer-three": "0.16.0",
-    "@chestnutlabs/toolpath-core": "0.16.0"
+    "@chestnutlabs/gcode-parser": "0.17.0",
+    "@chestnutlabs/gcode-renderer-2d": "0.17.0",
+    "@chestnutlabs/gcode-renderer-three": "0.17.0",
+    "@chestnutlabs/toolpath-core": "0.17.0"
   }
 }

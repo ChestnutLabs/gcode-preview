@@ -49,11 +49,14 @@ export function applyMarkerRanges(
   return applied;
 }
 
-/** One end of a wipe bracket (DD-016, #182): the source byte and whether it OPENED the bracket. */
-export interface WipeMark {
+/** One end of a housekeeping bracket (DD-016/DD-026 D3): source byte + whether it OPENED the bracket. */
+export interface BracketMark {
   srcByte: number;
-  open: boolean; // true = WIPE_START, false = WIPE_END
+  open: boolean; // true = <NAME>_START, false = <NAME>_END
 }
+
+/** One end of a wipe bracket (DD-016, #182). Structurally a {@link BracketMark}; kept for compatibility. */
+export type WipeMark = BracketMark;
 
 /**
  * Classify a comment as a PrusaSlicer/OrcaSlicer wipe-bracket marker. The convention is bare
@@ -61,19 +64,33 @@ export interface WipeMark {
  * leading space and casing. Returns null for any other comment.
  */
 export function matchWipeComment(comment: string): 'start' | 'end' | null {
+  return matchBracketComment(comment, 'WIPE');
+}
+
+/**
+ * Classify a comment as a bare `<NAME>_START` / `<NAME>_END` bracket marker (semicolon already stripped
+ * before onComment; case/space tolerant). Used for wipe (DD-016) and the DD-026 D3 housekeeping brackets
+ * (`FLUSH_START/END`, `WIPE_TOWER_START/END`). Returns null for any other comment.
+ */
+export function matchBracketComment(comment: string, name: string): 'start' | 'end' | null {
   const t = comment.trim().toUpperCase();
-  if (t === 'WIPE_START') return 'start';
-  if (t === 'WIPE_END') return 'end';
+  const n = name.toUpperCase();
+  if (t === `${n}_START`) return 'start';
+  if (t === `${n}_END`) return 'end';
   return null;
 }
 
 /**
- * Resolve WIPE_START/END byte marks to segment ranges and add `MoveKind.Wipe` additively via the sink
- * (DD-016 §4.2). Segments emitted between a START and its END are the wipe moves. Unbalanced or nested
- * markers degrade safely: a stray END is ignored, a second START before an END is folded into the open
- * bracket, and a START left open at end-of-file closes at the last segment. Returns ranges applied.
+ * Resolve balanced open/close bracket marks to inclusive segment ranges and hand each to `emit`. Shared
+ * by the wipe (MoveKind) and DD-026 housekeeping-role (FeatureRole) brackets. Unbalanced or nested
+ * markers degrade safely: a stray END is ignored, a second START before an END folds into the open
+ * bracket, and a START left open at end-of-file closes at the last segment. Returns ranges emitted.
  */
-export function applyWipeRanges(ir: ToolpathIR, marks: WipeMark[], sink: AnnotationSink): number {
+function forEachBracketRange(
+  ir: ToolpathIR,
+  marks: BracketMark[],
+  emit: (segStart: number, segEndInclusive: number) => void
+): number {
   let applied = 0;
   let openByte = -1;
   for (const mark of marks) {
@@ -81,9 +98,9 @@ export function applyWipeRanges(ir: ToolpathIR, marks: WipeMark[], sink: Annotat
       if (openByte < 0) openByte = mark.srcByte;
     } else if (openByte >= 0) {
       const start = segAtOrAfterByte(ir, openByte);
-      const end = segAtOrAfterByte(ir, mark.srcByte); // first segment AFTER the wipe block
+      const end = segAtOrAfterByte(ir, mark.srcByte); // first segment AFTER the block
       if (end - 1 >= start) {
-        sink.addMoveKind(start, end - 1, MoveKind.Wipe);
+        emit(start, end - 1);
         applied++;
       }
       openByte = -1;
@@ -92,11 +109,35 @@ export function applyWipeRanges(ir: ToolpathIR, marks: WipeMark[], sink: Annotat
   if (openByte >= 0) {
     const start = segAtOrAfterByte(ir, openByte);
     if (ir.segments.count - 1 >= start) {
-      sink.addMoveKind(start, ir.segments.count - 1, MoveKind.Wipe);
+      emit(start, ir.segments.count - 1);
       applied++;
     }
   }
   return applied;
+}
+
+/**
+ * Resolve WIPE_START/END byte marks to segment ranges and add `MoveKind.Wipe` additively via the sink
+ * (DD-016 §4.2). Segments emitted between a START and its END are the wipe moves. Returns ranges applied.
+ */
+export function applyWipeRanges(ir: ToolpathIR, marks: WipeMark[], sink: AnnotationSink): number {
+  return forEachBracketRange(ir, marks, (start, end) => sink.addMoveKind(start, end, MoveKind.Wipe));
+}
+
+/**
+ * Resolve a housekeeping bracket (DD-026 D3) — e.g. Bambu `FLUSH_START/END` → `FeatureRole.Purge`,
+ * `WIPE_TOWER_START/END` → `FeatureRole.WipeTower` — to segment ranges and set `role` on the enclosed
+ * segments. Apply this AFTER the `;TYPE:`/`; FEATURE:` markers so the explicit bracket wins over the
+ * surrounding role (the classifier then excludes the whole bracket from `modelBounds`). Returns ranges
+ * applied.
+ */
+export function applyFeatureBracketRanges(
+  ir: ToolpathIR,
+  marks: BracketMark[],
+  role: number,
+  sink: AnnotationSink
+): number {
+  return forEachBracketRange(ir, marks, (start, end) => sink.setFeature(start, end, role));
 }
 
 export interface SegMarker {

@@ -14,6 +14,7 @@ import {
   type Warning
 } from './ir.js';
 import { computeSegmentBounds } from './bounds.js';
+import { classifyModelBounds } from './classify.js';
 import { buildSourceIndex } from './source-index.js';
 
 /** One motion segment in absolute model coordinates. The builder stores it as a delta from the origin. */
@@ -183,7 +184,11 @@ export class ToolpathIRBuilder {
     const origin = this.originOffset ?? { x: 0, y: 0, z: 0 };
     const layers = deriveLayers(segments, origin.z);
     const { bounds, boundsWithTravel, objectBounds } = computeSegmentBounds(segments, origin);
+    const { modelBounds, classification } = classifyModelBounds(segments, origin);
     const sourceIndex = buildSourceIndex(segments.srcByte, count);
+    // Honest at build time from whatever channels exist; the dialect runner refreshes both after
+    // annotation settles the object/feature channels (DD-026 D5, lifecycle §5).
+    this.capabilities.nonModelClassification = classification;
 
     const header: ToolpathIRHeader = {
       irSchemaVersion: IR_SCHEMA_VERSION,
@@ -214,6 +219,7 @@ export class ToolpathIRBuilder {
       bounds,
       boundsWithTravel,
       objectBounds,
+      modelBounds,
       sourceIndex
     };
   }

@@ -103,6 +103,17 @@ export interface RenderStillOptions {
   /** Max in-flight tube-geometry bytes for the parallel build (DD-028 memory backpressure). A memory-
    *  limited container (e.g. 2 GiB) passes a fraction of its limit; the pool never exceeds it. */
   geometryMemoryBudgetBytes?: number;
+  /**
+   * Total CPU byte budget for the FINAL tube geometry (RR-006). This is a **different axis** from
+   * `geometryMemoryBudgetBytes` (which caps the parallel build's in-flight working set): this bounds the
+   * whole retained tube mesh and so decides whether a large plate renders as full **tubes** or degrades to
+   * **lines**. The default is deliberately conservative (~450 MB CPU / ~900 MB peak once uploaded), so a
+   * big full-sheet plate silently falls to lines even when the deployment has RAM to spare. A caller whose
+   * resource policy says the RAM is available raises this to retain tubes on large plates (peak RAM
+   * ≈ 2× the budget; the library does not read the container — sizing is the deployment's policy). Omit
+   * for the default.
+   */
+  tubeByteBudget?: number;
   /** Geometry-worker factory override (tests / exotic hosts). Defaults to the browser Web Worker when
    *  `Worker` is available and `geometryConcurrency !== 'off'`. */
   createGeometryWorker?: () => GeometryWorkerLike;
@@ -224,6 +235,7 @@ export async function renderStill(
     ...(resolvedTheme ? { theme: resolvedTheme } : {}),
     ...(options.colorMode ? { colorMode: options.colorMode } : {}),
     ...(options.tube ? { tube: options.tube } : {}),
+    ...(options.tubeByteBudget !== undefined ? { tubeByteBudget: options.tubeByteBudget } : {}),
     ...(options.buildVolume ? { buildVolume: toVolume(options.buildVolume) } : {}),
     preserveDrawingBuffer: true,
     scheduleFrame: (cb) => queueMicrotask(cb),

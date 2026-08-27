@@ -1,5 +1,34 @@
 # @chestnutlabs/gcode-preview-core
 
+## 0.17.0
+
+### Minor Changes
+
+- [#408](https://github.com/ChestnutLabs/gcode-preview/pull/408) [`63e191c`](https://github.com/ChestnutLabs/gcode-preview/commit/63e191cd5e3a36f697ba660c17cf5c7d28406af0) Thanks [@sobechestnut-dev](https://github.com/sobechestnut-dev)! - feat(render-still): expose `tubeByteBudget` on `RenderStillOptions`
+
+  `renderStill` now accepts `tubeByteBudget?: number`, forwarded to the renderer's existing option. This is
+  the **final-geometry** byte budget (RR-006) — a **different axis** from `geometryMemoryBudgetBytes` (the
+  parallel build's in-flight transient cap): it bounds the whole retained tube mesh and so decides whether a
+  large plate renders as full **tubes** or degrades to **lines**.
+
+  Previously the headless still was stuck behind the conservative default (~450 MB CPU / ~900 MB peak), so a
+  big full-sheet plate silently fell to lines even when the deployment had RAM to spare, with no way to opt
+  in. A caller whose resource policy says the RAM is available can now raise the budget to retain tubes on
+  large plates (peak RAM ≈ 2× the budget). The library never reads the container — choosing a value from the
+  actual CPU/RAM grant is deployment policy, not baked into gcode-preview.
+
+  Additive and behavior-preserving at the default. `geometryMemoryBudgetBytes` (CPU parallelism transient)
+  and `tubeByteBudget` (final-geometry retention) are independent knobs, matching the two-axis
+  capability-aware model the DD-028 headless characterization established.
+
+### Patch Changes
+
+- Updated dependencies [[`d1de1b4`](https://github.com/ChestnutLabs/gcode-preview/commit/d1de1b407389321442289a5be5d3104c60b68060), [`214b0db`](https://github.com/ChestnutLabs/gcode-preview/commit/214b0db2dd9d8aa177d80969bdb59173d33121a3), [`b362f9a`](https://github.com/ChestnutLabs/gcode-preview/commit/b362f9a81232a21ff35a4a23d84c6300db83f28f)]:
+  - @chestnutlabs/gcode-renderer-three@0.17.0
+  - @chestnutlabs/toolpath-core@0.17.0
+  - @chestnutlabs/gcode-parser@0.17.0
+  - @chestnutlabs/gcode-renderer-2d@0.17.0
+
 ## 0.16.0
 
 ### Minor Changes

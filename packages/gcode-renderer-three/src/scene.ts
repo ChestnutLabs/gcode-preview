@@ -695,7 +695,11 @@ export class ToolpathRenderer {
       if (size >= 1) {
         this.buildParallelism = 'pool';
         this.poolWorkerCount = size;
-        void this.buildTubesViaPool(size);
+        // Defense-in-depth: buildTubesViaPool degrades internally, but never let an unexpected escape
+        // become an unhandled rejection — fall back to serial tubes (DD-028).
+        void this.buildTubesViaPool(size).catch((err) => {
+          if (!this.disposed) this.fallbackToSerialTubes(err instanceof Error ? err.message : String(err));
+        });
         return;
       }
     }
@@ -779,7 +783,17 @@ export class ToolpathRenderer {
       lineWidth: this.tubeOptions.lineWidth,
       lineHeight: this.tubeOptions.lineHeight
     }));
-    const pool = this.ensurePool(size);
+    // Worker construction can fail synchronously (e.g. `new Worker(new URL(…, import.meta.url))` throwing
+    // when a bundler leaves `import.meta.url` undefined). Catch it here so it degrades like a runtime
+    // failure instead of rejecting this fire-and-forget promise (DD-028 robustness).
+    let pool: GeometryWorkerPool;
+    try {
+      pool = this.ensurePool(size);
+    } catch (err) {
+      if (this.disposed || gen !== this.buildGeneration) return;
+      this.fallbackToSerialTubes(err instanceof Error ? err.message : String(err));
+      return;
+    }
     const total = result.chunks.length;
     this.builtCount = nonExtrude;
     try {
@@ -798,8 +812,11 @@ export class ToolpathRenderer {
       });
     } catch (err) {
       if (this.disposed || gen !== this.buildGeneration) return;
-      // A worker failed (e.g. the kernel's vertex-budget RangeError) → honest degrade to continuous lines.
-      this.fallbackToLines(err instanceof Error ? err.message : String(err));
+      // A worker failed mid-build → degrade to a SERIAL main-thread tube build, not lines: the tube
+      // representation already fit the memory budget (the pool was sized against it), only the worker
+      // couldn't run, so quality is preserved. A genuine memory/budget limit still degrades to lines
+      // downstream via the serial build's own tube-budget path.
+      this.fallbackToSerialTubes(err instanceof Error ? err.message : String(err));
       return;
     }
     if (this.disposed || gen !== this.buildGeneration) return;
@@ -833,6 +850,28 @@ export class ToolpathRenderer {
     mesh.userData.vertexSegment = vertexSegment;
     this.applyDrawStateToMesh(mesh, chunk);
     return mesh;
+  }
+
+  /**
+   * A failed POOL build (worker construction OR a runtime worker error) degrades to a SERIAL
+   * main-thread tube build — the same TUBE representation, single-threaded. Deliberately NOT lines: the
+   * pool was sized against the memory budget, so the tubes already fit; only the worker couldn't run, so
+   * quality is preserved (this is what `geometryConcurrency:'off'` would have produced). The serial
+   * rebuild keeps its own tube-budget path, so a genuine memory limit still degrades to lines downstream.
+   * Recorded as a RenderStats disclosure (`buildParallelism` flips to `'main'`), never silent (DD-028).
+   */
+  private fallbackToSerialTubes(reason: string): void {
+    this.buildDisclosures.push(`pool→serial-tubes: ${reason}`);
+    this.buildParallelism = 'main';
+    this.poolWorkerCount = 0;
+    this.geometryPool?.dispose();
+    this.geometryPool = null;
+    this.clearToolpathGeometry();
+    if (this.buildResult !== null) {
+      this.builtCount = 0;
+      this.pendingChunks = [...this.buildResult.chunks];
+      this.scheduleFrame(() => this.buildTick());
+    }
   }
 
   /** A failed tubes build degrades to lines — evented, never silent (§6.1). */
@@ -1394,14 +1433,20 @@ export class ToolpathRenderer {
   }
 
   /**
-   * Choose the bounds to frame to (#306/#6): `frameContent: 'object'` frames the printed object,
-   * excluding skirt/prime/purge, when the file has object labels; otherwise (or `'all'`) the full
-   * extrude bounds. Returns null when neither is finite (empty IR).
+   * Choose the bounds to frame to (#306/#6, DD-026 D5). `frameContent: 'object'` frames the printed
+   * **model**, excluding skirt/prime/purge/tower, using the classifier's `modelBounds` when available,
+   * then the object-channel `objectBounds`, then (or for `'all'`) the full extrude bounds. The
+   * `modelBounds → objectBounds → bounds` precedence means a label-less file that still marks its
+   * housekeeping frames the model, and a Bambu tower inside an object bracket no longer inflates the
+   * frame. Returns null when nothing is finite (empty IR).
    */
   private frameBounds(): { min: { x: number; y: number; z: number }; max: { x: number; y: number; z: number } } | null {
     const ir = this.ir;
     if (ir === null) return null;
-    if (this.frameContentMode === 'object' && Number.isFinite(ir.objectBounds.min.x)) return ir.objectBounds;
+    if (this.frameContentMode === 'object') {
+      if (Number.isFinite(ir.modelBounds.min.x)) return ir.modelBounds;
+      if (Number.isFinite(ir.objectBounds.min.x)) return ir.objectBounds;
+    }
     return Number.isFinite(ir.bounds.min.x) ? ir.bounds : null;
   }
 
@@ -1491,18 +1536,26 @@ export class ToolpathRenderer {
   }
 
   /**
-   * Frame the printed **object** vs. **all** extrusion (#306/#6). `'object'` excludes skirt/prime/purge
-   * so a prime line at the bed edge doesn't shrink the object in view — but only when the file carries
-   * object labels; otherwise it discloses (an honest `error` event) and frames all extrusion. Re-frames.
+   * Frame the printed **model** vs. **all** extrusion (#306/#6, DD-026 D5/D6). `'object'` excludes
+   * skirt/prime/purge/tower via the `modelBounds → objectBounds` precedence so housekeeping doesn't
+   * shrink the model in view — but only when the file is classifiable; when neither is available (a
+   * genuinely unclassifiable file, e.g. an unmarked prime with no object channel) it discloses an
+   * honest `error` and frames all extrusion. Re-frames.
    */
   setFrameContent(mode: 'object' | 'all'): void {
     if (this.disposed) return;
     this.frameContentMode = mode;
-    if (mode === 'object' && this.ir !== null && !Number.isFinite(this.ir.objectBounds.min.x)) {
+    if (
+      mode === 'object' &&
+      this.ir !== null &&
+      !Number.isFinite(this.ir.modelBounds.min.x) &&
+      !Number.isFinite(this.ir.objectBounds.min.x)
+    ) {
+      const confidence = this.ir.header.capabilities.nonModelClassification ?? 'unavailable';
       this.emit({
         type: 'error',
         code: 'E_FRAME_CONTENT_UNAVAILABLE',
-        message: "frameContent 'object' has no object-labeled geometry; framing all extrusion"
+        message: `frameContent 'object' cannot isolate the model (nonModelClassification: ${confidence}); framing all extrusion`
       });
     }
     this.frame();

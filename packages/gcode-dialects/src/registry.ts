@@ -11,6 +11,7 @@
  * and all selected adapters run together. Adapter exceptions are contained:
  * a throwing adapter is disabled for the run with an `adapter-failed` warning.
  */
+import { classifyModelBounds } from '@chestnutlabs/toolpath-core';
 import type { DialectDetection, DialectMetadata, ToolpathIR, Warning } from '@chestnutlabs/toolpath-core';
 import type { CommandEvent, DetectInput, DialectAdapter } from './contracts.js';
 import { BufferedAnnotationSink } from './sink.js';
@@ -128,6 +129,12 @@ export function createDialectRunner(adapters: DialectAdapter[]): DialectRunnerFa
               conflicts.push({ code, message, severity: 'warn', count: 1 })
             );
           }
+          // Now that every adapter has settled the object/feature channels, refresh the non-model
+          // classification authoritatively (DD-026 D4/D5/D7, lifecycle §5). Parse time saw empty
+          // channels; this is where membership/roles actually exist.
+          const { modelBounds, classification } = classifyModelBounds(ir.segments, ir.header.originOffset);
+          ir.modelBounds = modelBounds;
+          ir.header.capabilities.nonModelClassification = classification;
           for (const w of conflicts) ir.header.warnings.push(w);
           ir.header.dialects.push(
             ...active.map((a) => ({ id: a.detection.dialectId, confidence: a.detection.confidence }))

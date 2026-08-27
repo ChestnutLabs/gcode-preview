@@ -8,6 +8,7 @@
 export * from './ir.js';
 export * from './builder.js';
 export * from './bounds.js';
+export * from './classify.js';
 export * from './source-index.js';
 export * from './metadata.js';
 export * from './progress.js';

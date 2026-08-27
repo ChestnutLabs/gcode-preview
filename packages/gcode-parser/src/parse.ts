@@ -31,7 +31,9 @@ import {
   IR_SCHEMA_VERSION,
   MoveKind,
   buildSourceIndex,
+  classifyModelBounds,
   computeSegmentBounds,
+  emptyBounds,
   type Confidence,
   type ToolInfo,
   type ToolpathIR,
@@ -1032,6 +1034,7 @@ export function createEngine(input: string | Uint8Array, opts: ParseOptions): En
 
     const origin = { x: ox, y: oy, z: oz };
     const { bounds, boundsWithTravel, objectBounds } = computeSegmentBounds(segments, origin);
+    const { modelBounds, classification: nonModelClassification } = classifyModelBounds(segments, origin);
     const sourceIndex = buildSourceIndex(segments.srcByte, segments.count);
 
     // Layer table for the IR (absolute z; seg ranges accumulated above).
@@ -1055,6 +1058,10 @@ export function createEngine(input: string | Uint8Array, opts: ParseOptions): En
       sourcePositions: 'known',
       featureRoles: 'unavailable',
       objects: 'unavailable',
+      // Non-model (model-bounds) classification (DD-026 D7). At parse time the object/feature channels
+      // are usually empty, so this is 'unavailable' until a dialect adapter annotates them and the
+      // runner refreshes it (gcode-dialects finalize). Honest either way — never a guess.
+      nonModelClassification,
       retractions: retractionEvents.length > 0 ? 'known' : 'unavailable',
       colorChanges: colorChangeEvents.length > 0 ? 'known' : 'unavailable',
       // Annotation-derived move kinds (DD-016, #182). The parser never sets these — they come from a
@@ -1129,6 +1136,7 @@ export function createEngine(input: string | Uint8Array, opts: ParseOptions): En
       bounds,
       boundsWithTravel,
       objectBounds,
+      modelBounds,
       sourceIndex
     };
 
@@ -1183,6 +1191,7 @@ export function createEngine(input: string | Uint8Array, opts: ParseOptions): En
           sourcePositions: 'unavailable', // no per-slice source index is built
           featureRoles: 'unavailable',
           objects: 'unavailable',
+          nonModelClassification: 'unavailable', // model classification resolves on the final IR (DD-026)
           retractions: 'unavailable', // markers resolve on the final IR, not on preview slices
           colorChanges: 'unavailable', // color-change boundaries resolve on the final IR
           wipeMoves: 'unavailable', // annotation move kinds resolve on the final IR (DD-016)
@@ -1204,6 +1213,7 @@ export function createEngine(input: string | Uint8Array, opts: ParseOptions): En
       bounds,
       boundsWithTravel,
       objectBounds,
+      modelBounds: emptyBounds(),
       sourceIndex: { byteOffsets: new Uint32Array(0), segmentIndices: new Uint32Array(0) }
     };
     return { slice, upTo: cut };

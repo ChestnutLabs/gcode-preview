@@ -50,7 +50,29 @@ function syncGeometryWorker(): GeometryWorkerLike {
   return w;
 }
 
-function makeRenderer(opts: { concurrency: 'auto' | 'off' | number; withWorker?: boolean }) {
+/** A worker whose construction throws synchronously (e.g. `new URL(…, import.meta.url)` in an IIFE). */
+function throwingConstructorWorker(): GeometryWorkerLike {
+  throw new Error('worker construction failed (import.meta.url undefined)');
+}
+
+/** A worker that reports a runtime error (module 404 / kernel throw) via onerror after dispatch. */
+function runtimeFailWorker(): GeometryWorkerLike {
+  const w: GeometryWorkerLike = {
+    onmessage: null,
+    onerror: null,
+    postMessage() {
+      queueMicrotask(() => w.onerror?.(new Error('worker runtime failure (module fetch 404)')));
+    },
+    terminate() {}
+  };
+  return w;
+}
+
+function makeRenderer(opts: {
+  concurrency: 'auto' | 'off' | number;
+  withWorker?: boolean;
+  workerFactory?: () => GeometryWorkerLike;
+}) {
   const canvas = document.createElement('canvas');
   const stub: GLRendererLike = {
     render: () => undefined,
@@ -63,7 +85,7 @@ function makeRenderer(opts: { concurrency: 'auto' | 'off' | number; withWorker?:
     quality: 'tubes',
     chunksPerTick: 8,
     geometryConcurrency: opts.concurrency,
-    ...(opts.withWorker === false ? {} : { createGeometryWorker: syncGeometryWorker }),
+    ...(opts.withWorker === false ? {} : { createGeometryWorker: opts.workerFactory ?? syncGeometryWorker }),
     createRenderer: () => stub,
     scheduleFrame: (cb) => queueMicrotask(cb)
   });
@@ -114,6 +136,49 @@ describe('DD-028 renderer pool wiring', () => {
     await settle();
     expect(noWorker.getRenderStats()?.buildParallelism).toBe('main');
     noWorker.dispose();
+  });
+
+  it('worker CONSTRUCTION failure degrades to serial tubes (not lines), same scene, no unhandled rejection', async () => {
+    // The AnyBridge/esbuild-IIFE case: `import.meta.url` is undefined, so `new Worker(new URL(...))`
+    // throws synchronously. The build must degrade to a serial main-thread TUBE build, not lines.
+    const failed = makeRenderer({ concurrency: 2, workerFactory: throwingConstructorWorker });
+    failed.setIR(makeTubeIR(6, 800));
+    await settle();
+
+    const serial = makeRenderer({ concurrency: 'off' });
+    serial.setIR(makeTubeIR(6, 800));
+    await settle();
+
+    const stats = failed.getRenderStats();
+    expect(stats?.buildParallelism).toBe('main'); // degraded off the pool
+    expect(stats?.geometryMode).toBe('tubes'); // TUBES preserved, NOT lines
+    expect(stats?.disclosures.some((d) => /pool→serial-tubes/.test(d))).toBe(true);
+    // Same scene as the serial build: identical mesh count + total tube vertices.
+    expect(failed.chunkMeshes.length).toBe(serial.chunkMeshes.length);
+    expect(failed.chunkMeshes.length).toBeGreaterThan(1);
+    expect(tubeVertexTotal(failed)).toBe(tubeVertexTotal(serial));
+
+    failed.dispose();
+    serial.dispose();
+  });
+
+  it('worker RUNTIME failure (404/kernel throw) degrades to serial tubes, same scene', async () => {
+    const failed = makeRenderer({ concurrency: 2, workerFactory: runtimeFailWorker });
+    failed.setIR(makeTubeIR(6, 800));
+    await settle();
+
+    const serial = makeRenderer({ concurrency: 'off' });
+    serial.setIR(makeTubeIR(6, 800));
+    await settle();
+
+    const stats = failed.getRenderStats();
+    expect(stats?.buildParallelism).toBe('main');
+    expect(stats?.geometryMode).toBe('tubes');
+    expect(stats?.disclosures.some((d) => /pool→serial-tubes/.test(d))).toBe(true);
+    expect(tubeVertexTotal(failed)).toBe(tubeVertexTotal(serial));
+
+    failed.dispose();
+    serial.dispose();
   });
 
   it("'auto' engages the pool once the cost estimate crosses the threshold", async () => {
