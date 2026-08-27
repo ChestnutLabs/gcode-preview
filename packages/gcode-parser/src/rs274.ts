@@ -49,7 +49,7 @@ export function lineUsesParametric(codeSection: string): boolean {
 }
 
 /** Strip RS274NGC `( … )` comments from a code section (they are comments, never expressions). */
-function stripParenComments(s: string): string {
+export function stripParenComments(s: string): string {
   let out = '';
   let depth = 0;
   for (let i = 0; i < s.length; i++) {
@@ -85,6 +85,13 @@ export class Rs274Context {
   private paramLimitWarned = false;
   /** True once any parametric construct was executed — drives the `parametricProgram` capability. */
   used = false;
+  /**
+   * True once execution was degraded relative to a clean run: a hit resource limit (iteration cap),
+   * an unbalanced/unsupported O-word, or a malformed control expression (DD-017 §4.6). The
+   * O-word flow interpreter (Phase 2) sets this; it downgrades `parametricProgram` from `known` to
+   * `approximated` (still disclosed via a specific warning — never silently wrong).
+   */
+  degraded = false;
 
   constructor(
     private readonly warn: WarnFn,
@@ -241,6 +248,45 @@ export class Rs274Context {
       ev.skipWs();
     }
     return { kind: 'cmd', codes, params };
+  }
+
+  /**
+   * The `parametricProgram` capability tier (DD-017 §4.6). `unavailable` for a non-parametric file
+   * (all FDM); `known` when params/expressions/O-word flow ran deterministically within limits;
+   * `approximated` when execution was degraded (a hit iteration cap, an unbalanced/unsupported O-word,
+   * or a malformed control expression) — always paired with a specific disclosure, never silently wrong.
+   */
+  parametricConfidence(): 'known' | 'approximated' | 'unavailable' {
+    if (!this.used) return 'unavailable';
+    return this.degraded ? 'approximated' : 'known';
+  }
+
+  /**
+   * Evaluate a standalone expression (an O-word condition `[#1 GT 2]` or a `repeat` count `[5]`) against
+   * the shared parameter store, for the Phase 2 flow interpreter. Returns the numeric result, or `null`
+   * when the expression is malformed or evaluates to a non-finite value — disclosed either way (the
+   * caller treats `null` as false / zero iterations). Accepts a bracketed expression, a bare `#ref`, or a
+   * literal; trailing garbage is a malformed expression. No `eval`, depth-guarded like every other path.
+   */
+  evalExpression(text: string, srcByte?: number): number | null {
+    this.used = true;
+    try {
+      const ev = new Evaluator(text, this, srcByte);
+      ev.skipWs();
+      const v = ev.readWordValue(); // a leading `[expr]`, `#ref`, or number — exactly a condition/count
+      ev.skipWsToEnd();
+      if (!Number.isFinite(v)) {
+        this.warn(RS274_WARN.nonFiniteValue, 'control expression evaluated to a non-finite value', srcByte);
+        return null;
+      }
+      return v;
+    } catch (e) {
+      if (e instanceof Rs274EvalError) {
+        this.warn(RS274_WARN.badExpression, `malformed control expression dropped: ${e.message}`, srcByte);
+        return null;
+      }
+      throw e;
+    }
   }
 
   // --- operand hooks used by the Evaluator ---

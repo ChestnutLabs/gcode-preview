@@ -43,6 +43,7 @@ import {
 } from '@chestnutlabs/toolpath-core';
 import { BudgetExceededError, SegmentWriter } from './growable.js';
 import { Rs274Context, lineUsesParametric } from './rs274.js';
+import { RS274_FLOW_WARN, interpretOWordProgram, programUsesOWords, type FlowLine } from './rs274-flow.js';
 
 export interface ParseLimits {
   maxInputBytes: number;
@@ -50,6 +51,14 @@ export interface ParseLimits {
   maxBufferBytes: number;
   maxLineLength: number;
   maxWarnings: number;
+  /**
+   * Total loop-body executions across an RS274NGC O-word program (DD-017 §4.5, Phase 2). One counter is
+   * charged per pass of any `while`/`do`/`repeat`; exceeding it stops the program with a partial IR and a
+   * `rs274-iteration-limit` disclosure, so a hostile `o while [1]` wastes only bounded CPU. Irrelevant to
+   * FDM / non-parametric input, which never enters the interpreter. (Subroutine recursion depth —
+   * `maxCallDepth` — is a Phase 3 concern and not yet a limit.)
+   */
+  maxProgramIterations: number;
 }
 
 export const DEFAULT_LIMITS: ParseLimits = {
@@ -57,7 +66,8 @@ export const DEFAULT_LIMITS: ParseLimits = {
   maxSegments: 20_000_000,
   maxBufferBytes: 1536 * 1024 * 1024,
   maxLineLength: 64 * 1024,
-  maxWarnings: 10_000
+  maxWarnings: 10_000,
+  maxProgramIterations: 1_000_000
 };
 
 /**
@@ -255,6 +265,18 @@ export interface Engine {
   processLine(rawLine: string, offset: number): void;
   stopped(): boolean;
   markInputTooBig(): void;
+  /**
+   * Interpret the buffered `text` as an RS274NGC O-word program (DD-017 Phase 2). Called by the
+   * in-memory drivers INSTEAD of the forward-only line loop when `programUsesOWords(text)` is true;
+   * the interpreter re-feeds every plain line through `processLine`, so geometry stays on one path.
+   */
+  runOWordFlow(): void;
+  /**
+   * Streaming only: record that an O-word control line was seen but NOT interpreted (control flow needs a
+   * fully-buffered program — DD-017 §4.1). Discloses once and marks the parametric capability degraded;
+   * the line still runs linearly (the honest pre-Phase-2 behaviour), never silently as if flow had run.
+   */
+  noteUninterpretedOWord(srcByte: number): void;
   /** Streaming driver: record the true source byte count as it becomes known. */
   setSourceBytes(bytes: number): void;
   /**
@@ -1033,6 +1055,46 @@ export function createEngine(input: string | Uint8Array, opts: ParseOptions): En
     }
   };
 
+  // RS274NGC O-word control flow (DD-017 Phase 2). Engaged only when the buffered program actually
+  // contains a control line; it buffers the lines with their byte offsets and hands them to the tree
+  // interpreter, which re-feeds each plain line through `processLine` (one geometry path) and evaluates
+  // conditions/counts against the SAME parameter store. `used`/`degraded` tier the capability.
+  const runOWordFlow = (): void => {
+    rs274.used = true;
+    const flowLines: FlowLine[] = [];
+    const len = text.length;
+    let offset = 0;
+    while (offset < len) {
+      let nl = text.indexOf('\n', offset);
+      if (nl === -1) nl = len;
+      flowLines.push({ text: text.slice(offset, nl), offset });
+      offset = nl + 1;
+    }
+    const { degraded } = interpretOWordProgram(flowLines, {
+      processLine,
+      stopped: () => stopReason !== undefined,
+      evalExpression: (t, b) => rs274.evalExpression(t, b),
+      warn,
+      maxProgramIterations: limits.maxProgramIterations
+    });
+    if (degraded) rs274.degraded = true;
+  };
+
+  // Streaming can't interpret control flow from a partial stream (a loop needs its whole body — DD-017
+  // §4.1); disclose once and let the program run linearly (control lines are inert). Honest, bounded.
+  let streamingOWordWarned = false;
+  const noteUninterpretedOWord = (srcByte: number): void => {
+    if (streamingOWordWarned) return;
+    streamingOWordWarned = true;
+    rs274.used = true;
+    rs274.degraded = true;
+    warn(
+      RS274_FLOW_WARN.streamingUnsupported,
+      'O-word control flow is only interpreted for fully-buffered input; this streamed program ran linearly (control flow not executed).',
+      srcByte
+    );
+  };
+
   const finish = (cancelledAtByte?: number): ParseResult => {
     if (stopReason !== undefined && truncatedAtByte === undefined) {
       truncatedAtByte = currentSrcByte;
@@ -1094,10 +1156,11 @@ export function createEngine(input: string | Uint8Array, opts: ParseOptions): En
       // Canned drilling cycles expanded to geometry (DD-012 phase 2, #189). 'known' once a G81/G82/G83
       // was seen (holes are real segments), else 'unavailable' (no cycles / FDM).
       cannedCycles: cannedCyclesSeen ? 'known' : 'unavailable',
-      // RS274NGC parametric programs (DD-017 Phase 1, #189 phase 7). 'known' once a `#param`/`[expr]`
-      // was executed (the interpreter computes deterministic geometry — it does not infer); 'unavailable'
-      // for a non-parametric file (all FDM). Phase 2 adds control flow; a hit resource limit → disclosed.
-      parametricProgram: rs274.used ? 'known' : 'unavailable',
+      // RS274NGC parametric programs (DD-017, #189 phase 7). 'known' once a `#param`/`[expr]`/O-word was
+      // executed deterministically within limits (the interpreter computes geometry — it does not infer);
+      // 'approximated' when Phase 2 flow was degraded (a hit iteration cap, an unbalanced/unsupported
+      // O-word, or a malformed condition — always disclosed); 'unavailable' for non-parametric input.
+      parametricProgram: rs274.parametricConfidence(),
       // Motion-model modes (DD-010 E10 phase 1). 'known' when the governing command was seen
       // (M82/M83, or a firmware-known G90/G91 for E); 'inferred' when defaulted (absolute).
       extrusionMode: eModeExplicit !== null || (extruderFollowsPositioning && positioningSeen) ? 'known' : 'inferred',
@@ -1247,6 +1310,8 @@ export function createEngine(input: string | Uint8Array, opts: ParseOptions): En
     limits,
     processLine,
     stopped: () => stopReason !== undefined,
+    runOWordFlow,
+    noteUninterpretedOWord,
     snapshot,
     markInputTooBig: () => {
       stopReason = {
@@ -1273,6 +1338,13 @@ export function parseGcodeToIR(input: string | Uint8Array, opts: ParseOptions = 
     return engine.finish();
   }
   const text = engine.text;
+  // RS274NGC O-word program (DD-017 Phase 2): interpret with control flow instead of the forward-only
+  // loop. The cheap detection scan fails for every FDM / non-parametric file, which takes the untouched
+  // loop below (byte-identical).
+  if (programUsesOWords(text)) {
+    engine.runOWordFlow();
+    return engine.finish();
+  }
   const len = text.length;
   let offset = 0;
   while (offset < len && !engine.stopped()) {
@@ -1317,6 +1389,14 @@ export async function parseGcodeToIRAsync(
   const yieldEvery = hooks.yieldIntervalMs ?? 50;
   const partial = makePartialEmitter(engine, hooks);
   const text = engine.text;
+  // RS274NGC O-word program (DD-017 Phase 2): a bounded synchronous interpretation section (loops are
+  // capped by `maxProgramIterations`, and these programs are small — hand/CAM-written). Non-parametric
+  // input takes the cooperative line loop below unchanged.
+  if (programUsesOWords(text)) {
+    engine.runOWordFlow();
+    hooks.onProgress?.(text.length, byteLength, 0);
+    return { ...engine.finish(), cancelled: false };
+  }
   const len = text.length;
   let offset = 0;
   let sliceStart = Date.now();

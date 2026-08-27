@@ -22,6 +22,7 @@ import {
   type AsyncParseResult,
   type ParseOptions
 } from './parse.js';
+import { isOWordControlLine } from './rs274-flow.js';
 
 /** Anything that can hand us chunks of bytes. */
 export type StreamInput = BlobLike | ReadableStreamLike<Uint8Array>;
@@ -108,6 +109,9 @@ export async function parseGcodeStreamToIR(
         lineStartOffset += line.length + 1;
         continue;
       }
+      // O-word control flow can't be interpreted from a partial stream (DD-017 §4.1): disclose once and
+      // run linearly. The cheap peek rejects every FDM line before any allocation.
+      if (isOWordControlLine(line)) engine.noteUninterpretedOWord(lineStartOffset);
       engine.processLine(line, lineStartOffset);
       lineStartOffset += line.length + 1;
       if (engine.stopped()) return;
