@@ -25,6 +25,7 @@ export type {
   ToolpathRendererOptions,
   RenderTargetCanvas,
   RendererEvent,
+  PreparationStage,
   GLRendererLike,
   ProgressPresentationMode,
   QualityMode,

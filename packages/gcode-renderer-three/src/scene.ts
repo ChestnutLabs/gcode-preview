@@ -90,8 +90,20 @@ export function chooseQuality(requested: QualityMode | 'auto', totalSegments: nu
 /** How the live-progress overlay is currently presented (DD-006 §4.5). */
 export type ProgressPresentationMode = 'exact' | 'band' | 'stale' | 'hidden';
 
+/**
+ * Honest preparation stages (DD-029 §4 D2). `parsing`/`classifying` are emitted by
+ * `@chestnutlabs/gcode-preview-core` (the parse worker owns them); the renderer emits
+ * `building-geometry` (with a real fraction + counts — the stage the user waits on), `preparing-gpu`,
+ * and `ready`. `ready` coincides with `buildComplete` (never before it); a preparation failure
+ * terminates through the existing `error` path instead — there is no stage failure variant.
+ */
+export type PreparationStage = 'parsing' | 'classifying' | 'building-geometry' | 'preparing-gpu' | 'ready';
+
 export type RendererEvent =
   | { type: 'buildProgress'; chunksBuilt: number; chunksTotal: number }
+  /** Staged preparation progress (DD-029). `progress` (0..1) + `detail` are present for
+   *  `building-geometry`; `preparing-gpu`/`ready` are momentary (no fraction) in this renderer. */
+  | { type: 'stage'; stage: PreparationStage; progress?: number; detail?: { built: number; total: number } }
   | { type: 'progress-presentation-changed'; mode: ProgressPresentationMode; reason?: string }
   | {
       type: 'buildComplete';
@@ -736,13 +748,24 @@ export class ToolpathRenderer {
       this.builtCount++;
       built++;
     }
-    this.emit({ type: 'buildProgress', chunksBuilt: this.builtCount, chunksTotal: this.buildResult.chunks.length });
+    const chunkTotal = this.buildResult.chunks.length;
+    this.emit({ type: 'buildProgress', chunksBuilt: this.builtCount, chunksTotal: chunkTotal });
+    // DD-029: building-geometry is the stage the user waits on — carry a real fraction + counts.
+    this.emit({
+      type: 'stage',
+      stage: 'building-geometry',
+      progress: chunkTotal > 0 ? this.builtCount / chunkTotal : 1,
+      detail: { built: this.builtCount, total: chunkTotal }
+    });
     // Headless stills (renderDuringBuild=false) skip the per-tick render — only the final frame is
     // captured, so dozens-to-hundreds of intermediate full-scene software renders are pure waste.
     if (this.renderDuringBuild) this.render();
     if (this.pendingChunks.length > 0) {
       this.scheduleFrame(() => this.buildTick());
     } else {
+      // DD-029: geometry done → GPU-prep stage, then the reveal-authoritative `buildComplete`, then
+      // `ready` (which coincides with buildComplete, never precedes it).
+      this.emit({ type: 'stage', stage: 'preparing-gpu' });
       this.emit({
         type: 'buildComplete',
         segments: this.buildResult.totalSegmentsIncluded,
@@ -753,6 +776,8 @@ export class ToolpathRenderer {
       // DD-027: assemble + publish the render-diagnostics snapshot for this build.
       this.lastRenderStats = this.assembleRenderStats();
       this.emit({ type: 'renderStats', stats: this.lastRenderStats });
+      // DD-029: terminal preparation stage — coincident with `buildComplete` above.
+      this.emit({ type: 'stage', stage: 'ready' });
     }
   }
 
