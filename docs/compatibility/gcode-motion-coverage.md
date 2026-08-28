@@ -64,6 +64,34 @@ other geometry (positions, kinds, layers, source bytes) stayed byte-identical.
   `probe-position-runtime-dependent`; the native golden pins this, and the fixture is a documented,
   intentional divergence from the inherited engine (which ignored both `G31` and `G92 Z`).
 
+## RS274NGC parametric programs (DD-017)
+
+Beyond the fixed motion codes above, the interpreter executes the **RS274NGC programming layer** — the
+way LinuxCNC / CAM output *computes* geometry (parameters, expressions, control flow, subroutines). It
+engages only when a line uses `#`, `[`, or a leading O-word; every other file takes the ordinary path
+and is **byte-identical**. Shipped in v0.18.0 (DD-017 phases 1–3). See the
+[parametric-programs guide](../manual/concept-parametric-programs.md) for a worked example.
+
+| Construct | Support | Disclosure on trouble |
+|---|---|---|
+| Parameters `#1`–`#5399`, `#<local>`, `#<_global>`; assignment; indirect `##`; computed `#[expr]` | **honored** | read-before-write → `0` + `rs274-uninitialized-param` |
+| System parameters | read-only allow-list (current position `#5420`–`#5422`) | others → `0` + `rs274-unsupported-sysparam` |
+| Expressions `[ … ]` — full operator/function set, **degree** trig, LinuxCNC `MOD`/`EQ` | **honored** | malformed → word dropped + `rs274-bad-expression`; non-finite result → `rs274-non-finite-value` |
+| `if` / `elseif` / `else` / `endif` | **honored** | — |
+| `while` / `endwhile`, `do` / `while`, `repeat` / `endrepeat` | **honored** | total loop work capped → `rs274-iteration-limit` |
+| `break` / `continue` | **honored** (innermost loop, frame-local) | outside a loop → `rs274-misplaced-control` |
+| `sub` / `endsub`, `call [args]`, `return` — in-file, recursive, forward-referenceable | **honored** | recursion capped → `rs274-call-depth`; unknown sub → `rs274-unknown-sub`; redefined → `rs274-duplicate-sub` |
+| External subprogram files (`M98 P…`, external `o<name> call`), persistent `.var` params, `return` values | **out of scope** | — |
+
+**Bounds & honesty.** Two `ParseLimits` fields bound execution: `maxProgramIterations` (default
+1,000,000) caps total loop work — charged per loop pass *and* per statement inside a loop or subroutine,
+so a large body or an exponential recursive fan-out cannot exceed it — and `maxCallDepth` (default 50)
+caps subroutine recursion. There is no `eval` and no I/O. Clean execution reports the
+`parametricProgram` capability as `known`; any disclosure above drops it to `approximated`; a
+non-parametric file reports `unavailable` — never a fabricated value. FDM / non-parametric input is
+byte-identical (both golden suites unchanged). Design and the bounded-execution model:
+[DD-017](../design/DD-017-rs274ngc-parametric-programs.md).
+
 ## Remaining gaps
 
 The E10 motion-model gaps from the #154 audit are now all closed. Tracking issues: **#155** (G90/G91 +
