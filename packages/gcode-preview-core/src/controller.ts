@@ -43,6 +43,7 @@ import {
   segmentsCompletedAtTime,
   type Confidence,
   type DialectMetadata,
+  type FeatureRoleValue,
   type MachineGeometry,
   type MappedProgress,
   type ProgressMapper,
@@ -181,6 +182,12 @@ export interface GcodePreviewControls {
    */
   setScrubTime(ms: number | null): void;
   setKindVisible(kind: MoveKindToggle, visible: boolean): void;
+  /**
+   * Show/hide a single feature role — e.g. hide `Skirt`/`Brim` to declutter a part preview. Gate the
+   * UI on `capabilities.featureRoles === 'known'` (like the feature color mode); a no-op on the 2D
+   * renderer and on files without feature annotations. Import `FeatureRole` from `@chestnutlabs/toolpath-core`.
+   */
+  setFeatureRoleVisible(role: FeatureRoleValue, visible: boolean): void;
   /** Opt-in retraction/deretraction markers (DD-009 D1, #148). Off by default. */
   setShowRetractions(visible: boolean): void;
   setColorMode(mode: ColorMode): boolean;
@@ -545,6 +552,7 @@ export function createPreviewController(options: PreviewControllerOptions = {}):
       withRenderer((r) => r.setScrubPosition(seg));
     },
     setKindVisible: (k, v) => withRenderer((r) => r.setKindVisible(k, v)),
+    setFeatureRoleVisible: (role, v) => withRenderer((r) => r.setFeatureRoleVisible?.(role, v)),
     setShowRetractions: (v) => withRenderer((r) => r.setShowRetractions(v)),
     // Availability is IR/renderer-dependent; before the renderer is ready we optimistically queue
     // and report true (the mode applies once bound). Callers can re-check after `parse-complete`.

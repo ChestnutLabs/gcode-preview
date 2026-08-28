@@ -31,8 +31,9 @@ The core job: turn a sliced file into an interactive picture of the actual moves
 order. Scrubbing is a draw-range trim, so it stays smooth even on large models.*
 
 Also here: **segment scrub** (step move-by-move), **time scrub** with an honest print-time estimate
-(labeled *slicer estimate* vs *kinematic approximation*), and **source-line ↔ segment mapping** — click
-a move to find its byte in the file, and back. See [recipes](recipes.md).
+(labeled *slicer estimate* vs *kinematic approximation*), **hide by feature role**
+(`setFeatureRoleVisible` — e.g. hide brim/skirt to declutter a part preview), and **source-line ↔
+segment mapping** — click a move to find its byte in the file, and back. See [recipes](recipes.md).
 
 ## Coloring & analysis
 

@@ -42,7 +42,7 @@ import {
   Vector2,
   Vector3
 } from 'three';
-import type { MachineGeometry, MappedProgress, ToolpathIR } from '@chestnutlabs/toolpath-core';
+import type { FeatureRoleValue, MachineGeometry, MappedProgress, ToolpathIR } from '@chestnutlabs/toolpath-core';
 import { autoDecimation, buildChunks, type ChunkBuildResult, type GeometryChunk } from './chunks.js';
 import { buildChunkColors, type ColorMode } from './colors.js';
 import { computeDrawState, computeOverlayDrawStates } from './ranges.js';
@@ -358,6 +358,9 @@ export class ToolpathRenderer {
   private endLayer = Infinity;
   private scrubSegIndex: number | null = null;
   private kindVisible: Record<GeometryChunk['kind'], boolean> = { extrude: true, travel: true, wipe: true };
+  // Per-feature-role visibility (DD-009 extension): hidden roles are collapsed to NaN positions so the
+  // GPU discards them, reversibly. Empty by default → no work, geometry byte-identical when unused.
+  private hiddenFeatureRoles = new Set<number>();
   // Live-progress overlay state (DD-006 §4.5, phase 3): completed cut + ghost + marker/band.
   private progress: MappedProgress | null = null;
   private presentationMode: ProgressPresentationMode = 'hidden';
@@ -780,6 +783,7 @@ export class ToolpathRenderer {
       mesh.name = `chunk:${c.kind}:${c.layerStart}-${c.layerEnd}`;
       mesh.userData.chunk = c;
       this.applyDrawStateToMesh(mesh, c);
+      this.applyFeatureVisibilityToMesh(mesh, c);
       this.toolpathGroup.add(mesh);
       nonExtrude++;
     }
@@ -860,6 +864,7 @@ export class ToolpathRenderer {
     mesh.userData.drawUnitsPerSegment = response.indicesPerSegment;
     mesh.userData.vertexSegment = vertexSegment;
     this.applyDrawStateToMesh(mesh, chunk);
+    this.applyFeatureVisibilityToMesh(mesh, chunk);
     return mesh;
   }
 
@@ -993,6 +998,7 @@ export class ToolpathRenderer {
       mesh.name = `chunk:${chunk.kind}:${chunk.layerStart}-${chunk.layerEnd}`;
       mesh.userData.chunk = chunk;
       this.applyDrawStateToMesh(mesh, chunk); // honor clipping set during an in-flight build
+      this.applyFeatureVisibilityToMesh(mesh, chunk); // honor a hidden feature role, too
       this.toolpathGroup.add(mesh);
       this.builtCount++;
       built++;
@@ -1195,6 +1201,78 @@ export class ToolpathRenderer {
     this.kindVisible[kind] = visible;
     this.applyDrawState();
     this.render();
+  }
+
+  /**
+   * Show or hide a single {@link FeatureRole} — e.g. hide `Skirt`/`Brim` to declutter a part preview,
+   * or isolate `Support`. Feature roles live per-segment inside the extrusion geometry (unlike move
+   * kinds, which are whole chunks), so hidden segments are collapsed to NaN positions and the GPU
+   * discards them; the original positions are restored when the role is shown again.
+   *
+   * Only meaningful when the file carried feature annotations (`capabilities.featureRoles === 'known'`
+   * — gate the UI on it, like the feature color mode); on an unannotated file every segment is
+   * `Unknown` and hiding a specific role is a no-op. Untouched geometry (no role hidden) is
+   * byte-identical to before this call existed. Interacts cleanly with layer clip and scrub.
+   */
+  setFeatureRoleVisible(role: FeatureRoleValue, visible: boolean): void {
+    if (this.disposed) return;
+    if (visible) this.hiddenFeatureRoles.delete(role);
+    else this.hiddenFeatureRoles.add(role);
+    this.applyFeatureVisibility();
+    this.render();
+  }
+
+  /** The feature roles currently hidden via {@link setFeatureRoleVisible} (for state persistence). */
+  getHiddenFeatureRoles(): FeatureRoleValue[] {
+    return [...this.hiddenFeatureRoles] as FeatureRoleValue[];
+  }
+
+  private applyFeatureVisibility(): void {
+    for (const mesh of this.chunkMeshes) {
+      const chunk = mesh.userData.chunk as GeometryChunk | undefined;
+      if (chunk) this.applyFeatureVisibilityToMesh(mesh, chunk);
+    }
+  }
+
+  /**
+   * Collapse hidden-feature-role segments in one extrude mesh to NaN (GPU-discarded), restoring from a
+   * lazily-saved base copy when nothing is hidden. No-op for travel/wipe chunks (feature roles are an
+   * extrusion channel) and when no role is hidden and none ever was on this mesh — so unused = free.
+   */
+  private applyFeatureVisibilityToMesh(mesh: LineSegments | Mesh, chunk: GeometryChunk): void {
+    if (this.ir === null || chunk.kind !== 'extrude') return;
+    const posAttr = (mesh.geometry as BufferGeometry).getAttribute('position') as BufferAttribute;
+    const arr = posAttr.array as Float32Array;
+    let base = mesh.userData.baseFeaturePositions as Float32Array | undefined;
+    if (this.hiddenFeatureRoles.size === 0) {
+      if (base !== undefined) {
+        arr.set(base); // restore, then release the base copy
+        posAttr.needsUpdate = true;
+        mesh.userData.baseFeaturePositions = undefined;
+      }
+      return;
+    }
+    if (base === undefined) {
+      base = arr.slice();
+      mesh.userData.baseFeaturePositions = base;
+    }
+    const feature = this.ir.segments.feature;
+    const vertexSegment = mesh.userData.vertexSegment as Uint32Array | undefined;
+    const vcount = arr.length / 3;
+    for (let v = 0; v < vcount; v++) {
+      const inChunk = vertexSegment !== undefined ? vertexSegment[v] : v >> 1;
+      const globalSeg = chunk.segIndices[inChunk];
+      if (this.hiddenFeatureRoles.has(feature[globalSeg])) {
+        arr[v * 3] = NaN;
+        arr[v * 3 + 1] = NaN;
+        arr[v * 3 + 2] = NaN;
+      } else {
+        arr[v * 3] = base[v * 3];
+        arr[v * 3 + 1] = base[v * 3 + 1];
+        arr[v * 3 + 2] = base[v * 3 + 2];
+      }
+    }
+    posAttr.needsUpdate = true;
   }
 
   /**
