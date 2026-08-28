@@ -36,6 +36,14 @@ export interface CaptureOptions {
   quality?: number;
   /** Background for the capture: `'transparent'`, or a solid color. Default: the live scene background. */
   background?: 'transparent' | ThemeColor;
+  /**
+   * Include the build-volume group (grid + bed surface + origin + cage) in the capture. Default `true`
+   * (the live view). Set `false` to exclude it for the off-screen render only — with
+   * `background:'transparent'` this yields a clean toolpath-only cutout (parity with `ModelRenderer`
+   * thumbnails), without disturbing the live view. Honored by the 3D toolpath renderer; a no-op where
+   * there is no build volume (`ModelViewer`) or no capture (the 2D renderer).
+   */
+  includeBuildVolume?: boolean;
 }
 
 /** Resolve the capture pixel size from options + the live drawing-buffer size (both clamped to ≥1). */
