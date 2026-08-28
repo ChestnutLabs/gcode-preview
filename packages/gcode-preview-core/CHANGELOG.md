@@ -1,5 +1,27 @@
 # @chestnutlabs/gcode-preview-core
 
+## 0.19.0
+
+### Minor Changes
+
+- [#423](https://github.com/ChestnutLabs/gcode-preview/pull/423) [`81690dc`](https://github.com/ChestnutLabs/gcode-preview/commit/81690dcfece21d6fd11074ad7a264bcfc9edf455) Thanks [@sobechestnut-dev](https://github.com/sobechestnut-dev)! - feat(renderer): `setFeatureRoleVisible(role, visible)` — show/hide a single feature role
+
+  Toggle a `FeatureRole` on or off — e.g. hide `Skirt`/`Brim` to declutter a part preview, or isolate
+  `Support`. Feature roles live per-segment inside the extrusion geometry (unlike the whole-chunk move-kind
+  toggle), so hidden segments are collapsed to NaN positions and the GPU discards them; showing the role
+  again restores the geometry byte-for-byte. Available on `ToolpathRenderer` and via
+  `GcodePreviewControls.setFeatureRoleVisible` (a no-op on the 2D renderer). Additive and capability-gated:
+  gate the UI on `capabilities.featureRoles === 'known'`, like the feature colour mode; untouched geometry
+  (no role hidden) is byte-identical. Also exports `FeatureRoleValue` from `@chestnutlabs/toolpath-core`.
+
+### Patch Changes
+
+- Updated dependencies [[`81690dc`](https://github.com/ChestnutLabs/gcode-preview/commit/81690dcfece21d6fd11074ad7a264bcfc9edf455)]:
+  - @chestnutlabs/gcode-renderer-three@0.19.0
+  - @chestnutlabs/toolpath-core@0.19.0
+  - @chestnutlabs/gcode-parser@0.19.0
+  - @chestnutlabs/gcode-renderer-2d@0.19.0
+
 ## 0.18.0
 
 ### Minor Changes
