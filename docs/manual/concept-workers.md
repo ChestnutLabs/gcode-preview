@@ -54,3 +54,13 @@ The Three.js renderer keeps interactions cheap: **layer chunks** with decimation
 clip and segment scrub as **draw-range** updates (no geometry rebuilds), tube-or-line geometry with
 automatic quality fallback, per-file build plates, and WebGL context-loss recovery. Pair a bounded
 parse with draw-range navigation and even very large toolpaths stay responsive.
+
+| Tubes | Lines |
+|---|---|
+| ![The calicat as lit 3D extrusion tubes](../media/render-tubes.png) | ![The calicat as flat single-pixel toolpath lines](../media/render-lines.png) |
+| Lit 3D cross-sections — the default for models that fit the geometry budget. | Flat one-pixel paths — lighter, for very large files or low-GPU devices. |
+
+A **parallel geometry worker pool** builds the tubes off the main thread (byte-identical to serial,
+degrading pool → serial → lines under a memory budget, all disclosed), and **`getRenderStats()`**
+reports exactly what happened — backend, hardware-vs-software GPU, draw calls, and timings — so "why
+is this slow / what am I running on" is answerable, never guessed.

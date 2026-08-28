@@ -20,6 +20,11 @@ and the stack maps it onto the toolpath with **tiered confidence**:
 - **stale** signal → handled explicitly, not silently frozen;
 - **user scrub always wins** over incoming telemetry.
 
+| Known position | Approximated position |
+|---|---|
+| ![Live progress with a byte-exact position marker and a ghosted remaining path](../media/progress-known.png) | ![Live progress from a coarse signal shown as an emphasis band over the current layer](../media/progress-approximated.png) |
+| Byte-exact telemetry → a precise cut and an exact marker. | A layer index or bare percentage → an uncertainty band, not a fake dot. |
+
 The normalized contract and consumer guidance are in the
 [progress signal contract](https://github.com/ChestnutLabs/gcode-preview/blob/dev/docs/reference/progress-signal-contract.md)
 and [consumer notes](https://github.com/ChestnutLabs/gcode-preview/blob/dev/docs/reference/progress-consumer-notes.md).

@@ -86,7 +86,11 @@ console.log('\n== docs:build — generating SDK manual ==');
 typedocChecked('npx typedoc --options tools/docs/typedoc.manual.json', 'manual', 1);
 
 console.log('\n== docs:build — generating API reference (typedoc, packages mode) ==');
-typedocChecked('npx typedoc', 'API reference', 3);
+// Baseline 4: two unavoidable @types/three .d.ts comment quirks, one media-copy probe note for an
+// absolute doc link, and one "Unsupported highlight language gcode" note — the DD-017 parser TSDoc
+// carries a ```gcode example and shiki bundles no `gcode` grammar, so the block renders unhighlighted
+// (benign, same as the manual page). Lower the baseline as these are removed.
+typedocChecked('npx typedoc', 'API reference', 4);
 
 // Theme both sub-sites. typedoc's `customCss` is ignored in packages mode, so we append the theme
 // to every generated style.css (appended last → wins by source order) and inject a non-blocking

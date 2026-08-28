@@ -43,8 +43,14 @@ o100 while [#<i> LT #<n>]
 o100 endwhile
 ```
 
-The six rapids land on the circle: the loop runs and the degree-trig expressions evaluate, so the
+The rapids land on the circle: the loop runs and the degree-trig expressions evaluate, so the
 preview shows the pattern the machine would follow — not an empty plate.
+
+![A CNC toolpath of holes on a circle plus a centre hole and a square frame, all computed by a parametric program, cut moves in pink and rapid moves in blue](../media/parametric-bolt-circle.png)
+
+*A slightly larger version of the same idea — eight holes, a centre hole, and a computed frame —
+rendered from [`test-data/fixtures/parametric/bolt-circle.ngc`](https://github.com/ChestnutLabs/gcode-preview/blob/dev/test-data/fixtures/parametric/bolt-circle.ngc).
+Nothing in that file lists a hole position; every one is computed.*
 
 ## It costs nothing on ordinary files
 
