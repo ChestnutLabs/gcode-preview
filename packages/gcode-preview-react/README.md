@@ -26,12 +26,19 @@ function Viewer({ file }: { file: File | null }) {
 }
 ```
 
-That is a complete viewer (StrictMode-safe). The full surface is optional props with sensible
-defaults — `source`, `parseOptions`, `buildVolume` (consumer-wins bed precedence), `quality`,
-`colorMode`, `layerRange`, `scrub`, `showTravel`, `progress` (DD-006 observation), `createWorker`
-— with matching callbacks (`onReady`, `onParseError`, `onBuildComplete`, `onQualityFallback`,
+That is a complete viewer (StrictMode-safe). The full surface is ~24 optional props with sensible
+defaults — `source`, `parseOptions`, `buildVolume` (consumer-wins bed precedence), `quality` /
+`qualityMode`, `colorMode`, `theme`, `cameraMode` / `view` / `frameContent`, `layerRange`, `scrub`,
+`showTravel` / `showRetractions` / `showWipe`, `hiddenFeatureRoles` (hide feature roles like Skirt or
+Brim; gate on `capabilities.featureRoles`), `progress` (DD-006 observation), `createWorker` — with
+matching callbacks (`onReady`, `onCameraChange`, `onParseError`, `onParseCancelled`,
+`onParseProgress`, `onStage`, `onBuildComplete`, `onQualityFallback`,
 `onMachineGeometryMismatch`/`Discovered`, `onProgressPresentationChanged`, `onDisclosure`,
-`onError`). The full handle is reachable via `ref`.
+`onError`). The full handle is reachable via `ref`; its `controls` reach the imperative surface —
+`getRenderStats()` (render diagnostics), `pickSegment(ndcX, ndcY, threshold?)` (source-mapping /
+picking), `isColorModeAvailable(mode)`, and `capture(opts?)` (image `Blob`, also `handle.capture`).
+The handle `state` carries capability-aware UI data (`availableColorModes`, `hasRetractions`,
+`hasColorChanges`).
 
 ## Headless hook (build your own controls)
 

@@ -25,14 +25,20 @@ it automatically; pnpm/yarn users add it explicitly. See the
 </div>
 ```
 
-That is a complete viewer. The component ships as a **raw `.svelte` file** (standard Svelte
-library packaging — your bundler's svelte plugin compiles it via the `svelte` export condition).
-Full defaulted prop surface: `source`, `parseOptions`, `buildVolume` (consumer-wins bed
-precedence), `quality`, `colorMode`, `layerRange`, `scrub`, `showTravel`, `progress` (DD-006
-observation), `createWorker`. Events: `ready`, `parseerror`, `parsecancelled`, `parseprogress`,
-`buildcomplete`, `qualityfallback`, `machinegeometrymismatch`/`discovered`,
-`progresspresentationchanged`, `disclosure`, `error`. The full handle is exported as `preview`
-(`bind:this` then `.preview`).
+That is a complete viewer. The component ships from the `/GcodePreview.svelte` subpath as a **raw
+`.svelte` file** (standard Svelte library packaging — your bundler's svelte plugin compiles it via
+the `svelte` export condition), not from the package index. The ~24-prop defaulted surface covers
+`source`, `parseOptions`, `buildVolume` (consumer-wins bed precedence), `quality` / `qualityMode`,
+`colorMode`, `theme`, `cameraMode` / `view` / `frameContent`, `layerRange`, `scrub`, `showTravel` /
+`showRetractions` / `showWipe`, `hiddenFeatureRoles` (hide feature roles like Skirt or Brim; gate on
+`capabilities.featureRoles`), `progress` (DD-006 observation), and `createWorker`. Events (13):
+`ready`, `camerachange`, `parseerror`, `parsecancelled`, `parseprogress`, `stage`, `buildcomplete`,
+`qualityfallback`, `machinegeometrymismatch`/`discovered`, `progresspresentationchanged`,
+`disclosure`, `error`. The full handle is exported as `preview` (`bind:this` then `.preview`); its
+`controls` reach the imperative surface — `getRenderStats()` (render diagnostics),
+`pickSegment(ndcX, ndcY, threshold?)` (source-mapping / picking), `isColorModeAvailable(mode)`, and
+`capture(opts?)` (image `Blob`, also `preview.capture`). The handle `state` carries capability-aware
+UI data (`availableColorModes`, `hasRetractions`, `hasColorChanges`).
 
 ## Store/action API (build your own controls)
 

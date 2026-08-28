@@ -34,23 +34,32 @@ const file = shallowRef<File | null>(null);
 </template>
 ```
 
-That is a complete viewer. The full surface is optional props with sensible defaults:
+That is a complete viewer. The full surface is ~24 optional props with sensible defaults — the
+frequently reached-for ones:
 
 | Prop | Purpose |
 |---|---|
 | `source` | `Uint8Array \| ArrayBuffer \| File` — changing it re-parses |
 | `parse-options` | wire options (limits, dialects, containers, plate selection) |
+| `renderer` | `'3d'` (Three.js) or `'2d'` (Canvas fallback) — construction-time |
 | `build-volume` | consumer-configured plate — wins over file-discovered geometry; discovery is then emitted, not applied |
-| `quality` | `'auto' \| 'lines' \| 'tubes'` |
-| `color-mode` | single / by-tool / by-feature (feature coloring is capability-gated — listen for `error`) |
-| `layer-range` / `scrub` / `show-travel` | clipping controls |
+| `quality` / `quality-mode` | `'auto' \| 'lines' \| 'tubes'`; render-quality budget (`'full' \| 'adaptive' \| 'fast'`) |
+| `color-mode` | single / by-tool / by-feature (feature coloring is capability-gated — check `state.availableColorModes` or listen for `error`) |
+| `theme` | viewer theme (background, bed, toolpath palette) |
+| `camera-mode` / `view` / `camera-state` / `frame-content` | perspective/orthographic, named view, saved camera, framing target |
+| `layer-range` / `scrub` / `scrub-time` | clipping / time-based scrub controls |
+| `show-travel` / `show-wipe` / `show-retractions` / `show-volume-cage` | move-class and overlay visibility toggles |
+| `hidden-feature-roles` | hide feature roles (e.g. Skirt, Brim) — declarative form of `controls.setFeatureRoleVisible`; gate on `capabilities.featureRoles` |
 | `progress` | a DD-006 `ProgressObservation` — drives the honest live-progress overlay (marker for byte-exact, uncertainty band for approximate, gray when stale) |
 | `create-worker` | worker factory escape hatch (see below) |
 
-Emits: `ready`, `parse-error`, `parse-cancelled`, `parse-progress`, `build-complete`,
-`quality-fallback`, `machine-geometry-mismatch`, `machine-geometry-discovered`,
+Emits (13): `ready`, `camera-change`, `parse-error`, `parse-cancelled`, `parse-progress`, `stage`,
+`build-complete`, `quality-fallback`, `machine-geometry-mismatch`, `machine-geometry-discovered`,
 `progress-presentation-changed`, `disclosure`, `error`. The underlying handle is exposed for
-template refs (`ref.preview`).
+template refs (`ref.preview`); its `controls` reach the imperative surface — `getRenderStats()`
+(render diagnostics), `pickSegment(ndcX, ndcY, threshold?)` (source-mapping / picking),
+`isColorModeAvailable(mode)`, and `capture(opts?)` (image `Blob`, also `handle.capture`). The handle
+`state` carries capability-aware UI data (`availableColorModes`, `hasRetractions`, `hasColorChanges`).
 
 ## Headless composable (build your own controls)
 
