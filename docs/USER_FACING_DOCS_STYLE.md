@@ -86,11 +86,35 @@ confident, visual, technically credible, and human**.
 
 ## 6. Visuals
 
-Screenshots carry the product. Rules:
+Screenshots carry the product.
+
+**Default rule:** every user-facing feature is **visually documented somewhere** — unless the
+coverage matrix ([`docs/VISUAL_FEATURE_COVERAGE.md`](VISUAL_FEATURE_COVERAGE.md)) records *why not*
+(the feature is non-visual, is redundant with an existing shot, or is inherently temporal and
+covered by a clip). "We didn't get to it" is not a recorded reason; an explicit matrix entry is.
+The per-release Public Product + Docs + **Visual** review (`RELEASE_REVIEW.md`, enforced by
+`npm run docs:release-check`) is where this is reconciled before promotion.
+
+**Two visual classes** — know which one you are producing:
+
+- **Showcase** — the hero images that sell the product (README top, Pages homepage). They pick the
+  most compelling model + framing and demonstrate the product as a whole.
+- **Feature-proof** — the minimum image that *proves a specific capability exists and works*
+  (a color mode, a non-rectangular bed, a clip plane, a capability disclosure). It is judged by the
+  §8 recognition test, not by how pretty it is. Every feature the matrix tracks needs one, even when
+  it will never be a hero shot.
+
+Rules:
 
 - **Real software only.** Every image is a render from the current build (see
   [`tools/screenshots/`](../tools/screenshots/README.md)). Never mock, composite, or hand-paint a
   screenshot, and never show UI the software doesn't have.
+- **Documentation capture background.** Feature-proof and grid captures use the canonical
+  **mid-grey, slicer/CAD-style documentation background** — a named shared capture setting in
+  [`tools/screenshots/`](../tools/screenshots/README.md), *not* a library default. The neutral grey
+  keeps toolpath colors, feature coloring, and geometry legible and consistent across a set. It is a
+  documentation convention only: consumers keep full control of the rendered background, and nothing
+  here changes the library's own defaults.
 - **Put a strong visual near the top** of the root README, above the fold. It should demonstrate
   the product, not decorate the page.
 - **Consistency:** hold viewport size, framing, crop, sample models, filenames, and UI state steady
@@ -132,6 +156,16 @@ consideration is):
 
 If a visible behavior changed, regenerate the affected media with the capture harness rather than
 leaving a stale image in place.
+
+**The recognition test (for feature-proof visuals).** A feature-proof image passes only if:
+
+> Would a developer who knows the product recognize *this specific feature* from the image alone,
+> with the caption removed?
+
+If the capability is not legible without the words underneath it, the shot is not proving anything —
+reframe it, pick a model that exercises the feature, or add the on-screen state that makes it
+visible. Track the outcome in the coverage matrix ([`docs/VISUAL_FEATURE_COVERAGE.md`](VISUAL_FEATURE_COVERAGE.md));
+a feature with no passing image needs either a new capture or a recorded reason it has none.
 
 ## 9. Links and legal
 

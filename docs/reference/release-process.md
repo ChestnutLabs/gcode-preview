@@ -26,13 +26,31 @@ from the protected `Release / publish` workflow on a tag from `main` — never f
      stamper drops a `RELEASE_NOTES_DRAFT.md` (proposed lead + history line + deduped changelog
      points) into the PR for the author to fold in, then delete. The single source of truth for
      these surfaces is `tools/release/doc-surfaces.mjs`.
+   - **The Public Product + Docs + Visual review is seeded here too.** The same stamper generates
+     `RELEASE_REVIEW.md` from a **changed-capability inventory** — every package whose `src/` changed
+     since the previous `vX.Y.Z` tag (`changedCapabilityInventory()`), with its changed files and
+     changelog summary — each disposition pre-filled `Status: pending`, plus three global markers
+     (Product / Docs / Visual) pre-filled `pending`. It is the *inverse* of the notes draft: the
+     draft must be **absent** to promote, this review must be **present and fully resolved**. See the
+     dedicated review step below.
+2a. **Public Product + Documentation + Visual review (required, before promotion):** open
+   `RELEASE_REVIEW.md` and reconcile the changed-capability inventory against the whole public
+   surface — the root `README`, the Pages homepage, the feature gallery, the manual (`docs/manual/`),
+   the demo and `tools/example-*` apps, the screenshots, and the visual coverage matrix
+   (`docs/VISUAL_FEATURE_COVERAGE.md`). For each changed package set its disposition to
+   `Status: reviewed` / `no-change-needed` / `not-applicable` (never `pending`), regenerating any
+   media the change invalidated (`tools/screenshots/`). Then resolve the three global markers by
+   replacing `pending` with `resolved`. `npm run docs:release-check` (the `Docs release gate`) reads
+   this file and **blocks the promotion PR** until the version matches and every disposition is
+   resolved — so the review is enforced, not a reminder.
 3. **Promotion PR (`dev` → `main`):** a deliberate PR carrying the versioned state to `main`,
    merged only with the required checks green — including the **`Docs release gate`**
    (`npm run docs:release-check`), which fails the promotion if any version surface, the
    `docs/README` current-state lead, or the release-history list disagrees with the version being
-   cut, or if `RELEASE_NOTES_DRAFT.md` is still present. It also prints a screenshots/guides review
-   reminder (the judgment call from CLAUDE.md's *Public-docs completion check*; confirmed via the
-   promotion PR-template checkbox, not hard-failed). The first promotion (`v0.1.0`) ended the
+   cut, if `RELEASE_NOTES_DRAFT.md` is still present, or if `RELEASE_REVIEW.md` is missing, names a
+   different version, or still carries an unresolved disposition (a `Status: pending` row or a
+   Product/Docs/Visual marker not `resolved`). The Public Product + Docs + Visual review (step 2a) is
+   thus **enforced by the gate**, not left to a checkbox. The first promotion (`v0.1.0`) ended the
    founding-baseline freeze on `main`.
 4. **Tag + GitHub Release:** tag `vX.Y.Z` on `main` and publish a GitHub Release for it. This —
    and nothing else — triggers publication.
@@ -70,7 +88,7 @@ from the protected `Release / publish` workflow on a tag from `main` — never f
 | Branch | Protection |
 |---|---|
 | `dev` | required check `build` (existing); the *Changeset presence* check runs on every PR |
-| `main` | required check `build` (existing, kept name-stable); **add `node-24` as required** at the rehearsal; no direct pushes; release PRs (promotion) only |
+| `main` | required check `build` (existing, kept name-stable); **add `node-24` as required** at the rehearsal; the **`Docs release gate`** (`docs-release-gate.yml` → `npm run docs:release-check`) runs on every PR to `main` and — since promotion PRs are the only PRs targeting `main` — is the mechanism that enforces both the version surfaces and the resolved `RELEASE_REVIEW.md`; no direct pushes; release PRs (promotion) only |
 | tags `v*` | created only on `main` (the publish workflow independently verifies tag ∈ `main` and refuses otherwise) |
 
 ## Failure behavior (DD-008 §6)

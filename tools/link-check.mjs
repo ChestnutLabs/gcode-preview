@@ -28,6 +28,7 @@ const INCLUDE = [
   /^PROJECT_SETUP\.md$/,
   /^THIRD_PARTY_NOTICES\.md$/,
   /^docs\/README\.md$/,
+  /^docs\/manual\//,
   /^docs\/reference\//,
   /^docs\/compatibility\//,
   /^packages\/[^/]+\/README\.md$/,

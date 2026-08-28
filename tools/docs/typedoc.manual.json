@@ -9,7 +9,8 @@
     "../../docs/manual/concept-ir-capabilities.md",
     "../../docs/manual/concept-workers.md",
     "../../docs/manual/concept-dialects-containers.md",
-    "../../docs/manual/concept-progress-motion.md"
+    "../../docs/manual/concept-progress-motion.md",
+    "../../docs/manual/concept-parametric-programs.md"
   ],
   "out": "../../docs-site",
   "name": "Chestnut Labs G-code Preview",

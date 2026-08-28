@@ -1,6 +1,6 @@
 # DD-008 D3 (#130): the ONLY path that publishes @chestnutlabs/* — a GitHub Release
 # (tag vX.Y.Z) cut from `main`. Fresh install, every repository gate, then a
-# dependency-ordered `npm publish` ×9 with npm provenance. Trusted publishing (OIDC)
+# dependency-ordered `npm publish` ×14 with npm provenance. Trusted publishing (OIDC)
 # is the intended auth; a granular NPM_TOKEN secret is the recorded fallback
 # (DD-008 §4.3 — the @chestnutlabs scope is user-owned; org conversion deferred).
 # No workstation publishing, ever.
