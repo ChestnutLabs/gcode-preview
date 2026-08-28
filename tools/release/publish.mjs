@@ -1,5 +1,5 @@
 /*
- * DD-008 §4.3/#130: publish orchestration for the nine-package lockstep line.
+ * DD-008 §4.3/#130: publish orchestration for the 14-package lockstep line.
  * Publishes in dependency order with npm provenance. Guards:
  *   - a REAL publish runs only inside GitHub Actions (protected workflow) with
  *     RELEASE_CONFIRM=publish set by the workflow — never from a workstation.

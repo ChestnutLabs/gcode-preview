@@ -18,7 +18,7 @@
  * build in dependency order first.
  */
 import { execSync } from 'node:child_process';
-import { readFileSync, writeFileSync, readdirSync, rmSync } from 'node:fs';
+import { readFileSync, writeFileSync, readdirSync, rmSync, existsSync, mkdirSync, copyFileSync } from 'node:fs';
 import { sep } from 'node:path';
 
 // Dependency order: core first; dialects/containers/renderer + parser before preview-core;
@@ -79,8 +79,11 @@ const outDir = new URL('../../docs-site/', import.meta.url);
 rmSync(outDir, { recursive: true, force: true });
 
 // Manual first (out = docs-site root), then the API reference into the api/ subdir.
+// Baseline 1: the parametric-programs concept page uses ```gcode fences, and shiki (typedoc's
+// highlighter) bundles no `gcode` grammar, so it emits one unavoidable "Unsupported highlight
+// language gcode" note per build. The block still renders (unhighlighted); the warning is benign.
 console.log('\n== docs:build — generating SDK manual ==');
-typedocChecked('npx typedoc --options tools/docs/typedoc.manual.json', 'manual', 0);
+typedocChecked('npx typedoc --options tools/docs/typedoc.manual.json', 'manual', 1);
 
 console.log('\n== docs:build — generating API reference (typedoc, packages mode) ==');
 typedocChecked('npx typedoc', 'API reference', 3);
@@ -135,5 +138,33 @@ for (const entry of readdirSync(outDir, { recursive: true })) {
   }
 }
 console.log(`   themed ${styled} stylesheets; font + v${version} footer injected into ${patched} pages`);
+
+// Copy documentation media (docs/media/*) into the published tree at docs-site/media/. The
+// manual pages reference screenshots by relative path, and typedoc does not copy assets that
+// live outside its entry-point tree — so publish them explicitly. Runs for BOTH the Pages
+// deploy build and the PR verification build (both go through `npm run docs:build`).
+console.log('\n== docs:build — copying documentation media ==');
+const mediaSrc = new URL('../../docs/media/', import.meta.url);
+const mediaDest = new URL('../../docs-site/media/', import.meta.url);
+let copied = 0;
+if (existsSync(mediaSrc)) {
+  mkdirSync(mediaDest, { recursive: true });
+  for (const entry of readdirSync(mediaSrc, { recursive: true, withFileTypes: true })) {
+    if (!entry.isFile()) continue;
+    const relDir = String(entry.parentPath ?? entry.path ?? '')
+      .split(sep)
+      .join('/')
+      .replace(/^.*\/docs\/media\/?/, '');
+    const rel = (relDir ? relDir + '/' : '') + entry.name;
+    const from = new URL(rel, mediaSrc);
+    const to = new URL(rel, mediaDest);
+    mkdirSync(new URL('.', to), { recursive: true });
+    copyFileSync(from, to);
+    copied++;
+  }
+  console.log(`   copied ${copied} media file(s) → docs-site/media/`);
+} else {
+  console.log('   (no docs/media/ directory — nothing to copy)');
+}
 
 console.log('\n✅ Docs site generated at docs-site (manual at /, API reference at /api)');

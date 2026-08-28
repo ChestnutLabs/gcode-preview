@@ -22,10 +22,12 @@ import {
   readVersion,
   SURFACES,
   DRAFT_FILE,
+  REVIEW_FILE,
   currentVersionOf,
   applySurface,
   narrativeChecks,
-  aggregateChangelog
+  aggregateChangelog,
+  changedCapabilityInventory
 } from './doc-surfaces.mjs';
 
 const DRY = process.argv.includes('--dry-run');
@@ -99,6 +101,92 @@ if (DRY) {
   fs.writeFileSync(draftPath, draft);
   process.stderr.write(
     `stamp-release-docs: wrote ${DRAFT_FILE} (${bullets.length} points, ${changedPackages.length} pkgs) — fold into docs/README.md then delete it\n`
+  );
+}
+
+// ---- Public Product + Docs + Visual review artifact (RELEASE_REVIEW.md) ----
+// INVERTED vs the notes draft: this must be PRESENT and RESOLVED to promote. Seed it with
+// the changed-capability inventory, each disposition pre-filled `pending`. Overwrite a review
+// left over from a DIFFERENT version, but never clobber human edits for the SAME version.
+const reviewPath = path.join(repoRoot, REVIEW_FILE);
+const { prevTag, packages } = changedCapabilityInventory(version);
+
+const existingReview = fs.existsSync(reviewPath) ? fs.readFileSync(reviewPath, 'utf8') : null;
+const existingVersion = existingReview?.match(/Review version:[\s*]*v?(\d+\.\d+\.\d+)/i)?.[1] ?? null;
+
+const rows = packages.length
+  ? packages
+      .map((p) => {
+        const summary = p.changelogBullets[0]
+          ? p.changelogBullets[0].replace(/\|/g, '\\|').slice(0, 140)
+          : '_(version bump only — no src changelog summary)_';
+        return `| \`${p.package}\` | ${p.changedFiles.length} | ${summary} | Status: pending |`;
+      })
+      .join('\n')
+  : '| _(no package `src/` changed since the previous tag)_ | 0 | — | Status: not-applicable |';
+
+const diffedAgainst = prevTag ? `\`${prevTag}\`` : '_(no previous tag — treated all packages as changed)_';
+
+const review = `<!--
+  RELEASE_REVIEW.md — Public Product + Docs + Visual review for the version being cut.
+  Auto-seeded by tools/release/stamp-release-docs.mjs (inside \`npm run version\`), then
+  RESOLVED by hand before promotion. The release gate (\`npm run docs:release-check\`) blocks
+  the dev -> main promotion until this file:
+    * declares the version being cut on the "Review version:" line;
+    * carries NO \`Status: pending\` row — every changed package must be one of
+      reviewed / no-change-needed / not-applicable;
+    * marks all three global dispositions "resolved":
+      "Product review: resolved", "Docs review: resolved", "Visual review: resolved".
+  Keep the greppable tokens ("Review version:", "Status:", "<X> review:") intact — the gate
+  parses them literally. Delete rows only for packages that did not change.
+-->
+
+# Release review — v${version}
+
+**Review version:** v${version}
+**Changed-capability inventory diffed against:** ${diffedAgainst}
+
+This artifact records the per-release **Public Product + Documentation + Visual** reconciliation:
+before the \`dev\` -> \`main\` promotion, compare the changed capabilities below against the README,
+the Pages homepage, the feature gallery, the manual, the demo and examples, the screenshots, and
+the coverage matrix ([\`docs/VISUAL_FEATURE_COVERAGE.md\`](docs/VISUAL_FEATURE_COVERAGE.md)); then set
+each disposition. Guidance: CLAUDE.md "Public-docs completion check" and
+[\`docs/reference/release-process.md\`](docs/reference/release-process.md).
+
+## Changed packages (\`src/\` since the previous release)
+
+| Package | Changed src files | Changelog summary | Disposition |
+|---|--:|---|---|
+${rows}
+
+Set each **Disposition** to one of \`Status: reviewed\` / \`Status: no-change-needed\` /
+\`Status: not-applicable\` (never \`Status: pending\`).
+
+## Global dispositions
+
+- **Product review:** pending — README / Pages homepage / feature gallery still describe the product accurately for this release.
+- **Docs review:** pending — manual, package READMEs, examples, and quick-start match the shipped API.
+- **Visual review:** pending — every changed user-facing capability is visually documented, or the coverage matrix records why not.
+
+_Resolve each marker above by replacing \`pending\` with \`resolved\` once reconciled._
+`;
+
+if (DRY) {
+  const action =
+    existingVersion === version
+      ? 'keep existing (same version)'
+      : existingReview
+        ? 'overwrite (stale version)'
+        : 'create';
+  process.stderr.write(
+    `stamp-release-docs: [dry-run] ${REVIEW_FILE}: would ${action} (${packages.length} changed pkg(s) vs ${diffedAgainst})\n`
+  );
+} else if (existingVersion === version) {
+  process.stderr.write(`stamp-release-docs: ${REVIEW_FILE} already at v${version} — keeping human edits\n`);
+} else {
+  fs.writeFileSync(reviewPath, review);
+  process.stderr.write(
+    `stamp-release-docs: ${existingReview ? 'refreshed' : 'wrote'} ${REVIEW_FILE} for v${version} (${packages.length} changed pkg(s)) — resolve every disposition before promotion\n`
   );
 }
 

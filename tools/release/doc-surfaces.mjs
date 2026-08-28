@@ -15,6 +15,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { execFileSync } from 'node:child_process';
 
 export const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 
@@ -25,6 +26,17 @@ export function readVersion() {
 }
 
 export const DRAFT_FILE = 'RELEASE_NOTES_DRAFT.md';
+
+/**
+ * The per-release Public Product + Docs + Visual review artifact (repo root). Mirrors
+ * DRAFT_FILE but INVERTED: the draft must be ABSENT to promote, this must be PRESENT and
+ * fully RESOLVED. The stamper seeds it (Status: pending) inside the Version PR; the gate
+ * (reviewChecks) blocks promotion until every disposition is resolved for the version cut.
+ */
+export const REVIEW_FILE = 'RELEASE_REVIEW.md';
+
+/** The disposition keywords a per-package review row may carry (NOT `pending`). */
+export const REVIEW_STATUSES = ['reviewed', 'no-change-needed', 'not-applicable'];
 
 const SEMVER = String.raw`\d+\.\d+\.\d+`;
 
@@ -149,4 +161,185 @@ export function aggregateChangelog(version) {
     if (pkgTouched) changed.push('@chestnutlabs/' + d);
   }
   return { bullets, changedPackages: changed };
+}
+
+// ---------------------------------------------------------------------------
+// Release Public Product + Docs + Visual review (RELEASE_REVIEW.md) — the
+// changed-capability inventory that seeds it, and the gate that resolves it.
+// ---------------------------------------------------------------------------
+
+/** Numeric [major, minor, patch] for a clean `vX.Y.Z` tag, or null for anything else. */
+function parseReleaseTag(tag) {
+  const m = /^v(\d+)\.(\d+)\.(\d+)$/.exec(tag);
+  return m ? [Number(m[1]), Number(m[2]), Number(m[3])] : null;
+}
+
+function cmpSemver(a, b) {
+  for (let i = 0; i < 3; i++) {
+    if (a[i] !== b[i]) return a[i] - b[i];
+  }
+  return 0;
+}
+
+/**
+ * The previous published tag RELATIVE to `version`: the greatest clean `vX.Y.Z` tag whose
+ * version is strictly LESS than `version`. Deliberately compares by version rather than by
+ * commit date, and ignores non-`vX.Y.Z` tags (pre-release/upstream-legacy noise), so an
+ * unrelated higher-numbered tag in the namespace can never be mistaken for "previous".
+ * Returns null when there is no earlier release (first release, or git unavailable).
+ */
+export function previousReleaseTag(version) {
+  const cur = parseReleaseTag('v' + version);
+  if (!cur) return null;
+  let raw = '';
+  try {
+    raw = execFileSync('git', ['tag', '--list', 'v*'], { cwd: repoRoot, encoding: 'utf8' });
+  } catch {
+    return null;
+  }
+  const earlier = raw
+    .split('\n')
+    .filter(Boolean)
+    .map((t) => ({ tag: t.trim(), v: parseReleaseTag(t.trim()) }))
+    .filter((e) => e.v && cmpSemver(e.v, cur) < 0)
+    .sort((a, b) => cmpSemver(a.v, b.v));
+  return earlier.length ? earlier[earlier.length - 1].tag : null;
+}
+
+/** Top-level changelog summary lines for one package's `version` section (deduped, hash-stripped). */
+function packageChangelogBullets(pkgDir, version) {
+  const clPath = path.join(repoRoot, 'packages', pkgDir, 'CHANGELOG.md');
+  if (!fs.existsSync(clPath)) return [];
+  const cl = fs.readFileSync(clPath, 'utf8');
+  const start = cl.indexOf(`\n## ${version}\n`);
+  if (start < 0) return [];
+  const rest = cl.slice(start + 1);
+  const next = rest.indexOf('\n## ');
+  const section = next >= 0 ? rest.slice(0, next) : rest;
+  const bullets = [];
+  const seen = new Set();
+  for (const raw of section.split('\n')) {
+    const line = raw.trim();
+    if (!line.startsWith('- ')) continue;
+    if (/^- Updated dependencies/i.test(line)) continue;
+    if (/^- @chestnutlabs\//.test(line)) continue;
+    // Prefer the changeset summary (the text after "! - "); else strip the leading hash.
+    let text = line.replace(/^-\s+/, '');
+    const bang = text.indexOf('! - ');
+    text = bang >= 0 ? text.slice(bang + 4) : text.replace(/^\[?[0-9a-f]{7,40}\]?:?\s*/i, '');
+    text = text.trim();
+    if (!text || seen.has(text.toLowerCase())) continue;
+    seen.add(text.toLowerCase());
+    bullets.push(text);
+  }
+  return bullets;
+}
+
+/**
+ * The changed-capability inventory that seeds RELEASE_REVIEW.md: every package whose
+ * `src/` changed since the previous release tag, with its changed files and its own
+ * changelog summary lines for this version. Also reuses aggregateChangelog() for the
+ * de-duped cross-package bullet list.
+ *
+ * Returns { prevTag, packages, aggregatedBullets } where `packages` is the structured list
+ *   { package, changedFiles, changelogBullets }
+ * requested by the review contract, and `prevTag` (null on the first release) lets callers
+ * explain what the inventory was diffed against.
+ *
+ * No-previous-tag case: every package directory is treated as changed (empty changedFiles).
+ */
+export function changedCapabilityInventory(version) {
+  const prevTag = previousReleaseTag(version);
+  const pkgsDir = path.join(repoRoot, 'packages');
+  const allPkgs = fs.existsSync(pkgsDir)
+    ? fs.readdirSync(pkgsDir).filter((d) => fs.existsSync(path.join(pkgsDir, d, 'package.json')))
+    : [];
+
+  const filesByPkg = new Map();
+  if (prevTag) {
+    let out = '';
+    try {
+      out = execFileSync('git', ['diff', '--name-only', `${prevTag}..HEAD`, '--', 'packages'], {
+        cwd: repoRoot,
+        encoding: 'utf8'
+      });
+    } catch {
+      out = '';
+    }
+    for (const f of out.split('\n').filter(Boolean)) {
+      const rel = f.replace(/\\/g, '/');
+      const m = /^packages\/([^/]+)\/src\//.exec(rel);
+      if (!m) continue; // only src changes count as a changed capability
+      if (!filesByPkg.has(m[1])) filesByPkg.set(m[1], []);
+      filesByPkg.get(m[1]).push(rel);
+    }
+  } else {
+    for (const d of allPkgs) filesByPkg.set(d, []);
+  }
+
+  const { bullets: aggregatedBullets } = aggregateChangelog(version);
+  const packages = [...filesByPkg.keys()].sort().map((name) => ({
+    package: '@chestnutlabs/' + name,
+    changedFiles: filesByPkg.get(name).slice().sort(),
+    changelogBullets: packageChangelogBullets(name, version)
+  }));
+
+  return { prevTag, packages, aggregatedBullets };
+}
+
+/**
+ * Machine-checkable assertions on RELEASE_REVIEW.md content. Returns an array of
+ * { ok, message } — the gate fails if any is not ok. Purely content-based (no git), so the
+ * gate is deterministic regardless of tag history. It fails when:
+ *   - the file does not declare the exact `version` (the "Review version:" anchor);
+ *   - any per-package row's `Status:` is still `pending` (or an unrecognized keyword);
+ *   - any of the three global markers (Product/Docs/Visual review) is missing or `pending`.
+ * The greppable conventions are documented in the file's own header comment.
+ */
+export function reviewChecks(content, version) {
+  const results = [];
+
+  // 1) Version anchor: "**Review version:** v0.18.0" (bold optional, leading v optional).
+  const vm = content.match(/Review version:[\s*]*v?(\d+\.\d+\.\d+)/i);
+  results.push({
+    ok: vm?.[1] === version,
+    message: vm
+      ? `declares review version v${vm[1]} (expected v${version})`
+      : `missing the "Review version: vX.Y.Z" anchor (expected v${version})`
+  });
+
+  // 2) Per-package dispositions: no row may remain `pending` (or carry an unknown keyword).
+  //    A disposition is a table cell `| Status: <keyword> |` — anchoring to the cell delimiters
+  //    keeps prose mentions of "Status: pending" (in the header comment / guidance) from matching.
+  const statusRe = /\|\s*Status:\s*([A-Za-z-]+)\s*\|/g;
+  let m;
+  let rows = 0;
+  const unresolved = [];
+  while ((m = statusRe.exec(content)) !== null) {
+    rows++;
+    const kw = m[1].toLowerCase();
+    if (!REVIEW_STATUSES.includes(kw)) unresolved.push(kw);
+  }
+  results.push({
+    ok: unresolved.length === 0,
+    message:
+      unresolved.length === 0
+        ? `all ${rows} package disposition(s) resolved`
+        : `unresolved package disposition(s): ${unresolved.join(', ')} (allowed: ${REVIEW_STATUSES.join(' / ')})`
+  });
+
+  // 3) Global disposition markers — all three bold list items must say `resolved`. Anchored to
+  //    the bold `**<X> review:**` syntax so the header comment's quoted example never matches.
+  for (const label of ['Product review', 'Docs review', 'Visual review']) {
+    const rm = content.match(new RegExp('\\*\\*' + label + ':\\*\\*\\s*([A-Za-z-]+)', 'i'));
+    const kw = rm?.[1]?.toLowerCase() ?? null;
+    results.push({
+      ok: kw === 'resolved',
+      message: rm
+        ? `${label}: ${kw} (expected resolved)`
+        : `${label}: marker not found (expected "**${label}:** resolved")`
+    });
+  }
+
+  return results;
 }
