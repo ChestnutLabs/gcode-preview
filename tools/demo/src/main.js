@@ -45,6 +45,18 @@ const HEIGHT_RAMP = [
   [0.95, 0.85, 0.2],
   [0.9, 0.3, 0.2]
 ];
+// Color-by-speed ramp (#177): slow → fast as blue → yellow → red.
+const SPEED_RAMP = [
+  [0.12, 0.36, 0.95],
+  [0.97, 0.86, 0.2],
+  [0.92, 0.22, 0.15]
+];
+const OBJECT_PALETTE = [
+  [0.35, 0.7, 0.95],
+  [0.95, 0.55, 0.3],
+  [0.5, 0.88, 0.5],
+  [0.9, 0.42, 0.72]
+];
 
 // Named scene themes (#153, DD-009 D4): each is a bounded declarative Theme.
 // Unspecified fields fall back to the default look (replace semantics).
@@ -107,6 +119,10 @@ const els = {
   progressTier: $('progressTier'),
   progressPlay: $('progressPlay'),
   progressNote: $('progressNote'),
+  progressive: $('progressive'),
+  capturePng: $('capturePng'),
+  showStats: $('showStats'),
+  renderStats: $('renderStats'),
   canvas: $('view')
 };
 
@@ -138,6 +154,8 @@ function colorModeFor(kind) {
   if (kind === 'feature') return { mode: 'feature', palette: FEATURE_PALETTE, fallback: [0.55, 0.55, 0.55] };
   if (kind === 'colorChange') return { mode: 'colorChange', palette: TOOL_PALETTE, fallback: [0.55, 0.55, 0.55] };
   if (kind === 'layerHeight') return { mode: 'layerHeight', ramp: HEIGHT_RAMP, fallback: [0.6, 0.6, 0.6] };
+  if (kind === 'feedrate') return { mode: 'feedrate', ramp: SPEED_RAMP, fallback: [0.55, 0.6, 0.62] };
+  if (kind === 'object') return { mode: 'object', palette: OBJECT_PALETTE, fallback: [0.55, 0.55, 0.55] };
   return { mode: 'single', color: [0.9, 0.4, 0.7] };
 }
 
@@ -245,6 +263,22 @@ function enableControls(ir) {
   if (!lhOk && els.colorMode.value === 'layerHeight') {
     els.colorMode.value = 'single';
   }
+  // Speed/feedrate coloring (#177): offered when the file carries feedrates.
+  const spOpt = els.colorMode.querySelector('option[value="feedrate"]');
+  const spOk = renderer.isColorModeAvailable('feedrate');
+  spOpt.disabled = !spOk;
+  spOpt.textContent = spOk
+    ? 'By speed'
+    : `By speed (unavailable: feedrate = ${ir.header.capabilities.feedrate ?? 'unknown'})`;
+  if (!spOk && els.colorMode.value === 'feedrate') els.colorMode.value = 'single';
+  // Object coloring (#178): only when the dialect resolved per-object membership.
+  const objOpt = els.colorMode.querySelector('option[value="object"]');
+  const objOk = renderer.isColorModeAvailable('object');
+  objOpt.disabled = !objOk;
+  objOpt.textContent = objOk
+    ? 'By object'
+    : `By object (unavailable: objects = ${ir.header.capabilities.objects ?? 'unknown'})`;
+  if (!objOk && els.colorMode.value === 'object') els.colorMode.value = 'single';
   renderer.setColorMode(colorModeFor(els.colorMode.value));
 }
 
@@ -266,6 +300,8 @@ renderer.onEvent((e) => {
           `(layer boundaries kept); travel hidden. ${e.segments.toLocaleString()} segments drawn.`
         : '';
     els.qualityNote.textContent = `Rendering as: ${e.quality}${bedNote}`;
+    els.capturePng.disabled = false;
+    els.showStats.disabled = false;
   } else if (e.type === 'qualityFallback') {
     els.qualityNote.textContent = `Tubes unavailable — fell back to lines (${e.reason})`;
   } else if (e.type === 'error') {
@@ -495,6 +531,45 @@ els.exportStl.addEventListener('click', () => {
       ? `Exported STL: ${triangles.toLocaleString()} triangles from ${emitted.toLocaleString()} of ${segments.toLocaleString()} productive segments (strided to the triangle budget).`
       : `Exported STL: ${triangles.toLocaleString()} triangles from ${segments.toLocaleString()} productive segments.`;
   setStatus(note);
+});
+// Progressive preview (#60, DD-029): how a large file is revealed while parsing.
+els.progressive.addEventListener('change', () => renderer.setProgressivePreview(els.progressive.value));
+// Capture the current view as a PNG via the generic renderer.capture() (DD-030 D1).
+els.capturePng.addEventListener('click', async () => {
+  try {
+    const blob = await renderer.capture({ format: 'png' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'gcode-preview.png';
+    a.click();
+    URL.revokeObjectURL(url);
+    setStatus(`Captured ${(blob.size / 1024).toFixed(0)} KB PNG.`);
+  } catch (err) {
+    setStatus(`Capture failed: ${err && err.message ? err.message : err}`, true);
+  }
+});
+// Render diagnostics (DD-027): read renderer.getRenderStats() and show it — backend,
+// hardware-vs-software GPU, geometry mode, counts, and timings, never fabricated.
+els.showStats.addEventListener('click', () => {
+  const s = renderer.getRenderStats();
+  if (!s) {
+    els.renderStats.textContent = 'No render stats yet — render a file first.';
+    return;
+  }
+  const ms = (v) => (v == null ? '—' : `${Math.round(v)} ms`);
+  els.renderStats.textContent = [
+    `backend:      ${s.backend} (WebGL ${s.webglVersion ?? '?'})`,
+    `capability:   ${s.capability}${s.gpuRenderer ? ` — ${s.gpuRenderer}` : ''}`,
+    `geometry:     ${s.geometryMode} · parallelism ${s.buildParallelism}${s.workerCount ? ` (${s.workerCount} workers)` : ''}`,
+    `segments:     ${(s.renderedSegmentCount ?? 0).toLocaleString()} / ${(s.sourceSegmentCount ?? 0).toLocaleString()}${s.decimationApplied ? ' (decimated)' : ''}`,
+    `draw calls:   ${s.drawCalls ?? '—'} · vertices ${s.vertexCount?.toLocaleString() ?? '—'}`,
+    `tube bytes:   ${s.tubeBytes ? (s.tubeBytes / 1e6).toFixed(1) + ' MB' : '—'} / budget ${s.tubeByteBudget ? (s.tubeByteBudget / 1e6).toFixed(0) + ' MB' : '—'}`,
+    `timings:      parse ${ms(s.parseMs)} · build ${ms(s.geometryBuildMs)} · first frame ${ms(s.firstRenderMs)} · ready ${ms(s.totalReadyMs)}`,
+    s.disclosures?.length ? `disclosures:  ${s.disclosures.join(', ')}` : ''
+  ]
+    .filter(Boolean)
+    .join('\n');
 });
 
 // App-level keyboard shortcuts (master plan §9.5); every control is also plain
