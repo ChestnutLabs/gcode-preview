@@ -223,6 +223,8 @@
             <option value="single">Single color</option>
             <option value="tool">By tool</option>
             <option value="feature">By feature role</option>
+            <option value="feedrate">By speed</option>
+            <option value="object">By object</option>
             <option value="colorChange">By color change (M600)</option>
             <option value="layerHeight">By layer height</option>
           </select>
@@ -233,6 +235,15 @@
             <option value="auto">Auto (tubes ≤ 1M segments)</option>
             <option value="tubes">Tubes (print-like)</option>
             <option value="lines">Lines (fast)</option>
+          </select>
+        </label>
+        <label>
+          Progressive preview
+          <select id="progressive" title="How a large file is revealed while parsing (never changes the final image)">
+            <option value="auto">Auto</option>
+            <option value="lines">Lines (stream)</option>
+            <option value="hold">Hold (single clean reveal)</option>
+            <option value="off">Off</option>
           </select>
         </label>
         <label>
@@ -258,6 +269,7 @@
         </div>
         <button id="frame" disabled>Frame model</button>
         <button id="exportStl" disabled title="Download the productive toolpath (extrude/cut moves) as a binary STL mesh">Export STL</button>
+        <button id="capturePng" disabled title="Capture the current view as a PNG via renderer.capture()">Capture PNG</button>
         <p id="disclosure" role="note"></p>
       </fieldset>
 
@@ -300,6 +312,23 @@
       <fieldset>
         <legend>Result</legend>
         <p id="stats">—</p>
+      </fieldset>
+
+      <fieldset>
+        <legend>Render diagnostics</legend>
+        <button id="showStats" disabled title="Read renderer.getRenderStats() — backend, GPU, geometry, timings">Read render stats</button>
+        <pre id="renderStats" style="white-space: pre-wrap; font-size: 11px; margin: 0.5rem 0 0"></pre>
+      </fieldset>
+
+      <fieldset>
+        <legend>More demos</legend>
+        <p style="margin: 0; line-height: 1.9">
+          <a href="model.html">Model stills (STL / 3MF)</a> ·
+          <a href="model-viewer.html">Interactive model viewer</a> ·
+          <a href="2d.html">Canvas 2D fallback</a> ·
+          <a href="validate.html">CNC / laser validation</a> ·
+          <a href="still.html">Headless still</a>
+        </p>
       </fieldset>
 
       <fieldset>

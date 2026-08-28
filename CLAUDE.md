@@ -6,7 +6,7 @@ Project instructions for Claude Code and other agents working in this repository
 
 A browser G-code / toolpath toolkit: parse `.gcode`, `.gcode.3mf`, and Prusa `.bgcode` off the main
 thread into a neutral intermediate representation (`ToolpathIR`) and render it with Three.js or a
-Canvas 2D fallback. It ships as 13 lockstep-versioned `@chestnutlabs/*` packages plus Vue, React,
+Canvas 2D fallback. It ships as 14 lockstep-versioned `@chestnutlabs/*` packages plus Vue, React,
 Svelte, and Web Component adapters over one shared engine. It began as a fork of
 `xyz-tools/gcode-preview` — attribution and provenance are load-bearing (see `NOTICE.md`).
 
@@ -48,18 +48,27 @@ deliberate consideration is):
 
 If visible behavior changed, regenerate the affected media with
 [`tools/screenshots/`](tools/screenshots/README.md) rather than leaving a stale image in place.
+Every user-facing feature is **visually documented somewhere** unless the visual coverage matrix
+([`docs/VISUAL_FEATURE_COVERAGE.md`](docs/VISUAL_FEATURE_COVERAGE.md)) records why not — see the
+visual standard in [`docs/USER_FACING_DOCS_STYLE.md`](docs/USER_FACING_DOCS_STYLE.md) §6/§8.
 
 **Docs freshness is enforced at release time, not left as post-release cleanup.** The `version`
-script auto-stamps the deterministic "vX.Y.Z is on npm" strings into the generated Version PR and
+script auto-stamps the deterministic "vX.Y.Z is on npm" strings into the generated Version PR,
 drops a `RELEASE_NOTES_DRAFT.md` to seed the `docs/README` "Current state" narrative + history
-(fold it in, then delete it). The `Docs release gate` (`npm run docs:release-check`) then **blocks
-the `dev` → `main` promotion** until every version surface, the current-state lead, and the
-history list name the version being cut. Surfaces live in `tools/release/doc-surfaces.mjs`; the
-flow is documented in [`docs/reference/release-process.md`](docs/reference/release-process.md).
+(fold it in, then delete it), and generates `RELEASE_REVIEW.md` — a **per-release Public Product +
+Documentation + Visual review** seeded from the changed-capability inventory (every package whose
+`src/` changed since the previous tag). The `Docs release gate` (`npm run docs:release-check`) then
+**blocks the `dev` → `main` promotion** until every version surface names the version being cut,
+`RELEASE_NOTES_DRAFT.md` is gone, **and** `RELEASE_REVIEW.md` is present with every disposition
+resolved (each changed package `reviewed` / `no-change-needed` / `not-applicable`, and the Product /
+Docs / Visual markers `resolved`). This is enforcement, not a checkbox: reconcile the README, Pages
+homepage, feature gallery, manual, demo/examples, screenshots, and the coverage matrix against the
+inventory, then resolve the review. Surfaces live in `tools/release/doc-surfaces.mjs`; the flow is
+documented in [`docs/reference/release-process.md`](docs/reference/release-process.md).
 
 ## Repo orientation
 
-- `packages/*` — the 13 published packages (foundation → parse → color → render → adapters). Build
+- `packages/*` — the 14 published packages (foundation → parse → color → render → adapters). Build
   in dependency order; each package builds itself (`npm run build -w @chestnutlabs/<pkg>`).
 - `docs/` — user manual (`manual/`), consumer references (`reference/`, `compatibility/`), and the
   maintainer planning/design/research set.

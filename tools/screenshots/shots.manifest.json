@@ -1,0 +1,207 @@
+{
+  "_comment": "Canonical documentation-media shot manifest. Every entry is a real render of a real corpus file, captured by tools/screenshots/capture.mjs on the shared mid-grey documentation presentation (lib/presentation.mjs). Regenerate all: `node capture.mjs`. Subset: `node capture.mjs <name> ...`. Keep captions/alt in sync with what the image shows (USER_FACING_DOCS_STYLE §8).",
+  "presentation": "mid-grey slicer/CAD viewport (lib/presentation.mjs DOC_BACKGROUND)",
+  "colorPalettes": "resolved from lib/presentation.mjs PAL by mode",
+  "shots": [
+    {
+      "name": "viewer-benchy-tubes",
+      "page": "toolpath",
+      "class": "showcase",
+      "file": "gcodes/3DBenchy.gcode",
+      "quality": "tubes",
+      "color": { "mode": "feature", "fallback": [0.55, 0.55, 0.55] },
+      "caption": "3DBenchy rendered as extrusion tubes, colored by feature role.",
+      "alt": "3DBenchy rendered as extrusion tubes with per-feature coloring — perimeters, infill, and skirt in distinct colors — on a neutral grey build plate"
+    },
+    {
+      "name": "layer-clip-benchy",
+      "page": "toolpath",
+      "class": "feature-proof",
+      "file": "gcodes/3DBenchy.gcode",
+      "quality": "tubes",
+      "color": { "mode": "feature", "fallback": [0.55, 0.55, 0.55] },
+      "layerRange": "mid",
+      "caption": "Layer-range clipping: the model cut to a mid-height band, exposing perimeters and infill.",
+      "alt": "3DBenchy clipped to a mid-height layer range, cutting through the cabin to expose perimeters and infill"
+    },
+    {
+      "name": "color-speed-calicat",
+      "page": "toolpath",
+      "class": "feature-proof",
+      "file": "gcodes/calicat.gcode",
+      "quality": "tubes",
+      "color": { "mode": "feedrate", "fallback": [0.55, 0.6, 0.62] },
+      "caption": "Color by feedrate: blue at slow moves ramping to red at fast moves.",
+      "alt": "The calicat model colored by feedrate, from blue at slow moves to red at fast moves"
+    },
+    {
+      "name": "color-layerheight",
+      "page": "toolpath",
+      "class": "feature-proof",
+      "file": "fixtures/annotations/variable-layers.gcode",
+      "quality": "tubes",
+      "color": { "mode": "layerHeight", "fallback": [0.6, 0.6, 0.6] },
+      "caption": "Color by layer height: thin layers blue, thick layers red — variable-layer regions at a glance.",
+      "alt": "A variable-layer-height test print colored from blue for thin layers to red for thick layers"
+    },
+    {
+      "name": "cnc-cut-vs-rapid",
+      "page": "toolpath",
+      "class": "feature-proof",
+      "file": "gcodes/easel.gcode",
+      "quality": "lines",
+      "color": { "mode": "moveKind", "cut": [0.95, 0.45, 0.6], "travel": [0.3, 0.55, 0.65], "fallback": [0.6, 0.6, 0.6] },
+      "travel": true,
+      "caption": "An Easel CNC carve colored by move kind: cut moves pink, rapid moves blue.",
+      "alt": "An Easel CNC carve toolpath colored by move kind: cut moves in pink, rapid moves in blue"
+    },
+    {
+      "name": "progress-known",
+      "page": "toolpath",
+      "class": "feature-proof",
+      "file": "gcodes/calicat.gcode",
+      "quality": "lines",
+      "progress": "byte",
+      "caption": "Live progress from byte-exact telemetry: a precise cut and an exact position marker.",
+      "alt": "Live-progress overlay with a byte-exact position: completed toolpath in full color, remaining path as a translucent ghost, and an orange marker at the exact print position"
+    },
+    {
+      "name": "progress-approximated",
+      "page": "toolpath",
+      "class": "feature-proof",
+      "file": "gcodes/calicat.gcode",
+      "quality": "lines",
+      "progress": "layer",
+      "caption": "Live progress from a coarse signal: an emphasis band spanning the current layer, not a false-precise dot.",
+      "alt": "Live-progress overlay from a coarse signal: an emphasis band spanning the current layer instead of a single false-precise marker"
+    },
+    {
+      "name": "camera-top",
+      "page": "toolpath",
+      "class": "feature-proof",
+      "file": "gcodes/3DBenchy.gcode",
+      "quality": "lines",
+      "color": { "mode": "single", "color": [0.55, 0.75, 0.95] },
+      "camera": "orthographic",
+      "view": "top",
+      "caption": "Top preset (orthographic).",
+      "alt": "3DBenchy from directly above, orthographic camera — the hull outline"
+    },
+    {
+      "name": "camera-front",
+      "page": "toolpath",
+      "class": "feature-proof",
+      "file": "gcodes/3DBenchy.gcode",
+      "quality": "lines",
+      "color": { "mode": "single", "color": [0.55, 0.75, 0.95] },
+      "camera": "orthographic",
+      "view": "front",
+      "caption": "Front preset (orthographic).",
+      "alt": "3DBenchy from the front, orthographic camera — the boat's side profile"
+    },
+    {
+      "name": "camera-iso",
+      "page": "toolpath",
+      "class": "feature-proof",
+      "file": "gcodes/3DBenchy.gcode",
+      "quality": "lines",
+      "color": { "mode": "single", "color": [0.55, 0.75, 0.95] },
+      "caption": "Iso preset (perspective).",
+      "alt": "3DBenchy from an isometric angle, perspective camera"
+    },
+    {
+      "name": "retraction-markers",
+      "page": "toolpath",
+      "class": "feature-proof",
+      "file": "gcodes/calicat.gcode",
+      "quality": "tubes",
+      "color": { "mode": "feature", "fallback": [0.55, 0.55, 0.55] },
+      "retractions": true,
+      "layerRange": "low",
+      "caption": "Retraction and de-retraction markers pinned on the toolpath.",
+      "alt": "Calicat lower layers with retraction and de-retraction markers as orange and cyan pins on the toolpath"
+    },
+    {
+      "name": "app-control-panel",
+      "page": "toolpath",
+      "class": "showcase",
+      "file": "gcodes/3DBenchy.gcode",
+      "quality": "tubes",
+      "color": { "mode": "feature", "fallback": [0.55, 0.55, 0.55] },
+      "view": "iso",
+      "fullPage": true,
+      "caption": "The demo application: control panel beside a fully rendered 3DBenchy.",
+      "alt": "The demo application: a control panel — corpus picker, layer and time scrub, an honest print-time estimate, display toggles — beside a fully rendered 3DBenchy with feature coloring"
+    },
+    {
+      "name": "canvas-2d-fallback",
+      "page": "canvas2d",
+      "class": "feature-proof",
+      "file": "gcodes/calicat.gcode",
+      "caption": "The Canvas 2D fallback: a flat layer view with no WebGL and no Three.js.",
+      "alt": "A single print layer drawn by the Canvas 2D renderer: perimeter walls and cross-hatch infill, no WebGL"
+    },
+    {
+      "name": "model-render-stl-3mf",
+      "page": "model",
+      "class": "showcase",
+      "caption": "Presentation stills from renderModelStill: a neutral STL (materials: unavailable) beside a colored 3MF (materials: known).",
+      "alt": "Two presentation thumbnails from renderModelStill: left, a neutral gray part from an STL labeled materials unavailable; right, a colored tower from a 3MF labeled materials known"
+    },
+    {
+      "name": "parametric-bolt-circle",
+      "page": "toolpath",
+      "class": "feature-proof",
+      "file": "fixtures/parametric/bolt-circle.ngc",
+      "quality": "lines",
+      "color": { "mode": "moveKind", "cut": [0.95, 0.45, 0.6], "travel": [0.45, 0.75, 0.9], "fallback": [0.6, 0.6, 0.6] },
+      "travel": true,
+      "caption": "An RS274NGC parametric program: a bolt circle and frame COMPUTED from parameters (a while-loop + subroutine + degree trig), rendered as the real toolpath.",
+      "alt": "A CNC toolpath of eight drilled holes on a circle plus a centre hole and a square frame, all computed by a parametric program, cut moves in pink and rapid moves in blue"
+    },
+    {
+      "name": "bed-circular",
+      "page": "toolpath",
+      "class": "feature-proof",
+      "file": "gcodes/calicat.gcode",
+      "quality": "tubes",
+      "color": { "mode": "feature", "fallback": [0.55, 0.55, 0.55] },
+      "bed": { "shape": "circular", "fit": 2.4 },
+      "withBed": true,
+      "caption": "A circular (delta-style) build bed: the outline and grid follow the round shape, not a rectangle.",
+      "alt": "A print rendered on a round, delta-style build plate — the bed outline and grid are circular, with the model centered on it"
+    },
+    {
+      "name": "bed-polygon",
+      "page": "toolpath",
+      "class": "feature-proof",
+      "file": "gcodes/calicat.gcode",
+      "quality": "tubes",
+      "color": { "mode": "feature", "fallback": [0.55, 0.55, 0.55] },
+      "bed": { "shape": "polygon", "sides": 6, "fit": 2.4 },
+      "withBed": true,
+      "caption": "A polygonal build bed: an arbitrary hexagonal bed outline with the grid clipped to the shape.",
+      "alt": "A print rendered on a hexagonal build plate — the bed outline is a six-sided polygon with the grid clipped to it"
+    },
+    {
+      "name": "render-tubes",
+      "page": "toolpath",
+      "class": "feature-proof",
+      "file": "gcodes/calicat.gcode",
+      "quality": "tubes",
+      "color": { "mode": "feature", "fallback": [0.55, 0.55, 0.55] },
+      "caption": "Tube geometry: lit 3D extrusion cross-sections.",
+      "alt": "The calicat rendered as lit 3D extrusion tubes"
+    },
+    {
+      "name": "render-lines",
+      "page": "toolpath",
+      "class": "feature-proof",
+      "file": "gcodes/calicat.gcode",
+      "quality": "lines",
+      "color": { "mode": "feature", "fallback": [0.55, 0.55, 0.55] },
+      "caption": "Line geometry: flat one-pixel paths — lighter, for very large files or low-GPU devices.",
+      "alt": "The calicat rendered as flat single-pixel toolpath lines"
+    }
+  ]
+}

@@ -150,3 +150,114 @@ a.tsd-index-link {
 .gp-docs-footer a {
   color: var(--color-link);
 }
+
+/* ============================================================================
+   Homepage hero + feature cards (docs/manual/index.md).
+   Raw-HTML blocks on the homepage use these classes; theme-aware via the vars
+   above, responsive (flex/grid, images cap at 100%). Documentation-only.
+   ============================================================================ */
+.gp-hero {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1.75rem;
+  align-items: center;
+  margin: 0.5rem 0 2rem;
+}
+.gp-hero-copy {
+  flex: 1 1 320px;
+  min-width: 280px;
+}
+.gp-hero-copy .gp-tagline {
+  font-size: 1.5rem;
+  line-height: 1.25;
+  font-weight: 600;
+  margin: 0 0 0.6rem;
+  color: var(--gp-primary-strong);
+}
+.gp-hero-copy p {
+  margin: 0 0 1rem;
+  color: var(--color-text-aside);
+}
+.gp-hero-media {
+  flex: 1 1 380px;
+  min-width: 300px;
+}
+.gp-hero-media img {
+  width: 100%;
+  height: auto;
+  border-radius: 10px;
+  border: 1px solid var(--gp-border);
+  display: block;
+}
+.gp-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  margin-top: 0.4rem;
+}
+.gp-btn {
+  display: inline-block;
+  padding: 0.5rem 0.95rem;
+  border-radius: 6px;
+  border: 1px solid var(--gp-border);
+  background: var(--color-background-secondary);
+  color: var(--color-link);
+  font-weight: 600;
+  text-decoration: none;
+  font-size: 0.92rem;
+}
+.gp-btn:hover {
+  border-color: var(--color-accent);
+}
+.gp-btn-primary {
+  background: var(--color-accent);
+  color: var(--color-contrast-text);
+  border-color: var(--color-accent);
+}
+.gp-btn-primary:hover {
+  filter: brightness(1.08);
+}
+.gp-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+  gap: 1rem;
+  margin: 1.5rem 0 2rem;
+  padding: 0;
+  list-style: none;
+}
+.gp-card {
+  border: 1px solid var(--gp-border);
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--color-background-secondary);
+  display: flex;
+  flex-direction: column;
+}
+.gp-card img {
+  width: 100%;
+  height: 130px;
+  object-fit: cover;
+  display: block;
+  border-bottom: 1px solid var(--gp-border);
+}
+.gp-card-body {
+  padding: 0.75rem 0.9rem 0.95rem;
+}
+.gp-card-body h3 {
+  margin: 0 0 0.3rem;
+  font-size: 1rem;
+}
+.gp-card-body h3 a {
+  text-decoration: none;
+}
+.gp-card-body p {
+  margin: 0;
+  font-size: 0.86rem;
+  color: var(--color-text-aside);
+  line-height: 1.4;
+}
+@media (max-width: 640px) {
+  .gp-hero-copy .gp-tagline {
+    font-size: 1.3rem;
+  }
+}
