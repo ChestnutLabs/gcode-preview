@@ -34,9 +34,16 @@ Every derived claim is tagged with a confidence level:
 | `unavailable` | Cannot be determined from this input. |
 
 These live in the IR header's `capabilities` map — for example `extrusionMode`, `positioningMode`,
-`layers`, `sourcePositions`. A consumer reads them to decide what UI to show: feature coloring only
-when the feature was disclosed, a layer slider only when layers are `known`, an uncertainty band
-when a position is `approximated`.
+`layers`, `sourcePositions`, `parametricProgram`. A consumer reads them to decide what UI to show:
+feature coloring only when the feature was disclosed, a layer slider only when layers are `known`, an
+uncertainty band when a position is `approximated`.
+
+The same rule governs computed geometry. When a file uses the RS274NGC programming layer (parameters,
+expressions, loops, subroutines — see [Parametric programs](concept-parametric-programs.md)), the
+interpreter *computes* the coordinates rather than inferring them, so a clean run reports
+`parametricProgram: 'known'`. If a resource limit was hit or a construct couldn't be executed, it
+reports `approximated` and emits a specific warning (each `rs274-…` warning names what was lost) — the
+geometry it did produce is still real, and what it couldn't do is stated, not faked.
 
 This is why the preview never silently lies: if a dialect didn't emit feature annotations, the
 stack says so rather than inventing them; if the extruder mode wasn't stated, it defaults *and tells

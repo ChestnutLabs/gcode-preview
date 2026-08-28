@@ -64,7 +64,8 @@ viewer is reachable without switching APIs.
 - **Concepts** — [ToolpathIR & the capability model](concept-ir-capabilities.md),
   [Workers, streaming & performance](concept-workers.md),
   [Dialects & containers](concept-dialects-containers.md),
-  [Live progress & motion model](concept-progress-motion.md).
+  [Live progress & motion model](concept-progress-motion.md),
+  [Parametric programs (RS274NGC)](concept-parametric-programs.md).
 - **API reference** — pick a package in the sidebar (`toolpath-core`, `gcode-parser`, …).
 
 > **Status:** published — all fourteen `@chestnutlabs/*` packages are on npm (latest `v0.18.0`,
