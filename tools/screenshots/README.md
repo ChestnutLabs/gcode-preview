@@ -96,8 +96,18 @@ Keep framing, viewport, and filenames stable when adding shots so the set reads 
 
 ## Animation (temporal captures)
 
-For features where the interaction *is* the point (scrub, progressive reveal), the harness can
-capture a frame sequence and encode it with the Playwright-bundled ffmpeg (auto-located; override
-with `FFMPEG_PATH`). See `lib/browser.mjs` `resolveFfmpeg()`. Reach for animation only when a static
-frame genuinely can't carry the feature — a single well-composed frame or a before/after pair is
-usually clearer and cheaper.
+For features where the interaction *is* the point (scrub, progressive reveal), a shot with
+`"output": "webm"` and an `"anim"` spec sweeps a temporal control across frames and encodes a small,
+looping, muted **WebM** — embedded on the docs site as `<video autoplay loop muted playsinline>`.
+
+```json
+{ "name": "scrub-sweep", "output": "webm",
+  "anim": { "kind": "scrub", "frames": 48, "fps": 16, "holdFrames": 10 } }
+```
+
+`kind` is `scrub` (segment draw-range) or `layers` (layer-range build-up); `holdFrames` repeats the
+final frame so the loop pauses on the finished model. Encoding uses the Playwright-bundled ffmpeg
+(auto-located; override with `FFMPEG_PATH`), which is a stripped `--disable-everything` build: it can
+only **decode mjpeg/vp8** and **mux webm**, so frames are captured as **JPEG** and piped through
+`image2pipe` → VP8 (no PNG decode, palette filters, or gif muxer exist — see `lib/browser.mjs`
+`encodeWebm`). Reach for animation only when a static frame genuinely can't carry the feature.

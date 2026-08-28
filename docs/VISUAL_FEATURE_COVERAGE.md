@@ -60,11 +60,15 @@ What moved to **covered** in the second public-product pass:
   `progressivePreview` selector, **By speed** + **By object** color modes, the parametric fixture,
   and nav links to the model / model-viewer / 2D / CNC-validation / headless-still pages.
 
+**Animations wired up** (WebM, via the harness `encodeWebm` → `image2pipe`/mjpeg → VP8; embedded as
+`<video autoplay loop muted playsinline>`): `scrub-sweep.webm` (segment scrub drawing the toolpath)
+and `layer-buildup.webm` (layer-range sweep — the progressive reveal), in the feature gallery and the
+workers concept page.
+
 Still on the **to-capture** list (honest remainder — recorded, not forgotten):
 
-- `needs animation`: segment/time **scrub**, **progressive / held reveal**, interaction-aware
-  quality, user-scrub-wins — temporal, so a GIF/short clip beats a still (harness has the ffmpeg
-  path via `lib/browser.mjs`; not yet wired into shots).
+- `needs animation`: **time scrub**, interaction-aware quality, user-scrub-wins, and the *actual*
+  load-time progressive/`hold` reveal (the layer-buildup clip stands in for it today).
 - `needs comparison`: **object-aware framing** (whole-job vs model-aware), **fresh vs stale**
   progress, **render scope** (plate/object subset before/after).
 - `needs screenshot`: **diagnostics panel** in-context, **transparent-background capture** over a
@@ -79,7 +83,7 @@ them up rather than rediscovering them.
 | Capability | User-facing | Demo | Media | README | Pages gallery | Manual/pkg | Status |
 |---|:---:|:---:|:---:|:---:|:---:|:---:|---|
 | Layer-range clipping | ✅ | ✅ | `layer-clip-benchy` | ✅ | gallery | recipes | needs better coverage — show the range control + resulting cut |
-| Segment scrub | ✅ | ✅ | — | — | gallery | recipes | needs animation — scrub is temporal |
+| Segment scrub | ✅ | ✅ | `scrub-sweep.webm` | — | gallery | recipes | covered — scrub-sweep animation in the gallery |
 | Time scrub + print-time estimate (slicer vs kinematic provenance) | ✅ | ✅ | — | mention | gallery | concept-progress-motion | needs animation + needs better coverage (provenance label) |
 | Travel-move toggle | ✅ | ✅ | (in others) | ✅ | gallery | recipes | covered |
 | Wipe-move toggle | ✅ | ✅ | — | mention | gallery | — | needs screenshot |
@@ -119,8 +123,8 @@ them up rather than rediscovering them.
 | Line geometry | ✅ | ✅ | `render-lines` | mention | gallery | concept-workers | covered (tubes-vs-lines pair in gallery + concept) |
 | Canvas 2D fallback (no WebGL/Three) | ✅ | 2d page | `canvas-2d-fallback` | ✅ | gallery | concept-workers | covered |
 | Quality modes (full/adaptive/fast) | ✅ | partial | — | mention | gallery | concept-workers | needs demo exposure |
-| Progressive preview (`auto`/`lines`) | ✅ | ✅ (selector) | — | ✅ | gallery | concept-workers | demo + docs covered; animation pending |
-| Held / single clean reveal (`hold`) | ✅ | ✅ (selector) | — | ✅ | gallery | concept-workers | demo + docs covered; animation pending |
+| Progressive preview (`auto`/`lines`) | ✅ | ✅ (selector) | `layer-buildup.webm` | ✅ | gallery | concept-workers | demo + docs + build-up animation; true load-time capture still pending |
+| Held / single clean reveal (`hold`) | ✅ | ✅ (selector) | `layer-buildup.webm` | ✅ | gallery | concept-workers | demo + docs + build-up animation (stand-in); true load-time capture pending |
 | Renderer build stages (`stage` event) | ✅ | ❌ | — | ✅ (prose) | gallery | concept-workers | needs animation |
 | Interaction-aware quality | ✅ | ❌ | — | ✅ (prose) | gallery | concept-workers | needs animation |
 | Disclosed decimation / degradation | ✅ | ✅ (disclosure) | — | ✅ (prose) | gallery | concept-workers | needs screenshot (disclosure text) |

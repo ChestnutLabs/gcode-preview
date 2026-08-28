@@ -21,7 +21,7 @@
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
 import { readFileSync } from 'node:fs';
-import { launchBrowser, readCanvasPng, savePngDataUrl } from './lib/browser.mjs';
+import { launchBrowser, readCanvasPng, savePngDataUrl, encodeWebm } from './lib/browser.mjs';
 import { docTheme, VIEW, SCALE, PAL, DOC_BACKGROUND_CSS } from './lib/presentation.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -187,6 +187,38 @@ async function driveToolpath(page, shot) {
     { shot, theme: docTheme({ withBed: !!shot.withBed }) }
   );
   await page.waitForTimeout(400);
+
+  // Animation: sweep a temporal control across frames and encode a looping WebM.
+  // The camera + theme set above stay fixed; only the draw-range changes. Frames
+  // are JPEG (the bundled ffmpeg can only decode mjpeg, not png — see encodeWebm).
+  if (shot.output === 'webm' && shot.anim) {
+    const spec = shot.anim;
+    const N = spec.frames || 40;
+    const hold = spec.holdFrames || 0; // repeat the final frame so the loop pauses full
+    const frames = [];
+    for (let i = 0; i <= N; i++) {
+      const t = i / N;
+      await page.evaluate(
+        ({ kind, t }) => {
+          const r = window.viewer.renderer;
+          if (kind === 'scrub') {
+            const total = r.segmentCount;
+            r.setScrubPosition(t >= 1 ? null : Math.max(1, Math.round(t * total)));
+          } else if (kind === 'layers') {
+            const last = Math.max(0, r.layerCount - 1);
+            r.setLayerRange(0, Math.max(0, Math.round(t * last)));
+          }
+          r.render();
+        },
+        { kind: spec.kind, t }
+      );
+      await page.waitForTimeout(spec.settleMs || 30);
+      frames.push(await readCanvasPng(page, 'view', true, 'image/jpeg', spec.quality || 0.9));
+    }
+    for (let h = 0; h < hold; h++) frames.push(frames[frames.length - 1]);
+    encodeWebm(frames, resolve(MEDIA, shot.name + '.webm'), { fps: spec.fps || 16, width: spec.width || 720 });
+    return;
+  }
 
   const out = resolve(MEDIA, shot.name + '.png');
   if (shot.fullPage) {

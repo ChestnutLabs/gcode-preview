@@ -18,6 +18,8 @@ Input is **streamed** into the parser, and the renderer can append geometry as i
 large print shows a growing preview (time-to-first-paint) rather than a spinner until the whole file
 is parsed. The session reports progress as it goes.
 
+<p><video autoplay loop muted playsinline width="640" poster="https://chestnutlabs.github.io/gcode-preview/media/viewer-benchy-tubes.png" style="max-width:100%;border-radius:8px;border:1px solid var(--color-accent)"><source src="https://chestnutlabs.github.io/gcode-preview/media/layer-buildup.webm" type="video/webm"></video></p>
+
 The **`progressivePreview`** prop chooses how that stream is presented (3D):
 
 - **`'lines'`** (default) — show the growing line preview as it parses, then swap in the final build.

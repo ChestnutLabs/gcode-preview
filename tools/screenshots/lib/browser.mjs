@@ -15,6 +15,7 @@ import { chromium } from 'playwright-core';
 import { existsSync, readdirSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
+import { execFileSync } from 'node:child_process';
 
 function playwrightCacheDir() {
   if (process.platform === 'win32')
@@ -94,23 +95,65 @@ export async function launchBrowser() {
   throw new Error('Could not launch any Chromium candidate:\n' + errors.join('\n'));
 }
 
-/** Copy a WebGL canvas' backing store into a 2D canvas and return a PNG data URL. */
-export async function readCanvasPng(page, canvasId, renderFirst = true) {
+/** Copy a WebGL canvas' backing store into a 2D canvas and return an image data URL. */
+export async function readCanvasPng(page, canvasId, renderFirst = true, mime = 'image/png', quality = 0.92) {
   return page.evaluate(
-    ({ id, renderFirst }) => {
+    ({ id, renderFirst, mime, quality }) => {
       if (renderFirst && window.viewer?.renderer?.render) window.viewer.renderer.render();
       const src = document.getElementById(id);
       const c = document.createElement('canvas');
       c.width = src.width;
       c.height = src.height;
       c.getContext('2d').drawImage(src, 0, 0);
-      return c.toDataURL('image/png');
+      return c.toDataURL(mime, quality);
     },
-    { id: canvasId, renderFirst }
+    { id: canvasId, renderFirst, mime, quality }
   );
 }
 
 /** Write a `data:image/png;base64,...` URL to disk. */
 export function savePngDataUrl(outPath, dataUrl) {
   writeFileSync(outPath, Buffer.from(dataUrl.split(',')[1], 'base64'));
+}
+
+const dataUrlToBuffer = (u) => Buffer.from(u.split(',')[1], 'base64');
+
+/**
+ * Encode an array of JPEG frames (each a `data:image/jpeg` URL) into a looping,
+ * muted WebM (VP8) via the Playwright-bundled ffmpeg. That build is stripped
+ * (`--disable-everything`): it can only DECODE mjpeg/vp8 and MUX webm, so frames
+ * are piped as concatenated JPEGs through `image2pipe` + the mjpeg decoder — no
+ * PNG decode, palette filters, or gif muxer are available. Throws if ffmpeg is
+ * missing. WebM is embedded via `<video autoplay loop muted playsinline>`.
+ */
+export function encodeWebm(frameDataUrls, outPath, { fps = 16, width = 720 } = {}) {
+  const ffmpeg = resolveFfmpeg();
+  if (!ffmpeg) throw new Error('ffmpeg not found (set FFMPEG_PATH or install a Playwright browser bundle).');
+  const input = Buffer.concat(frameDataUrls.map(dataUrlToBuffer));
+  // -crf/-b:v 0 = constant-quality VP8; scale to an even width for the codec.
+  execFileSync(
+    ffmpeg,
+    [
+      '-y',
+      '-f',
+      'image2pipe',
+      '-c:v',
+      'mjpeg',
+      '-framerate',
+      String(fps),
+      '-i',
+      'pipe:0',
+      '-vf',
+      `scale=${width}:-2:flags=lanczos`,
+      '-c:v',
+      'libvpx',
+      '-b:v',
+      '0',
+      '-crf',
+      '22',
+      '-an',
+      outPath
+    ],
+    { input, stdio: ['pipe', 'ignore', 'inherit'], maxBuffer: 1 << 30 }
+  );
 }
