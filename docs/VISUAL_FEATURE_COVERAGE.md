@@ -90,6 +90,7 @@ them up rather than rediscovering them.
 | Retraction / de-retraction markers | ✅ | ✅ | `retraction-markers` | ✅ | gallery | — | covered |
 | Seam moves | ✅ | partial | — | mention | gallery | — | needs screenshot |
 | Source-line ↔ segment mapping ("debugger": `pickSegment` + `segmentAtSourceLine`) | ✅ | ❌ | — | ❌ | gallery | recipes | needs demo exposure + needs screenshot |
+| Show/hide a feature role (`setFeatureRoleVisible` — e.g. hide brim/skirt) | ✅ | ✅ (toggle) | — | ❌ | gallery | — | covered (demo + tests); screenshot with a brim file pending |
 
 ## 2. Coloring & analysis modes
 

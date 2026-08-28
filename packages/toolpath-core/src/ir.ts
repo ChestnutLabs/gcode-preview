@@ -72,6 +72,8 @@ export const FeatureRole = {
   Purge: 14
 } as const;
 export type FeatureRoleName = keyof typeof FeatureRole;
+/** A {@link FeatureRole} value (the numeric code stored per segment in `segments.feature`). */
+export type FeatureRoleValue = (typeof FeatureRole)[FeatureRoleName];
 
 export interface Warning {
   code: string;

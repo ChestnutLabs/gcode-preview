@@ -6,7 +6,12 @@
  */
 import { GcodeParseSession, CancelledError } from '@chestnutlabs/gcode-parser';
 import { ToolpathRenderer } from '@chestnutlabs/gcode-renderer-three';
-import { createProgressMapper, computeToolpathTime, segmentsCompletedAtTime } from '@chestnutlabs/toolpath-core';
+import {
+  createProgressMapper,
+  computeToolpathTime,
+  segmentsCompletedAtTime,
+  FeatureRole
+} from '@chestnutlabs/toolpath-core';
 import { downloadToolpathStl } from './stl-export.js';
 
 // Inherited MIT demo corpus (see test-data/manifest.json), served by Vite's publicDir.
@@ -119,6 +124,7 @@ const els = {
   progressTier: $('progressTier'),
   progressPlay: $('progressPlay'),
   progressNote: $('progressNote'),
+  hideAdhesion: $('hideAdhesion'),
   progressive: $('progressive'),
   capturePng: $('capturePng'),
   showStats: $('showStats'),
@@ -243,6 +249,11 @@ function enableControls(ir) {
   if (!featureOk && els.colorMode.value === 'feature') {
     els.colorMode.value = 'single';
   }
+  // "Hide brim/skirt" needs classified feature roles (same gate as feature colour); start visible.
+  els.hideAdhesion.disabled = !featureOk;
+  els.hideAdhesion.checked = false;
+  renderer.setFeatureRoleVisible(FeatureRole.Skirt, true);
+  renderer.setFeatureRoleVisible(FeatureRole.Brim, true);
   // M600 color-change coloring (#147): only offered when the IR actually saw an M600.
   const ccOpt = els.colorMode.querySelector('option[value="colorChange"]');
   const ccOk = renderer.isColorModeAvailable('colorChange');
@@ -498,6 +509,11 @@ els.scrub.addEventListener('input', applyScrub);
 els.travel.addEventListener('change', () => renderer.setKindVisible('travel', els.travel.checked));
 els.wipe.addEventListener('change', () => renderer.setKindVisible('wipe', els.wipe.checked));
 els.retractions.addEventListener('change', () => renderer.setShowRetractions(els.retractions.checked));
+els.hideAdhesion.addEventListener('change', () => {
+  const visible = !els.hideAdhesion.checked;
+  renderer.setFeatureRoleVisible(FeatureRole.Skirt, visible);
+  renderer.setFeatureRoleVisible(FeatureRole.Brim, visible);
+});
 els.colorMode.addEventListener('change', () => {
   if (!renderer.setColorMode(colorModeFor(els.colorMode.value))) {
     els.colorMode.value = 'single';
