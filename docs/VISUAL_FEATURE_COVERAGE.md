@@ -45,6 +45,35 @@ Intentional exceptions (transparency, dark/light themes, custom backgrounds) are
 
 ---
 
+## This pass (2026-08-27) — coverage delta
+
+What moved to **covered** in the second public-product pass:
+
+- All 14 existing images **regenerated on the mid-grey documentation presentation**; the harness is
+  now manifest-driven (`shots.manifest.json`) with a shared `lib/presentation.mjs` look.
+- **New media**: `parametric-bolt-circle`, `bed-circular`, `bed-polygon`, `render-tubes`,
+  `render-lines` — each on the mid-grey look.
+- **Parametric RS274NGC**, **non-rectangular beds**, **capture/export**, **render diagnostics**,
+  **progressive/held reveal**, **parallel geometry pool**, **render scope / per-plate**: now in the
+  **README**, the **feature gallery**, and (where visual) concept pages with real screenshots.
+- **Demo now exposes**: `capture()` (Capture PNG), `getRenderStats()` (diagnostics panel),
+  `progressivePreview` selector, **By speed** + **By object** color modes, the parametric fixture,
+  and nav links to the model / model-viewer / 2D / CNC-validation / headless-still pages.
+
+Still on the **to-capture** list (honest remainder — recorded, not forgotten):
+
+- `needs animation`: segment/time **scrub**, **progressive / held reveal**, interaction-aware
+  quality, user-scrub-wins — temporal, so a GIF/short clip beats a still (harness has the ffmpeg
+  path via `lib/browser.mjs`; not yet wired into shots).
+- `needs comparison`: **object-aware framing** (whole-job vs model-aware), **fresh vs stale**
+  progress, **render scope** (plate/object subset before/after).
+- `needs screenshot`: **diagnostics panel** in-context, **transparent-background capture** over a
+  checkerboard, per-mode **color legends** (feature/object/power), circular/polygon **bed** shots
+  with a flatter model for a cleaner outline.
+
+These are tracked here so the next release's Public Product + Documentation + Visual Review picks
+them up rather than rediscovering them.
+
 ## 1. Toolpath inspection
 
 | Capability | User-facing | Demo | Media | README | Pages gallery | Manual/pkg | Status |
@@ -87,15 +116,15 @@ Intentional exceptions (transparency, dark/light themes, custom backgrounds) are
 | Capability | User-facing | Demo | Media | README | Pages gallery | Manual/pkg | Status |
 |---|:---:|:---:|:---:|:---:|:---:|:---:|---|
 | Tube geometry | ✅ | ✅ | hero | ✅ | gallery | concept-workers | covered |
-| Line geometry | ✅ | ✅ | — | mention | gallery | — | needs comparison (tubes vs lines) |
+| Line geometry | ✅ | ✅ | `render-lines` | mention | gallery | concept-workers | covered (tubes-vs-lines pair in gallery + concept) |
 | Canvas 2D fallback (no WebGL/Three) | ✅ | 2d page | `canvas-2d-fallback` | ✅ | gallery | concept-workers | covered |
 | Quality modes (full/adaptive/fast) | ✅ | partial | — | mention | gallery | concept-workers | needs demo exposure |
-| Progressive preview (`auto`/`lines`) | ✅ | wired, no UI | — | ❌ | gallery | concept-workers | needs demo exposure + needs animation |
-| Held / single clean reveal (`hold`) | ✅ | ❌ | — | ❌ | gallery | concept-workers | needs demo exposure + needs animation |
-| Renderer build stages (`stage` event) | ✅ | ❌ | — | ❌ | gallery | concept-workers | needs demo exposure + needs animation |
-| Interaction-aware quality | ✅ | ❌ | — | ✅ (prose) | gallery | concept-workers | needs demo exposure + needs animation |
-| Disclosed decimation / degradation | ✅ | partial | — | ✅ (prose) | gallery | concept-workers | needs screenshot (disclosure text) |
-| Render diagnostics (`getRenderStats`) | ✅ | ❌ | — | ❌ | gallery | concept-workers | needs demo exposure + needs screenshot |
+| Progressive preview (`auto`/`lines`) | ✅ | ✅ (selector) | — | ✅ | gallery | concept-workers | demo + docs covered; animation pending |
+| Held / single clean reveal (`hold`) | ✅ | ✅ (selector) | — | ✅ | gallery | concept-workers | demo + docs covered; animation pending |
+| Renderer build stages (`stage` event) | ✅ | ❌ | — | ✅ (prose) | gallery | concept-workers | needs animation |
+| Interaction-aware quality | ✅ | ❌ | — | ✅ (prose) | gallery | concept-workers | needs animation |
+| Disclosed decimation / degradation | ✅ | ✅ (disclosure) | — | ✅ (prose) | gallery | concept-workers | needs screenshot (disclosure text) |
+| Render diagnostics (`getRenderStats`) | ✅ | ✅ (panel) | — | ✅ | gallery | concept-workers | demo + README + gallery covered; in-context panel screenshot pending |
 | Geometry worker pool (parallel tubes) | ✅ | ❌ | — | mention | gallery | concept-workers | not visually meaningful (diagnostics panel proxies it) |
 | WebGL context-loss recovery | ✅ | ❌ | — | mention | — | — | not visually meaningful |
 
@@ -108,8 +137,8 @@ Intentional exceptions (transparency, dark/light themes, custom backgrounds) are
 | Saved/restored camera state | ✅ | ✅ | — | mention | — | recipes | not visually meaningful |
 | Object-aware framing (`frameContent`) | ✅ | ✅ | — | ✅ (prose) | gallery | concept-ir-capabilities | needs comparison — whole-job vs model-aware |
 | Build-volume cage toggle | ✅ | ✅ | — | mention | gallery | — | needs screenshot |
-| Capture / export → Blob | ✅ | ❌ | — | ❌ | gallery | recipes | needs demo exposure + needs screenshot |
-| Transparent / independent-background capture | ✅ | ❌ | — | ❌ | gallery | recipes | needs demo exposure + needs screenshot (checkerboard) |
+| Capture / export → Blob | ✅ | ✅ | — | ✅ | gallery | recipes | covered (demo Capture PNG + README + gallery); in-context screenshot pending |
+| Transparent / independent-background capture | ✅ | ✅ (via capture) | — | ✅ | gallery | recipes | demo + README covered; checkerboard screenshot pending |
 
 ## 6. Source-model rendering (STL / 3MF)
 
@@ -129,8 +158,8 @@ Intentional exceptions (transparency, dark/light themes, custom backgrounds) are
 | Capability | User-facing | Demo | Media | README | Pages gallery | Manual/pkg | Status |
 |---|:---:|:---:|:---:|:---:|:---:|:---:|---|
 | Rectangular bed | ✅ | ✅ | (in many) | mention | gallery | — | covered |
-| Circular / delta bed | ✅ | ❌ | — | ❌ | gallery | concept-dialects-containers | needs demo exposure + needs screenshot |
-| Polygonal bed | ✅ | ❌ | — | ❌ | gallery | concept-dialects-containers | needs demo exposure + needs screenshot |
+| Circular / delta bed | ✅ | harness | `bed-circular` | ✅ | gallery | concept-dialects-containers | covered (media + README + gallery); interactive bed selector still pending |
+| Polygonal bed | ✅ | harness | `bed-polygon` | ✅ | gallery | concept-dialects-containers | covered (media + README + gallery); interactive bed selector still pending |
 | Excluded-region outlines | ✅ | ✅ | — | ❌ | — | — | needs screenshot |
 | Bed surface / texture themes | ✅ | ✅ | — | mention | gallery | — | needs screenshot |
 
@@ -142,7 +171,7 @@ Intentional exceptions (transparency, dark/light themes, custom backgrounds) are
 | Tool power channel (laser/RPM) | ✅ | validate page | — | mention | gallery (CNC) | — | needs demo exposure + needs screenshot |
 | Canned drilling cycles (G81/82/83) | ✅ | ❌ | — | mention | gallery (CNC) | motion-coverage | needs screenshot |
 | Validation tiers (validated vs experimental) | ✅ | validate page | — | ✅ (prose) | gallery (CNC) | compatibility | not visually meaningful (prose/table) |
-| Parametric RS274NGC programs (params/expr/O-word/subs) | ✅ | ❌ | — | ❌ | gallery (CNC) | concept-parametric-programs | needs demo exposure + needs comparison (program → geometry) |
+| Parametric RS274NGC programs (params/expr/O-word/subs) | ✅ | ✅ (fixture) | `parametric-bolt-circle` | ✅ | gallery (CNC) | concept-parametric-programs | covered — demo fixture + media + README + gallery (program paired with geometry) |
 
 ## 9. Formats, dialects & classification
 
