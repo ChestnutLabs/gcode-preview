@@ -10,7 +10,7 @@ live printer progress. Parsing runs in a Web Worker, so a 250 MB file never free
 [![docs](https://img.shields.io/badge/docs-manual%20%2B%20API-2ea44f)](https://chestnutlabs.github.io/gcode-preview/)
 ![node](https://img.shields.io/badge/node-%E2%89%A522-339933)
 
-![3DBenchy rendered as extrusion tubes with per-feature coloring — perimeters, infill, and skirt in distinct colors — on a dark build plate](docs/media/viewer-benchy-tubes.png)
+![3DBenchy rendered as extrusion tubes with per-feature coloring — perimeters, infill, and skirt in distinct colors — on a neutral grey build plate](docs/media/viewer-benchy-tubes.png)
 
 ---
 
@@ -66,7 +66,8 @@ Every one of those maps to something the library actually does, below.
   move, with a keyboard-operable slider.
 - **Time scrub & print-time estimate** — scrub along the *time* axis and read an estimated print
   time, labeled by provenance (the slicer's own estimate, or a kinematic approximation).
-- **Feature inspection** — toggle travel, wipe, seam, and retraction/de-retraction markers.
+- **Feature inspection** — toggle travel, wipe, seam, and retraction/de-retraction markers, or
+  **hide a whole feature role** (`setFeatureRoleVisible` — e.g. hide brim/skirt to declutter a part).
 - **Source-line ↔ segment mapping** — go from a byte in the file to the segment it drew, and back.
 
 ### Live job progress
@@ -100,6 +101,18 @@ signal deserves**:
   giving up final-frame fidelity. The hard GPU/vertex-budget fallback still applies underneath.
 - **Degradation is disclosed** — over a large-file threshold the renderer decimates and *tells you*
   the exact reduction factor rather than dropping detail silently.
+- **Any build surface, not just a rectangle** — rectangular, **circular / delta**, and **polygonal**
+  beds render with the outline and grid following the real shape (`buildVolume.shape`).
+- **Capture / export** — `capture()` returns the current view as a `Blob` (PNG/JPEG/WebP) from the
+  interactive viewer *or* the headless still, including a **transparent background** for compositing
+  onto cards — the same primitive behind server thumbnails and "save image".
+
+<table>
+<tr>
+<td width="50%"><img src="docs/media/bed-circular.png" alt="A print rendered on a round, delta-style build plate — the bed outline and grid are circular, with the model centered on it"></td>
+<td><b>Non-rectangular beds.</b> A circular (delta) or polygonal build surface draws its true outline and clips the grid to the shape, instead of forcing a rectangle. Pass a <code>shape</code> on the build volume; rectangular stays the default.</td>
+</tr>
+</table>
 
 <table>
 <tr>
@@ -132,6 +145,31 @@ a controller's semantic claims are reported `inferred` until confirmed on real h
 — today **GRBL/LightBurn laser is hardware-validated**; GRBL-mill and LinuxCNC are experimental.
 Geometry always parses regardless of tier.
 
+#### Parametric programs (RS274NGC)
+
+Some G-code doesn't spell out its geometry move by move — it **computes** it. A LinuxCNC / CAM
+program can set variables, evaluate expressions as coordinates, loop, branch, and call subroutines,
+so a bolt circle is a `while` loop over an angle instead of twelve explicit moves. The parser runs
+that programming layer, so these files resolve to the **real toolpath** instead of rendering empty.
+
+![A CNC toolpath of eight drilled holes on a circle plus a centre hole and a square frame, all computed by a parametric program, cut moves in pink and rapid moves in blue](docs/media/parametric-bolt-circle.png)
+
+```gcode
+o200 while [#<i> LT #<holes>]
+  #<a> = [#<i> * 360 / #<holes>]
+  G0 X[#<cx> + #<r> * COS[#<a>]] Y[#<cy> + #<r> * SIN[#<a>]]   ; computed hole position
+  o100 call                                                   ; drill (subroutine)
+  #<i> = [#<i> + 1]
+o200 endwhile
+```
+
+Parameters, expressions, `if` / `while` / `do` / `repeat` control flow, and in-file subroutines all
+run — **bounded** (a hostile file can't hang the parser: `maxProgramIterations` / `maxCallDepth`) and
+**honest** (a clean run reports `parametricProgram: 'known'`; a limit or unsupported construct drops
+to `approximated` with a specific warning). It engages only on files that use `#` / `[` / O-words;
+every FDM file is byte-for-byte unchanged. See
+[Parametric programs](docs/manual/concept-parametric-programs.md).
+
 ### Framework integration
 
 Four adapters over one engine, with matching options, events, and TypeScript types — enforced by a
@@ -148,6 +186,17 @@ shared behavioral test suite that runs against all four in CI:
 
 - **Off-thread parsing** — a `GcodeParseSession` runs the parser in a Web Worker with streaming
   input, progressive previews for large files, resource limits, and cancellation.
+- **Parallel geometry build** — a geometry worker pool builds extrusion tubes off the main thread
+  (byte-identical to serial), bounded by a memory budget and degrading gracefully (pool → serial →
+  lines) with every step disclosed. Big plates stay responsive.
+- **Preparation is staged, the reveal is clean** — a `stage` event walks
+  `parsing → classifying → building-geometry → preparing-gpu → ready` with a real build percentage,
+  and `progressivePreview: 'hold'` suppresses the half-built scene so the model appears in one clean
+  reveal instead of visibly growing.
+- **Render diagnostics** — `getRenderStats()` reports what actually happened: backend and WebGL
+  version, hardware-vs-software GPU (unmasked renderer/vendor), geometry mode, rendered segment and
+  draw-call counts, whether decimation applied, worker count, and a timing breakdown — a ready-made
+  "what am I running on / why is this slow" panel, never fabricated.
 - **Batteries-included worker** — the adapters wire up a worker with every dialect and `.gcode.3mf`
   support via the bundler-native `new Worker(new URL(...))` pattern (Vite works out of the box); a
   `createWorker` hook is the escape hatch for slim builds, custom dialects, or strict-CSP hosts.
@@ -200,6 +249,12 @@ interactive analogue of the still: it orbits, zooms, and pans the same STL / 3MF
 multicolor) with camera presets and the same serializable camera state, over the shared camera and
 orbit controls. See the
 [model-renderer README](packages/gcode-model-renderer/README.md#interactive-viewer).
+
+**Multi-plate, multi-object, or just a subset.** A 3MF project can hold several plates and many
+objects. Parse or render **one plate at a time** (`parseOptions.plate`), and a **render scope**
+(`{ plateId }`, `{ objectIds }`, or an instance filter) narrows a still or the viewer to exactly the
+plate or objects you want — a single plate's thumbnail, or one part isolated from the rest — with a
+stable cache key per scope.
 
 ## Quick start
 
@@ -319,7 +374,9 @@ contain. Details: [ToolpathIR & the capability model](docs/manual/concept-ir-cap
 
 ## Documentation
 
-- **[Manual & getting started](https://chestnutlabs.github.io/gcode-preview/)** and the
+- **[Manual & getting started](https://chestnutlabs.github.io/gcode-preview/)**, the
+  **[visual feature gallery](https://chestnutlabs.github.io/gcode-preview/documents/Feature_gallery.html)**
+  (what it does, shown rather than described), and the
   **[API reference](https://chestnutlabs.github.io/gcode-preview/api/)** (generated from source).
 - Concepts: [workers & performance](docs/manual/concept-workers.md) ·
   [IR & capabilities](docs/manual/concept-ir-capabilities.md) ·
@@ -395,7 +452,7 @@ row inspects the *toolpath*, the bottom row presents the *source model* (see
 
 Design rationale, boundaries, and the accepted architecture live in
 [`docs/design/`](docs/design); the [docs index](docs/README.md) maps the whole set. Fourteen
-packages publish to npm in lockstep (currently **v0.18.0**) with npm provenance.
+packages publish to npm in lockstep (currently **v0.19.0**) with npm provenance.
 
 ## Development
 

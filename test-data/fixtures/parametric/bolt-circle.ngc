@@ -1,0 +1,51 @@
+; RS274NGC parametric program (LinuxCNC dialect) — computed geometry demo.
+;
+; Nothing here spells out a hole position move-by-move: a bolt circle of holes and
+; a surrounding frame are COMPUTED from a handful of parameters using expressions,
+; a while-loop, and a subroutine. The parser runs this programming layer, so the
+; preview shows the real toolpath the machine would follow — not an empty plate.
+;
+; MIT-clean, hand-authored for documentation (Chestnut Labs).
+
+G21 G17 G90        ; mm, XY plane, absolute
+S12000 M3          ; spindle on -> productive G1 moves classify as Cut
+
+; --- parameters -----------------------------------------------------------
+#<cx>     = 60      ; bolt-circle centre X
+#<cy>     = 60      ; bolt-circle centre Y
+#<r>      = 34      ; bolt-circle radius
+#<holes>  = 8       ; number of holes
+#<half>   = 46      ; frame half-width
+#<_zsafe> = 3       ; retract height  (global: readable inside the subroutine)
+#<_zcut>  = -4      ; hole depth      (global: named locals are per-call-frame)
+
+; --- subroutine: peck-drill a hole at the current X/Y ----------------------
+o100 sub
+  G1 Z#<_zcut> F120  ; plunge (cut)
+  G0 Z#<_zsafe>      ; retract (rapid)
+o100 endsub
+
+; --- bolt circle: one hole per step, position computed with degree trig -----
+#<i> = 0
+o200 while [#<i> LT #<holes>]
+  #<a> = [#<i> * 360 / #<holes>]
+  G0 X[#<cx> + #<r> * COS[#<a>]] Y[#<cy> + #<r> * SIN[#<a>]]
+  o100 call
+  #<i> = [#<i> + 1]
+o200 endwhile
+
+; --- a centre hole ---------------------------------------------------------
+G0 X#<cx> Y#<cy>
+o100 call
+
+; --- computed square frame around the pattern ------------------------------
+G0 X[#<cx> - #<half>] Y[#<cy> - #<half>]
+G1 Z#<_zcut> F160
+G1 X[#<cx> + #<half>] Y[#<cy> - #<half>]
+G1 X[#<cx> + #<half>] Y[#<cy> + #<half>]
+G1 X[#<cx> - #<half>] Y[#<cy> + #<half>]
+G1 X[#<cx> - #<half>] Y[#<cy> - #<half>]
+G0 Z#<_zsafe>
+
+M5                 ; spindle off
+M2                 ; end

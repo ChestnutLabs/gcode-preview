@@ -22,10 +22,12 @@
 ## Documentation
 - [ ] User- and maintainer-facing docs updated in this PR (docs are part of the feature)
 - [ ] Support matrix / migration notes updated, or N/A
-- [ ] **Release promotion (`dev` → `main`) only:** `npm run docs:release-check` is green, the
-      `docs/README` current-state narrative + history name this version, `RELEASE_NOTES_DRAFT.md`
-      is folded in and deleted, and screenshots/guides were reviewed (CLAUDE.md public-docs
-      completion check) — or N/A for a normal `dev` PR.
+- [ ] **Release promotion (`dev` → `main`) only:** `npm run docs:release-check` is green — the
+      `docs/README` current-state narrative + history name this version, `RELEASE_NOTES_DRAFT.md` is
+      folded in and deleted, and the enforced **`RELEASE_REVIEW.md`** (Public Product + Docs + Visual
+      review) is present for this version with every disposition resolved (each changed package
+      `reviewed` / `no-change-needed` / `not-applicable`; Product / Docs / Visual markers `resolved`).
+      The gate blocks promotion until it is — or N/A for a normal `dev` PR.
 
 ## Impact
 - Security: <untrusted-input / limits impact, or none>

@@ -6,7 +6,12 @@
  */
 import { GcodeParseSession, CancelledError } from '@chestnutlabs/gcode-parser';
 import { ToolpathRenderer } from '@chestnutlabs/gcode-renderer-three';
-import { createProgressMapper, computeToolpathTime, segmentsCompletedAtTime } from '@chestnutlabs/toolpath-core';
+import {
+  createProgressMapper,
+  computeToolpathTime,
+  segmentsCompletedAtTime,
+  FeatureRole
+} from '@chestnutlabs/toolpath-core';
 import { downloadToolpathStl } from './stl-export.js';
 
 // Inherited MIT demo corpus (see test-data/manifest.json), served by Vite's publicDir.
@@ -18,9 +23,11 @@ const CORPUS = [
   ['gcodes/plant-sign.gcode', 'Plant sign'],
   ['gcodes/easel.gcode', 'Easel (19 KB)'],
   ['gcodes/mach3.gcode', 'Mach3 (CNC-style)'],
+  ['fixtures/parametric/bolt-circle.ngc', 'Parametric bolt-circle (RS274NGC)'],
   ['fixtures/containers/mini-project.gcode.3mf', 'mini-project.gcode.3mf (container)'],
   ['fixtures/annotations/wipe-brackets.gcode', 'Wipe brackets (#182 demo)'],
-  ['fixtures/annotations/variable-layers.gcode', 'Variable layer height (#179 demo)']
+  ['fixtures/annotations/variable-layers.gcode', 'Variable layer height (#179 demo)'],
+  ['fixtures/annotations/skirt-brim-model.gcode', 'Model + skirt + brim (framing / hide-adhesion)']
 ];
 
 const TOOL_PALETTE = [
@@ -43,6 +50,18 @@ const HEIGHT_RAMP = [
   [0.2, 0.85, 0.45],
   [0.95, 0.85, 0.2],
   [0.9, 0.3, 0.2]
+];
+// Color-by-speed ramp (#177): slow → fast as blue → yellow → red.
+const SPEED_RAMP = [
+  [0.12, 0.36, 0.95],
+  [0.97, 0.86, 0.2],
+  [0.92, 0.22, 0.15]
+];
+const OBJECT_PALETTE = [
+  [0.35, 0.7, 0.95],
+  [0.95, 0.55, 0.3],
+  [0.5, 0.88, 0.5],
+  [0.9, 0.42, 0.72]
 ];
 
 // Named scene themes (#153, DD-009 D4): each is a bounded declarative Theme.
@@ -106,6 +125,11 @@ const els = {
   progressTier: $('progressTier'),
   progressPlay: $('progressPlay'),
   progressNote: $('progressNote'),
+  hideAdhesion: $('hideAdhesion'),
+  progressive: $('progressive'),
+  capturePng: $('capturePng'),
+  showStats: $('showStats'),
+  renderStats: $('renderStats'),
   canvas: $('view')
 };
 
@@ -137,6 +161,8 @@ function colorModeFor(kind) {
   if (kind === 'feature') return { mode: 'feature', palette: FEATURE_PALETTE, fallback: [0.55, 0.55, 0.55] };
   if (kind === 'colorChange') return { mode: 'colorChange', palette: TOOL_PALETTE, fallback: [0.55, 0.55, 0.55] };
   if (kind === 'layerHeight') return { mode: 'layerHeight', ramp: HEIGHT_RAMP, fallback: [0.6, 0.6, 0.6] };
+  if (kind === 'feedrate') return { mode: 'feedrate', ramp: SPEED_RAMP, fallback: [0.55, 0.6, 0.62] };
+  if (kind === 'object') return { mode: 'object', palette: OBJECT_PALETTE, fallback: [0.55, 0.55, 0.55] };
   return { mode: 'single', color: [0.9, 0.4, 0.7] };
 }
 
@@ -224,6 +250,11 @@ function enableControls(ir) {
   if (!featureOk && els.colorMode.value === 'feature') {
     els.colorMode.value = 'single';
   }
+  // "Hide brim/skirt" needs classified feature roles (same gate as feature colour); start visible.
+  els.hideAdhesion.disabled = !featureOk;
+  els.hideAdhesion.checked = false;
+  renderer.setFeatureRoleVisible(FeatureRole.Skirt, true);
+  renderer.setFeatureRoleVisible(FeatureRole.Brim, true);
   // M600 color-change coloring (#147): only offered when the IR actually saw an M600.
   const ccOpt = els.colorMode.querySelector('option[value="colorChange"]');
   const ccOk = renderer.isColorModeAvailable('colorChange');
@@ -244,6 +275,22 @@ function enableControls(ir) {
   if (!lhOk && els.colorMode.value === 'layerHeight') {
     els.colorMode.value = 'single';
   }
+  // Speed/feedrate coloring (#177): offered when the file carries feedrates.
+  const spOpt = els.colorMode.querySelector('option[value="feedrate"]');
+  const spOk = renderer.isColorModeAvailable('feedrate');
+  spOpt.disabled = !spOk;
+  spOpt.textContent = spOk
+    ? 'By speed'
+    : `By speed (unavailable: feedrate = ${ir.header.capabilities.feedrate ?? 'unknown'})`;
+  if (!spOk && els.colorMode.value === 'feedrate') els.colorMode.value = 'single';
+  // Object coloring (#178): only when the dialect resolved per-object membership.
+  const objOpt = els.colorMode.querySelector('option[value="object"]');
+  const objOk = renderer.isColorModeAvailable('object');
+  objOpt.disabled = !objOk;
+  objOpt.textContent = objOk
+    ? 'By object'
+    : `By object (unavailable: objects = ${ir.header.capabilities.objects ?? 'unknown'})`;
+  if (!objOk && els.colorMode.value === 'object') els.colorMode.value = 'single';
   renderer.setColorMode(colorModeFor(els.colorMode.value));
 }
 
@@ -265,6 +312,8 @@ renderer.onEvent((e) => {
           `(layer boundaries kept); travel hidden. ${e.segments.toLocaleString()} segments drawn.`
         : '';
     els.qualityNote.textContent = `Rendering as: ${e.quality}${bedNote}`;
+    els.capturePng.disabled = false;
+    els.showStats.disabled = false;
   } else if (e.type === 'qualityFallback') {
     els.qualityNote.textContent = `Tubes unavailable — fell back to lines (${e.reason})`;
   } else if (e.type === 'error') {
@@ -461,6 +510,11 @@ els.scrub.addEventListener('input', applyScrub);
 els.travel.addEventListener('change', () => renderer.setKindVisible('travel', els.travel.checked));
 els.wipe.addEventListener('change', () => renderer.setKindVisible('wipe', els.wipe.checked));
 els.retractions.addEventListener('change', () => renderer.setShowRetractions(els.retractions.checked));
+els.hideAdhesion.addEventListener('change', () => {
+  const visible = !els.hideAdhesion.checked;
+  renderer.setFeatureRoleVisible(FeatureRole.Skirt, visible);
+  renderer.setFeatureRoleVisible(FeatureRole.Brim, visible);
+});
 els.colorMode.addEventListener('change', () => {
   if (!renderer.setColorMode(colorModeFor(els.colorMode.value))) {
     els.colorMode.value = 'single';
@@ -494,6 +548,45 @@ els.exportStl.addEventListener('click', () => {
       ? `Exported STL: ${triangles.toLocaleString()} triangles from ${emitted.toLocaleString()} of ${segments.toLocaleString()} productive segments (strided to the triangle budget).`
       : `Exported STL: ${triangles.toLocaleString()} triangles from ${segments.toLocaleString()} productive segments.`;
   setStatus(note);
+});
+// Progressive preview (#60, DD-029): how a large file is revealed while parsing.
+els.progressive.addEventListener('change', () => renderer.setProgressivePreview(els.progressive.value));
+// Capture the current view as a PNG via the generic renderer.capture() (DD-030 D1).
+els.capturePng.addEventListener('click', async () => {
+  try {
+    const blob = await renderer.capture({ format: 'png' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'gcode-preview.png';
+    a.click();
+    URL.revokeObjectURL(url);
+    setStatus(`Captured ${(blob.size / 1024).toFixed(0)} KB PNG.`);
+  } catch (err) {
+    setStatus(`Capture failed: ${err && err.message ? err.message : err}`, true);
+  }
+});
+// Render diagnostics (DD-027): read renderer.getRenderStats() and show it — backend,
+// hardware-vs-software GPU, geometry mode, counts, and timings, never fabricated.
+els.showStats.addEventListener('click', () => {
+  const s = renderer.getRenderStats();
+  if (!s) {
+    els.renderStats.textContent = 'No render stats yet — render a file first.';
+    return;
+  }
+  const ms = (v) => (v == null ? '—' : `${Math.round(v)} ms`);
+  els.renderStats.textContent = [
+    `backend:      ${s.backend} (WebGL ${s.webglVersion ?? '?'})`,
+    `capability:   ${s.capability}${s.gpuRenderer ? ` — ${s.gpuRenderer}` : ''}`,
+    `geometry:     ${s.geometryMode} · parallelism ${s.buildParallelism}${s.workerCount ? ` (${s.workerCount} workers)` : ''}`,
+    `segments:     ${(s.renderedSegmentCount ?? 0).toLocaleString()} / ${(s.sourceSegmentCount ?? 0).toLocaleString()}${s.decimationApplied ? ' (decimated)' : ''}`,
+    `draw calls:   ${s.drawCalls ?? '—'} · vertices ${s.vertexCount?.toLocaleString() ?? '—'}`,
+    `tube bytes:   ${s.tubeBytes ? (s.tubeBytes / 1e6).toFixed(1) + ' MB' : '—'} / budget ${s.tubeByteBudget ? (s.tubeByteBudget / 1e6).toFixed(0) + ' MB' : '—'}`,
+    `timings:      parse ${ms(s.parseMs)} · build ${ms(s.geometryBuildMs)} · first frame ${ms(s.firstRenderMs)} · ready ${ms(s.totalReadyMs)}`,
+    s.disclosures?.length ? `disclosures:  ${s.disclosures.join(', ')}` : ''
+  ]
+    .filter(Boolean)
+    .join('\n');
 });
 
 // App-level keyboard shortcuts (master plan §9.5); every control is also plain

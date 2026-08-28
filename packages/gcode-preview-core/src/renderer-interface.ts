@@ -23,7 +23,7 @@ import type {
 } from '@chestnutlabs/gcode-renderer-three';
 
 export type { CameraState, CameraView, CaptureOptions } from '@chestnutlabs/gcode-renderer-three';
-import type { MachineGeometry, MappedProgress, ToolpathIR } from '@chestnutlabs/toolpath-core';
+import type { FeatureRoleValue, MachineGeometry, MappedProgress, ToolpathIR } from '@chestnutlabs/toolpath-core';
 
 /** Which renderer implementation backs the preview. `'3d'` is the default (Three.js). */
 export type RendererMode = '2d' | '3d';
@@ -63,6 +63,11 @@ export interface PreviewRenderer {
   setLayerRange(startLayer: number, endLayer: number): void;
   setScrubPosition(segIndex: number | null): void;
   setKindVisible(kind: MoveKindToggle, visible: boolean): void;
+  /**
+   * Show/hide a single feature role (e.g. hide `Skirt`/`Brim`). 3D only — the flat 2D view treats it
+   * as a no-op. Optional so a renderer need not implement it; gate the UI on `featureRoles: 'known'`.
+   */
+  setFeatureRoleVisible?(role: FeatureRoleValue, visible: boolean): void;
   setShowRetractions(visible: boolean): void;
   setColorMode(mode: ColorMode): boolean;
   setQuality(quality: QualityMode | 'auto'): void;

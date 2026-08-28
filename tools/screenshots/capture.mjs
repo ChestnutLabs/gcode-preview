@@ -1,151 +1,54 @@
 /**
- * Documentation media capture harness.
+ * Documentation media capture harness (manifest-driven).
  *
- * Drives the running `tools/demo` app (http://localhost:5199) with a headless
- * Chromium and writes the toolpath renders used in the root README and the
- * user manual to `docs/media/`. Every image is a real render of a real file
- * from the tracked MIT demo corpus — nothing is mocked or hand-edited.
+ * Reads `shots.manifest.json` and drives the running `tools/demo` app with a
+ * headless Chromium, writing every documentation image to `docs/media/`. Each
+ * image is a real render of a real file from the tracked MIT demo corpus on the
+ * shared mid-grey documentation presentation (`lib/presentation.mjs`) — nothing
+ * is mocked or hand-edited.
  *
  * Prerequisites (see tools/screenshots/README.md):
  *   1. Build the workspace packages so the demo can resolve them.
- *   2. Start the demo:  cd tools/demo && npm install && npm run dev
- *   3. Have Google Chrome / Chromium installed (CHROME_PATH overrides the path).
- *   4. npm i -D playwright-core   (kept out of the repo dependency tree)
+ *   2. Start the demo:  cd tools/demo && npm install && npm run dev   (:5199)
+ *   3. A Chromium is auto-located from the Playwright cache; CHROME_PATH overrides.
+ *   4. npm i playwright-core   (kept out of the repo dependency tree)
  *
  * Run:  node tools/screenshots/capture.mjs [shotName ...]
- * With no args it captures every shot; pass names to capture a subset.
+ *   No args  → every shot in the manifest.
+ *   Names    → just those shots.
  */
 /* eslint-env node, browser */
-import { chromium } from 'playwright-core';
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
-import { writeFileSync } from 'node:fs';
+import { readFileSync } from 'node:fs';
+import { launchBrowser, readCanvasPng, savePngDataUrl, encodeWebm } from './lib/browser.mjs';
+import { docTheme, VIEW, SCALE, PAL, DOC_BACKGROUND_CSS } from './lib/presentation.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const MEDIA = resolve(__dirname, '../../docs/media');
 const BASE = process.env.DEMO_URL || 'http://localhost:5199';
-const CHROME = process.env.CHROME_PATH || '/usr/bin/google-chrome-stable';
-const VIEW = { width: 1320, height: 760 };
-const SCALE = 2;
+const manifest = JSON.parse(readFileSync(resolve(__dirname, 'shots.manifest.json'), 'utf8'));
 
-// Palettes mirror the demo (tools/demo/src/main.js) so colors match the app.
-const PAL = {
-  feature: [
-    [0.9, 0.4, 0.7],
-    [0.35, 0.7, 0.95],
-    [0.95, 0.75, 0.3],
-    [0.5, 0.9, 0.5],
-    [0.8, 0.5, 0.95]
-  ],
-  tool: [
-    [0.9, 0.4, 0.7],
-    [0.35, 0.7, 0.95],
-    [0.95, 0.75, 0.3],
-    [0.5, 0.9, 0.5]
-  ],
-  height: [
-    [0.15, 0.4, 0.9],
-    [0.2, 0.85, 0.45],
-    [0.95, 0.85, 0.2],
-    [0.9, 0.3, 0.2]
-  ],
-  speed: [
-    [0.13, 0.35, 0.92],
-    [0.96, 0.85, 0.22],
-    [0.9, 0.22, 0.16]
-  ]
-};
-
-/** Each shot: name, corpus file, quality, and a `setup` body run in-page after parse. */
-const SHOTS = [
-  {
-    name: 'viewer-benchy-tubes',
-    file: 'gcodes/3DBenchy.gcode',
-    quality: 'tubes',
-    color: { mode: 'feature', palette: PAL.feature, fallback: [0.55, 0.55, 0.55] }
-  },
-
-  {
-    name: 'layer-clip-benchy',
-    file: 'gcodes/3DBenchy.gcode',
-    quality: 'tubes',
-    color: { mode: 'feature', palette: PAL.feature, fallback: [0.55, 0.55, 0.55] },
-    layerRange: 'mid'
-  },
-
-  {
-    name: 'color-speed-calicat',
-    file: 'gcodes/calicat.gcode',
-    quality: 'tubes',
-    color: { mode: 'feedrate', ramp: PAL.speed, fallback: [0.55, 0.6, 0.62] }
-  },
-
-  {
-    name: 'color-layerheight',
-    file: 'fixtures/annotations/variable-layers.gcode',
-    quality: 'tubes',
-    color: { mode: 'layerHeight', ramp: PAL.height, fallback: [0.6, 0.6, 0.6] }
-  },
-
-  {
-    name: 'cnc-cut-vs-rapid',
-    file: 'gcodes/easel.gcode',
-    quality: 'lines',
-    color: { mode: 'moveKind', cut: [0.95, 0.45, 0.6], travel: [0.3, 0.55, 0.65], fallback: [0.6, 0.6, 0.6] },
-    travel: true
-  },
-
-  { name: 'progress-known', file: 'gcodes/calicat.gcode', quality: 'lines', progress: 'byte' },
-
-  { name: 'progress-approximated', file: 'gcodes/calicat.gcode', quality: 'lines', progress: 'layer' },
-
-  {
-    name: 'camera-top',
-    file: 'gcodes/3DBenchy.gcode',
-    quality: 'lines',
-    color: { mode: 'single', color: [0.55, 0.75, 0.95] },
-    camera: 'orthographic',
-    view: 'top'
-  },
-  {
-    name: 'camera-front',
-    file: 'gcodes/3DBenchy.gcode',
-    quality: 'lines',
-    color: { mode: 'single', color: [0.55, 0.75, 0.95] },
-    camera: 'orthographic',
-    view: 'front'
-  },
-  {
-    name: 'camera-iso',
-    file: 'gcodes/3DBenchy.gcode',
-    quality: 'lines',
-    color: { mode: 'single', color: [0.55, 0.75, 0.95] }
-  },
-
-  {
-    name: 'retraction-markers',
-    file: 'gcodes/calicat.gcode',
-    quality: 'tubes',
-    color: { mode: 'feature', palette: PAL.feature, fallback: [0.55, 0.55, 0.55] },
-    retractions: true,
-    layerRange: 'low'
-  },
-
-  // Full-app frame: sidebar controls + live render (embeddable inspection UI).
-  {
-    name: 'app-control-panel',
-    file: 'gcodes/3DBenchy.gcode',
-    quality: 'tubes',
-    color: { mode: 'feature', palette: PAL.feature, fallback: [0.55, 0.55, 0.55] },
-    view: 'iso',
-    fullPage: true
+/** Expand a compact color spec from the manifest into the ColorMode the demo expects. */
+function expandColor(spec) {
+  if (!spec) return null;
+  const out = { mode: spec.mode, fallback: spec.fallback };
+  if (spec.color) out.color = spec.color;
+  if (spec.mode === 'feature' || spec.mode === 'tool' || spec.mode === 'object') out.palette = PAL[spec.mode];
+  if (spec.mode === 'feedrate') out.ramp = PAL.speed;
+  if (spec.mode === 'layerHeight') out.ramp = PAL.height;
+  if (spec.mode === 'moveKind') {
+    out.cut = spec.cut;
+    out.travel = spec.travel;
   }
-];
+  return out;
+}
 
-async function parse(page, file) {
+async function parseCorpus(page, file) {
   await page.evaluate((f) => {
     const sel = document.getElementById('fixture');
     sel.value = f;
+    if (sel.value !== f) throw new Error('fixture not in corpus select: ' + f);
     document.getElementById('parse').click();
   }, file);
   await page.waitForFunction(
@@ -156,106 +59,227 @@ async function parse(page, file) {
     null,
     { timeout: 90000 }
   );
-  await page.waitForTimeout(400);
+  await page.waitForTimeout(300);
 }
 
-async function apply(page, shot) {
-  // Geometry uploads incrementally; watch for buildComplete so we never capture
-  // a half-built model.
+/** Toolpath renders (the main demo). Applies params, then the doc theme LAST so it wins. */
+async function driveToolpath(page, shot) {
+  await page.goto(BASE + '/', { waitUntil: 'load' });
+  await page.waitForFunction(() => !!window.viewer, null, { timeout: 15000 });
+  await parseCorpus(page, shot.file);
+
   await page.evaluate(() => {
     window.__built = false;
     window.viewer.renderer.onEvent((e) => {
       if (e.type === 'buildComplete') window.__built = true;
     });
   });
-  await page.evaluate((shot) => {
-    const r = window.viewer.renderer;
-    if (shot.quality) r.setQuality(shot.quality);
-    if (shot.color) r.setColorMode(shot.color);
-    if (shot.travel !== undefined) r.setKindVisible('travel', shot.travel);
-    if (shot.retractions) r.setShowRetractions(true);
-    if (shot.camera) r.setCameraMode(shot.camera);
-    if (shot.layerRange) {
-      const n = r.layerCount;
-      if (shot.layerRange === 'mid') r.setLayerRange(0, Math.max(0, Math.round(n * 0.42)));
-      else if (shot.layerRange === 'low') r.setLayerRange(0, Math.max(0, Math.round(n * 0.18)));
-    }
-  }, shot);
-  // Wait for the full geometry to finish uploading (setQuality triggers a rebuild).
+
+  const color = expandColor(shot.color);
+  await page.evaluate(
+    ({ shot, color }) => {
+      const r = window.viewer.renderer;
+      if (shot.quality) r.setQuality(shot.quality);
+      if (color) r.setColorMode(color);
+      if (shot.travel !== undefined && shot.travel !== null) r.setKindVisible('travel', shot.travel);
+      if (shot.retractions) r.setShowRetractions(true);
+      if (shot.camera) r.setCameraMode(shot.camera);
+      if (shot.frameContent) r.setFrameContent(shot.frameContent);
+      if (shot.bedShape) r.setBuildVolume(shot.bedShape);
+      if (shot.layerRange) {
+        const n = r.layerCount;
+        if (shot.layerRange === 'mid') r.setLayerRange(0, Math.max(0, Math.round(n * 0.42)));
+        else if (shot.layerRange === 'low') r.setLayerRange(0, Math.max(0, Math.round(n * 0.18)));
+        else if (Array.isArray(shot.layerRange)) r.setLayerRange(shot.layerRange[0], shot.layerRange[1]);
+      }
+    },
+    { shot, color }
+  );
+
   await page.waitForFunction(() => window.__built === true, null, { timeout: 90000 }).catch(() => {});
   await page.waitForTimeout(300);
-  await page.evaluate((shot) => {
-    const r = window.viewer.renderer;
-    if (shot.progress) {
-      const m = window.viewer.sim.mapper;
-      const ir = r.ir;
-      const now = Date.now();
-      const obs =
-        shot.progress === 'byte'
-          ? {
-              v: 1,
-              timestampMs: now,
-              state: 'printing',
-              position: { byte: Math.round(0.55 * window.viewer.sim.fileBytes) }
-            }
-          : {
-              v: 1,
-              timestampMs: now,
-              state: 'printing',
-              position: { layer: Math.round(ir.layers.length * 0.5), totalLayers: ir.layers.length }
-            };
-      r.setProgress(m.observe(obs));
-    }
-    r.frame();
-    if (shot.view) {
-      r.setView(shot.view);
-    } else if (!shot.camera) {
-      // Consistent, slightly-lower 3/4 elevation (~22°) across every perspective
-      // shot — frame()'s default sits steeper. Uses the same bounds→scene mapping.
-      // CNC/laser cut moves aren't extrusion, so extrude-only bounds are null —
-      // fall back to travel-inclusive bounds so the toolpath frames.
-      const b = Number.isFinite(r.ir.bounds.min.x) ? r.ir.bounds : r.ir.boundsWithTravel;
-      const cx = (b.min.x + b.max.x) / 2,
-        cy = (b.min.y + b.max.y) / 2,
-        cz = (b.min.z + b.max.z) / 2;
-      const radius = Math.max(10, Math.hypot(b.max.x - cx, b.max.y - cy, b.max.z - cz));
-      const t = { x: cx, y: cz, z: -cy };
-      const cam = r.activeCamera;
-      cam.position.set(t.x - radius * 1.75, t.y + radius * 1.05, t.z + radius * 2.05);
-      cam.lookAt(t.x, t.y, t.z);
-      if (r.controls) {
-        r.controls.target.set(t.x, t.y, t.z);
-        r.controls.update();
+
+  // Progress overlay, framing, camera, and the doc theme (applied last so it wins).
+  await page.evaluate(
+    ({ shot, theme }) => {
+      const r = window.viewer.renderer;
+      r.setTheme(theme);
+      // Non-rectangular bed (DD-030 D3): auto-fit a round/polygon bed around the
+      // model's XY footprint and frame the bed so the build surface is visible.
+      if (shot.bed) {
+        const b = Number.isFinite(r.ir.bounds.min.x) ? r.ir.bounds : r.ir.boundsWithTravel;
+        const cx = (b.min.x + b.max.x) / 2,
+          cy = (b.min.y + b.max.y) / 2;
+        const ext = Math.max(b.max.x - b.min.x, b.max.y - b.min.y);
+        const size = Math.max(40, ext * (shot.bed.fit || 1.9));
+        const z = Math.max(60, b.max.z + 20);
+        let shape;
+        if (shot.bed.shape === 'circular') {
+          shape = { kind: 'circular', center: { x: cx, y: cy }, diameter: size };
+        } else {
+          const n = shot.bed.sides || 6;
+          const R = size / 2;
+          const pts = [];
+          for (let i = 0; i < n; i++) {
+            const a = Math.PI / 2 + (i * 2 * Math.PI) / n;
+            pts.push({ x: cx + R * Math.cos(a), y: cy + R * Math.sin(a) });
+          }
+          shape = { kind: 'polygon', points: pts };
+        }
+        r.setBuildVolume({ x: size, y: size, z, min: { x: cx - size / 2, y: cy - size / 2 }, shape });
+        // Frame the whole bed from a steeper, pulled-back 3/4 angle so the bed
+        // OUTLINE (the point of the shot) reads clearly above the model.
+        const t = { x: cx, y: 0, z: -cy };
+        const radius = size * 1.05;
+        const cam = r.camera;
+        cam.position.set(t.x - radius * 0.7, t.y + radius * 1.35, t.z + radius * 1.0);
+        cam.lookAt(t.x, t.y, t.z);
+        if (r.controls) {
+          r.controls.target.set(t.x, t.y, t.z);
+          r.controls.update();
+        }
+        r.render();
+        return;
       }
+      if (shot.progress) {
+        const m = window.viewer.sim.mapper;
+        const ir = r.ir;
+        const now = Date.now();
+        const obs =
+          shot.progress === 'byte'
+            ? {
+                v: 1,
+                timestampMs: now,
+                state: 'printing',
+                position: { byte: Math.round(0.55 * window.viewer.sim.fileBytes) }
+              }
+            : {
+                v: 1,
+                timestampMs: now,
+                state: 'printing',
+                position: { layer: Math.round(ir.layers.length * 0.5), totalLayers: ir.layers.length }
+              };
+        r.setProgress(m.observe(obs));
+      }
+      if (shot.hideRoles) for (const role of shot.hideRoles) r.setFeatureRoleVisible(role, false);
+      r.frame();
+      if (shot.view) {
+        r.setView(shot.view);
+      } else if (!shot.camera) {
+        // Consistent slightly-lower ~22° 3/4 elevation across perspective shots.
+        // frameContent:'object' frames the printed model (excludes skirt/prime); 'all'/default frames
+        // the whole job. CNC cut moves aren't extrusion → extrude-only bounds can be empty; fall back.
+        const useModel = shot.frameContent === 'object' && Number.isFinite(r.ir.modelBounds?.min?.x);
+        const b = useModel
+          ? r.ir.modelBounds
+          : Number.isFinite(r.ir.bounds.min.x)
+            ? r.ir.bounds
+            : r.ir.boundsWithTravel;
+        const cx = (b.min.x + b.max.x) / 2,
+          cy = (b.min.y + b.max.y) / 2,
+          cz = (b.min.z + b.max.z) / 2;
+        const radius = Math.max(10, Math.hypot(b.max.x - cx, b.max.y - cy, b.max.z - cz));
+        const t = { x: cx, y: cz, z: -cy };
+        const cam = r.camera;
+        cam.position.set(t.x - radius * 1.75, t.y + radius * 1.05, t.z + radius * 2.05);
+        cam.lookAt(t.x, t.y, t.z);
+        if (r.controls) {
+          r.controls.target.set(t.x, t.y, t.z);
+          r.controls.update();
+        }
+      }
+      r.render();
+    },
+    { shot, theme: docTheme({ withBed: !!shot.withBed }) }
+  );
+  await page.waitForTimeout(400);
+
+  // Animation: sweep a temporal control across frames and encode a looping WebM.
+  // The camera + theme set above stay fixed; only the draw-range changes. Frames
+  // are JPEG (the bundled ffmpeg can only decode mjpeg, not png — see encodeWebm).
+  if (shot.output === 'webm' && shot.anim) {
+    const spec = shot.anim;
+    const N = spec.frames || 40;
+    const hold = spec.holdFrames || 0; // repeat the final frame so the loop pauses full
+    const frames = [];
+    for (let i = 0; i <= N; i++) {
+      const t = i / N;
+      await page.evaluate(
+        ({ kind, t }) => {
+          const r = window.viewer.renderer;
+          if (kind === 'scrub') {
+            const total = r.segmentCount;
+            r.setScrubPosition(t >= 1 ? null : Math.max(1, Math.round(t * total)));
+          } else if (kind === 'layers') {
+            const last = Math.max(0, r.layerCount - 1);
+            r.setLayerRange(0, Math.max(0, Math.round(t * last)));
+          }
+          r.render();
+        },
+        { kind: spec.kind, t }
+      );
+      await page.waitForTimeout(spec.settleMs || 30);
+      frames.push(await readCanvasPng(page, 'view', true, 'image/jpeg', spec.quality || 0.9));
     }
-    r.render();
-  }, shot);
-  await page.waitForTimeout(500);
-  await page.evaluate(() => window.viewer.renderer.render());
-  await page.waitForTimeout(200);
-}
+    for (let h = 0; h < hold; h++) frames.push(frames[frames.length - 1]);
+    encodeWebm(frames, resolve(MEDIA, shot.name + '.webm'), { fps: spec.fps || 16, width: spec.width || 720 });
+    return;
+  }
 
-const want = process.argv.slice(2);
-const browser = await chromium.launch({
-  executablePath: CHROME,
-  headless: true,
-  args: ['--ignore-gpu-blocklist', '--use-gl=angle', '--use-angle=swiftshader']
-});
-const page = await browser.newPage({ viewport: VIEW, deviceScaleFactor: SCALE });
-page.on('pageerror', (e) => console.log('  [pageerror]', e.message));
-
-for (const shot of SHOTS) {
-  if (want.length && !want.includes(shot.name)) continue;
-  process.stdout.write(`• ${shot.name} … `);
-  await page.goto(BASE + '/', { waitUntil: 'load' });
-  await page.waitForFunction(() => !!window.viewer, null, { timeout: 15000 });
-  await parse(page, shot.file);
-  await apply(page, shot);
   const out = resolve(MEDIA, shot.name + '.png');
+  if (shot.recipe === 'transparent-checker') {
+    // Prove renderer.capture({ background: 'transparent' }) yields real alpha: composite the captured
+    // PNG over a checkerboard so the see-through areas are obvious (the card-compositing use case).
+    // NOTE: no manifest shot uses this today — headless SwiftShader flattens the render-target readback
+    // alpha to opaque, so the composite would be misleading here. Transparent capture is validated on
+    // real hardware (AnyBridge RTX 4070); run this recipe on a GPU-backed browser to regenerate the shot.
+    const dataUrl = await page.evaluate(async () => {
+      const r = window.viewer.renderer;
+      const blob = await r.capture({ background: 'transparent', format: 'png' });
+      const bmp = await createImageBitmap(blob);
+      const c = document.createElement('canvas');
+      c.width = bmp.width;
+      c.height = bmp.height;
+      const ctx = c.getContext('2d');
+      const s = 28;
+      for (let y = 0; y < c.height; y += s)
+        for (let x = 0; x < c.width; x += s) {
+          ctx.fillStyle = ((x / s + y / s) % 2 === 0 ? 1 : 0) ? '#dcdee1' : '#bfc2c6';
+          ctx.fillRect(x, y, s, s);
+        }
+      ctx.drawImage(bmp, 0, 0);
+      return c.toDataURL('image/png');
+    });
+    savePngDataUrl(out, dataUrl);
+    return;
+  }
+  if (shot.recipe === 'diagnostics') {
+    // Fill the render-diagnostics panel (getRenderStats), scroll it into view in the (internally
+    // scrolling) sidebar — the render stays on the right — freeze the GL frame, then a viewport shot.
+    await page.evaluate(() => {
+      const btn = document.getElementById('showStats');
+      btn.disabled = false;
+      btn.click();
+      btn.closest('fieldset')?.scrollIntoView({ block: 'center' });
+      const src = document.getElementById('view');
+      window.viewer.renderer.render();
+      const c = document.createElement('canvas');
+      c.width = src.width;
+      c.height = src.height;
+      c.getContext('2d').drawImage(src, 0, 0);
+      const img = document.createElement('img');
+      img.src = c.toDataURL('image/png');
+      img.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;';
+      src.parentElement.appendChild(img);
+      src.style.visibility = 'hidden';
+    });
+    await page.waitForTimeout(300);
+    await page.screenshot({ path: out, timeout: 30000 });
+    return;
+  }
   if (shot.fullPage) {
     // page.screenshot stalls on a live WebGL surface under headless SwiftShader.
-    // Freeze the GL frame into a static <img> overlay first, then screenshot the
-    // DOM (real sidebar + frozen render).
+    // Freeze the GL frame into a static <img> overlay, then screenshot the DOM.
     await page.evaluate(() => {
       const src = document.getElementById('view');
       window.viewer.renderer.render();
@@ -272,22 +296,106 @@ for (const shot of SHOTS) {
     await page.waitForTimeout(300);
     await page.screenshot({ path: out, timeout: 30000 });
   } else {
-    // Copy the GL backing store into a 2D canvas in the same task and read it
-    // as a PNG — the approach the repo's own VR harness uses. Deterministic and
-    // free of the compositor stability wait a live rAF loop would stall on.
-    const dataUrl = await page.evaluate(() => {
-      const gl = window.viewer.renderer;
-      gl.render();
-      const src = document.getElementById('view');
-      const c = document.createElement('canvas');
-      c.width = src.width;
-      c.height = src.height;
-      c.getContext('2d').drawImage(src, 0, 0);
-      return c.toDataURL('image/png');
-    });
-    writeFileSync(out, Buffer.from(dataUrl.split(',')[1], 'base64'));
+    savePngDataUrl(out, await readCanvasPng(page, 'view'));
   }
-  console.log('saved', out);
+}
+
+/** Canvas-2D fallback render (2d.html). */
+async function driveCanvas2d(page, shot) {
+  await page.goto(BASE + '/2d.html', { waitUntil: 'load' });
+  await page.waitForFunction(() => (document.getElementById('status')?.textContent || '').includes('layers'), null, {
+    timeout: 30000
+  });
+  await page.waitForTimeout(300);
+  const url = await page.evaluate((bg) => {
+    const layer = document.getElementById('layer');
+    const ghost = document.getElementById('ghost');
+    layer.value = String(Math.round(Number(layer.max) * 0.5));
+    layer.dispatchEvent(new Event('input'));
+    ghost.value = '2';
+    ghost.dispatchEvent(new Event('input'));
+    const c = document.getElementById('view');
+    // Tight bbox of lit pixels, padded.
+    const s = document.createElement('canvas');
+    s.width = c.width;
+    s.height = c.height;
+    const sx = s.getContext('2d');
+    sx.drawImage(c, 0, 0);
+    const d = sx.getImageData(0, 0, c.width, c.height).data;
+    let minX = c.width,
+      minY = c.height,
+      maxX = 0,
+      maxY = 0;
+    for (let y = 0; y < c.height; y++)
+      for (let x = 0; x < c.width; x++) {
+        const i = (y * c.width + x) * 4;
+        if (d[i] + d[i + 1] + d[i + 2] > 40 && d[i + 3] > 0) {
+          if (x < minX) minX = x;
+          if (x > maxX) maxX = x;
+          if (y < minY) minY = y;
+          if (y > maxY) maxY = y;
+        }
+      }
+    const pad = Math.round((maxX - minX) * 0.12) + 8;
+    minX = Math.max(0, minX - pad);
+    minY = Math.max(0, minY - pad);
+    maxX = Math.min(c.width, maxX + pad);
+    maxY = Math.min(c.height, maxY + pad);
+    const sw = maxX - minX,
+      sh = maxY - minY;
+    const OW = 1000,
+      OH = 750;
+    const o = document.createElement('canvas');
+    o.width = OW;
+    o.height = OH;
+    const ox = o.getContext('2d');
+    ox.fillStyle = bg;
+    ox.fillRect(0, 0, OW, OH);
+    const scale = Math.min(OW / sw, OH / sh);
+    const dw = sw * scale,
+      dh = sh * scale;
+    ox.imageSmoothingEnabled = true;
+    ox.drawImage(c, minX, minY, sw, sh, (OW - dw) / 2, (OH - dh) / 2, dw, dh);
+    return o.toDataURL('image/png');
+  }, DOC_BACKGROUND_CSS);
+  savePngDataUrl(resolve(MEDIA, shot.name + '.png'), url);
+}
+
+/** Model presentation still (model.html) — asserts the honesty tiers before saving. */
+async function driveModel(page, shot) {
+  await page.goto(BASE + '/model.html', { waitUntil: 'load' });
+  await page.waitForFunction(() => !!window.__modelResult, null, { timeout: 30000 });
+  const result = await page.evaluate(() => window.__modelResult);
+  if (result.threemf.materials !== 'known' || result.stl.materials !== 'unavailable') {
+    throw new Error('unexpected materials tiers: ' + JSON.stringify(result));
+  }
+  await page.waitForTimeout(300);
+  await page.locator('#cards').screenshot({ path: resolve(MEDIA, shot.name + '.png') });
+}
+
+const want = process.argv.slice(2);
+const shots = manifest.shots.filter((s) => !want.length || want.includes(s.name));
+if (!shots.length) {
+  console.error('No matching shots. Names:', manifest.shots.map((s) => s.name).join(', '));
+  process.exit(1);
+}
+
+const { browser, executablePath } = await launchBrowser();
+console.log('chromium:', executablePath);
+const page = await browser.newPage({ viewport: VIEW, deviceScaleFactor: SCALE });
+page.on('pageerror', (e) => console.log('  [pageerror]', e.message));
+
+for (const shot of shots) {
+  process.stdout.write(`• ${shot.name} (${shot.page}) … `);
+  try {
+    if (shot.page === 'toolpath') await driveToolpath(page, shot);
+    else if (shot.page === 'canvas2d') await driveCanvas2d(page, shot);
+    else if (shot.page === 'model') await driveModel(page, shot);
+    else throw new Error('unknown page: ' + shot.page);
+    console.log('saved');
+  } catch (e) {
+    console.log('FAILED:', e.message.split('\n')[0]);
+  }
 }
 await browser.close();
 console.log('done');

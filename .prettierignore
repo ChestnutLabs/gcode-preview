@@ -5,3 +5,4 @@
 dist
 *.min.css
 *.svelte
+docs-site

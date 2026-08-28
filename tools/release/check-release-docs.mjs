@@ -7,10 +7,13 @@
  *   - any deterministic surface (SURFACES) declares a different version or its anchor is gone;
  *   - the docs/README "Current state" block does not LEAD with this version;
  *   - the release-history list does not include this version;
- *   - RELEASE_NOTES_DRAFT.md still exists (the narrative draft was never folded in + removed).
+ *   - RELEASE_NOTES_DRAFT.md still exists (the narrative draft was never folded in + removed);
+ *   - RELEASE_REVIEW.md is missing, names a different version, or still has an unresolved
+ *     disposition (a `Status: pending` row, or a Product/Docs/Visual marker not `resolved`).
  *
- * WARNS (non-fatal) with a screenshots/guides review reminder — that judgment call is
- * surfaced here and enforced by the promotion PR-template checkbox, not hard-failed.
+ * The Public Product + Docs + Visual review is now ENFORCED here (RELEASE_REVIEW.md), not left
+ * as a soft reminder — the changed-capability inventory is seeded by the stamper and must be
+ * reconciled and resolved before promotion.
  *
  * Usage: node tools/release/check-release-docs.mjs
  */
@@ -21,9 +24,11 @@ import {
   readVersion,
   SURFACES,
   DRAFT_FILE,
+  REVIEW_FILE,
   currentVersionOf,
   narrativeChecks,
-  aggregateChangelog
+  aggregateChangelog,
+  reviewChecks
 } from './doc-surfaces.mjs';
 
 const version = readVersion();
@@ -51,14 +56,30 @@ if (fs.existsSync(path.join(repoRoot, DRAFT_FILE))) {
   failures.push(`${DRAFT_FILE} still present — fold it into docs/README.md's current-state + history, then delete it`);
 }
 
-// --- Non-fatal: surface the screenshots/guides judgment call. ---
+// 4) The Public Product + Docs + Visual review must be PRESENT and fully RESOLVED for this
+//    version (inverse of the draft: absent draft, present-and-resolved review).
+const reviewPath = path.join(repoRoot, REVIEW_FILE);
+if (!fs.existsSync(reviewPath)) {
+  failures.push(
+    `${REVIEW_FILE} missing — run \`node tools/release/stamp-release-docs.mjs\` to seed it, then resolve every disposition`
+  );
+} else {
+  const reviewContent = fs.readFileSync(reviewPath, 'utf8');
+  for (const r of reviewChecks(reviewContent, version)) {
+    if (!r.ok) failures.push(`${REVIEW_FILE}: ${r.message}`);
+  }
+}
+
+// --- Informational: echo the packages changed this release. ---
 const { changedPackages } = aggregateChangelog(version);
 process.stderr.write(`\ndocs-release-check: v${version}\n`);
-process.stderr.write('REVIEW (not auto-checked): does this release need README/guide edits or a screenshot refresh?\n');
+process.stderr.write(
+  `REVIEW (enforced via ${REVIEW_FILE}): README/guide edits + screenshot refresh reconciled below.\n`
+);
 if (changedPackages.length) {
   process.stderr.write(`  packages changed this release: ${changedPackages.join(', ')}\n`);
 }
-process.stderr.write('  see CLAUDE.md "Public-docs completion check"; confirm via the promotion PR checkbox.\n\n');
+process.stderr.write(`  see CLAUDE.md "Public-docs completion check" and ${REVIEW_FILE} dispositions.\n\n`);
 
 if (failures.length) {
   process.stderr.write(`docs-release-check: FAIL — docs do not match v${version}:\n`);
