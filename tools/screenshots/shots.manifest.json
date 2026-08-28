@@ -147,6 +147,61 @@
       "class": "showcase",
       "caption": "Presentation stills from renderModelStill: a neutral STL (materials: unavailable) beside a colored 3MF (materials: known).",
       "alt": "Two presentation thumbnails from renderModelStill: left, a neutral gray part from an STL labeled materials unavailable; right, a colored tower from a 3MF labeled materials known"
+    },
+    {
+      "name": "parametric-bolt-circle",
+      "page": "toolpath",
+      "class": "feature-proof",
+      "file": "fixtures/parametric/bolt-circle.ngc",
+      "quality": "lines",
+      "color": { "mode": "moveKind", "cut": [0.95, 0.45, 0.6], "travel": [0.45, 0.75, 0.9], "fallback": [0.6, 0.6, 0.6] },
+      "travel": true,
+      "caption": "An RS274NGC parametric program: a bolt circle and frame COMPUTED from parameters (a while-loop + subroutine + degree trig), rendered as the real toolpath.",
+      "alt": "A CNC toolpath of eight drilled holes on a circle plus a centre hole and a square frame, all computed by a parametric program, cut moves in pink and rapid moves in blue"
+    },
+    {
+      "name": "bed-circular",
+      "page": "toolpath",
+      "class": "feature-proof",
+      "file": "gcodes/calicat.gcode",
+      "quality": "tubes",
+      "color": { "mode": "feature", "fallback": [0.55, 0.55, 0.55] },
+      "bed": { "shape": "circular", "fit": 2.4 },
+      "withBed": true,
+      "caption": "A circular (delta-style) build bed: the outline and grid follow the round shape, not a rectangle.",
+      "alt": "A print rendered on a round, delta-style build plate — the bed outline and grid are circular, with the model centered on it"
+    },
+    {
+      "name": "bed-polygon",
+      "page": "toolpath",
+      "class": "feature-proof",
+      "file": "gcodes/calicat.gcode",
+      "quality": "tubes",
+      "color": { "mode": "feature", "fallback": [0.55, 0.55, 0.55] },
+      "bed": { "shape": "polygon", "sides": 6, "fit": 2.4 },
+      "withBed": true,
+      "caption": "A polygonal build bed: an arbitrary hexagonal bed outline with the grid clipped to the shape.",
+      "alt": "A print rendered on a hexagonal build plate — the bed outline is a six-sided polygon with the grid clipped to it"
+    },
+    {
+      "name": "render-tubes",
+      "page": "toolpath",
+      "class": "feature-proof",
+      "file": "gcodes/calicat.gcode",
+      "quality": "tubes",
+      "color": { "mode": "feature", "fallback": [0.55, 0.55, 0.55] },
+      "caption": "Tube geometry: lit 3D extrusion cross-sections.",
+      "alt": "The calicat rendered as lit 3D extrusion tubes"
+    },
+    {
+      "name": "render-lines",
+      "page": "toolpath",
+      "class": "feature-proof",
+      "file": "gcodes/calicat.gcode",
+      "quality": "lines",
+      "color": { "mode": "feature", "fallback": [0.55, 0.55, 0.55] },
+      "caption": "Line geometry: flat one-pixel paths — lighter, for very large files or low-GPU devices.",
+      "alt": "The calicat rendered as flat single-pixel toolpath lines"
     }
   ]
 }

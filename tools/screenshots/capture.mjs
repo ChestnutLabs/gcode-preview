@@ -104,6 +104,43 @@ async function driveToolpath(page, shot) {
     ({ shot, theme }) => {
       const r = window.viewer.renderer;
       r.setTheme(theme);
+      // Non-rectangular bed (DD-030 D3): auto-fit a round/polygon bed around the
+      // model's XY footprint and frame the bed so the build surface is visible.
+      if (shot.bed) {
+        const b = Number.isFinite(r.ir.bounds.min.x) ? r.ir.bounds : r.ir.boundsWithTravel;
+        const cx = (b.min.x + b.max.x) / 2,
+          cy = (b.min.y + b.max.y) / 2;
+        const ext = Math.max(b.max.x - b.min.x, b.max.y - b.min.y);
+        const size = Math.max(40, ext * (shot.bed.fit || 1.9));
+        const z = Math.max(60, b.max.z + 20);
+        let shape;
+        if (shot.bed.shape === 'circular') {
+          shape = { kind: 'circular', center: { x: cx, y: cy }, diameter: size };
+        } else {
+          const n = shot.bed.sides || 6;
+          const R = size / 2;
+          const pts = [];
+          for (let i = 0; i < n; i++) {
+            const a = (Math.PI / 2) + (i * 2 * Math.PI) / n;
+            pts.push({ x: cx + R * Math.cos(a), y: cy + R * Math.sin(a) });
+          }
+          shape = { kind: 'polygon', points: pts };
+        }
+        r.setBuildVolume({ x: size, y: size, z, min: { x: cx - size / 2, y: cy - size / 2 }, shape });
+        // Frame the whole bed from a steeper, pulled-back 3/4 angle so the bed
+        // OUTLINE (the point of the shot) reads clearly above the model.
+        const t = { x: cx, y: 0, z: -cy };
+        const radius = size * 1.05;
+        const cam = r.camera;
+        cam.position.set(t.x - radius * 0.7, t.y + radius * 1.35, t.z + radius * 1.0);
+        cam.lookAt(t.x, t.y, t.z);
+        if (r.controls) {
+          r.controls.target.set(t.x, t.y, t.z);
+          r.controls.update();
+        }
+        r.render();
+        return;
+      }
       if (shot.progress) {
         const m = window.viewer.sim.mapper;
         const ir = r.ir;
