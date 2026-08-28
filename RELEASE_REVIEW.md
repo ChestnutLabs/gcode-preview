@@ -12,10 +12,10 @@
   parses them literally. Delete rows only for packages that did not change.
 -->
 
-# Release review — v0.18.0
+# Release review — v0.19.0
 
-**Review version:** v0.18.0
-**Changed-capability inventory diffed against:** `v0.17.0`
+**Review version:** v0.19.0
+**Changed-capability inventory diffed against:** `v0.18.0`
 
 This artifact records the per-release **Public Product + Documentation + Visual** reconciliation:
 before the `dev` -> `main` promotion, compare the changed capabilities below against the README,
@@ -24,30 +24,21 @@ the coverage matrix ([`docs/VISUAL_FEATURE_COVERAGE.md`](docs/VISUAL_FEATURE_COV
 each disposition. Guidance: CLAUDE.md "Public-docs completion check" and
 [`docs/reference/release-process.md`](docs/reference/release-process.md).
 
-> **This review (documentation-systematization pass).** v0.18.0 was already published to npm; this
-> pass reconciled its public surface retroactively and stood up the enforcement machinery. The two
-> shipped feature arcs — DD-017 RS274NGC parametric programs (parser) and DD-030 renderer/viewer
-> interop (non-rectangular bed, per-plate render scope, `capture() → Blob`) — are covered by the
-> manual (`concept-parametric-programs.md`, `concept-ir-capabilities.md`, `adapters.md`) and the
-> package CHANGELOGs. No user-facing surface misrepresents the shipped build.
-
 ## Changed packages (`src/` since the previous release)
 
 | Package | Changed src files | Changelog summary | Disposition |
 |---|--:|---|---|
-| `@chestnutlabs/gcode-model-renderer` | 5 | feat(renderer): interactive view capture() → Blob + per-plate render scope + non-rect bed (DD-030) | Status: reviewed |
-| `@chestnutlabs/gcode-parser` | 6 | feat(parser): RS274NGC parameters + expressions + O-word flow + subroutines (DD-017 P1–3) | Status: reviewed |
-| `@chestnutlabs/gcode-preview-core` | 3 | feat: capture()/render-scope plumbed through GcodePreviewControls + staged progress (DD-030) | Status: reviewed |
-| `@chestnutlabs/gcode-preview-element` | 1 | feat: Web Component inherits imperative capture() (DD-030 D1) | Status: reviewed |
-| `@chestnutlabs/gcode-renderer-three` | 8 | feat(renderer): non-rectangular build-bed geometry + frameBounds precedence (DD-030 D3) | Status: reviewed |
+| `@chestnutlabs/gcode-preview-core` | 2 | feat(renderer): `setFeatureRoleVisible(role, visible)` — show/hide a single feature role | Status: pending |
+| `@chestnutlabs/gcode-renderer-three` | 2 | feat(renderer): `setFeatureRoleVisible(role, visible)` — show/hide a single feature role | Status: pending |
+| `@chestnutlabs/toolpath-core` | 1 | feat(renderer): `setFeatureRoleVisible(role, visible)` — show/hide a single feature role | Status: pending |
 
 Set each **Disposition** to one of `Status: reviewed` / `Status: no-change-needed` /
 `Status: not-applicable` (never `Status: pending`).
 
 ## Global dispositions
 
-- **Product review:** resolved — README, Pages homepage, and the DD-017/DD-030 capability descriptions accurately describe the v0.18.0 product; no fabricated capability or validation claim.
-- **Docs review:** resolved — the manual (parametric-programs + IR-capabilities + adapters), package READMEs, and quick-start match the shipped API; the parametric-programs concept page is now registered in Pages nav and link-checked.
-- **Visual review:** resolved — DD-017 is a parser/semantic capability (no new on-screen surface beyond parsed geometry, disclosed via capabilities); DD-030's non-rect bed / per-plate scope / capture map to existing renderer imagery, tracked in `docs/VISUAL_FEATURE_COVERAGE.md`. No changed capability is left visually undocumented without a matrix entry.
+- **Product review:** pending — README / Pages homepage / feature gallery still describe the product accurately for this release.
+- **Docs review:** pending — manual, package READMEs, examples, and quick-start match the shipped API.
+- **Visual review:** pending — every changed user-facing capability is visually documented, or the coverage matrix records why not.
 
 _Resolve each marker above by replacing `pending` with `resolved` once reconciled._
