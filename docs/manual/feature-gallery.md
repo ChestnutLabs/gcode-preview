@@ -25,6 +25,11 @@ The core job: turn a sliced file into an interactive picture of the actual moves
 | ![Calicat lower layers with retraction and de-retraction markers pinned on the path](../media/retraction-markers.png) | ![The calicat as flat single-pixel toolpath lines](../media/render-lines.png) |
 | **Retraction & de-retraction markers.** Toggle markers for retractions, wipes, travel, and seams. | **Line geometry.** Flat one-pixel paths — lighter for very large files or low-GPU devices. |
 
+<p><video autoplay loop muted playsinline width="720" poster="https://chestnutlabs.github.io/gcode-preview/media/viewer-benchy-tubes.png" style="max-width:100%;border-radius:8px;border:1px solid var(--gp-border)"><source src="https://chestnutlabs.github.io/gcode-preview/media/scrub-sweep.webm" type="video/webm"></video></p>
+
+*Segment scrub sweeping the draw-range through 3DBenchy — the toolpath drawing itself in exact print
+order. Scrubbing is a draw-range trim, so it stays smooth even on large models.*
+
 Also here: **segment scrub** (step move-by-move), **time scrub** with an honest print-time estimate
 (labeled *slicer estimate* vs *kinematic approximation*), and **source-line ↔ segment mapping** — click
 a move to find its byte in the file, and back. See [recipes](recipes.md).
@@ -62,6 +67,11 @@ incoming telemetry; file-identity mismatches are detected and disclosed. See
 |---|---|
 | ![The calicat as lit 3D tubes](../media/render-tubes.png) | ![A single layer drawn by the Canvas 2D renderer, no WebGL](../media/canvas-2d-fallback.png) |
 | **Tubes vs lines.** Automatic quality selection, or force either. | **Canvas 2D fallback.** A flat layer view with **no WebGL and no Three.js** — the 2D bundle never ships Three. |
+
+<p><video autoplay loop muted playsinline width="720" poster="https://chestnutlabs.github.io/gcode-preview/media/viewer-benchy-tubes.png" style="max-width:100%;border-radius:8px;border:1px solid var(--gp-border)"><source src="https://chestnutlabs.github.io/gcode-preview/media/layer-buildup.webm" type="video/webm"></video></p>
+
+*Raising the top layer builds the model bottom to top — the same draw-range mechanism, and the visual
+of a progressive reveal.*
 
 Underneath: **quality modes** (full / adaptive / fast), **interaction-aware quality** (drop detail
 while orbiting, restore on settle), a **parallel geometry worker pool** (byte-identical tubes off the

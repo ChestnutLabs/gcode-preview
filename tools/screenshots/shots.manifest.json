@@ -202,6 +202,30 @@
       "color": { "mode": "feature", "fallback": [0.55, 0.55, 0.55] },
       "caption": "Line geometry: flat one-pixel paths — lighter, for very large files or low-GPU devices.",
       "alt": "The calicat rendered as flat single-pixel toolpath lines"
+    },
+    {
+      "name": "scrub-sweep",
+      "page": "toolpath",
+      "class": "feature-proof",
+      "file": "gcodes/3DBenchy.gcode",
+      "quality": "tubes",
+      "color": { "mode": "feature", "fallback": [0.55, 0.55, 0.55] },
+      "output": "webm",
+      "anim": { "kind": "scrub", "frames": 48, "fps": 16, "holdFrames": 10 },
+      "caption": "Segment scrub: stepping the draw-range through the toolpath traces the exact print order — the animation IS the feature.",
+      "alt": "Animation of 3DBenchy drawing itself as the segment scrub sweeps from the first move to the last"
+    },
+    {
+      "name": "layer-buildup",
+      "page": "toolpath",
+      "class": "feature-proof",
+      "file": "gcodes/3DBenchy.gcode",
+      "quality": "tubes",
+      "color": { "mode": "feature", "fallback": [0.55, 0.55, 0.55] },
+      "output": "webm",
+      "anim": { "kind": "layers", "frames": 44, "fps": 16, "holdFrames": 10 },
+      "caption": "Layer-range sweep: raising the top layer builds the model up bottom to top — the progressive reveal, shown as motion.",
+      "alt": "Animation of 3DBenchy building up layer by layer from the base to the top as the layer range grows"
     }
   ]
 }
