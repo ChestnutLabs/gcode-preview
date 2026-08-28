@@ -26,6 +26,7 @@ import type {
   ProgressivePreview,
   QualityMode,
   QualityPolicy,
+  RenderStats,
   Theme
 } from '@chestnutlabs/gcode-renderer-three';
 import type { MachineGeometry, MappedProgress, ToolpathIR } from '@chestnutlabs/toolpath-core';
@@ -148,13 +149,34 @@ export class LayerView2DRenderer implements PreviewRenderer {
   }
 
   /** Capability gate mirroring the 3D renderer (DD-001 honesty): unknown channel → unavailable. */
-  private isColorModeAvailable(mode: ColorMode['mode']): boolean {
+  isColorModeAvailable(mode: ColorMode['mode']): boolean {
     const caps = this.ir?.header.capabilities;
     if (mode === 'feature') return caps?.['featureRoles'] !== undefined && caps['featureRoles'] !== 'unavailable';
     if (mode === 'colorChange') return caps?.['colorChanges'] !== undefined && caps['colorChanges'] !== 'unavailable';
     if (mode === 'object') return caps?.['objects'] !== undefined && caps['objects'] !== 'unavailable';
     if (mode === 'feedrate') return caps?.['feedrate'] !== 'unavailable';
+    if (mode === 'layerHeight') return caps?.['layers'] !== undefined && caps['layers'] !== 'unavailable';
+    if (mode === 'power') return caps?.['toolPower'] !== undefined && caps['toolPower'] !== 'unavailable';
     return true;
+  }
+
+  /** Retraction markers are a 3D-only overlay — the flat 2D layer view never shows them (DD-031 G6). */
+  get hasRetractions(): boolean {
+    return false;
+  }
+
+  /** True when the current IR carries M600 color-change boundaries (DD-031 G6). */
+  get hasColorChanges(): boolean {
+    return this.ir?.header.capabilities['colorChanges'] === 'known';
+  }
+
+  /**
+   * The flat 2D layer view produces no GPU/geometry render diagnostics (no WebGL backend, no tube
+   * geometry, no draw-call/parallelism story). Returning null is honest — never a fabricated stats
+   * object (DD-031 G1). A consumer's diagnostics UI should say diagnostics are unavailable in 2D mode.
+   */
+  getRenderStats(): RenderStats | null {
+    return null;
   }
 
   setQuality(_quality: QualityMode | 'auto'): void {

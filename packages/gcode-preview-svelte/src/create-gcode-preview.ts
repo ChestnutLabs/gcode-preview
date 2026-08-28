@@ -12,6 +12,7 @@ import type { GcodeParseSession, WireParseOptions } from '@chestnutlabs/gcode-pa
 import type { MappedProgress, ProgressObservation } from '@chestnutlabs/toolpath-core';
 import {
   createPreviewController,
+  type CaptureOptions,
   type GcodePreviewControls,
   type GcodePreviewState,
   type ParseOutcome,
@@ -55,6 +56,9 @@ export interface SvelteGcodePreview {
   observeProgress(obs: ProgressObservation): MappedProgress | null;
   tickProgress(nowMs: number): MappedProgress | null;
   clearProgress(): void;
+  /** Capture the current view as an image `Blob` (DD-030 D1, DD-031 G5) — handle-level parity with the
+   *  Web Component's `capture()`. Also reachable as `controls.capture`. Rejects on the 2D renderer. */
+  capture(opts?: CaptureOptions): Promise<Blob>;
   controls: GcodePreviewControls;
   raw: { session: GcodeParseSession; renderer: () => PreviewRenderer | null };
   onEvent(cb: (e: PreviewEvent) => void): () => void;
@@ -79,6 +83,7 @@ export function createGcodePreview(options: CreateGcodePreviewOptions = {}): Sve
     observeProgress: controller.observeProgress,
     tickProgress: controller.tickProgress,
     clearProgress: controller.clearProgress,
+    capture: controller.controls.capture,
     controls: controller.controls,
     raw: controller.raw,
     onEvent: controller.onEvent,

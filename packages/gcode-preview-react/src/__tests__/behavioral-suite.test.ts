@@ -70,18 +70,11 @@ runBehavioralSuite(
           return out;
         },
         getState: () => latest().state,
-        // Controls delegate through the latest handle (the controller beneath is stable).
-        controls: {
-          setLayerRange: (a, b) => latest().controls.setLayerRange(a, b),
-          setScrubPosition: (s) => latest().controls.setScrubPosition(s),
-          setKindVisible: (k, v) => latest().controls.setKindVisible(k, v),
-          setColorMode: (m) => latest().controls.setColorMode(m),
-          setQuality: (q) => latest().controls.setQuality(q),
-          setBuildVolume: (d) => latest().controls.setBuildVolume(d),
-          setView: (v) => latest().controls.setView(v),
-          getCameraState: () => latest().controls.getCameraState(),
-          setCameraState: (s) => latest().controls.setCameraState(s),
-          frame: () => latest().controls.frame()
+        // Delegate the WHOLE controls object through the latest handle (the controller beneath is
+        // stable, so `controls` identity is stable too). A getter — not a hand-picked method list —
+        // so a newly-added controls method can't silently miss the parity suite (DD-031 parity guard).
+        get controls() {
+          return latest().controls;
         },
         observeProgress: (obs) => latest().observeProgress(obs),
         clearProgress: () => latest().clearProgress(),
