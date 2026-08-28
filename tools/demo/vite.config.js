@@ -7,7 +7,9 @@ export default defineConfig({
   publicDir: '../../test-data',
   server: {
     port: 5199,
-    strictPort: true
+    strictPort: true,
+    // Allow importing the workspace-internal demo-kit (tools/demo-kit) which lives outside this app's root.
+    fs: { allow: ['../..'] }
   },
   resolve: {
     // One three.js instance even though the renderer package is symlinked.
