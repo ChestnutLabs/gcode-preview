@@ -65,15 +65,28 @@ What moved to **covered** in the second public-product pass:
 and `layer-buildup.webm` (layer-range sweep — the progressive reveal), in the feature gallery and the
 workers concept page.
 
-Still on the **to-capture** list (honest remainder — recorded, not forgotten):
+**Remainder cleared** (new MIT fixture `skirt-brim-model.gcode` = a model wrapped by skirt + brim):
 
-- `needs animation`: **time scrub**, interaction-aware quality, user-scrub-wins, and the *actual*
-  load-time progressive/`hold` reveal (the layer-buildup clip stands in for it today).
-- `needs comparison`: **object-aware framing** (whole-job vs model-aware), **fresh vs stale**
-  progress, **render scope** (plate/object subset before/after).
-- `needs screenshot`: **diagnostics panel** in-context, **transparent-background capture** over a
-  checkerboard, per-mode **color legends** (feature/object/power), circular/polygon **bed** shots
-  with a flatter model for a cleaner outline.
+- `object-aware framing` — **captured**: `frame-all` vs `frame-object` comparison (skirt included vs
+  the part framed alone). In the gallery.
+- `setFeatureRoleVisible` (hide brim/skirt) — **captured**: `frame-all` vs `adhesion-hidden` before/
+  after (skirt ring present vs gone). In the gallery.
+- `getRenderStats` diagnostics in-context — **captured**: `diagnostics-panel` (the demo panel reading
+  backend/GPU/geometry/counts/timings beside the render). In the gallery.
+
+Genuinely deferred, each with a recorded reason (valid dispositions, not silent omissions):
+
+- **Transparent-background capture** — `capture({background:'transparent'})` returns correct alpha on
+  real hardware (AnyBridge validated on an RTX 4070), but **headless SwiftShader flattens the
+  render-target readback to opaque**, so a truthful composite can't be produced in the CI/dev
+  environment. The harness recipe (`transparent-checker`) is retained for a GPU-backed run.
+- **Interaction-aware quality** — the feature *is* the motion (detail drops while orbiting, restores
+  on settle); a still can't carry it and a synthetic clip would misrepresent it. Documented in prose.
+- **True load-time progressive/`hold` reveal** — the `layer-buildup` clip stands in; an authentic
+  load capture is timing-sensitive under headless SwiftShader.
+- **Time scrub** animation — visually near-identical to `scrub-sweep`; redundant.
+- **Fresh vs stale progress**, **render scope** (plate/object subset), per-mode **color legends** —
+  feasible, lower-priority polish; left for a future review round.
 
 These are tracked here so the next release's Public Product + Documentation + Visual Review picks
 them up rather than rediscovering them.
@@ -90,7 +103,7 @@ them up rather than rediscovering them.
 | Retraction / de-retraction markers | ✅ | ✅ | `retraction-markers` | ✅ | gallery | — | covered |
 | Seam moves | ✅ | partial | — | mention | gallery | — | needs screenshot |
 | Source-line ↔ segment mapping ("debugger": `pickSegment` + `segmentAtSourceLine`) | ✅ | ❌ | — | ❌ | gallery | recipes | needs demo exposure + needs screenshot |
-| Show/hide a feature role (`setFeatureRoleVisible` — e.g. hide brim/skirt) | ✅ | ✅ (toggle) | — | ❌ | gallery | — | covered (demo + tests); screenshot with a brim file pending |
+| Show/hide a feature role (`setFeatureRoleVisible` — e.g. hide brim/skirt) | ✅ | ✅ (toggle) | `adhesion-hidden` | ❌ | gallery | — | covered — before/after with the skirt-brim fixture in the gallery |
 
 ## 2. Coloring & analysis modes
 
@@ -129,7 +142,7 @@ them up rather than rediscovering them.
 | Renderer build stages (`stage` event) | ✅ | ❌ | — | ✅ (prose) | gallery | concept-workers | needs animation |
 | Interaction-aware quality | ✅ | ❌ | — | ✅ (prose) | gallery | concept-workers | needs animation |
 | Disclosed decimation / degradation | ✅ | ✅ (disclosure) | — | ✅ (prose) | gallery | concept-workers | needs screenshot (disclosure text) |
-| Render diagnostics (`getRenderStats`) | ✅ | ✅ (panel) | — | ✅ | gallery | concept-workers | demo + README + gallery covered; in-context panel screenshot pending |
+| Render diagnostics (`getRenderStats`) | ✅ | ✅ (panel) | `diagnostics-panel` | ✅ | gallery | concept-workers | covered — panel-in-context screenshot in the gallery |
 | Geometry worker pool (parallel tubes) | ✅ | ❌ | — | mention | gallery | concept-workers | not visually meaningful (diagnostics panel proxies it) |
 | WebGL context-loss recovery | ✅ | ❌ | — | mention | — | — | not visually meaningful |
 
@@ -140,7 +153,7 @@ them up rather than rediscovering them.
 | Camera presets (7 views) | ✅ | ✅ | `camera-top/front/iso` | ✅ | gallery | — | covered (labeled sequence) |
 | Perspective vs orthographic | ✅ | ✅ | (in camera trio) | ✅ | gallery | — | covered |
 | Saved/restored camera state | ✅ | ✅ | — | mention | — | recipes | not visually meaningful |
-| Object-aware framing (`frameContent`) | ✅ | ✅ | — | ✅ (prose) | gallery | concept-ir-capabilities | needs comparison — whole-job vs model-aware |
+| Object-aware framing (`frameContent`) | ✅ | ✅ | `frame-all`/`frame-object` | ✅ (prose) | gallery | concept-ir-capabilities | covered — whole-job vs model-aware comparison in the gallery |
 | Build-volume cage toggle | ✅ | ✅ | — | mention | gallery | — | needs screenshot |
 | Capture / export → Blob | ✅ | ✅ | — | ✅ | gallery | recipes | covered (demo Capture PNG + README + gallery); in-context screenshot pending |
 | Transparent / independent-background capture | ✅ | ✅ (via capture) | — | ✅ | gallery | recipes | demo + README covered; checkerboard screenshot pending |

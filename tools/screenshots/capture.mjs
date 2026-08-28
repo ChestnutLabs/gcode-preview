@@ -161,14 +161,20 @@ async function driveToolpath(page, shot) {
               };
         r.setProgress(m.observe(obs));
       }
+      if (shot.hideRoles) for (const role of shot.hideRoles) r.setFeatureRoleVisible(role, false);
       r.frame();
       if (shot.view) {
         r.setView(shot.view);
       } else if (!shot.camera) {
         // Consistent slightly-lower ~22° 3/4 elevation across perspective shots.
-        // CNC/laser cut moves aren't extrusion → extrude-only bounds can be empty;
-        // fall back to travel-inclusive bounds so the toolpath frames.
-        const b = Number.isFinite(r.ir.bounds.min.x) ? r.ir.bounds : r.ir.boundsWithTravel;
+        // frameContent:'object' frames the printed model (excludes skirt/prime); 'all'/default frames
+        // the whole job. CNC cut moves aren't extrusion → extrude-only bounds can be empty; fall back.
+        const useModel = shot.frameContent === 'object' && Number.isFinite(r.ir.modelBounds?.min?.x);
+        const b = useModel
+          ? r.ir.modelBounds
+          : Number.isFinite(r.ir.bounds.min.x)
+            ? r.ir.bounds
+            : r.ir.boundsWithTravel;
         const cx = (b.min.x + b.max.x) / 2,
           cy = (b.min.y + b.max.y) / 2,
           cz = (b.min.z + b.max.z) / 2;
@@ -221,6 +227,56 @@ async function driveToolpath(page, shot) {
   }
 
   const out = resolve(MEDIA, shot.name + '.png');
+  if (shot.recipe === 'transparent-checker') {
+    // Prove renderer.capture({ background: 'transparent' }) yields real alpha: composite the captured
+    // PNG over a checkerboard so the see-through areas are obvious (the card-compositing use case).
+    // NOTE: no manifest shot uses this today — headless SwiftShader flattens the render-target readback
+    // alpha to opaque, so the composite would be misleading here. Transparent capture is validated on
+    // real hardware (AnyBridge RTX 4070); run this recipe on a GPU-backed browser to regenerate the shot.
+    const dataUrl = await page.evaluate(async () => {
+      const r = window.viewer.renderer;
+      const blob = await r.capture({ background: 'transparent', format: 'png' });
+      const bmp = await createImageBitmap(blob);
+      const c = document.createElement('canvas');
+      c.width = bmp.width;
+      c.height = bmp.height;
+      const ctx = c.getContext('2d');
+      const s = 28;
+      for (let y = 0; y < c.height; y += s)
+        for (let x = 0; x < c.width; x += s) {
+          ctx.fillStyle = ((x / s + y / s) % 2 === 0 ? 1 : 0) ? '#dcdee1' : '#bfc2c6';
+          ctx.fillRect(x, y, s, s);
+        }
+      ctx.drawImage(bmp, 0, 0);
+      return c.toDataURL('image/png');
+    });
+    savePngDataUrl(out, dataUrl);
+    return;
+  }
+  if (shot.recipe === 'diagnostics') {
+    // Fill the render-diagnostics panel (getRenderStats), scroll it into view in the (internally
+    // scrolling) sidebar — the render stays on the right — freeze the GL frame, then a viewport shot.
+    await page.evaluate(() => {
+      const btn = document.getElementById('showStats');
+      btn.disabled = false;
+      btn.click();
+      btn.closest('fieldset')?.scrollIntoView({ block: 'center' });
+      const src = document.getElementById('view');
+      window.viewer.renderer.render();
+      const c = document.createElement('canvas');
+      c.width = src.width;
+      c.height = src.height;
+      c.getContext('2d').drawImage(src, 0, 0);
+      const img = document.createElement('img');
+      img.src = c.toDataURL('image/png');
+      img.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;';
+      src.parentElement.appendChild(img);
+      src.style.visibility = 'hidden';
+    });
+    await page.waitForTimeout(300);
+    await page.screenshot({ path: out, timeout: 30000 });
+    return;
+  }
   if (shot.fullPage) {
     // page.screenshot stalls on a live WebGL surface under headless SwiftShader.
     // Freeze the GL frame into a static <img> overlay, then screenshot the DOM.
