@@ -17,7 +17,8 @@ import { homedir } from 'node:os';
 import { join } from 'node:path';
 
 function playwrightCacheDir() {
-  if (process.platform === 'win32') return join(process.env.LOCALAPPDATA || join(homedir(), 'AppData', 'Local'), 'ms-playwright');
+  if (process.platform === 'win32')
+    return join(process.env.LOCALAPPDATA || join(homedir(), 'AppData', 'Local'), 'ms-playwright');
   if (process.platform === 'darwin') return join(homedir(), 'Library', 'Caches', 'ms-playwright');
   return join(homedir(), '.cache', 'ms-playwright');
 }
@@ -62,7 +63,11 @@ export function resolveFfmpeg() {
   const dirs = readdirSync(cache).filter((d) => /^ffmpeg-\d+$/.test(d));
   for (const d of dirs) {
     const names =
-      process.platform === 'win32' ? ['ffmpeg-win64.exe', 'ffmpeg-win32.exe'] : process.platform === 'darwin' ? ['ffmpeg-mac'] : ['ffmpeg-linux'];
+      process.platform === 'win32'
+        ? ['ffmpeg-win64.exe', 'ffmpeg-win32.exe']
+        : process.platform === 'darwin'
+          ? ['ffmpeg-mac']
+          : ['ffmpeg-linux'];
     for (const n of names) {
       const p = join(cache, d, n);
       if (existsSync(p)) return p;

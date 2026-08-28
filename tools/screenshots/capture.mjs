@@ -121,7 +121,7 @@ async function driveToolpath(page, shot) {
           const R = size / 2;
           const pts = [];
           for (let i = 0; i < n; i++) {
-            const a = (Math.PI / 2) + (i * 2 * Math.PI) / n;
+            const a = Math.PI / 2 + (i * 2 * Math.PI) / n;
             pts.push({ x: cx + R * Math.cos(a), y: cy + R * Math.sin(a) });
           }
           shape = { kind: 'polygon', points: pts };
@@ -147,8 +147,18 @@ async function driveToolpath(page, shot) {
         const now = Date.now();
         const obs =
           shot.progress === 'byte'
-            ? { v: 1, timestampMs: now, state: 'printing', position: { byte: Math.round(0.55 * window.viewer.sim.fileBytes) } }
-            : { v: 1, timestampMs: now, state: 'printing', position: { layer: Math.round(ir.layers.length * 0.5), totalLayers: ir.layers.length } };
+            ? {
+                v: 1,
+                timestampMs: now,
+                state: 'printing',
+                position: { byte: Math.round(0.55 * window.viewer.sim.fileBytes) }
+              }
+            : {
+                v: 1,
+                timestampMs: now,
+                state: 'printing',
+                position: { layer: Math.round(ir.layers.length * 0.5), totalLayers: ir.layers.length }
+              };
         r.setProgress(m.observe(obs));
       }
       r.frame();
@@ -205,7 +215,9 @@ async function driveToolpath(page, shot) {
 /** Canvas-2D fallback render (2d.html). */
 async function driveCanvas2d(page, shot) {
   await page.goto(BASE + '/2d.html', { waitUntil: 'load' });
-  await page.waitForFunction(() => (document.getElementById('status')?.textContent || '').includes('layers'), null, { timeout: 30000 });
+  await page.waitForFunction(() => (document.getElementById('status')?.textContent || '').includes('layers'), null, {
+    timeout: 30000
+  });
   await page.waitForTimeout(300);
   const url = await page.evaluate((bg) => {
     const layer = document.getElementById('layer');
