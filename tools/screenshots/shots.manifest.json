@@ -226,6 +226,52 @@
       "anim": { "kind": "layers", "frames": 44, "fps": 16, "holdFrames": 10 },
       "caption": "Layer-range sweep: raising the top layer builds the model up bottom to top — the progressive reveal, shown as motion.",
       "alt": "Animation of 3DBenchy building up layer by layer from the base to the top as the layer range grows"
+    },
+    {
+      "name": "frame-all",
+      "page": "toolpath",
+      "class": "feature-proof",
+      "file": "fixtures/annotations/skirt-brim-model.gcode",
+      "quality": "tubes",
+      "color": { "mode": "feature", "fallback": [0.55, 0.55, 0.55] },
+      "frameContent": "all",
+      "caption": "Whole-job framing: the camera fits everything, so the model sits small inside its skirt.",
+      "alt": "A small square model framed together with its wide skirt ring, so the model is small in view"
+    },
+    {
+      "name": "frame-object",
+      "page": "toolpath",
+      "class": "feature-proof",
+      "file": "fixtures/annotations/skirt-brim-model.gcode",
+      "quality": "tubes",
+      "color": { "mode": "feature", "fallback": [0.55, 0.55, 0.55] },
+      "frameContent": "object",
+      "caption": "Object-aware framing: frameContent:'object' fits the printed model, excluding the skirt/brim.",
+      "alt": "The same model framed tightly on the part alone, with the skirt excluded so the model fills the view"
+    },
+    {
+      "name": "adhesion-hidden",
+      "page": "toolpath",
+      "class": "feature-proof",
+      "file": "fixtures/annotations/skirt-brim-model.gcode",
+      "quality": "tubes",
+      "color": { "mode": "feature", "fallback": [0.55, 0.55, 0.55] },
+      "frameContent": "all",
+      "hideRoles": [6, 7],
+      "caption": "setFeatureRoleVisible(Skirt/Brim, false): the adhesion ring is hidden, leaving just the part.",
+      "alt": "The same whole-job view with the skirt and brim hidden, leaving only the model"
+    },
+    {
+      "name": "diagnostics-panel",
+      "page": "toolpath",
+      "class": "feature-proof",
+      "file": "gcodes/3DBenchy.gcode",
+      "quality": "tubes",
+      "color": { "mode": "feature", "fallback": [0.55, 0.55, 0.55] },
+      "view": "iso",
+      "recipe": "diagnostics",
+      "caption": "getRenderStats() in context: the demo's Render diagnostics panel reads backend, hardware-vs-software GPU, geometry mode, counts, and timings beside the live render.",
+      "alt": "The demo app with the Render diagnostics panel populated — backend, GPU capability, geometry mode, segment and draw counts, and timings — next to the rendered 3DBenchy"
     }
   ]
 }

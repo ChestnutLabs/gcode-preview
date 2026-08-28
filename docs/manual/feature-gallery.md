@@ -31,9 +31,16 @@ The core job: turn a sliced file into an interactive picture of the actual moves
 order. Scrubbing is a draw-range trim, so it stays smooth even on large models.*
 
 Also here: **segment scrub** (step move-by-move), **time scrub** with an honest print-time estimate
-(labeled *slicer estimate* vs *kinematic approximation*), **hide by feature role**
-(`setFeatureRoleVisible` — e.g. hide brim/skirt to declutter a part preview), and **source-line ↔
-segment mapping** — click a move to find its byte in the file, and back. See [recipes](recipes.md).
+(labeled *slicer estimate* vs *kinematic approximation*), and **source-line ↔ segment mapping** —
+click a move to find its byte in the file, and back. See [recipes](recipes.md).
+
+**Hide by feature role** (`setFeatureRoleVisible`) — e.g. hide brim/skirt to declutter a part
+preview, at the same framing:
+
+| Brim + skirt shown | Adhesion hidden |
+|---|---|
+| ![A model with its skirt ring and brim shown](../media/frame-all.png) | ![The same view with the skirt and brim hidden, leaving just the model](../media/adhesion-hidden.png) |
+| The pink skirt ring and brim frame the part. | `setFeatureRoleVisible(Skirt/Brim, false)` leaves only the model. |
 
 ## Coloring & analysis
 
@@ -81,6 +88,12 @@ clean `hold` reveal**, staged preparation progress, and **`getRenderStats()`** d
 hardware-vs-software GPU, draw calls, timings — never fabricated). See
 [workers, streaming & performance](concept-workers.md).
 
+![The demo's Render diagnostics panel populated beside the render — backend 3d-webgl (WebGL 2), software ANGLE/SwiftShader GPU, geometry tubes, segment and draw counts, tube bytes, and timings](../media/diagnostics-panel.png)
+
+*`getRenderStats()` in context — every value read from the actual render, never fabricated; here
+reporting a software (SwiftShader) backend, `108,725 / 108,729` segments, 92 draw calls, and the
+build/first-frame timings.*
+
 ## Cameras, framing & capture
 
 | | | |
@@ -89,10 +102,18 @@ hardware-vs-software GPU, draw calls, timings — never fabricated). See
 | **Front** (ortho) | **Top** (ortho) | **Iso** (perspective) |
 
 Seven **camera presets**, orthographic/perspective, and a serializable **camera state** you can
-persist and restore. **Object-aware framing** fits the printed object — excluding skirt, prime line,
-and purge — instead of the whole machine volume. **`capture()`** returns the current view as a `Blob`
-(PNG/JPEG/WebP), including a **transparent background** for compositing onto cards, from the
-interactive viewer *or* the headless still.
+persist and restore.
+
+**Object-aware framing** (`frameContent: 'object'`) fits the printed object — excluding skirt, prime
+line, and purge — instead of the whole machine volume:
+
+| Whole-job framing | Object-aware framing |
+|---|---|
+| ![A small model framed together with its wide skirt ring, so the model sits small](../media/frame-all.png) | ![The same model framed tightly on the part, with the skirt excluded](../media/frame-object.png) |
+| `'all'` fits everything, so the model is small inside its skirt. | `'object'` fits the part — the skirt/brim fall outside the frame. |
+
+**`capture()`** returns the current view as a `Blob` (PNG/JPEG/WebP), including a **transparent
+background** for compositing onto cards, from the interactive viewer *or* the headless still.
 
 ## Models & plates — the other renderer
 

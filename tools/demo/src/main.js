@@ -26,7 +26,8 @@ const CORPUS = [
   ['fixtures/parametric/bolt-circle.ngc', 'Parametric bolt-circle (RS274NGC)'],
   ['fixtures/containers/mini-project.gcode.3mf', 'mini-project.gcode.3mf (container)'],
   ['fixtures/annotations/wipe-brackets.gcode', 'Wipe brackets (#182 demo)'],
-  ['fixtures/annotations/variable-layers.gcode', 'Variable layer height (#179 demo)']
+  ['fixtures/annotations/variable-layers.gcode', 'Variable layer height (#179 demo)'],
+  ['fixtures/annotations/skirt-brim-model.gcode', 'Model + skirt + brim (framing / hide-adhesion)']
 ];
 
 const TOOL_PALETTE = [
