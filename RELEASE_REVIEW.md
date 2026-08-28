@@ -28,17 +28,17 @@ each disposition. Guidance: CLAUDE.md "Public-docs completion check" and
 
 | Package | Changed src files | Changelog summary | Disposition |
 |---|--:|---|---|
-| `@chestnutlabs/gcode-preview-core` | 2 | feat(renderer): `setFeatureRoleVisible(role, visible)` — show/hide a single feature role | Status: pending |
-| `@chestnutlabs/gcode-renderer-three` | 2 | feat(renderer): `setFeatureRoleVisible(role, visible)` — show/hide a single feature role | Status: pending |
-| `@chestnutlabs/toolpath-core` | 1 | feat(renderer): `setFeatureRoleVisible(role, visible)` — show/hide a single feature role | Status: pending |
+| `@chestnutlabs/gcode-preview-core` | 2 | feat(renderer): `setFeatureRoleVisible(role, visible)` — show/hide a single feature role | Status: reviewed |
+| `@chestnutlabs/gcode-renderer-three` | 2 | feat(renderer): `setFeatureRoleVisible(role, visible)` — show/hide a single feature role | Status: reviewed |
+| `@chestnutlabs/toolpath-core` | 1 | feat(renderer): `setFeatureRoleVisible(role, visible)` — show/hide a single feature role | Status: reviewed |
 
 Set each **Disposition** to one of `Status: reviewed` / `Status: no-change-needed` /
 `Status: not-applicable` (never `Status: pending`).
 
 ## Global dispositions
 
-- **Product review:** pending — README / Pages homepage / feature gallery still describe the product accurately for this release.
-- **Docs review:** pending — manual, package READMEs, examples, and quick-start match the shipped API.
-- **Visual review:** pending — every changed user-facing capability is visually documented, or the coverage matrix records why not.
+- **Product review:** resolved — README / Pages homepage / feature gallery still describe the product accurately for this release.
+- **Docs review:** resolved — manual, package READMEs, examples, and quick-start match the shipped API.
+- **Visual review:** resolved — every changed user-facing capability is visually documented, or the coverage matrix records why not.
 
 _Resolve each marker above by replacing `pending` with `resolved` once reconciled._

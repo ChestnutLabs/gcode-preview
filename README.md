@@ -66,7 +66,8 @@ Every one of those maps to something the library actually does, below.
   move, with a keyboard-operable slider.
 - **Time scrub & print-time estimate** — scrub along the *time* axis and read an estimated print
   time, labeled by provenance (the slicer's own estimate, or a kinematic approximation).
-- **Feature inspection** — toggle travel, wipe, seam, and retraction/de-retraction markers.
+- **Feature inspection** — toggle travel, wipe, seam, and retraction/de-retraction markers, or
+  **hide a whole feature role** (`setFeatureRoleVisible` — e.g. hide brim/skirt to declutter a part).
 - **Source-line ↔ segment mapping** — go from a byte in the file to the segment it drew, and back.
 
 ### Live job progress
