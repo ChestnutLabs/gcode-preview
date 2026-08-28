@@ -1204,7 +1204,7 @@ export class ToolpathRenderer {
   }
 
   /**
-   * Show or hide a single {@link FeatureRole} — e.g. hide `Skirt`/`Brim` to declutter a part preview,
+   * Show or hide a single `FeatureRole` — e.g. hide `Skirt`/`Brim` to declutter a part preview,
    * or isolate `Support`. Feature roles live per-segment inside the extrusion geometry (unlike move
    * kinds, which are whole chunks), so hidden segments are collapsed to NaN positions and the GPU
    * discards them; the original positions are restored when the role is shown again.
