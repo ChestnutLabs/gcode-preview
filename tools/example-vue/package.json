@@ -1,0 +1,26 @@
+{
+  "name": "gcode-preview-example-vue",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "description": "Two-tier Vue example (DD-031 §4.7): minimal.html (smallest real integration via <GcodePreview>) + showcase.html (full declarative surface + shared demo-kit). Consumes the published @chestnutlabs/gcode-preview-vue.",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build"
+  },
+  "dependencies": {
+    "@chestnutlabs/gcode-containers": "file:../../packages/gcode-containers",
+    "@chestnutlabs/gcode-dialects": "file:../../packages/gcode-dialects",
+    "@chestnutlabs/gcode-parser": "file:../../packages/gcode-parser",
+    "@chestnutlabs/gcode-preview-core": "file:../../packages/gcode-preview-core",
+    "@chestnutlabs/gcode-preview-vue": "file:../../packages/gcode-preview-vue",
+    "@chestnutlabs/gcode-renderer-three": "file:../../packages/gcode-renderer-three",
+    "@chestnutlabs/toolpath-core": "file:../../packages/toolpath-core",
+    "three": "0.178.0",
+    "vue": "^3.4.0"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-vue": "^5.0.0",
+    "vite": "^6.0.0"
+  }
+}
