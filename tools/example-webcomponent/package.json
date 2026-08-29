@@ -1,0 +1,24 @@
+{
+  "name": "gcode-preview-example-webcomponent",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "description": "Two-tier Web Component example (DD-031 §4.7): minimal.html (smallest real integration of <gcode-preview>) + showcase.html (full attribute/property/event surface + shared demo-kit). Consumes the published @chestnutlabs/gcode-preview-element.",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build"
+  },
+  "dependencies": {
+    "@chestnutlabs/gcode-containers": "file:../../packages/gcode-containers",
+    "@chestnutlabs/gcode-dialects": "file:../../packages/gcode-dialects",
+    "@chestnutlabs/gcode-parser": "file:../../packages/gcode-parser",
+    "@chestnutlabs/gcode-preview-core": "file:../../packages/gcode-preview-core",
+    "@chestnutlabs/gcode-preview-element": "file:../../packages/gcode-preview-element",
+    "@chestnutlabs/gcode-renderer-three": "file:../../packages/gcode-renderer-three",
+    "@chestnutlabs/toolpath-core": "file:../../packages/toolpath-core",
+    "three": "0.178.0"
+  },
+  "devDependencies": {
+    "vite": "^6.0.0"
+  }
+}
