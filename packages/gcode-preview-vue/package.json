@@ -36,6 +36,10 @@
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
+    },
+    "./model": {
+      "types": "./dist/model/index.d.ts",
+      "import": "./dist/model/index.js"
     }
   },
   "files": [
@@ -50,6 +54,7 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@chestnutlabs/gcode-model-renderer": "0.19.0",
     "@chestnutlabs/gcode-parser": "0.19.0",
     "@chestnutlabs/gcode-renderer-three": "0.19.0",
     "@chestnutlabs/toolpath-core": "0.19.0",
