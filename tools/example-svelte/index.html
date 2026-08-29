@@ -3,44 +3,85 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>GcodePreview Svelte — example app (DD-007 phase 7)</title>
+    <title>@chestnutlabs/gcode-preview-svelte — examples</title>
     <style>
       body {
         margin: 0;
-        font-family: system-ui, sans-serif;
-        background: #10151b;
-        color: #dfe7ef;
+        min-height: 100vh;
         display: grid;
-        grid-template-columns: 300px 1fr;
-        height: 100vh;
-      }
-      aside {
-        padding: 1rem;
-        overflow-y: auto;
-        border-right: 1px solid #2a3542;
+        place-items: center;
+        font-family: 'Inter', system-ui, sans-serif;
+        background: #16181d;
+        color: #e7eaef;
       }
       main {
-        min-width: 0;
+        max-width: 640px;
+        padding: 2.5rem;
       }
-      label {
+      h1 {
+        font-size: 1.4rem;
+        margin: 0 0 0.35rem;
+      }
+      p.lede {
+        color: #9aa2ae;
+        margin: 0 0 2rem;
+        line-height: 1.5;
+      }
+      .tiers {
+        display: grid;
+        gap: 1rem;
+        grid-template-columns: 1fr 1fr;
+      }
+      a.card {
         display: block;
-        margin: 0.6rem 0;
+        padding: 1.25rem;
+        border: 1px solid #363b44;
+        border-radius: 12px;
+        background: #1e2127;
+        color: inherit;
+        text-decoration: none;
+        transition: border-color 0.15s;
+      }
+      a.card:hover {
+        border-color: #4f9df2;
+      }
+      a.card h2 {
+        font-size: 1rem;
+        margin: 0 0 0.35rem;
+      }
+      a.card span {
+        color: #9aa2ae;
         font-size: 0.85rem;
+        line-height: 1.45;
       }
-      select,
-      input[type='range'],
-      button {
-        width: 100%;
+      code {
+        font-family: 'JetBrains Mono', ui-monospace, monospace;
+        color: #6cb0ff;
       }
-      #log {
-        font-size: 0.75rem;
-        white-space: pre-wrap;
-        color: #9fb0c0;
+      @media (max-width: 560px) {
+        .tiers {
+          grid-template-columns: 1fr;
+        }
       }
     </style>
   </head>
   <body>
-    <div id="app" style="display: contents"></div>
-    <script type="module" src="/src/main.js"></script>
+    <main>
+      <h1>@chestnutlabs/gcode-preview-svelte</h1>
+      <p class="lede">
+        Two example apps built on the published Svelte adapter. Both drive the real package — no raw
+        renderer or parser imports.
+      </p>
+      <div class="tiers">
+        <a class="card" href="./minimal.html">
+          <h2>Minimal →</h2>
+          <span>The smallest real integration: <code>&lt;GcodePreview {source} /&gt;</code> plus a fixture picker and a layer slider. One short component to copy.</span>
+        </a>
+        <a class="card" href="./showcase.html">
+          <h2>Showcase →</h2>
+          <span>The full declarative surface — color modes with capability gating, feature-role hiding, camera, diagnostics — styled with the shared demo-kit.</span>
+        </a>
+      </div>
+    </main>
   </body>
 </html>
