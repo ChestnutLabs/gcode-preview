@@ -140,6 +140,8 @@ function setMode(next) {
   populateFixtures(prepare);
   els.legendCard.hidden = true;
   els.countPill.hidden = true;
+  // The bottom scrub strip (layers/segments/time) is toolpath-only — hide it in Prepare.
+  els.scrubStrip.hidden = prepare;
   if (prepare) ensureModel();
   loadSelected();
 }

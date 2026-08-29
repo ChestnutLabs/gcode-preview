@@ -155,6 +155,10 @@
         font-size: 11px;
         color: var(--gp-text-muted);
       }
+      /* The display rule above beats the UA [hidden] rule — restore hiding (e.g. in Prepare mode). */
+      .gp-count-pill[hidden] {
+        display: none;
+      }
       .gp-count-pill b {
         color: var(--gp-text);
         font-weight: 600;
@@ -231,6 +235,9 @@
         padding: var(--gp-space-2) var(--gp-space-4);
         background: var(--gp-surface-2);
         border-top: 1px solid var(--gp-border);
+      }
+      .gp-scrub[hidden] {
+        display: none;
       }
       .gp-scrub .track {
         display: flex;
@@ -585,7 +592,7 @@
       </div>
 
       <!-- ============ SCRUB STRIP ============ -->
-      <div class="gp-scrub">
+      <div class="gp-scrub" id="scrubStrip">
         <div class="gp-segment" id="scrubMode">
           <button data-scrub="layers" class="gp-on">Layers</button>
           <button data-scrub="segments">Segments</button>
