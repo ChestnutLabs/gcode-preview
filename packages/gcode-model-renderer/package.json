@@ -37,6 +37,10 @@
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
+    },
+    "./testing": {
+      "types": "./dist/model-testing.d.ts",
+      "import": "./dist/model-testing.js"
     }
   },
   "files": [
