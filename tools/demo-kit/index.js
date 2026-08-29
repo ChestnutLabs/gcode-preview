@@ -9,4 +9,5 @@
  */
 export * from './capabilities.js';
 export * from './fixtures.js';
+export * from './models.js';
 export * from './format.js';

@@ -22,7 +22,8 @@ export default defineConfig({
       input: {
         index: resolve(import.meta.dirname, 'index.html'),
         minimal: resolve(import.meta.dirname, 'minimal.html'),
-        showcase: resolve(import.meta.dirname, 'showcase.html')
+        showcase: resolve(import.meta.dirname, 'showcase.html'),
+        model: resolve(import.meta.dirname, 'model.html')
       }
     }
   },
