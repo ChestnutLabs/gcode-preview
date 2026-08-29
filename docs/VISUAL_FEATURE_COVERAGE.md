@@ -111,6 +111,12 @@ capabilities, so the per-capability rows below are unchanged):
 - `getRenderStats` diagnostics and `pickSegment` picking are now reachable through the **public
   adapter surface** in all four showcases (previously controls/raw-only) — the dark-capability
   closure that section 1's `pickSegment` row and section 4's diagnostics row depend on.
+- **Source-model viewing became a first-class declarative half of the SDK**: a `<ModelViewer>` adapter
+  on each framework's `/model` subpath (over the new `createModelPreviewController`), a Preview/Prepare
+  toggle in the Feature Lab and all four showcases, and a minimal model page per framework. This moves
+  the interactive model viewer (§6) from "needs demo exposure" to demonstrated everywhere consumers
+  look. App-UI screenshots of Prepare mode were captured for review but, like the toolpath showcase
+  shots, are not yet canonical `docs/media` (same harness gap).
 
 ## 1. Toolpath inspection
 
@@ -186,7 +192,8 @@ capabilities, so the per-capability rows below are unchanged):
 | Toolpath vs source-model (two renderers) | ✅ | model page | `model-render-stl-3mf` | ✅ | gallery | — | covered |
 | STL presentation still | ✅ | model page | (in pair) | ✅ | gallery | model-renderer README | covered |
 | 3MF material/color presentation | ✅ | model page | (in pair) | ✅ | gallery | model-renderer README | covered |
-| Interactive model viewer (`createModelViewer`) | ✅ | model-viewer page | — | ✅ (prose) | gallery | model-renderer README | needs demo exposure (link) + needs animation |
+| Interactive model viewer (`createModelViewer`) | ✅ | model-viewer page + Feature Lab (Prepare) | — | ✅ (prose) | gallery | model-renderer README | covered (interactive) — Feature Lab + all 4 showcases have a Prepare mode; animation still nice-to-have |
+| Model-viewer framework adapters (`<ModelViewer>` / `/model`) | ✅ | Feature Lab + 4 showcases (Prepare) + model.html minimals | — | ✅ (table) | — | adapters + 4 READMEs | covered (code + examples); app-UI media pending harness support |
 | Multi-object files | ✅ | model page | — | mention | gallery | — | needs screenshot |
 | Multi-plate files + per-plate render | ✅ | ❌ | — | ❌ | gallery | — | needs demo exposure + needs comparison |
 | Render scope / object subsets (`RenderScope`) | ✅ | ❌ | — | ❌ | gallery | recipes | needs demo exposure + needs comparison |

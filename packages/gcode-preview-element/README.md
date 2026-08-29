@@ -85,6 +85,33 @@ picking), and `isColorModeAvailable(mode)`; `capture(opts?)` (image `Blob`) is b
 method and `controls.capture`. The handle `state` carries capability-aware UI data
 (`availableColorModes`, `hasRetractions`, `hasColorChanges`).
 
+## Model viewing (Prepare side)
+
+The `/model/define` entry registers `<gcode-model-viewer>` — the **Prepare**-side counterpart to
+`<gcode-preview>` (the tag deliberately avoids the reserved `<model-viewer>`). Where `<gcode-preview>`
+draws the toolpath (how a print runs), `<gcode-model-viewer>` draws the **source model** (an `.stl` /
+`.3mf` mesh) — the object before slicing.
+
+```html
+<script type="module">
+  import '@chestnutlabs/gcode-preview-element/model/define'; // registers <gcode-model-viewer>
+
+  const el = document.querySelector('gcode-model-viewer');
+  el.addEventListener('ready', (e) => console.log(e.detail.objectCount, e.detail.materials));
+  el.source = { kind: '3mf', bytes }; // rich options are properties; primitives are attributes
+</script>
+
+<gcode-model-viewer background="transparent" style="width: 100%; height: 70vh"></gcode-model-viewer>
+```
+
+The `ready` event carries the honest material-colour tier: `e.detail.materials` is `'known'` /
+`'approximated'` when the file declared colours the render used, and `'unavailable'` when it declared
+none (a neutral default, never faked). The same attribute/property split as `<gcode-preview>` applies —
+rich options (`.source`, `.cameraState`, `.renderScope`, …) are properties; primitives (`view`,
+`background`, `camera-mode`) are attributes. See
+[`docs/manual/adapters.md`](../../docs/manual/adapters.md) "Two viewers: Preview and Prepare" for the
+cross-adapter tour, and `tools/example-webcomponent/model.html` for a runnable minimal page.
+
 ## Examples
 
 `tools/example-webcomponent` in the repository is a framework-free Vite app with two tiers, both

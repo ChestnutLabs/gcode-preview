@@ -98,6 +98,33 @@ Linked-workspace development note: Vite consumers using `file:` links should add
 `@chestnutlabs/*` package the worker pulls in to `optimizeDeps.exclude` (installed tarballs/registry
 packages need no configuration).
 
+## Model viewing (Prepare side)
+
+The `/model` subpath ships a `<ModelViewer>` — the **Prepare**-side counterpart to `<GcodePreview>`.
+Where `<GcodePreview>` draws the toolpath (how a print runs), `<ModelViewer>` draws the **source
+model** (an `.stl` / `.3mf` mesh) — the object before slicing.
+
+```vue
+<script setup lang="ts">
+import { ModelViewer } from '@chestnutlabs/gcode-preview-vue/model';
+
+const source = { kind: '3mf' as const, bytes };
+</script>
+
+<template>
+  <div style="height: 70vh">
+    <ModelViewer :source="source" @ready="(info) => console.log(info.objectCount, info.materials)" />
+  </div>
+</template>
+```
+
+`@ready` carries the honest material-colour tier: `info.materials` is `'known'` / `'approximated'`
+when the file declared colours the render used, and `'unavailable'` when it declared none (a neutral
+default, never faked). The kebab props (`:view`, `:background`, `:render-scope`, …), matching emits,
+and the `useModelViewer` composable mirror the toolpath component. See
+[`docs/manual/adapters.md`](../../docs/manual/adapters.md) "Two viewers: Preview and Prepare" for the
+cross-adapter tour, and `tools/example-vue/model.html` for a runnable minimal page.
+
 ## Examples
 
 `tools/example-vue` in the repository is a Vite app with two tiers, both driving this published

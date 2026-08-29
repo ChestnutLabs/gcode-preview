@@ -61,6 +61,34 @@ The batteries default (all dialect adapters + `.gcode.3mf`) needs zero setup und
 `@chestnutlabs/gcode-preview-vue` README for the shared worker documentation — the options are
 identical across adapters by design.
 
+## Model viewing (Prepare side)
+
+The `/model` subpath ships a `<ModelViewer>` — the **Prepare**-side counterpart to `<GcodePreview>`.
+Where `<GcodePreview>` draws the toolpath (how a print runs), `<ModelViewer>` draws the **source
+model** (an `.stl` / `.3mf` mesh) — the object before slicing.
+
+```tsx
+import { ModelViewer } from '@chestnutlabs/gcode-preview-react/model';
+
+function ModelPreview({ bytes }: { bytes: Uint8Array }) {
+  return (
+    <div style={{ height: '70vh' }}>
+      <ModelViewer
+        source={{ kind: '3mf', bytes }}
+        onReady={(info) => console.log(info.objectCount, info.materials)}
+      />
+    </div>
+  );
+}
+```
+
+`onReady(info)` carries the honest material-colour tier: `info.materials` is `'known'` /
+`'approximated'` when the file declared colours the render used, and `'unavailable'` when it declared
+none (a neutral default was drawn, never faked). The declarative props, callbacks, and the
+`useModelViewer` hook mirror the toolpath component. See
+[`docs/manual/adapters.md`](../../docs/manual/adapters.md) "Two viewers: Preview and Prepare" for the
+cross-adapter tour, and `tools/example-react/model.html` for a runnable minimal page.
+
 ## Examples
 
 `tools/example-react` in the repository is a Vite app with two tiers, both driving this published

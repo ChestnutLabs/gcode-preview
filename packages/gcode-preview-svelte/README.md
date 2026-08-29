@@ -67,6 +67,33 @@ Batteries default (all dialect adapters + `.gcode.3mf`) needs zero setup under V
 identical across all three framework adapters by design (see the Vue README for the shared worker
 documentation).
 
+## Model viewing (Prepare side)
+
+The `/model` subpath ships a `<ModelViewer>` — the **Prepare**-side counterpart to `<GcodePreview>`.
+Where `<GcodePreview>` draws the toolpath (how a print runs), `<ModelViewer>` draws the **source
+model** (an `.stl` / `.3mf` mesh) — the object before slicing.
+
+```svelte
+<script>
+  import ModelViewer from '@chestnutlabs/gcode-preview-svelte/model/ModelViewer.svelte';
+  export let bytes;
+</script>
+
+<div style="height: 70vh">
+  <ModelViewer
+    source={{ kind: '3mf', bytes }}
+    on:ready={(e) => console.log(e.detail.objectCount, e.detail.materials)}
+  />
+</div>
+```
+
+`on:ready` (detail-wrapped, like the other Svelte events) carries the honest material-colour tier:
+`e.detail.materials` is `'known'` / `'approximated'` when the file declared colours the render used,
+and `'unavailable'` when it declared none (a neutral default, never faked). The `createModelViewer`
+store handle mirrors the toolpath component. See
+[`docs/manual/adapters.md`](../../docs/manual/adapters.md) "Two viewers: Preview and Prepare" for the
+cross-adapter tour, and `tools/example-svelte/model.html` for a runnable minimal page.
+
 ## Examples
 
 `tools/example-svelte` in the repository is a Vite app with two tiers, both driving this published

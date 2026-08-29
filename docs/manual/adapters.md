@@ -22,6 +22,38 @@ useGcodePreview() / createGcodePreview() / element.controls   ← your own UI ov
 Reach for the component to get a working viewer in one line; reach for the lower-level API when you
 want bespoke controls without reimplementing the parse→render pipeline.
 
+## Two viewers: Preview and Prepare
+
+The SDK has two viewing surfaces, like a slicer's two modes — and each framework exposes both:
+
+- **Preview** — the sliced **G-code / toolpath** (`<GcodePreview>`, from the package root). Layers,
+  travel, scrub, color modes, diagnostics.
+- **Prepare** — the **source model** (STL / 3MF) before slicing (`<ModelViewer>`, from the package's
+  **`/model`** subpath). Orbit/zoom/pan, honest material-colour capability tier, object/instance counts,
+  per-plate render scope, capture.
+
+The model viewer is a thin declarative shell over the framework-neutral
+`createModelPreviewController` (in `@chestnutlabs/gcode-model-renderer`), exactly as the toolpath
+component is over `gcode-preview-core` — same idioms (props/options, events, a ref/handle, `getState`
+where the framework is reactive), and a matching portable behavioral suite with its own parity guard.
+It lives behind the `/model` subpath so toolpath-only consumers never bundle the model renderer.
+
+| Framework | Toolpath (Preview) | Source model (Prepare) |
+| --- | --- | --- |
+| React | `import { GcodePreview } from '@chestnutlabs/gcode-preview-react'` | `import { ModelViewer } from '@chestnutlabs/gcode-preview-react/model'` |
+| Vue | `import { GcodePreview } from '@chestnutlabs/gcode-preview-vue'` | `import { ModelViewer } from '@chestnutlabs/gcode-preview-vue/model'` |
+| Svelte | `import GcodePreview from '@chestnutlabs/gcode-preview-svelte/GcodePreview.svelte'` | `import ModelViewer from '@chestnutlabs/gcode-preview-svelte/model/ModelViewer.svelte'` |
+| Web Component | `import '@chestnutlabs/gcode-preview-element/define'` → `<gcode-preview>` | `import '@chestnutlabs/gcode-preview-element/model/define'` → `<gcode-model-viewer>` |
+
+```jsx
+// React — the smallest source-model integration (STL / 3MF bytes)
+<ModelViewer source={{ kind: 'stl', bytes }} onReady={(info) => console.log(info.materials)} />
+```
+
+`<ModelViewer source={…} />` alone is a working viewer; `onReady`/`@ready`/`on:ready`/the `ready`
+event carries the honest `ModelReadyInfo` (`objectCount`, `materials` tier, `bounds`, `instancedCount`,
+`plates?`). The showcase examples put Preview and Prepare behind one toggle.
+
 ## Try the examples
 
 Each adapter ships a runnable Vite example in the repository with **two tiers**, both driving the
@@ -34,10 +66,11 @@ real published package (never a raw renderer or parser):
 | Svelte | `tools/example-svelte` | 5202 |
 | Web Component | `tools/example-webcomponent` | 5204 |
 
-Every one has a **`minimal.html`** — the smallest real integration you'd copy to get started — and a
-**`showcase.html`** — the full capability-aware surface (color modes that grey out with a reason when
-a file can't support them, declarative feature-role hiding, and `getRenderStats()`/`pickSegment()`
-diagnostics through the handle). Run one with, e.g.,
+Every one has a **`minimal.html`** — the smallest toolpath integration you'd copy to get started — a
+**`model.html`** — the smallest source-model integration (`<ModelViewer source>`) — and a
+**`showcase.html`** — the full capability-aware surface with the Preview/Prepare toggle (color modes
+that grey out with a reason when a file can't support them, declarative feature-role hiding,
+`getRenderStats()`/`pickSegment()` diagnostics, and the source-model viewer). Run one with, e.g.,
 `npm install --prefix tools/example-react && npm run dev --prefix tools/example-react`.
 
 ## The shared surface
@@ -117,7 +150,9 @@ Ships as raw `.svelte` (your bundler's Svelte plugin compiles it), imported from
 Scalar options (`quality`, `camera-mode`, `layer-range`, `scrub`, `view`, `hidden-feature-roles`, …)
 are **attributes**; rich options (`.source`, `.colorMode`, `.theme`, `.tube`, `.buildVolume`) are
 **JS properties** because objects can't be attributes. Listen for `ready`; call `element.capture()`
-or `element.controls.*` for the imperative surface. Works in any page or framework.
+or `element.controls.*` for the imperative surface. Works in any page or framework. The source-model
+counterpart is `<gcode-model-viewer>` (from `/model/define`) — the tag avoids the reserved
+`<model-viewer>` name.
 
 ## Build your own (core)
 

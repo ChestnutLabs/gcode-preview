@@ -91,6 +91,46 @@ viewer's API (design: [DD-021](../../docs/design/DD-021-interactive-model-viewer
 Prefer to build your own scene? `parseStl` / `parse3mf` return a three-free `ModelScene`, and both the
 still and the viewer accept a pre-built `ModelScene` directly.
 
+## Framework-neutral Prepare controller
+
+`createModelPreviewController` wraps `createModelViewer` in the controller shape the framework adapters
+consume — it is the Prepare-side analogue of the toolpath core controller. On top of the raw viewer it
+adds a canvas-`bindCanvas` lifecycle (rebind survives a remount; the last source and any queued control
+ops replay on bind), a single reactive state snapshot (`getState()` / `onStateChange()`), and an op
+queue so calls made before the canvas exists are not lost. It backs the `/model` subpath of the Vue,
+React, Svelte, and Web Component packages; use it directly to build your own adapter.
+
+```ts
+import { createModelPreviewController } from '@chestnutlabs/gcode-model-renderer';
+
+const controller = createModelPreviewController();
+const off = controller.onStateChange((s) => {
+  // s: ModelPreviewState — loading, ready, rendererSupported, objectCount, materials,
+  //    instancedCount, decimationApplied, bounds, plates, hasPlates, cameraState, progress, error
+});
+controller.bindCanvas(canvas);                       // a real <canvas> in the page
+await controller.controls.setSource({ kind: '3mf', bytes });
+// ...on teardown:
+off();
+controller.dispose();
+```
+
+The two contract types are `ModelPreviewControls` (`setSource` / `setView` / `getCameraState` /
+`setCameraState` / `setBackground` / `setInteractionQuality` / `setRenderScope` / `frame` / `resize` /
+`capture`) and the `ModelPreviewState` snapshot above; `materials` in that snapshot is the same honest
+tier the still and viewer report (`'known'` / `'approximated'` / `'unavailable'`, never invented).
+
+A portable behavioral suite ships at the `/testing` subpath: `runModelBehavioralSuite(name, api,
+harness)` runs one shared set of assertions against any adapter, so every framework's `<ModelViewer>`
+is verified against the same contract as the core controller.
+
+```ts
+import { runModelBehavioralSuite } from '@chestnutlabs/gcode-model-renderer/testing';
+```
+
+See [`docs/manual/adapters.md`](../../docs/manual/adapters.md) "Two viewers: Preview and Prepare" for
+the cross-adapter tour of the four framework wrappers.
+
 Determinism (stills): same input + same environment ⇒ identical output. Cross-GPU/driver pixel identity
 is not promised — cache by the returned `cacheKey`.
 

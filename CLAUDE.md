@@ -69,25 +69,31 @@ documented in [`docs/reference/release-process.md`](docs/reference/release-proce
 ## Framework parity completion check (mandatory)
 
 **A public capability is not "done" until it has a deliberate parity decision across every framework
-adapter** (DD-031). When a change adds or materially changes a consumer-meaningful capability on the
-core controller or a renderer, answer each — "not applicable" is a valid, explicit answer, but it
-must be a decision, not an omission:
+adapter** (DD-031). This applies to **both** viewer surfaces: the toolpath/Preview side
+(`GcodePreview` over `gcode-preview-core`) and the source-model/Prepare side (`ModelViewer` over
+`gcode-model-renderer`'s `createModelPreviewController`, exposed on each adapter's `/model` subpath).
+When a change adds or materially changes a consumer-meaningful capability on a controller or a
+renderer, answer each — "not applicable" is a valid, explicit answer, but it must be a decision, not
+an omission:
 
 1. Does **core** (`GcodePreviewControls` / `GcodePreviewState` / `PreviewEvent`) expose it correctly?
 2. Do **Vue**, **React**, **Svelte**, and the **Web Component** expose it — declaratively where it
    logically belongs, imperatively via `controls` otherwise?
 3. Are the **lower-level APIs** (`useGcodePreview` / `createGcodePreview` / `element`) covered?
 4. Are **events/callbacks** equivalent (allowing each framework's naming idiom)?
-5. Is it exercised by the **portable behavioral suite** (`gcode-preview-core/src/testing.ts`)? The
-   controls-completeness **parity guard** there fails CI if a `GcodePreviewControls` method isn't
-   reachable through an adapter — add new controls methods to its required list.
+5. Is it exercised by the **portable behavioral suite** (`gcode-preview-core/src/testing.ts` for
+   toolpath; `gcode-model-renderer/src/model-testing.ts` for the model viewer)? The
+   controls/state-completeness **parity guards** there fail CI if a `GcodePreviewControls` /
+   `ModelPreviewControls` method (or a state field) isn't reachable through an adapter — add new
+   controls/state to the matching required list.
 6. Does the **Feature Lab demo** expose it, and do the **framework showcase examples** demonstrate it
    where useful?
 7. Is it **documented** consistently across the adapter READMEs + `docs/manual/adapters.md`, and does
    **visual coverage** (`docs/VISUAL_FEATURE_COVERAGE.md`) need updating?
 
-Deliberate per-framework differences (e.g. the Web Component's property-vs-attribute split, Svelte's
-`.svelte` subpath) are fine — but they must be **documented as intentional**, never accidental drift.
+Deliberate per-framework differences (e.g. the Web Component's property-vs-attribute split and the
+`<gcode-model-viewer>` tag, Svelte's `.svelte` subpath, the `/model` subpath for source-model viewing)
+are fine — but they must be **documented as intentional**, never accidental drift.
 No capability should be reachable only through the `raw.renderer()` escape hatch for lack of a public
 surface. The release review (`RELEASE_REVIEW.md`) carries a parity line so this is checked before a cut.
 
