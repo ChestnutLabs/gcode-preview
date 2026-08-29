@@ -98,6 +98,21 @@ Linked-workspace development note: Vite consumers using `file:` links should add
 `@chestnutlabs/*` package the worker pulls in to `optimizeDeps.exclude` (installed tarballs/registry
 packages need no configuration).
 
+## Examples
+
+`tools/example-vue` in the repository is a Vite app with two tiers, both driving this published
+package (no raw renderer or parser imports):
+
+- **`minimal.html`** — the smallest real integration: `<GcodePreview :source>` plus a fixture picker
+  and a layer slider. One short component to copy when getting started.
+- **`showcase.html`** — the full declarative surface: capability-gated color modes (a mode greys out
+  with a plain-language reason when the file can't support it), declarative `:hidden-feature-roles`,
+  camera, and `getRenderStats()`/`pickSegment()` diagnostics through the component ref's handle
+  (`viewer.preview.controls`), whose `state` mirror is directly reactive in Vue.
+
+Run it with `npm install --prefix tools/example-vue && npm run dev --prefix tools/example-vue`
+(port 5203).
+
 ## Capability honesty
 
 Everything the engine reports as `inferred`/`approximated`/`unavailable` stays that way at this

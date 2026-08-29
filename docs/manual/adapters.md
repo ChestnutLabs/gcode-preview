@@ -22,6 +22,24 @@ useGcodePreview() / createGcodePreview() / element.controls   ← your own UI ov
 Reach for the component to get a working viewer in one line; reach for the lower-level API when you
 want bespoke controls without reimplementing the parse→render pipeline.
 
+## Try the examples
+
+Each adapter ships a runnable Vite example in the repository with **two tiers**, both driving the
+real published package (never a raw renderer or parser):
+
+| Adapter | Example | Port |
+| --- | --- | --- |
+| Vue | `tools/example-vue` | 5203 |
+| React | `tools/example-react` | 5201 |
+| Svelte | `tools/example-svelte` | 5202 |
+| Web Component | `tools/example-webcomponent` | 5204 |
+
+Every one has a **`minimal.html`** — the smallest real integration you'd copy to get started — and a
+**`showcase.html`** — the full capability-aware surface (color modes that grey out with a reason when
+a file can't support them, declarative feature-role hiding, and `getRenderStats()`/`pickSegment()`
+diagnostics through the handle). Run one with, e.g.,
+`npm install --prefix tools/example-react && npm run dev --prefix tools/example-react`.
+
 ## The shared surface
 
 The declarative props below are equivalent across the Vue, React, and Svelte components (camelCase),

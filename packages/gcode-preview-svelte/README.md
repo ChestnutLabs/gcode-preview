@@ -67,7 +67,17 @@ Batteries default (all dialect adapters + `.gcode.3mf`) needs zero setup under V
 identical across all three framework adapters by design (see the Vue README for the shared worker
 documentation).
 
-## Example
+## Examples
 
-`tools/example-svelte` in the repository is a complete Vite + Svelte app (corpus load,
-layer/scrub, simulated live progress) compiling the raw component through the export condition.
+`tools/example-svelte` in the repository is a Vite app with two tiers, both driving this published
+package through the `.svelte` export condition (no raw renderer or parser imports):
+
+- **`minimal.html`** — the smallest real integration: `<GcodePreview {source}>` plus a fixture
+  picker and a layer slider. One short component to copy when getting started.
+- **`showcase.html`** — the full declarative surface: capability-gated color modes (a mode greys out
+  with a plain-language reason when the file can't support it), declarative `hiddenFeatureRoles`,
+  camera, and `getRenderStats()`/`pickSegment()` diagnostics through the `bind:this` handle
+  (`viewer.preview.controls`); the handle's store-contract `state` supplies the reactive UI data.
+
+Run it with `npm install --prefix tools/example-svelte && npm run dev --prefix tools/example-svelte`
+(port 5202).

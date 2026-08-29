@@ -85,6 +85,21 @@ picking), and `isColorModeAvailable(mode)`; `capture(opts?)` (image `Blob`) is b
 method and `controls.capture`. The handle `state` carries capability-aware UI data
 (`availableColorModes`, `hasRetractions`, `hasColorChanges`).
 
+## Examples
+
+`tools/example-webcomponent` in the repository is a framework-free Vite app with two tiers, both
+driving this published element (no raw renderer or parser imports):
+
+- **`minimal.html`** — the smallest real integration: import `/define` to register `<gcode-preview>`,
+  set the `source` property, listen for `ready`; the layer slider drives the `layer-range` attribute.
+  Shows the attribute/property split in ~40 lines.
+- **`showcase.html`** — the full surface in vanilla JS: objects (`source`, `colorMode`,
+  `hiddenFeatureRoles`) set as properties, primitives (`layer-range`, `view`) as attributes;
+  capability-gated color modes; `getRenderStats()`/`pickSegment()` diagnostics via `element.controls`.
+
+Run it with `npm install --prefix tools/example-webcomponent && npm run dev --prefix
+tools/example-webcomponent` (port 5204).
+
 ## Workers
 
 By default the batteries worker parses off-thread. To supply a custom/slim worker, set the
