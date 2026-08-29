@@ -53,6 +53,7 @@ function App() {
         <GcodePreview
           source={source}
           layerRange={layers > 0 ? [0, topLayer] : null}
+          showTravel={false}
           onReady={(s) => {
             setLayers(s.layers);
             setTopLayer(Math.max(0, s.layers - 1));

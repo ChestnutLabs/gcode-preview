@@ -42,6 +42,11 @@ function onReady(summary) {
     </label>
   </header>
   <main>
-    <GcodePreview :source="source" :layer-range="layers > 0 ? [0, topLayer] : null" @ready="onReady" />
+    <GcodePreview
+      :source="source"
+      :layer-range="layers > 0 ? [0, topLayer] : null"
+      :show-travel="false"
+      @ready="onReady"
+    />
   </main>
 </template>

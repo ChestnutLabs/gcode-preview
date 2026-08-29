@@ -43,6 +43,13 @@ $('fixture').value = 'skirt-brim';
 $('mode').innerHTML = COLOR_MODES.map((m) => `<option value="${m.id}">${m.label}</option>`).join('');
 $('mode').value = colorModeId;
 
+// Apply the initial control state to the element. Unlike the framework wrappers (which bind these
+// declaratively and so apply them on mount), the element keeps its own defaults — e.g. showTravel
+// defaults to `true` — until we push the UI's initial state, or the unchecked boxes would disagree
+// with what's rendered. (Controls set before parse are queued and replayed.)
+view.showTravel = $('travel').checked;
+view.showRetractions = $('retract').checked;
+
 // ---- chrome (app) theme, separate from the viewport ----
 function setChrome(c) {
   document.documentElement.dataset.chrome = c;

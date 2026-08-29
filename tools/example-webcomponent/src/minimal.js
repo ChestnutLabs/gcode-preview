@@ -16,6 +16,9 @@ const layerLabel = document.getElementById('layerLabel');
 const layerNum = document.getElementById('layerNum');
 const layerMax = document.getElementById('layerMax');
 
+// Hide travel moves for a clean first view (property; the element defaults showTravel to true).
+view.showTravel = false;
+
 let layers = 0;
 
 fixture.addEventListener('change', async () => {

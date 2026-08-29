@@ -45,5 +45,5 @@
   {/if}
 </header>
 <main>
-  <GcodePreview {source} layerRange={layers > 0 ? [0, topLayer] : null} on:ready={onReady} />
+  <GcodePreview {source} layerRange={layers > 0 ? [0, topLayer] : null} showTravel={false} on:ready={onReady} />
 </main>

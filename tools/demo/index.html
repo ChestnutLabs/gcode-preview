@@ -203,9 +203,12 @@
         flex: 1;
         min-height: 0;
       }
+      /* Rail collapse/expand handle — a drawer handle centered on the rail seam, kept clear of the
+         top-right camera cluster (which shares that corner). */
       .gp-rail-collapse {
         position: absolute;
-        top: var(--gp-space-3);
+        top: 50%;
+        transform: translateY(-50%);
         right: calc(var(--rail-w, 360px) + var(--gp-space-2));
         z-index: 5;
       }
