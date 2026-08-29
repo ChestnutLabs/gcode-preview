@@ -10,10 +10,15 @@
  * Styling is the shared workspace-internal demo-kit. Still the real package: no raw renderer imports.
  */
 import '@chestnutlabs/gcode-preview-element/define';
+// Auto-registers <gcode-model-viewer> (the Prepare-side source-model viewer). Note the tag is
+// `gcode-model-viewer`, not the reserved `model-viewer`.
+import '@chestnutlabs/gcode-preview-element/model/define';
 import { FeatureRole } from '@chestnutlabs/toolpath-core';
 import {
   FIXTURE_GROUPS,
   FIXTURE_BY_ID,
+  MODEL_FIXTURES,
+  MODEL_FIXTURE_BY_ID,
   COLOR_MODES,
   COLOR_MODE_BY_ID,
   colorModeReason,
@@ -29,16 +34,27 @@ const CAP_KEYS = ['featureRoles', 'objects', 'feedrate', 'colorChanges'];
 const $ = (id) => document.getElementById(id);
 
 const view = $('view');
+const modelView = $('modelView');
 let caps = {};
 let layers = 0;
 let segments = 0;
 let colorModeId = 'feature';
+let mode = 'preview'; // 'preview' (toolpath) | 'prepare' (source model)
+let previewCount = { has: false, text: '' }; // preview count-pill state, restored when switching back
+let modelInfo = null; // last ModelReadyInfo (Prepare)
 
-// ---- populate the pickers from the shared demo-kit ----
-$('fixture').innerHTML = FIXTURE_GROUPS.map(
-  (g) => `<optgroup label="${g.group}">${g.items.map((i) => `<option value="${i.id}">${i.label}</option>`).join('')}</optgroup>`
-).join('');
-$('fixture').value = 'skirt-brim';
+// ---- fixture pickers: one <select>, repopulated per mode from the shared demo-kit ----
+function fillPreviewFixtures() {
+  $('fixture').innerHTML = FIXTURE_GROUPS.map(
+    (g) => `<optgroup label="${g.group}">${g.items.map((i) => `<option value="${i.id}">${i.label}</option>`).join('')}</optgroup>`
+  ).join('');
+  $('fixture').value = 'skirt-brim';
+}
+function fillModelFixtures() {
+  $('fixture').innerHTML = MODEL_FIXTURES.map((m) => `<option value="${m.id}">${m.label}</option>`).join('');
+  $('fixture').value = 'colored-3mf';
+}
+fillPreviewFixtures();
 
 $('mode').innerHTML = COLOR_MODES.map((m) => `<option value="${m.id}">${m.label}</option>`).join('');
 $('mode').value = colorModeId;
@@ -62,6 +78,7 @@ setChrome('dark');
 
 // ---- fixtures ----
 async function load() {
+  if (mode === 'prepare') return loadModel();
   const fx = FIXTURE_BY_ID[$('fixture').value];
   if (!fx) return;
   const res = await fetch(`./${fx.path}`);
@@ -70,8 +87,48 @@ async function load() {
   $('pickOut').textContent = '';
   $('disclosure').textContent = fx.blurb;
 }
+// Prepare: hand the model viewer a { kind, bytes } ModelSourceInput (property; objects can't be
+// attributes). No fetch — the model fixtures are synthetic, MIT-clean, built in the demo-kit.
+function loadModel() {
+  const fx = MODEL_FIXTURE_BY_ID[$('fixture').value];
+  if (!fx) return;
+  modelView.source = fx.source(); // property (object) → parse + render
+  modelInfo = null;
+  renderModelPanel();
+  updateCount();
+  updateCaps();
+}
 $('load').addEventListener('click', load);
 $('fixture').addEventListener('change', load);
+
+// ---- workflow mode: swap the two viewers, the rail panels, and the fixture list ----
+function setMode(m) {
+  mode = m;
+  const prepare = m === 'prepare';
+  $('modePreview').classList.toggle('gp-on', !prepare);
+  $('modePrepare').classList.toggle('gp-on', prepare);
+  // swap the viewers (CSS restores [hidden] over the display rule)
+  view.hidden = prepare;
+  modelView.hidden = !prepare;
+  // swap the rail panels
+  $('previewPanels').hidden = prepare;
+  $('modelPanel').hidden = !prepare;
+  // the toolpath legend never applies in Prepare
+  if (prepare) $('legendCard').hidden = true;
+  else applyColorMode();
+  // repopulate the fixture picker for this mode
+  if (prepare) fillModelFixtures();
+  else fillPreviewFixtures();
+  if (prepare) renderModelPanel();
+  updateCount();
+  updateCaps();
+  // default footer line; events (disclosure / errors) overwrite it
+  $('disclosure').textContent = prepare
+    ? 'Prepare: view the source model before slicing.'
+    : FIXTURE_BY_ID[$('fixture').value]?.blurb ?? 'Pick a fixture to begin.';
+}
+$('modePreview').addEventListener('click', () => setMode('preview'));
+$('modePrepare').addEventListener('click', () => setMode('prepare'));
 
 // ---- color mode: reflect availability, set the colorMode PROPERTY ----
 function applyColorMode() {
@@ -118,12 +175,13 @@ $('retract').addEventListener('change', () => {
   view.showRetractions = $('retract').checked;
 });
 
-// ---- camera ----
+// ---- camera (shared: drives whichever viewer is active; `view` is a primitive → attribute) ----
 for (const btn of document.querySelectorAll('.sc-cam button')) {
   btn.addEventListener('click', () => {
     document.querySelectorAll('.sc-cam button').forEach((b) => b.classList.remove('gp-on'));
     btn.classList.add('gp-on');
-    view.setAttribute('view', btn.dataset.view); // primitive → attribute
+    const target = mode === 'prepare' ? modelView : view;
+    target.setAttribute('view', btn.dataset.view);
   });
 }
 
@@ -146,6 +204,7 @@ function readStats() {
 }
 $('stats').addEventListener('click', readStats);
 $('viewport').addEventListener('click', (e) => {
+  if (mode !== 'preview') return; // picking is a toolpath feature
   const c = view.querySelector('canvas') ?? view.shadowRoot?.querySelector('canvas');
   if (!c || layers === 0) return;
   const r = c.getBoundingClientRect();
@@ -156,14 +215,73 @@ $('viewport').addEventListener('click', (e) => {
   $('pickOut').textContent = hit !== null ? `Picked IR segment #${hit}` : 'Click the model to identify a segment.';
 });
 
-// ---- capability badges ----
+// ---- capability badges (Preview: the toolpath's honesty tiers; Prepare: just the material tier) ----
 function renderCaps() {
   $('caps').innerHTML = CAP_KEYS.map((k) => {
     const t = confidenceTier(caps[k]);
     return `<span class="gp-badge ${t.cls}" title="${k}: ${t.label}">${k} · ${t.label}</span>`;
   }).join('');
 }
+function updateCaps() {
+  if (mode !== 'prepare') return renderCaps();
+  if (modelInfo) {
+    const t = confidenceTier(modelInfo.materials);
+    $('caps').innerHTML = `<span class="gp-badge ${t.cls}">materials · ${t.label}</span>`;
+  } else {
+    $('caps').innerHTML = '';
+  }
+}
+
+// ---- count pill (Preview: segments/layers/time; Prepare: objects/placements) ----
+function updateCount() {
+  if (mode === 'prepare') {
+    if (modelInfo) {
+      const oc = modelInfo.objectCount;
+      let txt = `${formatCount(oc)} object${oc === 1 ? '' : 's'}`;
+      if (modelInfo.instancedCount > oc) txt += ` · ${formatCount(modelInfo.instancedCount)} placements`;
+      $('count').hidden = false;
+      $('count').textContent = txt;
+    } else {
+      $('count').hidden = true;
+    }
+  } else {
+    $('count').hidden = !previewCount.has;
+    $('count').textContent = previewCount.text;
+  }
+}
+
+// ---- Prepare rail panel: what the source model exposes ----
+function renderModelPanel() {
+  const fx = MODEL_FIXTURE_BY_ID[$('fixture').value];
+  $('modelBlurb').textContent = fx ? fx.blurb : '';
+  if (modelInfo) {
+    const tier = confidenceTier(modelInfo.materials);
+    $('modelInfo').innerHTML = [
+      `<div>objects: ${formatCount(modelInfo.objectCount)}</div>`,
+      `<div>placements: ${formatCount(modelInfo.instancedCount)}</div>`,
+      `<div>materials: <span class="gp-badge ${tier.cls}">${tier.label}</span></div>`,
+      modelInfo.plates ? `<div>plates: ${modelInfo.plates.list.length}</div>` : ''
+    ]
+      .filter(Boolean)
+      .join('');
+  } else {
+    $('modelInfo').innerHTML = '<p class="gp-reason">Press Load to view a source model.</p>';
+  }
+}
+
 renderCaps();
+
+// ---- model events (CustomEvent; `ready` detail is a ModelReadyInfo) ----
+modelView.addEventListener('ready', (e) => {
+  if (typeof window !== 'undefined') window.gcodeModelViewer = modelView; // handle for devtools/inspection
+  modelInfo = e.detail;
+  renderModelPanel();
+  updateCount();
+  updateCaps();
+});
+modelView.addEventListener('error', (e) => {
+  $('disclosure').textContent = `Model error: ${e.detail.code} — ${e.detail.message}`;
+});
 
 // ---- events from the element (CustomEvent; detail shapes match the adapter contract) ----
 view.addEventListener('ready', (e) => {
@@ -203,8 +321,8 @@ view.addEventListener('ready', (e) => {
 
   // count pill
   const timeStr = st.totalTimeMs !== null ? ` · ${formatDuration(st.totalTimeMs)}` : '';
-  $('count').hidden = segments === 0;
-  $('count').textContent = `${formatCount(segments)} segments · ${layers} layers${timeStr}`;
+  previewCount = { has: segments > 0, text: `${formatCount(segments)} segments · ${layers} layers${timeStr}` };
+  updateCount();
 
   $('stats').disabled = segments === 0;
 });

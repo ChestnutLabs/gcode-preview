@@ -1,19 +1,27 @@
 <!--
   Full showcase example (DD-031 §4.7, tier 2).
 
-  Exercises the real declarative surface of @chestnutlabs/gcode-preview-svelte and mirrors the
-  Feature Lab's capability-aware UX in Svelte idiom: color modes gate on the file's capabilities with
-  a plain-language reason, feature-role hiding is a declarative prop, and diagnostics/picking come
-  through the bound handle (`viewer.preview.controls`). Chrome (light/dark) is separate from the
-  renderer's neutral viewport. Styling is the shared workspace-internal demo-kit — not a published UI
-  kit and not a library default. Still the real package: no raw renderer imports.
+  Demonstrates BOTH halves of the SDK in one app, like a slicer's two modes:
+   - Preview  → sliced G-code / toolpath via <GcodePreview> (@chestnutlabs/gcode-preview-svelte)
+   - Prepare  → source model (STL / 3MF) via <ModelViewer> (@chestnutlabs/gcode-preview-svelte/model)
+
+  Both are the real published adapters (no raw renderer) and mirror the Feature Lab's
+  capability-aware, honest UX in Svelte idiom: toolpath color modes gate on the file's capabilities
+  with a plain-language reason, feature-role hiding is a declarative prop, and diagnostics/picking come
+  through the bound handle (`viewer.preview.controls`); the model side surfaces the material-colour
+  capability tier and object/instance counts. Chrome (light/dark) is separate from the renderer's
+  neutral viewport. Styling is the shared workspace-internal demo-kit — not a published UI kit and not
+  a library default.
 -->
 <script>
   import GcodePreview from '@chestnutlabs/gcode-preview-svelte/GcodePreview.svelte';
+  import ModelViewer from '@chestnutlabs/gcode-preview-svelte/model/ModelViewer.svelte';
   import { FeatureRole } from '@chestnutlabs/toolpath-core';
   import {
     FIXTURE_GROUPS,
     FIXTURE_BY_ID,
+    MODEL_FIXTURES,
+    MODEL_FIXTURE_BY_ID,
     COLOR_MODES,
     COLOR_MODE_BY_ID,
     colorModeReason,
@@ -31,8 +39,10 @@
   ];
   const CAP_KEYS = ['featureRoles', 'objects', 'feedrate', 'colorChanges'];
 
-  let viewer; // bind:this → viewer.preview is the handle
+  let viewer; // bind:this → viewer.preview is the toolpath handle
+  let modelViewer; // bind:this → modelViewer.viewer is the model handle
   let chrome = 'dark';
+  let mode = 'preview'; // 'preview' (toolpath) | 'prepare' (source model)
   let fixtureId = 'skirt-brim';
   let source = null;
 
@@ -54,19 +64,37 @@
   let showRetractions = false;
   let view = 'iso';
 
+  // Prepare (source model) state.
+  let modelFixtureId = 'colored-3mf';
+  let modelSource = null;
+  let modelInfo = null;
+
   $: if (typeof document !== 'undefined') document.documentElement.dataset.chrome = chrome;
 
-  $: mode = COLOR_MODE_BY_ID[colorModeId];
+  $: colorModeItem = COLOR_MODE_BY_ID[colorModeId];
   $: modeReason = colorModeReason(colorModeId, caps);
-  $: colorMode = modeReason === '' ? mode.build() : undefined;
-  $: legend = mode.legend ?? null;
+  $: colorMode = modeReason === '' ? colorModeItem.build() : undefined;
+  $: legend = colorModeItem.legend ?? null;
   $: featureRolesKnown = caps.featureRoles === 'known' || caps.featureRoles === 'inferred';
   $: hiddenRoles = hideAdhesion ? ADHESION_ROLES : undefined;
   $: fixture = FIXTURE_BY_ID[fixtureId];
+  $: prepare = mode === 'prepare';
+  $: modelFx = MODEL_FIXTURE_BY_ID[modelFixtureId];
   $: countLabel =
     segments > 0
       ? `${formatCount(segments)} segments · ${layers} layers${time.ms !== null ? ` · ${formatDuration(time.ms)}` : ''}`
       : '';
+  // Svelte trims whitespace at {#if} boundaries → build display strings as reactive vars, not inline.
+  $: modelCountLabel = modelInfo
+    ? `${formatCount(modelInfo.objectCount)} object${modelInfo.objectCount === 1 ? '' : 's'}${
+        modelInfo.instancedCount > modelInfo.objectCount
+          ? ` · ${formatCount(modelInfo.instancedCount)} placements`
+          : ''
+      }`
+    : '';
+  $: statusText =
+    disclosure || (prepare ? 'Prepare: view the source model before slicing.' : fixture ? fixture.blurb : 'Pick a fixture to begin.');
+  $: materialsTier = modelInfo ? confidenceTier(modelInfo.materials) : null;
 
   // The handle's `state` is a Svelte store; read a one-shot snapshot for fields the ready event omits.
   function stateSnapshot() {
@@ -84,6 +112,18 @@
     source = new Uint8Array(await res.arrayBuffer());
     stats = null;
     picked = null;
+  }
+
+  function loadModel(id) {
+    const fx = MODEL_FIXTURE_BY_ID[id ?? modelFixtureId];
+    if (!fx) return;
+    modelFixtureId = fx.id;
+    modelSource = fx.source(); // { kind, bytes } — no fetch, synthetic MIT-clean fixture
+    modelInfo = null;
+  }
+
+  function onModelReady(event) {
+    modelInfo = event.detail;
   }
 
   function onReady(event) {
@@ -108,6 +148,7 @@
   }
 
   function onCanvasClick(e) {
+    if (prepare) return; // picking is a toolpath-only affordance
     const c = e.currentTarget.querySelector('canvas');
     if (!c || layers === 0) return;
     const r = c.getBoundingClientRect();
@@ -125,16 +166,29 @@
     <span class="gp-title">G-code Preview · Svelte</span>
     <span class="gp-eyebrow">Showcase</span>
   </div>
-  <select class="gp-input" style="width: 220px" bind:value={fixtureId} on:change={() => load()}>
-    {#each FIXTURE_GROUPS as g}
-      <optgroup label={g.group}>
-        {#each g.items as i}
-          <option value={i.id}>{i.label}</option>
-        {/each}
-      </optgroup>
-    {/each}
-  </select>
-  <button class="gp-btn gp-primary" on:click={() => load()}>Load</button>
+  <!-- Preview (toolpath) vs Prepare (source model) — the two halves of the SDK. -->
+  <div class="gp-segment" role="group" aria-label="Workflow">
+    <button class={!prepare ? 'gp-on' : ''} on:click={() => (mode = 'preview')}>Preview</button>
+    <button class={prepare ? 'gp-on' : ''} on:click={() => (mode = 'prepare')}>Prepare</button>
+  </div>
+  {#if !prepare}
+    <select class="gp-input" style="width: 220px" bind:value={fixtureId} on:change={() => load()}>
+      {#each FIXTURE_GROUPS as g}
+        <optgroup label={g.group}>
+          {#each g.items as i}
+            <option value={i.id}>{i.label}</option>
+          {/each}
+        </optgroup>
+      {/each}
+    </select>
+  {:else}
+    <select class="gp-input" style="width: 220px" bind:value={modelFixtureId} on:change={() => loadModel()}>
+      {#each MODEL_FIXTURES as m}
+        <option value={m.id}>{m.label}</option>
+      {/each}
+    </select>
+  {/if}
+  <button class="gp-btn gp-primary" on:click={() => (prepare ? loadModel() : load())}>Load</button>
   <div class="sc-spacer" />
   <div class="gp-segment" role="group" aria-label="Chrome theme">
     <button class={chrome === 'dark' ? 'gp-on' : ''} on:click={() => (chrome = 'dark')}>Dark</button>
@@ -145,25 +199,36 @@
 <div class="sc-main">
   <!-- svelte-ignore a11y-click-events-have-key-events a11y-no-static-element-interactions -->
   <div class="sc-viewport" on:click={onCanvasClick}>
-    <GcodePreview
-      bind:this={viewer}
-      {source}
-      {colorMode}
-      layerRange={layers > 0 ? [0, topLayer] : null}
-      hiddenFeatureRoles={hiddenRoles}
-      {showTravel}
-      {showRetractions}
-      {view}
-      frameContent="object"
-      quality="auto"
-      on:ready={onReady}
-      on:buildcomplete={refreshStats}
-      on:disclosure={(e) => (disclosure = e.detail ?? '')}
-      on:parseerror={(e) => (disclosure = `Parse error: ${e.detail.code} — ${e.detail.message}`)}
-    />
-    {#if legend}
+    {#if !prepare}
+      <GcodePreview
+        bind:this={viewer}
+        {source}
+        {colorMode}
+        layerRange={layers > 0 ? [0, topLayer] : null}
+        hiddenFeatureRoles={hiddenRoles}
+        {showTravel}
+        {showRetractions}
+        {view}
+        frameContent="object"
+        quality="auto"
+        on:ready={onReady}
+        on:buildcomplete={refreshStats}
+        on:disclosure={(e) => (disclosure = e.detail ?? '')}
+        on:parseerror={(e) => (disclosure = `Parse error: ${e.detail.code} — ${e.detail.message}`)}
+      />
+    {:else}
+      <ModelViewer
+        bind:this={modelViewer}
+        source={modelSource}
+        {view}
+        background="transparent"
+        on:ready={onModelReady}
+        on:error={(e) => (disclosure = `Model error: ${e.detail.code} — ${e.detail.message}`)}
+      />
+    {/if}
+    {#if !prepare && legend}
       <div class="sc-legend-card">
-        <span class="gp-eyebrow">{mode.label}</span>
+        <span class="gp-eyebrow">{colorModeItem.label}</span>
         <div class="gp-legend">
           {#each legend as [label, rgb]}
             <span class="gp-legend-item">
@@ -181,13 +246,17 @@
         </button>
       {/each}
     </div>
-    {#if segments > 0}
+    {#if !prepare && segments > 0}
       <div class="sc-count">{countLabel}</div>
+    {/if}
+    {#if prepare && modelInfo}
+      <div class="sc-count">{modelCountLabel}</div>
     {/if}
   </div>
 
   <aside class="sc-rail">
     <div class="gp-scroll">
+      {#if !prepare}
       <section class="gp-panel">
         <h3>Appearance</h3>
         <div class="gp-field">
@@ -249,18 +318,38 @@
           <p class="gp-reason" style="margin-top: var(--gp-space-2)">Click the model to identify a segment.</p>
         {/if}
       </section>
+      {:else}
+      <section class="gp-panel">
+        <h3>Source model</h3>
+        <p class="gp-reason" style="margin-bottom: var(--gp-space-3)">{modelFx ? modelFx.blurb : ''}</p>
+        {#if modelInfo}
+          <div class="gp-mono">
+            <div>objects: {formatCount(modelInfo.objectCount)}</div>
+            <div>placements: {formatCount(modelInfo.instancedCount)}</div>
+            <div>materials: <span class="gp-badge {materialsTier.cls}">{materialsTier.label}</span></div>
+            {#if modelInfo.plates}<div>plates: {modelInfo.plates.list.length}</div>{/if}
+          </div>
+        {:else}
+          <p class="gp-reason">Press Load to view a source model.</p>
+        {/if}
+      </section>
+      {/if}
     </div>
   </aside>
 </div>
 
 <footer class="sc-status">
   <div class="sc-caps">
-    {#each CAP_KEYS as k}
-      <span class="gp-badge {confidenceTier(caps[k]).cls}" title="{k}: {confidenceTier(caps[k]).label}">
-        {k} · {confidenceTier(caps[k]).label}
-      </span>
-    {/each}
+    {#if !prepare}
+      {#each CAP_KEYS as k}
+        <span class="gp-badge {confidenceTier(caps[k]).cls}" title="{k}: {confidenceTier(caps[k]).label}">
+          {k} · {confidenceTier(caps[k]).label}
+        </span>
+      {/each}
+    {:else if modelInfo}
+      <span class="gp-badge {materialsTier.cls}">materials · {materialsTier.label}</span>
+    {/if}
   </div>
   <div class="sc-spacer" />
-  <span>{disclosure || (fixture ? fixture.blurb : 'Pick a fixture to begin.')}</span>
+  <span>{statusText}</span>
 </footer>

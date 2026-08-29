@@ -69,17 +69,22 @@
     <main>
       <h1>@chestnutlabs/gcode-preview-svelte</h1>
       <p class="lede">
-        Two example apps built on the published Svelte adapter. Both drive the real package — no raw
-        renderer or parser imports.
+        Example apps built on the published Svelte adapter — both halves of the SDK: sliced G-code
+        (Preview) and source models (Prepare). All drive the real package — no raw renderer or parser
+        imports.
       </p>
       <div class="tiers">
         <a class="card" href="./minimal.html">
           <h2>Minimal →</h2>
-          <span>The smallest real integration: <code>&lt;GcodePreview {source} /&gt;</code> plus a fixture picker and a layer slider. One short component to copy.</span>
+          <span>The smallest G-code integration: <code>&lt;GcodePreview {source} /&gt;</code> plus a fixture picker and a layer slider. One short component to copy.</span>
         </a>
         <a class="card" href="./showcase.html">
           <h2>Showcase →</h2>
-          <span>The full declarative surface — color modes with capability gating, feature-role hiding, camera, diagnostics — styled with the shared demo-kit.</span>
+          <span>The full surface — Preview + Prepare, capability-gated color modes, feature-role hiding, camera, diagnostics — styled with the shared demo-kit.</span>
+        </a>
+        <a class="card" href="./model.html">
+          <h2>Minimal model →</h2>
+          <span>The smallest source-model integration: <code>&lt;ModelViewer {source} /&gt;</code> from <code>/model/ModelViewer.svelte</code> for STL / 3MF.</span>
         </a>
       </div>
     </main>

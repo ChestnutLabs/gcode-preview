@@ -6,6 +6,9 @@
  */
 import '../../demo-kit/tokens.css';
 import { createPreviewController } from '@chestnutlabs/gcode-preview-core';
+// DD-031: the Prepare-side controller for source-model (STL/3MF) viewing — the counterpart to the
+// toolpath controller above. The flagship demonstrates both halves of the SDK.
+import { createModelPreviewController } from '@chestnutlabs/gcode-model-renderer';
 import { FeatureRole } from '@chestnutlabs/toolpath-core';
 import {
   COLOR_MODES,
@@ -15,6 +18,8 @@ import {
   rgbCss,
   FIXTURE_GROUPS,
   FIXTURE_BY_ID,
+  MODEL_FIXTURES,
+  MODEL_FIXTURE_BY_ID,
   count,
   duration,
   bytes,
@@ -59,6 +64,85 @@ let fileBytes = 0;
 let capabilities = {};
 let savedCamera = null;
 let ready = false;
+
+// ---- Prepare (source-model) mode: the second half of the SDK, lazily created on first use ----
+let mode = 'preview'; // 'preview' (toolpath) | 'prepare' (source model)
+let modelController = null;
+let modelInfo = null;
+
+function ensureModel() {
+  if (modelController !== null) return modelController;
+  modelController = createModelPreviewController({ background: 'transparent', interactionQuality: 'auto' });
+  modelController.bindCanvas(els.modelView);
+  modelController.onEvent((e) => {
+    if (e.type === 'ready') {
+      modelInfo = e.info;
+      renderModelInfo();
+    } else if (e.type === 'error') {
+      els.status.textContent = `Model error: ${e.code} — ${e.message}`;
+    }
+  });
+  return modelController;
+}
+
+function renderModelInfo() {
+  if (modelInfo === null) {
+    els.modelInfo.textContent = '—';
+    return;
+  }
+  const t = confidenceTier(modelInfo.materials);
+  const plates = modelInfo.plates ? `\nplates: ${modelInfo.plates.list.length}` : '';
+  els.modelInfo.innerHTML =
+    `objects: ${count(modelInfo.objectCount)}\n` +
+    `placements: ${count(modelInfo.instancedCount)}\n` +
+    `materials: <span class="gp-badge ${t.cls}">${t.label}</span>${plates}`;
+}
+
+function populateFixtures(prepare) {
+  els.fixture.innerHTML = '';
+  if (prepare) {
+    for (const m of MODEL_FIXTURES) {
+      const o = document.createElement('option');
+      o.value = m.id;
+      o.textContent = m.label;
+      els.fixture.appendChild(o);
+    }
+    els.fixture.value = 'colored-3mf';
+  } else {
+    for (const g of FIXTURE_GROUPS) {
+      const og = document.createElement('optgroup');
+      og.label = g.group;
+      for (const it of g.items) {
+        const o = document.createElement('option');
+        o.value = it.id;
+        o.textContent = it.label;
+        og.appendChild(o);
+      }
+      els.fixture.appendChild(og);
+    }
+    els.fixture.value = 'skirt-brim';
+  }
+}
+
+function setMode(next) {
+  if (next === mode) return;
+  mode = next;
+  const prepare = next === 'prepare';
+  for (const b of els.modeSeg.children) b.classList.toggle('gp-on', b.dataset.mode === next);
+  els.view.hidden = prepare;
+  els.modelView.hidden = !prepare;
+  // Toolpath tabs are irrelevant in Prepare; show only the Prepare tab and select it (and vice-versa).
+  for (const t of els.tabs.querySelectorAll('.gp-tab')) {
+    if (t.dataset.tab !== 'prepare') t.hidden = prepare;
+  }
+  document.querySelector('[data-tab="prepare"]').hidden = !prepare;
+  selectTab(prepare ? 'prepare' : 'inspect');
+  populateFixtures(prepare);
+  els.legendCard.hidden = true;
+  els.countPill.hidden = true;
+  if (prepare) ensureModel();
+  loadSelected();
+}
 
 // ============ fixture picker ============
 for (const g of FIXTURE_GROUPS) {
@@ -136,6 +220,7 @@ function renderLegend() {
 
 // ============ parse / load ============
 async function loadSelected() {
+  if (mode === 'prepare') return loadSelectedModel();
   const fx = FIXTURE_BY_ID[els.fixture.value];
   if (!fx) return;
   els.status.textContent = `Fetching ${fx.label}…`;
@@ -146,6 +231,18 @@ async function loadSelected() {
   } catch (err) {
     els.status.textContent = `Could not fetch ${fx.label}: ${err.message}`;
   }
+}
+
+// Prepare: hand the model controller a synthetic MIT-clean source model (no fetch). Its `ready` event
+// (wired in ensureModel) populates the Source-model panel with the honest capability tier + counts.
+function loadSelectedModel() {
+  const fx = MODEL_FIXTURE_BY_ID[els.fixture.value];
+  if (!fx) return;
+  modelInfo = null;
+  renderModelInfo();
+  els.status.textContent = `${fx.label} — ${fx.blurb}`;
+  els.modelBlurb.textContent = fx.blurb;
+  ensureModel().controls.setSource(fx.source());
 }
 
 async function parseInput(input, label) {
@@ -338,11 +435,18 @@ els.capture.addEventListener('click', async () => {
 });
 
 // ============ wiring: tabs + rail ============
+function selectTab(name) {
+  for (const t of els.tabs.querySelectorAll('.gp-tab')) t.classList.toggle('gp-on', t.dataset.tab === name);
+  for (const p of document.querySelectorAll('[data-panel]')) p.hidden = p.dataset.panel !== name;
+}
 els.tabs.addEventListener('click', (ev) => {
   const btn = ev.target.closest('[data-tab]');
   if (!btn) return;
-  for (const t of els.tabs.querySelectorAll('.gp-tab')) t.classList.toggle('gp-on', t === btn);
-  for (const p of document.querySelectorAll('[data-panel]')) p.hidden = p.dataset.panel !== btn.dataset.tab;
+  selectTab(btn.dataset.tab);
+});
+els.modeSeg.addEventListener('click', (ev) => {
+  const b = ev.target.closest('[data-mode]');
+  if (b) setMode(b.dataset.mode);
 });
 els.railToggle.addEventListener('click', () => els.main.classList.toggle('gp-rail-collapsed'));
 
@@ -386,10 +490,12 @@ els.projToggle.addEventListener('click', () => {
   preview.controls.setCameraMode(next);
   void cur;
 });
+// Camera presets + frame route to whichever viewer is active (toolpath or source model).
+const activeControls = () => (mode === 'prepare' && modelController !== null ? modelController.controls : preview.controls);
 document
   .querySelectorAll('[data-view]')
-  .forEach((b) => b.addEventListener('click', () => preview.controls.setView(b.dataset.view)));
-els.frame.addEventListener('click', () => preview.controls.frame());
+  .forEach((b) => b.addEventListener('click', () => activeControls().setView(b.dataset.view)));
+els.frame.addEventListener('click', () => activeControls().frame());
 els.frameSeg.addEventListener('click', (ev) => {
   const b = ev.target.closest('[data-frame]');
   if (!b) return;
@@ -515,9 +621,12 @@ new ResizeObserver(() => {
   const r = preview.raw.renderer();
   if (r) r.resize(els.view.clientWidth, els.view.clientHeight);
 }).observe(els.view);
+new ResizeObserver(() => {
+  if (modelController !== null) modelController.controls.resize(els.modelView.clientWidth, els.modelView.clientHeight);
+}).observe(els.modelView);
 
 // expose for automated verification (kept minimal — the flagship path is the controller)
-window.viewer = { preview };
+window.viewer = { preview, model: () => modelController };
 
 // STL export lives on a header-adjacent action only when useful; keep the util imported (used by tests).
 void downloadToolpathStl;

@@ -37,10 +37,17 @@
         min-width: 0;
         background: var(--gp-viewport);
       }
-      .sc-viewport gcode-preview {
+      .sc-viewport gcode-preview,
+      .sc-viewport gcode-model-viewer {
         display: block;
         width: 100%;
         height: 100%;
+      }
+      /* A CSS `display` rule beats the UA `[hidden]` rule, so restore hiding explicitly for the two
+         viewers we swap between Preview and Prepare. */
+      .sc-viewport gcode-preview[hidden],
+      .sc-viewport gcode-model-viewer[hidden] {
+        display: none;
       }
       .sc-legend-card {
         position: absolute;
@@ -119,6 +126,12 @@
         <span class="gp-title">G-code Preview · Web Component</span>
         <span class="gp-eyebrow">Showcase</span>
       </div>
+      <!-- Preview (sliced toolpath) vs Prepare (source model) — the two halves of the SDK. -->
+      <div class="gp-segment" role="group" aria-label="Workflow">
+        <button id="modePreview" class="gp-on">Preview</button>
+        <button id="modePrepare">Prepare</button>
+      </div>
+      <!-- One select, repopulated per mode: toolpath fixtures in Preview, MODEL_FIXTURES in Prepare. -->
       <select id="fixture" class="gp-input" style="width: 220px"></select>
       <button id="load" class="gp-btn gp-primary">Load</button>
       <div class="sc-spacer"></div>
@@ -133,6 +146,9 @@
         <!-- The published Web Component. Objects (source, colorMode) are properties; primitives
              (layer-range, show-travel, view, frame-content) are attributes. -->
         <gcode-preview id="view" frame-content="object" quality="auto"></gcode-preview>
+        <!-- The Prepare-side viewer: source-model (STL / 3MF). `source` is a property; `view` and
+             `background` are attributes. Hidden until the Prepare mode is selected. -->
+        <gcode-model-viewer id="modelView" view="iso" background="transparent" hidden></gcode-model-viewer>
         <div class="sc-legend-card" id="legendCard" hidden>
           <span class="gp-eyebrow" id="legendTitle"></span>
           <div class="gp-legend" id="legend"></div>
@@ -147,6 +163,8 @@
 
       <aside class="sc-rail">
         <div class="gp-scroll">
+          <!-- Preview-only panels: appearance / filter / diagnostics of the sliced toolpath. -->
+          <div id="previewPanels">
           <section class="gp-panel">
             <h3>Appearance</h3>
             <div class="gp-field">
@@ -181,6 +199,14 @@
             <button class="gp-btn" id="stats" disabled>Read render stats</button>
             <div class="gp-mono" id="statsOut" style="margin-top: var(--gp-space-3)"></div>
             <p class="gp-reason" id="pickOut" style="margin-top: var(--gp-space-2)"></p>
+          </section>
+          </div>
+
+          <!-- Prepare-only panel: what the source model exposes (objects / placements / material tier). -->
+          <section class="gp-panel" id="modelPanel" hidden>
+            <h3>Source model</h3>
+            <p class="gp-reason" id="modelBlurb" style="margin-bottom: var(--gp-space-3)"></p>
+            <div class="gp-mono" id="modelInfo"></div>
           </section>
         </div>
       </aside>

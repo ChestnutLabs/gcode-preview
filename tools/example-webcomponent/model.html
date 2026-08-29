@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>gcode-preview element — minimal model viewer</title>
+    <style>
+      body {
+        margin: 0;
+        font-family: system-ui, sans-serif;
+        background: #10151b;
+        color: #dfe7ef;
+        height: 100vh;
+        display: grid;
+        grid-template-rows: auto 1fr;
+      }
+      header {
+        display: flex;
+        gap: 0.75rem;
+        align-items: center;
+        padding: 0.75rem 1rem;
+        border-bottom: 1px solid #2a3542;
+      }
+      header strong {
+        font-size: 0.9rem;
+      }
+      header span {
+        font-size: 0.85rem;
+        color: #9fb0c0;
+      }
+      /* The element fills its grid cell; give it a definite box to render into. */
+      gcode-model-viewer {
+        display: block;
+        min-height: 0;
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <strong>gcode-model-viewer · minimal</strong>
+      <select id="fixture">
+        <option value="" selected disabled>Load a model…</option>
+      </select>
+      <span id="info"></span>
+    </header>
+    <!-- The source-model viewer. `source` is a property (objects can't be attributes). -->
+    <gcode-model-viewer id="view" background="transparent"></gcode-model-viewer>
+    <script type="module" src="/src/model-minimal.js"></script>
+  </body>
+</html>

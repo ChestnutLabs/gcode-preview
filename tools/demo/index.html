@@ -89,12 +89,18 @@
         background: var(--gp-viewport);
         overflow: hidden;
       }
-      #view {
+      #view,
+      #modelView {
         width: 100%;
         height: 100%;
         display: block;
         touch-action: none;
         outline: none;
+      }
+      /* A CSS display rule beats the UA [hidden] rule — restore hiding for the swapped viewer. */
+      #view[hidden],
+      #modelView[hidden] {
+        display: none;
       }
 
       /* floating viewport overlays */
@@ -342,6 +348,11 @@
           </div>
         </div>
         <div class="gp-job">
+          <!-- Preview (sliced G-code) vs Prepare (source model) — the two halves of the SDK. -->
+          <div class="gp-segment" id="modeSeg" role="group" aria-label="Workflow">
+            <button data-mode="preview" class="gp-on">Preview</button>
+            <button data-mode="prepare">Prepare</button>
+          </div>
           <select id="fixture" class="gp-input" aria-label="Sample file"></select>
           <button id="open" class="gp-btn">Open file…</button>
           <input id="file" type="file" accept=".gcode,.gco,.g,.nc,.ngc,.bgcode,.3mf" hidden />
@@ -360,6 +371,8 @@
       <div class="gp-main" id="main">
         <div class="gp-viewport-wrap">
           <canvas id="view" tabindex="0" aria-label="3D G-code toolpath preview"></canvas>
+          <!-- Prepare-side source-model viewer (STL / 3MF); swapped in for #view in Prepare mode. -->
+          <canvas id="modelView" tabindex="0" aria-label="3D source-model preview" hidden></canvas>
 
           <div class="gp-vp-overlay gp-vp-tl">
             <div class="gp-glass gp-legend-card" id="legendCard" hidden>
@@ -404,6 +417,7 @@
             <button class="gp-tab" data-tab="progress" role="tab">Progress</button>
             <button class="gp-tab" data-tab="cnc" data-context="cam" role="tab" hidden>CNC</button>
             <button class="gp-tab" data-tab="diagnostics" role="tab">Diag</button>
+            <button class="gp-tab" data-tab="prepare" data-context="model" role="tab" hidden>Prepare</button>
           </div>
           <div class="gp-rail-body gp-scroll" id="railBody">
             <!-- INSPECT -->
@@ -560,6 +574,11 @@
               <h3>Render diagnostics</h3>
               <button class="gp-btn" id="showStats">Read render stats</button>
               <pre id="renderStats">Load a file, then read the render stats (backend, GPU, geometry, timings).</pre>
+            </section>
+            <section class="gp-panel" data-panel="prepare" hidden>
+              <h3>Source model</h3>
+              <p class="gp-hint" id="modelBlurb">Pick a model and press Load to view it before slicing.</p>
+              <div class="gp-mono" id="modelInfo" style="margin-top: var(--gp-space-3)">—</div>
             </section>
           </div>
         </aside>

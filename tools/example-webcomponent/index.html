@@ -69,17 +69,23 @@
     <main>
       <h1>@chestnutlabs/gcode-preview-element</h1>
       <p class="lede">
-        Two example apps built on the published <code>&lt;gcode-preview&gt;</code> Web Component —
-        framework-free, vanilla JS. Both drive the real package: no raw renderer or parser imports.
+        Example apps built on the published <code>&lt;gcode-preview&gt;</code> and
+        <code>&lt;gcode-model-viewer&gt;</code> Web Components — framework-free, vanilla JS. They cover
+        both halves of the SDK: <strong>Preview</strong> a sliced toolpath and <strong>Prepare</strong>
+        a source model. All drive the real package: no raw renderer or parser imports.
       </p>
       <div class="tiers">
         <a class="card" href="./minimal.html">
           <h2>Minimal →</h2>
           <span>The smallest real integration: register the element, set <code>.source</code>, listen for <code>ready</code>. One short script.</span>
         </a>
+        <a class="card" href="./model.html">
+          <h2>Minimal model →</h2>
+          <span>The Prepare side: register <code>&lt;gcode-model-viewer&gt;</code>, set <code>.source</code> to an STL/3MF, read the <code>ready</code> info. Just as small.</span>
+        </a>
         <a class="card" href="./showcase.html">
           <h2>Showcase →</h2>
-          <span>The full surface — the attribute/property split, <code>element.controls</code> diagnostics, capability-gated color modes — styled with the shared demo-kit.</span>
+          <span>The full surface — Preview/Prepare, the attribute/property split, <code>element.controls</code> diagnostics, capability-gated color modes — styled with the shared demo-kit.</span>
         </a>
       </div>
     </main>
