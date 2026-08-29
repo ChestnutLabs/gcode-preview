@@ -121,8 +121,10 @@ for (const btn of document.querySelectorAll('.sc-cam button')) {
 }
 
 // ---- diagnostics: element.controls ----
-$('stats').addEventListener('click', () => {
+function readStats() {
   const s = view.controls.getRenderStats();
+  // Render nothing until stats exist (they populate a tick after build-complete) — parity with the
+  // framework showcases, which also silently no-op a null read rather than showing an error line.
   $('statsOut').textContent = s
     ? [
         `backend: ${s.backend} (${s.capability})`,
@@ -133,8 +135,9 @@ $('stats').addEventListener('click', () => {
       ]
         .filter(Boolean)
         .join('\n')
-    : '(no stats — renderer not ready)';
-});
+    : '';
+}
+$('stats').addEventListener('click', readStats);
 $('viewport').addEventListener('click', (e) => {
   const c = view.querySelector('canvas') ?? view.shadowRoot?.querySelector('canvas');
   if (!c || layers === 0) return;
@@ -157,6 +160,7 @@ renderCaps();
 
 // ---- events from the element (CustomEvent; detail shapes match the adapter contract) ----
 view.addEventListener('ready', (e) => {
+  if (typeof window !== 'undefined') window.gcodePreview = view; // element handle, for devtools/inspection
   const s = e.detail;
   caps = s.capabilities;
   layers = s.layers;
@@ -197,7 +201,7 @@ view.addEventListener('ready', (e) => {
 
   $('stats').disabled = segments === 0;
 });
-view.addEventListener('build-complete', () => $('stats').click());
+view.addEventListener('build-complete', readStats);
 view.addEventListener('disclosure', (e) => {
   if (e.detail?.text) $('disclosure').textContent = e.detail.text; // WC wraps disclosure as { text }
 });

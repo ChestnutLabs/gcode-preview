@@ -75,6 +75,7 @@ function App() {
   }
 
   function onReady(s) {
+    if (typeof window !== 'undefined') window.gcodePreview = ref.current; // handle, for devtools/inspection
     setCaps(s.capabilities);
     setLayers(s.layers);
     setSegments(s.segments);

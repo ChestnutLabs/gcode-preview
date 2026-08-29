@@ -83,6 +83,7 @@ function onReady(summary) {
   layers.value = summary.layers;
   segments.value = summary.segments;
   topLayer.value = Math.max(0, summary.layers - 1);
+  if (typeof window !== 'undefined') window.gcodePreview = viewer.value?.preview; // for devtools/inspection
   const st = viewer.value?.preview?.state;
   if (st) {
     hasRetractions.value = st.hasRetractions;

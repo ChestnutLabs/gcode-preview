@@ -92,6 +92,7 @@
     layers = s.layers;
     segments = s.segments;
     topLayer = Math.max(0, s.layers - 1);
+    if (typeof window !== 'undefined') window.gcodePreview = viewer?.preview; // for devtools/inspection
     const st = stateSnapshot();
     if (st) {
       hasRetractions = st.hasRetractions;
