@@ -25,14 +25,20 @@ it automatically; pnpm/yarn users add it explicitly. See the
 </div>
 ```
 
-That is a complete viewer. The component ships as a **raw `.svelte` file** (standard Svelte
-library packaging — your bundler's svelte plugin compiles it via the `svelte` export condition).
-Full defaulted prop surface: `source`, `parseOptions`, `buildVolume` (consumer-wins bed
-precedence), `quality`, `colorMode`, `layerRange`, `scrub`, `showTravel`, `progress` (DD-006
-observation), `createWorker`. Events: `ready`, `parseerror`, `parsecancelled`, `parseprogress`,
-`buildcomplete`, `qualityfallback`, `machinegeometrymismatch`/`discovered`,
-`progresspresentationchanged`, `disclosure`, `error`. The full handle is exported as `preview`
-(`bind:this` then `.preview`).
+That is a complete viewer. The component ships from the `/GcodePreview.svelte` subpath as a **raw
+`.svelte` file** (standard Svelte library packaging — your bundler's svelte plugin compiles it via
+the `svelte` export condition), not from the package index. The ~24-prop defaulted surface covers
+`source`, `parseOptions`, `buildVolume` (consumer-wins bed precedence), `quality` / `qualityMode`,
+`colorMode`, `theme`, `cameraMode` / `view` / `frameContent`, `layerRange`, `scrub`, `showTravel` /
+`showRetractions` / `showWipe`, `hiddenFeatureRoles` (hide feature roles like Skirt or Brim; gate on
+`capabilities.featureRoles`), `progress` (DD-006 observation), and `createWorker`. Events (13):
+`ready`, `camerachange`, `parseerror`, `parsecancelled`, `parseprogress`, `stage`, `buildcomplete`,
+`qualityfallback`, `machinegeometrymismatch`/`discovered`, `progresspresentationchanged`,
+`disclosure`, `error`. The full handle is exported as `preview` (`bind:this` then `.preview`); its
+`controls` reach the imperative surface — `getRenderStats()` (render diagnostics),
+`pickSegment(ndcX, ndcY, threshold?)` (source-mapping / picking), `isColorModeAvailable(mode)`, and
+`capture(opts?)` (image `Blob`, also `preview.capture`). The handle `state` carries capability-aware
+UI data (`availableColorModes`, `hasRetractions`, `hasColorChanges`).
 
 ## Store/action API (build your own controls)
 
@@ -61,7 +67,44 @@ Batteries default (all dialect adapters + `.gcode.3mf`) needs zero setup under V
 identical across all three framework adapters by design (see the Vue README for the shared worker
 documentation).
 
-## Example
+## Model viewing (Prepare side)
 
-`tools/example-svelte` in the repository is a complete Vite + Svelte app (corpus load,
-layer/scrub, simulated live progress) compiling the raw component through the export condition.
+The `/model` subpath ships a `<ModelViewer>` — the **Prepare**-side counterpart to `<GcodePreview>`.
+Where `<GcodePreview>` draws the toolpath (how a print runs), `<ModelViewer>` draws the **source
+model** (an `.stl` / `.3mf` mesh) — the object before slicing.
+
+```svelte
+<script>
+  import ModelViewer from '@chestnutlabs/gcode-preview-svelte/model/ModelViewer.svelte';
+  export let bytes;
+</script>
+
+<div style="height: 70vh">
+  <ModelViewer
+    source={{ kind: '3mf', bytes }}
+    on:ready={(e) => console.log(e.detail.objectCount, e.detail.materials)}
+  />
+</div>
+```
+
+`on:ready` (detail-wrapped, like the other Svelte events) carries the honest material-colour tier:
+`e.detail.materials` is `'known'` / `'approximated'` when the file declared colours the render used,
+and `'unavailable'` when it declared none (a neutral default, never faked). The `createModelViewer`
+store handle mirrors the toolpath component. See
+[`docs/manual/adapters.md`](../../docs/manual/adapters.md) "Two viewers: Preview and Prepare" for the
+cross-adapter tour, and `tools/example-svelte/model.html` for a runnable minimal page.
+
+## Examples
+
+`tools/example-svelte` in the repository is a Vite app with two tiers, both driving this published
+package through the `.svelte` export condition (no raw renderer or parser imports):
+
+- **`minimal.html`** — the smallest real integration: `<GcodePreview {source}>` plus a fixture
+  picker and a layer slider. One short component to copy when getting started.
+- **`showcase.html`** — the full declarative surface: capability-gated color modes (a mode greys out
+  with a plain-language reason when the file can't support it), declarative `hiddenFeatureRoles`,
+  camera, and `getRenderStats()`/`pickSegment()` diagnostics through the `bind:this` handle
+  (`viewer.preview.controls`); the handle's store-contract `state` supplies the reactive UI data.
+
+Run it with `npm install --prefix tools/example-svelte && npm run dev --prefix tools/example-svelte`
+(port 5202).

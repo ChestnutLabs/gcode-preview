@@ -1521,9 +1521,25 @@ export class ToolpathRenderer {
     this.stage.setCameraState(state);
   }
 
-  /** Capture the current view as an image `Blob` (DD-030 D1) — delegates to the shared stage. */
-  capture(opts?: CaptureOptions): Promise<Blob> {
-    return this.stage.capture(opts);
+  /**
+   * Capture the current view as an image `Blob` (DD-030 D1) — delegates to the shared stage. With
+   * `includeBuildVolume: false` the whole build-volume group (grid/bed/origin/cage) is hidden for the
+   * off-screen render only, so `background:'transparent'` yields a clean toolpath-only cutout (parity
+   * with `ModelRenderer` thumbnails). The live view is untouched: the visibility is restored
+   * synchronously before control returns to the event loop, so no intermediate frame is ever painted.
+   */
+  async capture(opts?: CaptureOptions): Promise<Blob> {
+    const hideVolume = opts?.includeBuildVolume === false && this.volumeGroup !== null;
+    const prevVisible = this.volumeGroup?.visible ?? true;
+    if (hideVolume) this.volumeGroup!.visible = false;
+    try {
+      return await this.stage.capture(opts);
+    } finally {
+      if (hideVolume) {
+        this.volumeGroup!.visible = prevVisible;
+        this.render();
+      }
+    }
   }
 
   /**

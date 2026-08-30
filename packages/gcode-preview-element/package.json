@@ -38,6 +38,14 @@
     "./define": {
       "types": "./dist/define.d.ts",
       "import": "./dist/define.js"
+    },
+    "./model": {
+      "types": "./dist/model/index.d.ts",
+      "import": "./dist/model/index.js"
+    },
+    "./model/define": {
+      "types": "./dist/model/define.d.ts",
+      "import": "./dist/model/define.js"
     }
   },
   "files": [
@@ -52,6 +60,7 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@chestnutlabs/gcode-model-renderer": "0.19.0",
     "@chestnutlabs/gcode-parser": "0.19.0",
     "@chestnutlabs/gcode-preview-core": "0.19.0",
     "@chestnutlabs/gcode-renderer-three": "0.19.0",

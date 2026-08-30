@@ -34,23 +34,32 @@ const file = shallowRef<File | null>(null);
 </template>
 ```
 
-That is a complete viewer. The full surface is optional props with sensible defaults:
+That is a complete viewer. The full surface is ~24 optional props with sensible defaults — the
+frequently reached-for ones:
 
 | Prop | Purpose |
 |---|---|
 | `source` | `Uint8Array \| ArrayBuffer \| File` — changing it re-parses |
 | `parse-options` | wire options (limits, dialects, containers, plate selection) |
+| `renderer` | `'3d'` (Three.js) or `'2d'` (Canvas fallback) — construction-time |
 | `build-volume` | consumer-configured plate — wins over file-discovered geometry; discovery is then emitted, not applied |
-| `quality` | `'auto' \| 'lines' \| 'tubes'` |
-| `color-mode` | single / by-tool / by-feature (feature coloring is capability-gated — listen for `error`) |
-| `layer-range` / `scrub` / `show-travel` | clipping controls |
+| `quality` / `quality-mode` | `'auto' \| 'lines' \| 'tubes'`; render-quality budget (`'full' \| 'adaptive' \| 'fast'`) |
+| `color-mode` | single / by-tool / by-feature (feature coloring is capability-gated — check `state.availableColorModes` or listen for `error`) |
+| `theme` | viewer theme (background, bed, toolpath palette) |
+| `camera-mode` / `view` / `camera-state` / `frame-content` | perspective/orthographic, named view, saved camera, framing target |
+| `layer-range` / `scrub` / `scrub-time` | clipping / time-based scrub controls |
+| `show-travel` / `show-wipe` / `show-retractions` / `show-volume-cage` | move-class and overlay visibility toggles |
+| `hidden-feature-roles` | hide feature roles (e.g. Skirt, Brim) — declarative form of `controls.setFeatureRoleVisible`; gate on `capabilities.featureRoles` |
 | `progress` | a DD-006 `ProgressObservation` — drives the honest live-progress overlay (marker for byte-exact, uncertainty band for approximate, gray when stale) |
 | `create-worker` | worker factory escape hatch (see below) |
 
-Emits: `ready`, `parse-error`, `parse-cancelled`, `parse-progress`, `build-complete`,
-`quality-fallback`, `machine-geometry-mismatch`, `machine-geometry-discovered`,
+Emits (13): `ready`, `camera-change`, `parse-error`, `parse-cancelled`, `parse-progress`, `stage`,
+`build-complete`, `quality-fallback`, `machine-geometry-mismatch`, `machine-geometry-discovered`,
 `progress-presentation-changed`, `disclosure`, `error`. The underlying handle is exposed for
-template refs (`ref.preview`).
+template refs (`ref.preview`); its `controls` reach the imperative surface — `getRenderStats()`
+(render diagnostics), `pickSegment(ndcX, ndcY, threshold?)` (source-mapping / picking),
+`isColorModeAvailable(mode)`, and `capture(opts?)` (image `Blob`, also `handle.capture`). The handle
+`state` carries capability-aware UI data (`availableColorModes`, `hasRetractions`, `hasColorChanges`).
 
 ## Headless composable (build your own controls)
 
@@ -88,6 +97,48 @@ useGcodePreview({
 Linked-workspace development note: Vite consumers using `file:` links should add every
 `@chestnutlabs/*` package the worker pulls in to `optimizeDeps.exclude` (installed tarballs/registry
 packages need no configuration).
+
+## Model viewing (Prepare side)
+
+The `/model` subpath ships a `<ModelViewer>` — the **Prepare**-side counterpart to `<GcodePreview>`.
+Where `<GcodePreview>` draws the toolpath (how a print runs), `<ModelViewer>` draws the **source
+model** (an `.stl` / `.3mf` mesh) — the object before slicing.
+
+```vue
+<script setup lang="ts">
+import { ModelViewer } from '@chestnutlabs/gcode-preview-vue/model';
+
+const source = { kind: '3mf' as const, bytes };
+</script>
+
+<template>
+  <div style="height: 70vh">
+    <ModelViewer :source="source" @ready="(info) => console.log(info.objectCount, info.materials)" />
+  </div>
+</template>
+```
+
+`@ready` carries the honest material-colour tier: `info.materials` is `'known'` / `'approximated'`
+when the file declared colours the render used, and `'unavailable'` when it declared none (a neutral
+default, never faked). The kebab props (`:view`, `:background`, `:render-scope`, …), matching emits,
+and the `useModelViewer` composable mirror the toolpath component. See
+[`docs/manual/adapters.md`](../../docs/manual/adapters.md) "Two viewers: Preview and Prepare" for the
+cross-adapter tour, and `tools/example-vue/model.html` for a runnable minimal page.
+
+## Examples
+
+`tools/example-vue` in the repository is a Vite app with two tiers, both driving this published
+package (no raw renderer or parser imports):
+
+- **`minimal.html`** — the smallest real integration: `<GcodePreview :source>` plus a fixture picker
+  and a layer slider. One short component to copy when getting started.
+- **`showcase.html`** — the full declarative surface: capability-gated color modes (a mode greys out
+  with a plain-language reason when the file can't support it), declarative `:hidden-feature-roles`,
+  camera, and `getRenderStats()`/`pickSegment()` diagnostics through the component ref's handle
+  (`viewer.preview.controls`), whose `state` mirror is directly reactive in Vue.
+
+Run it with `npm install --prefix tools/example-vue && npm run dev --prefix tools/example-vue`
+(port 5203).
 
 ## Capability honesty
 

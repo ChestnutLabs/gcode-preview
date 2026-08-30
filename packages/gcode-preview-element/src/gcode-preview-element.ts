@@ -29,7 +29,12 @@ import type {
   Theme,
   TubeOptions
 } from '@chestnutlabs/gcode-renderer-three';
-import type { MachineGeometry, MappedProgress, ProgressObservation } from '@chestnutlabs/toolpath-core';
+import type {
+  FeatureRoleValue,
+  MachineGeometry,
+  MappedProgress,
+  ProgressObservation
+} from '@chestnutlabs/toolpath-core';
 import type { WireParseOptions, WorkerLike } from '@chestnutlabs/gcode-parser';
 
 export type GcodePreviewSource = Uint8Array | ArrayBuffer | File | null;
@@ -65,7 +70,8 @@ const OBSERVED = [
   'show-volume-cage',
   'scrub',
   'scrub-time',
-  'layer-range'
+  'layer-range',
+  'hidden-feature-roles'
 ] as const;
 
 /** The default tag name (DD-009 §4.5). */
@@ -90,6 +96,8 @@ export class GcodePreviewElement extends HTMLElement {
   private _createWorker: (() => WorkerLike) | undefined;
   private _rendererOptions: ElementRendererOptions | undefined;
   private _cameraState: CameraState | null = null;
+  /** Which roles the `hidden-feature-roles` attribute last hid, for prev→next diffing (DD-031 G3). */
+  private prevHiddenRoles: number[] = [];
 
   // ---- rich-option property accessors ----
   get source(): GcodePreviewSource {
@@ -150,6 +158,26 @@ export class GcodePreviewElement extends HTMLElement {
   }
   set rendererOptions(v: ElementRendererOptions | undefined) {
     this._rendererOptions = v; // construction-only injectables
+  }
+  /**
+   * DD-014 D5 renderer selection (DD-031 E1): reflected property accessor over the `renderer`
+   * attribute. Construction-time like every adapter — read once at connect; changing it after the
+   * element is connected has no effect (mode switching post-mount is out of scope), it just keeps the
+   * attribute and property in sync so the value is readable/consistent.
+   */
+  get renderer(): string | null {
+    return this.getAttribute('renderer');
+  }
+  set renderer(v: string | null) {
+    this.reflect('renderer', v);
+  }
+  /** 2D only: preceding "ghost" layers (DD-031 E1). Construction-time; reflected accessor over the attribute. */
+  get adjacentLayers(): number | null {
+    const a = this.getAttribute('adjacent-layers');
+    return a === null ? null : Number(a);
+  }
+  set adjacentLayers(v: number | null) {
+    this.reflect('adjacent-layers', v);
   }
 
   // ---- scalar-option accessors (reflect to attributes: one source of truth) ----
@@ -255,6 +283,17 @@ export class GcodePreviewElement extends HTMLElement {
   }
   set layerRange(v: [number, number] | null) {
     this.reflect('layer-range', v === null ? null : `${v[0]},${v[1]}`);
+  }
+  /**
+   * DD-031 G3: feature roles to hide, as a comma-separated numeric list (`hidden-feature-roles="6,7"`
+   * for Skirt+Brim). Declarative form of `controls.setFeatureRoleVisible`; gate on
+   * `capabilities.featureRoles`. Import `FeatureRole` from `@chestnutlabs/toolpath-core` for the values.
+   */
+  get hiddenFeatureRoles(): number[] {
+    return parseRoleList(this.getAttribute('hidden-feature-roles'));
+  }
+  set hiddenFeatureRoles(v: number[] | null) {
+    this.reflect('hidden-feature-roles', v === null || v.length === 0 ? null : v.join(','));
   }
 
   // ---- handle-parity passthrough (advanced/parity surface; DOM events are the ergonomic one) ----
@@ -384,6 +423,9 @@ export class GcodePreviewElement extends HTMLElement {
         else c.setLayerRange(r[0], r[1]);
         break;
       }
+      case 'hidden-feature-roles':
+        this.applyHiddenRoles(parseRoleList(value));
+        break;
       default:
         break;
     }
@@ -402,7 +444,21 @@ export class GcodePreviewElement extends HTMLElement {
     else c.setLayerRange(r[0], r[1]);
     c.setScrubPosition(this.scrub);
     c.setScrubTime(this.scrubTime);
+    this.applyHiddenRoles(this.hiddenFeatureRoles);
     this.applyProgress();
+  }
+
+  /** Feature-role visibility (DD-031 G3): diff prev→next so we only toggle roles this attribute owns. */
+  private applyHiddenRoles(next: number[]): void {
+    if (this.controller === null) return;
+    const c = this.controller.controls;
+    for (const role of this.prevHiddenRoles) {
+      if (!next.includes(role)) c.setFeatureRoleVisible(role as FeatureRoleValue, true);
+    }
+    for (const role of next) {
+      if (!this.prevHiddenRoles.includes(role)) c.setFeatureRoleVisible(role as FeatureRoleValue, false);
+    }
+    this.prevHiddenRoles = [...next];
   }
 
   private applyProgress(): void {
@@ -485,6 +541,15 @@ function parseLayerRange(value: string | null): [number, number] | null {
   const parts = value.split(',').map((s) => Number(s.trim()));
   if (parts.length !== 2 || parts.some((n) => Number.isNaN(n))) return null;
   return [parts[0], parts[1]];
+}
+
+/** Parse `hidden-feature-roles="6,7"` into a numeric role list; ignores blanks/NaN (DD-031 G3). */
+function parseRoleList(value: string | null): number[] {
+  if (value === null || value.trim() === '') return [];
+  return value
+    .split(',')
+    .map((s) => Number(s.trim()))
+    .filter((n) => Number.isFinite(n));
 }
 
 /**

@@ -24,7 +24,7 @@ import type {
   TubeOptions
 } from '@chestnutlabs/gcode-renderer-three';
 import type { Confidence, DialectMetadata, Warning } from '@chestnutlabs/toolpath-core';
-import type { MachineGeometry, ProgressObservation } from '@chestnutlabs/toolpath-core';
+import type { FeatureRoleValue, MachineGeometry, ProgressObservation } from '@chestnutlabs/toolpath-core';
 import type { WireParseOptions, WorkerLike } from '@chestnutlabs/gcode-parser';
 import {
   useGcodePreview,
@@ -78,6 +78,9 @@ export const GcodePreview = defineComponent({
     showRetractions: { type: Boolean, default: false },
     /** #306/#6: show the build-volume wireframe cage (independent of the bed/plate). Default true. */
     showVolumeCage: { type: Boolean, default: true },
+    /** DD-031 G3: feature roles to hide (e.g. `[FeatureRole.Skirt, FeatureRole.Brim]` to declutter a
+     *  part). Declarative form of `controls.setFeatureRoleVisible`; gate on `capabilities.featureRoles`. */
+    hiddenFeatureRoles: { type: Array as PropType<FeatureRoleValue[]>, default: undefined },
     /** DD-006 live progress observation; null hides the overlay. */
     progress: { type: Object as PropType<ProgressObservation | null>, default: null },
     /** Worker factory escape hatch (DD-005 slim/custom entries; D2). Factory form only —
@@ -327,6 +330,21 @@ export const GcodePreview = defineComponent({
       (volume) => {
         if (volume !== undefined) preview.controls.setBuildVolume(volume);
       }
+    );
+    // Feature-role visibility (DD-031 G3): diff prev→next so we only toggle roles this prop owns,
+    // leaving any role hidden imperatively elsewhere untouched.
+    let prevHiddenRoles: FeatureRoleValue[] = [];
+    watch(
+      () => props.hiddenFeatureRoles,
+      (roles) => {
+        const next = roles ?? [];
+        for (const role of prevHiddenRoles)
+          if (!next.includes(role)) preview.controls.setFeatureRoleVisible(role, true);
+        for (const role of next)
+          if (!prevHiddenRoles.includes(role)) preview.controls.setFeatureRoleVisible(role, false);
+        prevHiddenRoles = [...next];
+      },
+      { immediate: true }
     );
     watch(
       () => props.progress,

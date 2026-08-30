@@ -51,6 +51,9 @@
   export let showRetractions = false;
   /** #306/#6: show the build-volume wireframe cage (independent of the bed/plate). Default true. */
   export let showVolumeCage = true;
+  /** DD-031 G3: feature roles to hide (e.g. `[FeatureRole.Skirt, FeatureRole.Brim]`). Declarative
+   *  form of `controls.setFeatureRoleVisible`; gate on `capabilities.featureRoles`. */
+  export let hiddenFeatureRoles = undefined;
   /** DD-006 live progress observation; null hides the overlay. */
   export let progress = null;
   /** Worker factory escape hatch (DD-005 slim/custom entries; D2). */
@@ -165,6 +168,18 @@
   $: if (theme !== undefined) preview.controls.setTheme(theme);
   $: if (progress === null || progress === undefined) preview.clearProgress();
   else preview.observeProgress(progress);
+
+  // Feature-role visibility (DD-031 G3): diff prev→next so we only toggle roles this prop owns.
+  // `roleState` is a plain object (property mutation isn't Svelte-tracked) so the reactive block
+  // depends only on `hiddenFeatureRoles` and can't loop on its own bookkeeping.
+  const roleState = { prev: [] };
+  function applyHiddenRoles(roles) {
+    const next = roles ?? [];
+    for (const role of roleState.prev) if (!next.includes(role)) preview.controls.setFeatureRoleVisible(role, true);
+    for (const role of next) if (!roleState.prev.includes(role)) preview.controls.setFeatureRoleVisible(role, false);
+    roleState.prev = [...next];
+  }
+  $: applyHiddenRoles(hiddenFeatureRoles);
 
   onDestroy(() => preview.dispose());
 </script>

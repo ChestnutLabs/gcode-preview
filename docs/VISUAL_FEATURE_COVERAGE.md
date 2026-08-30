@@ -91,6 +91,33 @@ Genuinely deferred, each with a recorded reason (valid dispositions, not silent 
 These are tracked here so the next release's Public Product + Documentation + Visual Review picks
 them up rather than rediscovering them.
 
+## This pass (2026-08-29, DD-031) — consumer UX & framework parity
+
+The consumer-experience pass reworked the *demonstration surfaces* (it added no new engine
+capabilities, so the per-capability rows below are unchanged):
+
+- The demo is rebuilt as the **Feature Lab** on the published `gcode-preview-core` controller —
+  viewport-first, intent-grouped controls, and **capability-aware** UI (a color mode greys out with
+  a plain-language reason when the file can't support it; the CNC tab appears only when a tool-power
+  channel exists; capability confidence is shown as tiered badges).
+- Every adapter now ships a **two-tier example** (`tools/example-{react,vue,svelte,webcomponent}`):
+  a genuinely minimal getting-started page and a full **showcase** that mirrors the Feature Lab's
+  capability-aware UX in that framework's idiom, on the shared demo-kit. This is what makes "find the
+  interactive version of everything in the docs" true per-framework, not just in the demo.
+- Review screenshots of the Feature Lab and the four showcases were captured this pass (dark app UI).
+  These are **not yet canonical `docs/media` assets**: the manifest harness produces the mid-grey
+  capability presentation, not app chrome. Deferred: teach the harness to emit app-UI shots (or add a
+  dark-app class) so these become tracked media — carried to the next Visual Review.
+- `getRenderStats` diagnostics and `pickSegment` picking are now reachable through the **public
+  adapter surface** in all four showcases (previously controls/raw-only) — the dark-capability
+  closure that section 1's `pickSegment` row and section 4's diagnostics row depend on.
+- **Source-model viewing became a first-class declarative half of the SDK**: a `<ModelViewer>` adapter
+  on each framework's `/model` subpath (over the new `createModelPreviewController`), a Preview/Prepare
+  toggle in the Feature Lab and all four showcases, and a minimal model page per framework. This moves
+  the interactive model viewer (§6) from "needs demo exposure" to demonstrated everywhere consumers
+  look. App-UI screenshots of Prepare mode were captured for review but, like the toolpath showcase
+  shots, are not yet canonical `docs/media` (same harness gap).
+
 ## 1. Toolpath inspection
 
 | Capability | User-facing | Demo | Media | README | Pages gallery | Manual/pkg | Status |
@@ -165,7 +192,8 @@ them up rather than rediscovering them.
 | Toolpath vs source-model (two renderers) | ✅ | model page | `model-render-stl-3mf` | ✅ | gallery | — | covered |
 | STL presentation still | ✅ | model page | (in pair) | ✅ | gallery | model-renderer README | covered |
 | 3MF material/color presentation | ✅ | model page | (in pair) | ✅ | gallery | model-renderer README | covered |
-| Interactive model viewer (`createModelViewer`) | ✅ | model-viewer page | — | ✅ (prose) | gallery | model-renderer README | needs demo exposure (link) + needs animation |
+| Interactive model viewer (`createModelViewer`) | ✅ | model-viewer page + Feature Lab (Prepare) | — | ✅ (prose) | gallery | model-renderer README | covered (interactive) — Feature Lab + all 4 showcases have a Prepare mode; animation still nice-to-have |
+| Model-viewer framework adapters (`<ModelViewer>` / `/model`) | ✅ | Feature Lab + 4 showcases (Prepare) + model.html minimals | — | ✅ (table) | — | adapters + 4 READMEs | covered (code + examples); app-UI media pending harness support |
 | Multi-object files | ✅ | model page | — | mention | gallery | — | needs screenshot |
 | Multi-plate files + per-plate render | ✅ | ❌ | — | ❌ | gallery | — | needs demo exposure + needs comparison |
 | Render scope / object subsets (`RenderScope`) | ✅ | ❌ | — | ❌ | gallery | recipes | needs demo exposure + needs comparison |
@@ -207,7 +235,8 @@ them up rather than rediscovering them.
 
 | Capability | User-facing | Demo | Media | README | Pages gallery | Manual/pkg | Status |
 |---|:---:|:---:|:---:|:---:|:---:|:---:|---|
-| Vue / React / Svelte / Web Component adapters | ✅ | examples | — | ✅ (table) | — | adapters | not visually meaningful (code) |
+| Vue / React / Svelte / Web Component adapters | ✅ | two-tier examples + Feature Lab | — | ✅ (table) | — | adapters | covered (code + examples) — each adapter has a minimal + showcase example on the shared design language; canonical app-UI media pending harness support |
+| Capability-aware consumer UX (gated modes + reasons, confidence tiers, contextual controls) | ✅ | Feature Lab + 4 showcases | — | ✅ (prose) | — | adapters | demonstrated in demo + examples; review captures exist (dark app UI), not yet canonical mid-grey media |
 | Headless toolpath still (`renderStill`) | ✅ | still page | — | ✅ | gallery | reference/still-render | needs screenshot (server-thumbnail context) |
 | Headless model still (`renderModelStill`) | ✅ | model page | `model-render-stl-3mf` | ✅ | gallery | model-renderer README | covered |
 | Off-thread parsing / cancellation / limits | ✅ | ✅ | — | ✅ (prose) | — | concept-workers | not visually meaningful |

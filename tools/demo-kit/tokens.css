@@ -1,0 +1,420 @@
+/*
+ * demo-kit — the shared design system for Chestnut Labs G-code Preview development/showcase surfaces
+ * (DD-031 §4.5/§12). NOT a published UI framework and NOT a library default — it styles the Feature
+ * Lab demo and the framework showcase examples so they visually belong to one project. The renderer
+ * scene theme stays independently configurable; this is application chrome only.
+ *
+ * Chrome theming is separate from viewport presentation (DD-031 §13): the app UI supports light/dark,
+ * while the renderer's neutral mid-grey workspace reads well against either. Default is dark chrome
+ * (the slicer/CAM idiom); [data-chrome="light"] on the root flips it.
+ */
+
+:root {
+  /* Neutral workspace scale — cool grey, calibrated for a CAD/slicer feel */
+  --gp-bg: #16181d; /* app background (behind everything) */
+  --gp-viewport: #6d7176; /* the canonical documentation mid-grey (matches the screenshot theme) */
+  --gp-surface: #1e2127; /* panels / rail */
+  --gp-surface-2: #262a31; /* raised controls, header */
+  --gp-surface-3: #2f343c; /* hover / active control */
+  --gp-border: #363b44;
+  --gp-border-strong: #454b56;
+
+  /* Text hierarchy */
+  --gp-text: #e7eaef;
+  --gp-text-muted: #9aa2ae;
+  --gp-text-faint: #6b7280;
+
+  /* Accent + semantic */
+  --gp-accent: #4f9df2; /* interactive blue (selection, focus, active tab) */
+  --gp-accent-weak: rgba(79, 157, 242, 0.16);
+  --gp-accent-strong: #6cb0ff;
+  --gp-success: #3fbf7f;
+  --gp-warning: #e5a13a;
+  --gp-danger: #ec6a5e;
+
+  /* Capability honesty colors (non-color-only: always paired with text) */
+  --gp-known: #3fbf7f;
+  --gp-inferred: #4f9df2;
+  --gp-approx: #e5a13a;
+  --gp-unavailable: #6b7280;
+
+  /* Shape + rhythm */
+  --gp-radius: 8px;
+  --gp-radius-sm: 5px;
+  --gp-radius-lg: 12px;
+  --gp-space-1: 4px;
+  --gp-space-2: 8px;
+  --gp-space-3: 12px;
+  --gp-space-4: 16px;
+  --gp-space-5: 24px;
+  --gp-control-h: 30px;
+  --gp-font: 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --gp-mono: 'JetBrains Mono', ui-monospace, 'SF Mono', 'Cascadia Code', Menlo, monospace;
+  --gp-shadow: 0 8px 30px rgba(0, 0, 0, 0.35);
+}
+
+:root[data-chrome='light'] {
+  --gp-bg: #eef0f3;
+  --gp-viewport: #6d7176;
+  --gp-surface: #ffffff;
+  --gp-surface-2: #f4f6f8;
+  --gp-surface-3: #e7ebf0;
+  --gp-border: #dbe0e6;
+  --gp-border-strong: #c3cad3;
+  --gp-text: #1b1e24;
+  --gp-text-muted: #586170;
+  --gp-text-faint: #8b94a1;
+  --gp-accent-weak: rgba(79, 157, 242, 0.14);
+  --gp-shadow: 0 8px 30px rgba(20, 30, 45, 0.14);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body.gp-app {
+  margin: 0;
+  height: 100vh;
+  overflow: hidden;
+  background: var(--gp-bg);
+  color: var(--gp-text);
+  font-family: var(--gp-font);
+  font-size: 13px;
+  line-height: 1.45;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ---- typography ---- */
+.gp-title {
+  font-size: 13px;
+  font-weight: 650;
+  letter-spacing: 0.01em;
+}
+.gp-eyebrow {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--gp-text-faint);
+}
+.gp-muted {
+  color: var(--gp-text-muted);
+}
+.gp-mono {
+  font-family: var(--gp-mono);
+  font-size: 11.5px;
+}
+
+/* ---- controls ---- */
+.gp-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gp-space-1);
+  margin-bottom: var(--gp-space-3);
+}
+.gp-field > label,
+.gp-label {
+  font-size: 11.5px;
+  font-weight: 550;
+  color: var(--gp-text-muted);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--gp-space-2);
+}
+.gp-value {
+  font-family: var(--gp-mono);
+  font-size: 11px;
+  color: var(--gp-text);
+}
+
+select.gp-input,
+input.gp-input {
+  height: var(--gp-control-h);
+  background: var(--gp-surface-2);
+  color: var(--gp-text);
+  border: 1px solid var(--gp-border);
+  border-radius: var(--gp-radius-sm);
+  padding: 0 var(--gp-space-2);
+  font-family: var(--gp-font);
+  font-size: 12px;
+  outline: none;
+  width: 100%;
+}
+select.gp-input:focus-visible,
+input.gp-input:focus-visible,
+.gp-btn:focus-visible,
+.gp-icon-btn:focus-visible,
+.gp-tab:focus-visible {
+  border-color: var(--gp-accent);
+  box-shadow: 0 0 0 3px var(--gp-accent-weak);
+}
+select.gp-input:disabled,
+input.gp-input:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+input[type='range'].gp-range {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--gp-surface-3);
+  outline: none;
+}
+input[type='range'].gp-range::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--gp-accent);
+  border: 2px solid var(--gp-surface);
+  cursor: pointer;
+}
+input[type='range'].gp-range::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--gp-accent);
+  border: 2px solid var(--gp-surface);
+  cursor: pointer;
+}
+input[type='range'].gp-range:disabled {
+  opacity: 0.4;
+}
+
+/* buttons */
+.gp-btn {
+  height: var(--gp-control-h);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 0 var(--gp-space-3);
+  background: var(--gp-surface-2);
+  color: var(--gp-text);
+  border: 1px solid var(--gp-border);
+  border-radius: var(--gp-radius-sm);
+  font-family: var(--gp-font);
+  font-size: 12px;
+  font-weight: 550;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.gp-btn:hover:not(:disabled) {
+  background: var(--gp-surface-3);
+  border-color: var(--gp-border-strong);
+}
+.gp-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+.gp-btn.gp-primary {
+  background: var(--gp-accent);
+  border-color: var(--gp-accent);
+  color: #fff;
+}
+.gp-btn.gp-primary:hover:not(:disabled) {
+  background: var(--gp-accent-strong);
+  border-color: var(--gp-accent-strong);
+}
+
+.gp-icon-btn {
+  width: var(--gp-control-h);
+  height: var(--gp-control-h);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--gp-surface-2);
+  color: var(--gp-text-muted);
+  border: 1px solid var(--gp-border);
+  border-radius: var(--gp-radius-sm);
+  cursor: pointer;
+  font-size: 14px;
+}
+.gp-icon-btn:hover {
+  background: var(--gp-surface-3);
+  color: var(--gp-text);
+}
+.gp-icon-btn.gp-on {
+  background: var(--gp-accent-weak);
+  border-color: var(--gp-accent);
+  color: var(--gp-accent-strong);
+}
+
+/* segmented control */
+.gp-segment {
+  display: inline-flex;
+  background: var(--gp-surface-2);
+  border: 1px solid var(--gp-border);
+  border-radius: var(--gp-radius-sm);
+  padding: 2px;
+  gap: 2px;
+}
+.gp-segment button {
+  border: none;
+  background: transparent;
+  color: var(--gp-text-muted);
+  font-size: 11.5px;
+  font-weight: 550;
+  padding: 3px 10px;
+  border-radius: 3px;
+  cursor: pointer;
+  font-family: var(--gp-font);
+}
+.gp-segment button.gp-on {
+  background: var(--gp-accent);
+  color: #fff;
+}
+
+/* toggle row */
+.gp-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--gp-space-2);
+  padding: 5px 0;
+  cursor: pointer;
+  user-select: none;
+}
+.gp-toggle input {
+  accent-color: var(--gp-accent);
+  width: 15px;
+  height: 15px;
+}
+.gp-toggle.gp-disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+/* checkbox row label + reason */
+.gp-reason {
+  font-size: 10.5px;
+  color: var(--gp-text-faint);
+  font-style: italic;
+}
+
+/* badges */
+.gp-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 10px;
+  font-weight: 650;
+  letter-spacing: 0.03em;
+  padding: 2px 7px;
+  border-radius: 20px;
+  text-transform: uppercase;
+  border: 1px solid transparent;
+}
+.gp-badge::before {
+  content: '';
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+}
+.gp-badge.gp-known {
+  color: var(--gp-known);
+  background: rgba(63, 191, 127, 0.12);
+}
+.gp-badge.gp-inferred {
+  color: var(--gp-inferred);
+  background: rgba(79, 157, 242, 0.12);
+}
+.gp-badge.gp-approx {
+  color: var(--gp-approx);
+  background: rgba(229, 161, 58, 0.12);
+}
+.gp-badge.gp-unavailable {
+  color: var(--gp-unavailable);
+  background: rgba(107, 114, 128, 0.12);
+}
+
+/* tabs (inspector categories) */
+.gp-tabs {
+  display: flex;
+  gap: 2px;
+  padding: 0 var(--gp-space-2);
+  border-bottom: 1px solid var(--gp-border);
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.gp-tabs::-webkit-scrollbar {
+  display: none;
+}
+.gp-tab {
+  border: none;
+  background: transparent;
+  color: var(--gp-text-muted);
+  font-size: 11px;
+  font-weight: 550;
+  padding: 9px 7px;
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  white-space: nowrap;
+  font-family: var(--gp-font);
+}
+.gp-tab:hover {
+  color: var(--gp-text);
+}
+.gp-tab.gp-on {
+  color: var(--gp-accent-strong);
+  border-bottom-color: var(--gp-accent);
+}
+.gp-tab[hidden] {
+  display: none;
+}
+
+/* panel section within a tab */
+.gp-panel {
+  padding: var(--gp-space-4);
+}
+.gp-panel h3 {
+  margin: 0 0 var(--gp-space-3);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--gp-text-faint);
+}
+.gp-panel + .gp-panel {
+  border-top: 1px solid var(--gp-border);
+}
+
+/* legend */
+.gp-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--gp-space-2) var(--gp-space-3);
+  margin-top: var(--gp-space-2);
+}
+.gp-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--gp-text-muted);
+}
+.gp-swatch {
+  width: 11px;
+  height: 11px;
+  border-radius: 3px;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+}
+
+/* scrollable container */
+.gp-scroll {
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--gp-border-strong) transparent;
+}
+.gp-scroll::-webkit-scrollbar {
+  width: 8px;
+}
+.gp-scroll::-webkit-scrollbar-thumb {
+  background: var(--gp-border-strong);
+  border-radius: 4px;
+}

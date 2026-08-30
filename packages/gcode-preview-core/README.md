@@ -1,7 +1,8 @@
 # @chestnutlabs/gcode-preview-core
 
 The **framework-neutral preview controller** for the Chestnut Labs G-code Preview stack
-(design: DD-007). This is the single engine under the Vue, React, and Svelte adapters — parse
+(design: DD-007). This is the single engine under the Vue, React, Svelte, and Web Component
+(`@chestnutlabs/gcode-preview-element`) adapters — parse
 session + renderer + progress mapper glued into one lifecycle with an **immutable-snapshot state
 model** (`getState()` returns a new identity per mutation; `onStateChange` notifies), which every
 framework's reactivity can bridge cheaply.
@@ -20,7 +21,7 @@ preview.dispose();
 
 Building an adapter for another framework? The **portable behavioral suite** is exported from
 `@chestnutlabs/gcode-preview-core/testing` — `runBehavioralSuite(...)` is the same parity
-contract the Vue/React/Svelte adapters pass in CI, and it is the anti-drift firewall for any new
-integration.
+contract the Vue, React, Svelte, and Web Component adapters pass in CI, and it is the anti-drift
+firewall for any new integration.
 
 Part of [Chestnut Labs G-code Preview](../../README.md) · MIT

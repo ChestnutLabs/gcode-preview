@@ -12,6 +12,7 @@ import type { GcodeParseSession, WireParseOptions } from '@chestnutlabs/gcode-pa
 import type { MappedProgress, ProgressObservation } from '@chestnutlabs/toolpath-core';
 import {
   createPreviewController,
+  type CaptureOptions,
   type GcodePreviewControls,
   type GcodePreviewState,
   type ParseOutcome,
@@ -43,6 +44,9 @@ export interface GcodePreviewHandle {
   /** Recompute staleness (DD-006 §4.4.3) — call at ~1 Hz while telemetry may go quiet. */
   tickProgress(nowMs: number): MappedProgress | null;
   clearProgress(): void;
+  /** Capture the current view as an image `Blob` (DD-030 D1, DD-031 G5) — handle-level parity with the
+   *  Web Component's `capture()`. Also reachable as `controls.capture`. Rejects on the 2D renderer. */
+  capture(opts?: CaptureOptions): Promise<Blob>;
   state: Readonly<GcodePreviewState>;
   controls: GcodePreviewControls;
   /** Escape hatches — the neutral objects themselves (advanced use; not reactive). */
@@ -78,6 +82,7 @@ export function useGcodePreview(options: UseGcodePreviewOptions = {}): GcodePrev
     observeProgress: controller.observeProgress,
     tickProgress: controller.tickProgress,
     clearProgress: controller.clearProgress,
+    capture: controller.controls.capture,
     state: readonly(state) as Readonly<GcodePreviewState>,
     controls: controller.controls,
     raw: controller.raw,

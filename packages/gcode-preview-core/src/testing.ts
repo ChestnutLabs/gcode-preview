@@ -15,7 +15,7 @@ import {
   type ProgressObservation,
   type ToolpathIR
 } from '@chestnutlabs/toolpath-core';
-import type { GLRendererLike } from '@chestnutlabs/gcode-renderer-three';
+import type { ColorMode, GLRendererLike } from '@chestnutlabs/gcode-renderer-three';
 import type { GcodePreviewControls, GcodePreviewState, PreviewEvent } from './controller.js';
 
 /** 2 layers × 6 extrude segments; srcByte = i*10; source byteLength 1000. */
@@ -225,6 +225,96 @@ export function runBehavioralSuite(name: string, api: TestApi, harness: AdapterH
     it('progress is unavailable before a parse (no fabricated mapping)', async () => {
       const a = await harness.create();
       expect(a.observeProgress({ v: 1, timestampMs: 1, position: { percent: 0.5 } })).toBeNull();
+      await a.dispose();
+    });
+
+    it('layer range clips and restores draw ranges (DD-031 parity)', async () => {
+      const a = await harness.create();
+      await a.parse(new Uint8Array(1_000));
+      await a.settle();
+      // Test IR is 2 layers × 6 extrude segments (24 draw verts). Clipping to layer 0 leaves 12.
+      expect(a.firstChunkDrawCount()).toBe(24);
+      a.controls.setLayerRange(0, 0);
+      await a.settle();
+      expect(a.firstChunkDrawCount()).toBe(12);
+      a.controls.setLayerRange(0, Number.POSITIVE_INFINITY);
+      await a.settle();
+      expect(a.firstChunkDrawCount()).toBe(24);
+      await a.dispose();
+    });
+
+    it('color-mode gating is honest and reachable through controls (DD-031 G6)', async () => {
+      const a = await harness.create();
+      await a.parse(new Uint8Array(1_000));
+      await a.settle();
+      // The test IR carries no feature roles → feature coloring is unavailable (never fabricated),
+      // while single/tool/moveKind are always available.
+      expect(a.controls.isColorModeAvailable('single')).toBe(true);
+      expect(a.controls.isColorModeAvailable('moveKind')).toBe(true);
+      expect(a.controls.isColorModeAvailable('feature')).toBe(false);
+      // setColorMode reports the same gate: single applies (true), gated feature is refused (false).
+      expect(a.controls.setColorMode({ mode: 'single', color: [1, 1, 1] } as ColorMode)).toBe(true);
+      expect(
+        a.controls.setColorMode({ mode: 'feature', palette: [[1, 0, 0]], fallback: [0.5, 0.5, 0.5] } as ColorMode)
+      ).toBe(false);
+      // The capability-aware state list mirrors the gates for capability-driven UI.
+      const modes = a.getState().availableColorModes;
+      expect(modes.includes('single')).toBe(true);
+      expect(modes.includes('tool')).toBe(true);
+      expect(modes.includes('moveKind')).toBe(true);
+      expect(modes.includes('feature')).toBe(false);
+      // Retraction/color-change presence are booleans a UI can gate on (this IR has neither).
+      expect(a.getState().hasRetractions).toBe(false);
+      expect(a.getState().hasColorChanges).toBe(false);
+      await a.dispose();
+    });
+
+    it('render diagnostics + segment picking are reachable through controls, not raw-only (DD-031 G1/G2)', async () => {
+      const a = await harness.create();
+      await a.parse(new Uint8Array(1_000));
+      await a.settle();
+      // Reachable through the public controls surface (no raw.renderer()). Honest shapes: a RenderStats
+      // object or null; a segment index or null — never a throw, never fabricated.
+      const stats = a.controls.getRenderStats();
+      expect(stats === null || typeof stats === 'object').toBe(true);
+      const hit = a.controls.pickSegment(0, 0);
+      expect(hit === null || typeof hit === 'number').toBe(true);
+      await a.dispose();
+    });
+
+    it('exposes the full controls contract on every adapter (DD-031 parity guard)', async () => {
+      const a = await harness.create();
+      await a.parse(new Uint8Array(1_000));
+      await a.settle();
+      // A capability that ships in core must not silently vanish from an adapter: assert each
+      // GcodePreviewControls method is callable here. Add new controls methods to this list.
+      const required: (keyof GcodePreviewControls)[] = [
+        'setLayerRange',
+        'setScrubPosition',
+        'setScrubTime',
+        'setKindVisible',
+        'setFeatureRoleVisible',
+        'setShowRetractions',
+        'setColorMode',
+        'isColorModeAvailable',
+        'setQuality',
+        'setQualityMode',
+        'setProgressivePreview',
+        'setCameraMode',
+        'setView',
+        'getCameraState',
+        'setCameraState',
+        'setTheme',
+        'setBuildVolume',
+        'setBuildVolumeCage',
+        'setFrameContent',
+        'setInteractionQuality',
+        'frame',
+        'capture',
+        'getRenderStats',
+        'pickSegment'
+      ];
+      for (const name of required) expect(typeof a.controls[name] === 'function').toBe(true);
       await a.dispose();
     });
 

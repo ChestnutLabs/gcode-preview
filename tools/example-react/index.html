@@ -3,44 +3,89 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>GcodePreview React — example app (DD-007 phase 6)</title>
+    <title>@chestnutlabs/gcode-preview-react — examples</title>
     <style>
       body {
         margin: 0;
-        font-family: system-ui, sans-serif;
-        background: #10151b;
-        color: #dfe7ef;
+        min-height: 100vh;
         display: grid;
-        grid-template-columns: 300px 1fr;
-        height: 100vh;
-      }
-      aside {
-        padding: 1rem;
-        overflow-y: auto;
-        border-right: 1px solid #2a3542;
+        place-items: center;
+        font-family: 'Inter', system-ui, sans-serif;
+        background: #16181d;
+        color: #e7eaef;
       }
       main {
-        min-width: 0;
+        max-width: 640px;
+        padding: 2.5rem;
       }
-      label {
+      h1 {
+        font-size: 1.4rem;
+        margin: 0 0 0.35rem;
+      }
+      p.lede {
+        color: #9aa2ae;
+        margin: 0 0 2rem;
+        line-height: 1.5;
+      }
+      .tiers {
+        display: grid;
+        gap: 1rem;
+        grid-template-columns: 1fr 1fr;
+      }
+      a.card {
         display: block;
-        margin: 0.6rem 0;
+        padding: 1.25rem;
+        border: 1px solid #363b44;
+        border-radius: 12px;
+        background: #1e2127;
+        color: inherit;
+        text-decoration: none;
+        transition: border-color 0.15s;
+      }
+      a.card:hover {
+        border-color: #4f9df2;
+      }
+      a.card h2 {
+        font-size: 1rem;
+        margin: 0 0 0.35rem;
+      }
+      a.card span {
+        color: #9aa2ae;
         font-size: 0.85rem;
+        line-height: 1.45;
       }
-      select,
-      input[type='range'],
-      button {
-        width: 100%;
+      code {
+        font-family: 'JetBrains Mono', ui-monospace, monospace;
+        color: #6cb0ff;
       }
-      #log {
-        font-size: 0.75rem;
-        white-space: pre-wrap;
-        color: #9fb0c0;
+      @media (max-width: 560px) {
+        .tiers {
+          grid-template-columns: 1fr;
+        }
       }
     </style>
   </head>
   <body>
-    <div id="app" style="display: contents"></div>
-    <script type="module" src="/src/main.jsx"></script>
+    <main>
+      <h1>@chestnutlabs/gcode-preview-react</h1>
+      <p class="lede">
+        Example apps built on the published React adapter — both halves of the SDK: sliced G-code
+        (Preview) and source models (Prepare). All drive the real package — no raw renderer imports.
+      </p>
+      <div class="tiers">
+        <a class="card" href="./minimal.html">
+          <h2>Minimal →</h2>
+          <span>Smallest G-code integration: <code>&lt;GcodePreview source /&gt;</code> plus a fixture picker and a layer slider.</span>
+        </a>
+        <a class="card" href="./showcase.html">
+          <h2>Showcase →</h2>
+          <span>The full surface — Preview + Prepare, capability-gated color modes, feature-role hiding, diagnostics — on the shared demo-kit.</span>
+        </a>
+        <a class="card" href="./model.html">
+          <h2>Minimal model →</h2>
+          <span>Smallest source-model integration: <code>&lt;ModelViewer source /&gt;</code> from <code>/model</code> for STL / 3MF.</span>
+        </a>
+      </div>
+    </main>
   </body>
 </html>
