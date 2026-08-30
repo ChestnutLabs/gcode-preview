@@ -1,5 +1,46 @@
 # @chestnutlabs/gcode-model-renderer
 
+## 0.20.0
+
+### Minor Changes
+
+- [#427](https://github.com/ChestnutLabs/gcode-preview/pull/427) [`b25ddb6`](https://github.com/ChestnutLabs/gcode-preview/commit/b25ddb68fdf4a5b12689c67f411e7d8c316086bb) Thanks [@sobechestnut-dev](https://github.com/sobechestnut-dev)! - Make interactive **source-model viewing** (STL / 3MF) a first-class, declarative half of the SDK —
+  the Prepare side alongside the toolpath Preview side — so consumers no longer have to drop to the
+  imperative `createModelViewer` engine to show a model in a framework (DD-031).
+
+  **New framework-neutral controller** (`@chestnutlabs/gcode-model-renderer`):
+  - `createModelPreviewController(options)` — the Prepare-side analogue of `gcode-preview-core`'s toolpath
+    controller. It wraps the existing `createModelViewer` engine unchanged and adds what a framework
+    binding needs: canvas-deferred construction with `bindCanvas` (rebuilding on a canvas swap and
+    replaying the last source), a reactive `getState()`/`onStateChange()` snapshot derived from the
+    engine's events (`ModelPreviewState`: `loading`/`ready`/`rendererSupported`/`objectCount`/`materials`/
+    `instancedCount`/`decimationApplied`/`bounds`/`plates`/`hasPlates`/`cameraState`/`progress`/`error`),
+    and an op queue for calls made before the canvas binds. `ModelPreviewControls` exposes `setSource`,
+    `setView`, get/`setCameraState`, `setBackground`, `setInteractionQuality`, `setRenderScope`, `frame`,
+    `resize`, and `capture`.
+  - A portable model behavioral suite ships via the `@chestnutlabs/gcode-model-renderer/testing` subpath
+    (`runModelBehavioralSuite`) with controls/state completeness parity guards.
+
+  **New `/model` adapter subpath on every framework** — thin shells over the one controller, mirroring
+  each framework's toolpath idiom:
+  - `@chestnutlabs/gcode-preview-react/model` — `useModelViewer` hook + `<ModelViewer>` component.
+  - `@chestnutlabs/gcode-preview-vue/model` — `useModelViewer` composable + `<ModelViewer>` component.
+  - `@chestnutlabs/gcode-preview-svelte/model` — `createModelViewer` store/action + the raw
+    `@chestnutlabs/gcode-preview-svelte/model/ModelViewer.svelte` component.
+  - `@chestnutlabs/gcode-preview-element/model` (+ `/model/define`) — the `<gcode-model-viewer>` custom
+    element (tag chosen to avoid the reserved `<model-viewer>`).
+
+  All additive — the toolpath surface is unchanged, and toolpath-only consumers don't pull the model
+  renderer (it lives behind the opt-in `/model` subpath). Every adapter passes the portable model
+  behavioral suite; each package gains `@chestnutlabs/gcode-model-renderer` as a dependency.
+
+### Patch Changes
+
+- Updated dependencies [[`718d1bd`](https://github.com/ChestnutLabs/gcode-preview/commit/718d1bde45856b58c37580d629da6d177f9f2004)]:
+  - @chestnutlabs/gcode-renderer-three@0.20.0
+  - @chestnutlabs/gcode-containers@0.20.0
+  - @chestnutlabs/toolpath-core@0.20.0
+
 ## 0.19.0
 
 ### Patch Changes
