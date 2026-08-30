@@ -19,10 +19,11 @@ import type {
   QualityMode,
   QualityPolicy,
   RendererEvent,
+  RenderStats,
   Theme
 } from '@chestnutlabs/gcode-renderer-three';
 
-export type { CameraState, CameraView, CaptureOptions } from '@chestnutlabs/gcode-renderer-three';
+export type { CameraState, CameraView, CaptureOptions, RenderStats } from '@chestnutlabs/gcode-renderer-three';
 import type { FeatureRoleValue, MachineGeometry, MappedProgress, ToolpathIR } from '@chestnutlabs/toolpath-core';
 
 /** Which renderer implementation backs the preview. `'3d'` is the default (Three.js). */
@@ -70,6 +71,16 @@ export interface PreviewRenderer {
   setFeatureRoleVisible?(role: FeatureRoleValue, visible: boolean): void;
   setShowRetractions(visible: boolean): void;
   setColorMode(mode: ColorMode): boolean;
+  /**
+   * Capability gate for a color mode (DD-001 honesty): `false` when the IR lacks the channel the mode
+   * reads (e.g. `feature` on a file with no feature roles). Lets a consumer build capability-aware UI
+   * without the raw handle (DD-031 G6). `single`/`tool`/`moveKind` are always available.
+   */
+  isColorModeAvailable(mode: ColorMode['mode']): boolean;
+  /** True when the current IR carries retraction/deretraction events the markers can show (DD-031 G6). */
+  readonly hasRetractions: boolean;
+  /** True when the current IR carries M600 color-change boundaries (DD-031 G6). */
+  readonly hasColorChanges: boolean;
   setQuality(quality: QualityMode | 'auto'): void;
   /** Fidelity policy (DD-023 §4 D6): 'full' | 'adaptive' | 'fast'. 3D only; 2D is a no-op. */
   setQualityMode(mode: QualityPolicy): void;
@@ -99,5 +110,11 @@ export interface PreviewRenderer {
    * `renderer-unsupported` / rejects. Never fabricated output.
    */
   capture?(opts?: CaptureOptions): Promise<Blob>;
+  /**
+   * Render diagnostics snapshot (DD-027) — backend/GPU/geometry-mode/parallelism/timings — or null
+   * before the first render / on a renderer that produces none (the 2D view). Exposed through the
+   * public surface so diagnostics are reachable without the raw handle (DD-031 G1).
+   */
+  getRenderStats(): RenderStats | null;
   dispose(): void;
 }

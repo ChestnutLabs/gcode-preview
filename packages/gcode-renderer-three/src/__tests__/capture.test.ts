@@ -29,6 +29,66 @@ describe('capture — pure helpers', () => {
   });
 });
 
+describe('capture — includeBuildVolume', () => {
+  // A capture-capable stub GL that records the build-volume group's visibility at the moment the
+  // scene is rendered INTO the off-screen target (setRenderTarget(non-null) → render). Encoding the
+  // pixels is browser-only, so capture may still reject at the encode step — but the render (and the
+  // visibility we care about) happens first, and the finally-restore runs regardless.
+  function makeProbe(): {
+    renderer: ToolpathRenderer;
+    capturedVisible: () => boolean | null;
+    volumeVisible: () => boolean;
+  } {
+    const canvas = document.createElement('canvas');
+    let toTarget = false;
+    let capturedVisible: boolean | null = null;
+    // Definite-assignment forward reference: the stub's render closure reads the renderer's
+    // volumeGroup lazily, but the renderer is constructed with that stub — assigned once below.
+    // eslint-disable-next-line prefer-const
+    let renderer!: ToolpathRenderer;
+    const volGroup = () => (renderer as unknown as { volumeGroup: { visible: boolean } | null }).volumeGroup;
+    const stub: GLRendererLike & {
+      setRenderTarget: (t: unknown) => void;
+      readRenderTargetPixels: () => void;
+    } = {
+      render: () => {
+        if (toTarget) capturedVisible = volGroup()?.visible ?? null;
+      },
+      setSize: () => undefined,
+      dispose: () => undefined,
+      domElement: canvas,
+      setRenderTarget: (t) => {
+        toTarget = t !== null;
+      },
+      readRenderTargetPixels: () => undefined
+    };
+    renderer = new ToolpathRenderer({
+      canvas,
+      quality: 'lines',
+      buildVolume: { x: 220, y: 220, z: 250 },
+      createRenderer: () => stub as unknown as GLRendererLike,
+      scheduleFrame: () => undefined
+    });
+    return { renderer, capturedVisible: () => capturedVisible, volumeVisible: () => volGroup()!.visible };
+  }
+
+  it('hides the build-volume group for the off-screen render, then restores the live view', async () => {
+    const probe = makeProbe();
+    await probe.renderer.capture({ includeBuildVolume: false, background: 'transparent' }).catch(() => undefined);
+    expect(probe.capturedVisible()).toBe(false); // grid/bed/cage hidden during the capture render
+    expect(probe.volumeVisible()).toBe(true); // live view restored — no permanent change
+    probe.renderer.dispose();
+  });
+
+  it('includes the build-volume group by default', async () => {
+    const probe = makeProbe();
+    await probe.renderer.capture().catch(() => undefined);
+    expect(probe.capturedVisible()).toBe(true); // default: the build volume is part of the capture
+    expect(probe.volumeVisible()).toBe(true);
+    probe.renderer.dispose();
+  });
+});
+
 describe('capture — unsupported path', () => {
   it('rejects with E_CAPTURE_UNSUPPORTED when the renderer cannot render-to-target', async () => {
     const canvas = document.createElement('canvas');

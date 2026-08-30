@@ -1,6 +1,6 @@
 {
   "name": "@chestnutlabs/gcode-preview-svelte",
-  "version": "0.19.0",
+  "version": "0.20.0",
   "description": "Thin Svelte integration for the Chestnut Labs G-code viewer (DD-007 D1 amendment): createGcodePreview store/action API + GcodePreview component as a reactivity bridge over @chestnutlabs/gcode-preview-core.",
   "keywords": [
     "gcode",
@@ -41,6 +41,15 @@
     "./GcodePreview.svelte": {
       "svelte": "./dist/GcodePreview.svelte",
       "import": "./dist/GcodePreview.svelte"
+    },
+    "./model": {
+      "types": "./dist/model/index.d.ts",
+      "svelte": "./dist/model/index.js",
+      "import": "./dist/model/index.js"
+    },
+    "./model/ModelViewer.svelte": {
+      "svelte": "./dist/model/ModelViewer.svelte",
+      "import": "./dist/model/ModelViewer.svelte"
     }
   },
   "files": [
@@ -55,10 +64,11 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@chestnutlabs/gcode-parser": "0.19.0",
-    "@chestnutlabs/gcode-preview-core": "0.19.0",
-    "@chestnutlabs/gcode-renderer-three": "0.19.0",
-    "@chestnutlabs/toolpath-core": "0.19.0"
+    "@chestnutlabs/gcode-model-renderer": "0.20.0",
+    "@chestnutlabs/gcode-parser": "0.20.0",
+    "@chestnutlabs/gcode-preview-core": "0.20.0",
+    "@chestnutlabs/gcode-renderer-three": "0.20.0",
+    "@chestnutlabs/toolpath-core": "0.20.0"
   },
   "peerDependencies": {
     "svelte": "^4.0.0 || ^5.0.0"

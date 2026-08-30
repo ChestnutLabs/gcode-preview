@@ -3,7 +3,7 @@
   "private": true,
   "version": "0.0.0",
   "type": "module",
-  "description": "DD-007 phase 7 example application (issue #114): the packaged Svelte component drives the full pipeline — the separate example app required by the D1 amendment.",
+  "description": "Two-tier Svelte example (DD-031 §4.7): minimal.html (smallest real integration via <GcodePreview>) + showcase.html (full declarative surface + shared demo-kit). Consumes the published @chestnutlabs/gcode-preview-svelte.",
   "scripts": {
     "dev": "vite",
     "build": "vite build"

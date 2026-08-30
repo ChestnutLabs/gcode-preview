@@ -12,6 +12,15 @@ export { renderModelStill } from './render-model-still.js';
 export type { ModelSource, RenderModelStillOptions, RenderModelStillResult } from './render-model-still.js';
 export { createModelViewer } from './model-viewer.js';
 export type { ModelViewer, ModelViewerOptions, ModelViewerEvent, ModelReadyInfo } from './model-viewer.js';
+// DD-031: framework-neutral controller for the interactive model viewer (the Prepare-side analogue of
+// gcode-preview-core's toolpath controller). The four framework `/model` adapters are thin shells over it.
+export { createModelPreviewController, INITIAL_MODEL_STATE } from './model-preview.js';
+export type {
+  ModelPreviewController,
+  ModelPreviewControllerOptions,
+  ModelPreviewControls,
+  ModelPreviewState
+} from './model-preview.js';
 export { parseStl } from './stl.js';
 export { parse3mf } from './three-mf.js';
 export type { Parse3mfOptions } from './three-mf.js';

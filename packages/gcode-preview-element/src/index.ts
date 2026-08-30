@@ -13,9 +13,12 @@ export {
 } from './gcode-preview-element.js';
 
 // Shared contracts pass through unchanged (re-export, never redeclare — the D1 drift firewall).
+// RendererMode/PreviewRenderer added for cross-adapter export parity (DD-031 E4).
 export type {
   GcodePreviewControls,
   GcodePreviewState,
   ParseOutcome,
-  PreviewEvent
+  PreviewEvent,
+  PreviewRenderer,
+  RendererMode
 } from '@chestnutlabs/gcode-preview-core';

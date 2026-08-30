@@ -1,355 +1,632 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-chrome="dark">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Chestnut Labs G-code Preview — pipeline demo</title>
+    <title>G-code Preview · Feature Lab</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;550;650;700&family=JetBrains+Mono:wght@400;500&display=swap"
+      rel="stylesheet"
+    />
     <style>
-      :root {
-        color-scheme: dark;
-        --bg: #16181d;
-        --panel: #1f232b;
-        --border: #333a46;
-        --text: #e6e9ef;
-        --muted: #9aa3b2;
-        --accent: #e566b3;
-      }
-      * {
-        box-sizing: border-box;
-      }
-      body {
-        margin: 0;
-        font: 14px/1.45 system-ui, sans-serif;
-        background: var(--bg);
-        color: var(--text);
+      /* Feature Lab layout — the design tokens/components live in demo-kit/tokens.css (imported by main.js). */
+      #app {
         display: grid;
-        grid-template-columns: 300px 1fr;
-        grid-template-rows: 100vh;
+        grid-template-rows: auto 1fr auto auto;
+        height: 100vh;
       }
-      aside {
-        background: var(--panel);
-        border-right: 1px solid var(--border);
-        padding: 14px;
-        overflow-y: auto;
+      .gp-header {
         display: flex;
-        flex-direction: column;
-        gap: 12px;
-      }
-      h1 {
-        font-size: 15px;
-        margin: 0;
-      }
-      h1 small {
-        display: block;
-        color: var(--muted);
-        font-weight: normal;
-        font-size: 11px;
-      }
-      fieldset {
-        border: 1px solid var(--border);
-        border-radius: 6px;
-        padding: 8px 10px 10px;
-        margin: 0;
-        display: flex;
-        flex-direction: column;
-        gap: 8px;
-      }
-      legend {
-        font-size: 11px;
-        text-transform: uppercase;
-        letter-spacing: 0.06em;
-        color: var(--muted);
-        padding: 0 4px;
-      }
-      label {
-        display: flex;
-        flex-direction: column;
-        gap: 3px;
-        font-size: 12px;
-        color: var(--muted);
-      }
-      label.inline {
-        flex-direction: row;
         align-items: center;
-        gap: 6px;
-        color: var(--text);
+        gap: var(--gp-space-4);
+        padding: 0 var(--gp-space-4);
+        height: 52px;
+        background: var(--gp-surface-2);
+        border-bottom: 1px solid var(--gp-border);
       }
-      select,
-      input[type='file'],
-      button {
-        font: inherit;
-        background: var(--bg);
-        color: var(--text);
-        border: 1px solid var(--border);
-        border-radius: 4px;
-        padding: 5px 8px;
-      }
-      button {
-        cursor: pointer;
-      }
-      button:disabled {
-        opacity: 0.45;
-        cursor: default;
-      }
-      .preset-views {
+      .gp-brand {
         display: flex;
-        flex-wrap: wrap;
-        gap: 4px;
-        margin: 4px 0;
+        align-items: center;
+        gap: 10px;
+        white-space: nowrap;
       }
-      .preset-views button {
-        flex: 1 1 auto;
-        min-width: 44px;
-        padding: 4px 6px;
-        font-size: 12px;
-      }
-      button.primary {
-        background: var(--accent);
-        border-color: var(--accent);
+      .gp-brand .mark {
+        width: 26px;
+        height: 26px;
+        border-radius: 7px;
+        background: linear-gradient(135deg, var(--gp-accent), #8a63f2);
+        display: grid;
+        place-items: center;
         color: #fff;
-        font-weight: 600;
+        font-weight: 800;
+        font-size: 14px;
       }
-      input[type='range'] {
-        width: 100%;
-        accent-color: var(--accent);
+      .gp-brand small {
+        color: var(--gp-text-faint);
+        font-size: 11px;
       }
-      progress {
-        width: 100%;
-        height: 8px;
-        accent-color: var(--accent);
-      }
-      #stats,
-      #disclosure,
-      #status,
-      #qualityNote {
-        font-size: 12px;
-        color: var(--muted);
-        white-space: pre-wrap;
-        margin: 0;
-      }
-      #disclosure:not(:empty) {
-        color: #f0b429;
-      }
-      #status.error {
-        color: #ef6a6a;
-      }
-      main {
-        position: relative;
+      .gp-header .gp-job {
+        display: flex;
+        align-items: center;
+        gap: var(--gp-space-2);
+        flex: 1;
         min-width: 0;
       }
-      canvas {
-        display: block;
+      .gp-header .gp-job select {
+        max-width: 280px;
+      }
+      .gp-header .spacer {
+        flex: 1;
+      }
+      .gp-header .gp-actions {
+        display: flex;
+        align-items: center;
+        gap: var(--gp-space-2);
+      }
+      #progress {
+        width: 120px;
+        height: 6px;
+      }
+      #progress[hidden] {
+        display: none;
+      }
+
+      .gp-main {
+        display: grid;
+        grid-template-columns: 1fr var(--rail-w, 360px);
+        min-height: 0;
+        position: relative;
+      }
+      .gp-main.gp-rail-collapsed {
+        grid-template-columns: 1fr 0;
+      }
+
+      .gp-viewport-wrap {
+        position: relative;
+        min-width: 0;
+        background: var(--gp-viewport);
+        overflow: hidden;
+      }
+      #view,
+      #modelView {
         width: 100%;
         height: 100%;
+        display: block;
+        touch-action: none;
         outline: none;
       }
-      kbd {
-        background: var(--bg);
-        border: 1px solid var(--border);
-        border-radius: 3px;
-        padding: 0 4px;
-        font-size: 11px;
+      /* A CSS display rule beats the UA [hidden] rule — restore hiding for the swapped viewer. */
+      #view[hidden],
+      #modelView[hidden] {
+        display: none;
       }
-      .keys {
+
+      /* floating viewport overlays */
+      .gp-vp-overlay {
+        position: absolute;
+        display: flex;
+        gap: var(--gp-space-2);
+        pointer-events: none;
+      }
+      .gp-vp-overlay > * {
+        pointer-events: auto;
+      }
+      .gp-vp-tl {
+        top: var(--gp-space-3);
+        left: var(--gp-space-3);
+        flex-direction: column;
+        align-items: flex-start;
+        max-width: 260px;
+      }
+      .gp-vp-tr {
+        top: var(--gp-space-3);
+        right: var(--gp-space-3);
+        align-items: center;
+      }
+      .gp-vp-bl {
+        bottom: var(--gp-space-3);
+        left: var(--gp-space-3);
+        align-items: center;
+      }
+      .gp-glass {
+        background: color-mix(in srgb, var(--gp-surface) 82%, transparent);
+        border: 1px solid var(--gp-border);
+        border-radius: var(--gp-radius);
+        box-shadow: var(--gp-shadow);
+        backdrop-filter: blur(8px);
+        padding: var(--gp-space-2);
+      }
+      .gp-legend-card {
+        padding: var(--gp-space-3);
+      }
+      .gp-legend-card[hidden] {
+        display: none;
+      }
+      .gp-legend-card .gp-eyebrow {
+        margin-bottom: 6px;
+      }
+      .gp-count-pill {
+        display: flex;
+        gap: var(--gp-space-3);
+        padding: 6px var(--gp-space-3);
+        font-family: var(--gp-mono);
         font-size: 11px;
-        color: var(--muted);
-        line-height: 1.9;
+        color: var(--gp-text-muted);
+      }
+      /* The display rule above beats the UA [hidden] rule — restore hiding (e.g. in Prepare mode). */
+      .gp-count-pill[hidden] {
+        display: none;
+      }
+      .gp-count-pill b {
+        color: var(--gp-text);
+        font-weight: 600;
+      }
+
+      /* stage banner (parse/build progress overlay) */
+      .gp-stage {
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        text-align: center;
+        pointer-events: none;
+      }
+      .gp-stage[hidden] {
+        display: none;
+      }
+      .gp-stage .ring {
+        width: 46px;
+        height: 46px;
+        margin: 0 auto 10px;
+        border: 3px solid var(--gp-border-strong);
+        border-top-color: var(--gp-accent);
+        border-radius: 50%;
+        animation: gp-spin 0.9s linear infinite;
+      }
+      .gp-stage .label {
+        font-size: 12px;
+        color: var(--gp-text);
+        background: color-mix(in srgb, var(--gp-surface) 80%, transparent);
+        padding: 4px 12px;
+        border-radius: 20px;
+      }
+      @keyframes gp-spin {
+        to {
+          transform: rotate(360deg);
+        }
+      }
+
+      /* inspector rail */
+      .gp-rail {
+        display: flex;
+        flex-direction: column;
+        min-height: 0;
+        background: var(--gp-surface);
+        border-left: 1px solid var(--gp-border);
+      }
+      .gp-rail-collapsed .gp-rail {
+        display: none;
+      }
+      .gp-rail-body {
+        flex: 1;
+        min-height: 0;
+      }
+      /* Rail collapse/expand handle — a drawer handle centered on the rail seam, kept clear of the
+         top-right camera cluster (which shares that corner). */
+      .gp-rail-collapse {
+        position: absolute;
+        top: 50%;
+        transform: translateY(-50%);
+        right: calc(var(--rail-w, 360px) + var(--gp-space-2));
+        z-index: 5;
+      }
+      .gp-rail-collapsed .gp-rail-collapse {
+        right: var(--gp-space-2);
+      }
+
+      /* scrub strip */
+      .gp-scrub {
+        display: grid;
+        grid-template-columns: auto 1fr auto;
+        align-items: center;
+        gap: var(--gp-space-4);
+        padding: var(--gp-space-2) var(--gp-space-4);
+        background: var(--gp-surface-2);
+        border-top: 1px solid var(--gp-border);
+      }
+      .gp-scrub[hidden] {
+        display: none;
+      }
+      .gp-scrub .track {
+        display: flex;
+        align-items: center;
+        gap: var(--gp-space-3);
+      }
+      .gp-scrub .track > .gp-range {
+        flex: 1;
+        min-width: 80px;
+      }
+      .gp-scrub .track[hidden] {
+        display: none;
+      }
+      .gp-scrub .rng {
+        font-family: var(--gp-mono);
+        font-size: 11px;
+        color: var(--gp-text-muted);
+        min-width: 74px;
+      }
+
+      /* status bar */
+      .gp-statusbar {
+        display: flex;
+        align-items: center;
+        gap: var(--gp-space-3);
+        padding: 5px var(--gp-space-4);
+        height: 30px;
+        background: var(--gp-surface);
+        border-top: 1px solid var(--gp-border);
+        font-size: 11px;
+        color: var(--gp-text-muted);
+      }
+      .gp-statusbar .disclosure {
+        flex: 1;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .gp-statusbar .sep {
+        color: var(--gp-border-strong);
+      }
+
+      .gp-hint {
+        font-size: 11px;
+        color: var(--gp-text-faint);
+        margin: 2px 0 var(--gp-space-3);
+      }
+      .gp-row {
+        display: flex;
+        gap: var(--gp-space-2);
+        flex-wrap: wrap;
+      }
+      .gp-grid2 {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: var(--gp-space-2);
+      }
+      pre#renderStats {
+        margin: 0;
+        font-family: var(--gp-mono);
+        font-size: 10.5px;
+        line-height: 1.5;
+        color: var(--gp-text-muted);
+        white-space: pre-wrap;
+        max-height: 300px;
+        overflow: auto;
+      }
+      .gp-panel[hidden] {
+        display: none;
+      }
+
+      /* responsive: collapse the rail to an overlay drawer on narrow widths */
+      @media (max-width: 1100px) {
+        .gp-main {
+          grid-template-columns: 1fr 0;
+        }
+        .gp-rail {
+          position: absolute;
+          top: 0;
+          right: 0;
+          bottom: 0;
+          width: min(360px, 86vw);
+          z-index: 20;
+          box-shadow: var(--gp-shadow);
+          transform: translateX(100%);
+          transition: transform 0.2s ease;
+        }
+        .gp-main:not(.gp-rail-collapsed) .gp-rail {
+          transform: translateX(0);
+          display: flex;
+        }
+        .gp-rail-collapse {
+          right: var(--gp-space-2);
+        }
+      }
+      @media (max-width: 720px) {
+        .gp-brand small {
+          display: none;
+        }
+        .gp-header .gp-job select {
+          max-width: 150px;
+        }
       }
     </style>
   </head>
-  <body>
-    <aside aria-label="Viewer controls">
-      <h1>
-        Chestnut Labs G-code Preview
-        <small>GcodeParseSession (worker) → ToolpathRenderer — DD-004 phase 3 demo</small>
-      </h1>
-
-      <fieldset>
-        <legend>Input</legend>
-        <label>
-          MIT demo corpus
-          <select id="fixture" aria-label="Choose a corpus file"></select>
-        </label>
-        <label>
-          …or your own G-code
-          <input id="file" type="file" accept=".gcode,.gco,.g,.nc,.3mf,text/plain" />
-        </label>
-        <div style="display: flex; gap: 8px">
-          <button id="parse" class="primary">Parse &amp; render</button>
-          <button id="cancel" disabled>Cancel</button>
+  <body class="gp-app">
+    <div id="app">
+      <!-- ============ HEADER ============ -->
+      <header class="gp-header">
+        <div class="gp-brand">
+          <span class="mark">G</span>
+          <div>
+            <div class="gp-title">G-code Preview</div>
+            <small>Feature Lab</small>
+          </div>
         </div>
-        <progress id="progress" max="1" value="0" aria-label="Parse progress" hidden></progress>
-        <p id="status" role="status">Pick a file and press Parse.</p>
-      </fieldset>
-
-      <fieldset>
-        <legend>Layers &amp; scrub</legend>
-        <label>
-          First layer: <span id="startLayerVal">0</span>
-          <input id="startLayer" type="range" min="0" max="0" value="0" step="1" disabled />
-        </label>
-        <label>
-          Last layer: <span id="endLayerVal">0</span>
-          <input id="endLayer" type="range" min="0" max="0" value="0" step="1" disabled />
-        </label>
-        <label>
-          Scrub (segments): <span id="scrubVal">all</span>
-          <input id="scrub" type="range" min="0" max="0" value="0" step="1" disabled />
-        </label>
-        <label>
-          Scrub (time): <span id="timeScrubVal">all</span>
-          <input id="timeScrub" type="range" min="0" max="0" value="0" step="1" disabled />
-        </label>
-        <p id="printTimeNote" role="note">Estimated print time: —</p>
-      </fieldset>
-
-      <fieldset>
-        <legend>Display</legend>
-        <label class="inline">
-          <input id="travel" type="checkbox" checked disabled />
-          Show travel moves
-        </label>
-        <label class="inline">
-          <input id="wipe" type="checkbox" checked disabled />
-          Show wipe moves
-        </label>
-        <label class="inline">
-          <input id="retractions" type="checkbox" disabled />
-          Show retractions
-        </label>
-        <label class="inline">
-          <input id="hideAdhesion" type="checkbox" disabled />
-          Hide brim / skirt (declutter)
-        </label>
-        <label>
-          Color mode
-          <select id="colorMode" disabled>
-            <option value="single">Single color</option>
-            <option value="tool">By tool</option>
-            <option value="feature">By feature role</option>
-            <option value="feedrate">By speed</option>
-            <option value="object">By object</option>
-            <option value="colorChange">By color change (M600)</option>
-            <option value="layerHeight">By layer height</option>
-          </select>
-        </label>
-        <label>
-          Quality
-          <select id="quality">
-            <option value="auto">Auto (tubes ≤ 1M segments)</option>
-            <option value="tubes">Tubes (print-like)</option>
-            <option value="lines">Lines (fast)</option>
-          </select>
-        </label>
-        <label>
-          Progressive preview
-          <select id="progressive" title="How a large file is revealed while parsing (never changes the final image)">
-            <option value="auto">Auto</option>
-            <option value="lines">Lines (stream)</option>
-            <option value="hold">Hold (single clean reveal)</option>
-            <option value="off">Off</option>
-          </select>
-        </label>
-        <label>
-          Camera
-          <select id="cameraMode">
-            <option value="perspective">Perspective</option>
-            <option value="orthographic">Orthographic</option>
-          </select>
-        </label>
-        <p id="qualityNote" role="note"></p>
-        <div class="preset-views" role="group" aria-label="Preset camera views">
-          <button class="view-btn" data-view="top" disabled>Top</button>
-          <button class="view-btn" data-view="bottom" disabled>Bottom</button>
-          <button class="view-btn" data-view="front" disabled>Front</button>
-          <button class="view-btn" data-view="back" disabled>Back</button>
-          <button class="view-btn" data-view="left" disabled>Left</button>
-          <button class="view-btn" data-view="right" disabled>Right</button>
-          <button class="view-btn" data-view="iso" disabled>Iso</button>
+        <div class="gp-job">
+          <!-- Preview (sliced G-code) vs Prepare (source model) — the two halves of the SDK. -->
+          <div class="gp-segment" id="modeSeg" role="group" aria-label="Workflow">
+            <button data-mode="preview" class="gp-on">Preview</button>
+            <button data-mode="prepare">Prepare</button>
+          </div>
+          <select id="fixture" class="gp-input" aria-label="Sample file"></select>
+          <button id="open" class="gp-btn">Open file…</button>
+          <input id="file" type="file" accept=".gcode,.gco,.g,.nc,.ngc,.bgcode,.3mf" hidden />
+          <button id="parse" class="gp-btn gp-primary">Load</button>
+          <button id="cancel" class="gp-btn" hidden>Cancel</button>
+          <progress id="progress" max="1" value="0" hidden></progress>
         </div>
-        <div class="preset-views">
-          <button id="saveView" disabled title="Remember the current camera position">Save view</button>
-          <button id="restoreView" disabled title="Return to the saved camera position">Restore view</button>
+        <div class="spacer"></div>
+        <div class="gp-actions">
+          <button id="capture" class="gp-btn" title="Capture the current view as a PNG">⤓ Capture</button>
+          <button id="chromeToggle" class="gp-icon-btn" title="Toggle light / dark UI">◐</button>
         </div>
-        <button id="frame" disabled>Frame model</button>
-        <button id="exportStl" disabled title="Download the productive toolpath (extrude/cut moves) as a binary STL mesh">Export STL</button>
-        <button id="capturePng" disabled title="Capture the current view as a PNG via renderer.capture()">Capture PNG</button>
-        <p id="disclosure" role="note"></p>
-      </fieldset>
+      </header>
 
-      <fieldset>
-        <legend>Theme</legend>
-        <label>
-          Scene theme
-          <select id="theme">
-            <option value="default">Default</option>
-            <option value="blueprint">Blueprint (dark)</option>
-            <option value="light">Light</option>
-            <option value="bedplate">Bed plate (solid)</option>
-          </select>
-        </label>
-        <label>
-          Extrusion material
-          <select id="material">
-            <option value="matte">Matte</option>
-            <option value="glossy">Glossy</option>
-          </select>
-        </label>
-      </fieldset>
+      <!-- ============ MAIN (viewport + rail) ============ -->
+      <div class="gp-main" id="main">
+        <div class="gp-viewport-wrap">
+          <canvas id="view" tabindex="0" aria-label="3D G-code toolpath preview"></canvas>
+          <!-- Prepare-side source-model viewer (STL / 3MF); swapped in for #view in Prepare mode. -->
+          <canvas id="modelView" tabindex="0" aria-label="3D source-model preview" hidden></canvas>
 
-      <fieldset>
-        <legend>Live progress (simulated)</legend>
-        <label>
-          Telemetry tier
-          <select id="progressTier" disabled>
-            <option value="byte">Byte-exact (Moonraker file_position)</option>
-            <option value="percent-bytes">Percent of bytes (Klipper virtual_sdcard)</option>
-            <option value="layer">Layer (Bambu/Anycubic)</option>
-            <option value="percent-job">Job percent (Bambu mc_percent)</option>
-            <option value="mismatch">Wrong file (identity mismatch)</option>
-          </select>
-        </label>
-        <button id="progressPlay" disabled>Play</button>
-        <p id="progressNote" role="note">Parse a file to enable simulated telemetry.</p>
-      </fieldset>
+          <div class="gp-vp-overlay gp-vp-tl">
+            <div class="gp-glass gp-legend-card" id="legendCard" hidden>
+              <div class="gp-eyebrow" id="legendTitle">Legend</div>
+              <div class="gp-legend" id="legend"></div>
+            </div>
+          </div>
 
-      <fieldset>
-        <legend>Result</legend>
-        <p id="stats">—</p>
-      </fieldset>
+          <div class="gp-vp-overlay gp-vp-tr">
+            <div class="gp-glass gp-row" style="gap: 4px">
+              <button class="gp-icon-btn" data-view="iso" title="Isometric">⬔</button>
+              <button class="gp-icon-btn" data-view="top" title="Top">▤</button>
+              <button class="gp-icon-btn" data-view="front" title="Front">▥</button>
+              <button class="gp-icon-btn" id="frame" title="Frame model">⤢</button>
+              <button class="gp-icon-btn" id="projToggle" title="Perspective / orthographic">◈</button>
+            </div>
+          </div>
 
-      <fieldset>
-        <legend>Render diagnostics</legend>
-        <button id="showStats" disabled title="Read renderer.getRenderStats() — backend, GPU, geometry, timings">Read render stats</button>
-        <pre id="renderStats" style="white-space: pre-wrap; font-size: 11px; margin: 0.5rem 0 0"></pre>
-      </fieldset>
+          <div class="gp-vp-overlay gp-vp-bl">
+            <div class="gp-glass gp-count-pill" id="countPill" hidden>
+              <span><b id="segCount">0</b> segments</span>
+              <span><b id="layerCountLbl">0</b> layers</span>
+              <span id="timePill" hidden><b id="timeLbl">—</b></span>
+            </div>
+          </div>
 
-      <fieldset>
-        <legend>More demos</legend>
-        <p style="margin: 0; line-height: 1.9">
-          <a href="model.html">Model stills (STL / 3MF)</a> ·
-          <a href="model-viewer.html">Interactive model viewer</a> ·
-          <a href="2d.html">Canvas 2D fallback</a> ·
-          <a href="validate.html">CNC / laser validation</a> ·
-          <a href="still.html">Headless still</a>
-        </p>
-      </fieldset>
-
-      <fieldset>
-        <legend>Keyboard</legend>
-        <div class="keys">
-          <kbd>Tab</kbd> reach every control · sliders take <kbd>←</kbd><kbd>→</kbd> and
-          <kbd>PgUp</kbd><kbd>PgDn</kbd><br />
-          Anywhere: <kbd>[</kbd>/<kbd>]</kbd> last layer −/+ · <kbd>,</kbd>/<kbd>.</kbd> scrub −/+ ·
-          <kbd>t</kbd> travel · <kbd>f</kbd> frame · <kbd>o</kbd> projection
+          <div class="gp-stage" id="stage" hidden>
+            <div class="ring"></div>
+            <div class="label" id="stageLabel">Parsing…</div>
+          </div>
         </div>
-      </fieldset>
-    </aside>
 
-    <main>
-      <canvas id="view" tabindex="0" aria-label="3D toolpath view"></canvas>
-    </main>
+        <button class="gp-icon-btn gp-rail-collapse" id="railToggle" title="Show / hide inspector">☰</button>
 
-    <script type="module" src="./src/main.js"></script>
+        <aside class="gp-rail">
+          <div class="gp-tabs" role="tablist" id="tabs">
+            <button class="gp-tab gp-on" data-tab="inspect" role="tab">Inspect</button>
+            <button class="gp-tab" data-tab="appearance" role="tab">Appearance</button>
+            <button class="gp-tab" data-tab="view" role="tab">View</button>
+            <button class="gp-tab" data-tab="rendering" role="tab">Render</button>
+            <button class="gp-tab" data-tab="machine" role="tab">Machine</button>
+            <button class="gp-tab" data-tab="progress" role="tab">Progress</button>
+            <button class="gp-tab" data-tab="cnc" data-context="cam" role="tab" hidden>CNC</button>
+            <button class="gp-tab" data-tab="diagnostics" role="tab">Diag</button>
+            <button class="gp-tab" data-tab="prepare" data-context="model" role="tab" hidden>Prepare</button>
+          </div>
+          <div class="gp-rail-body gp-scroll" id="railBody">
+            <!-- INSPECT -->
+            <section class="gp-panel" data-panel="inspect">
+              <h3>Move visibility</h3>
+              <label class="gp-toggle" id="travelRow"><span>Travel moves</span><input type="checkbox" id="travel" /></label>
+              <label class="gp-toggle" id="wipeRow"><span>Wipe moves</span><input type="checkbox" id="wipe" checked /></label>
+              <label class="gp-toggle" id="retractRow"><span>Retraction markers</span><input type="checkbox" id="retractions" /></label>
+              <div class="gp-panel" data-context="adhesion" style="padding: var(--gp-space-3) 0 0" hidden>
+                <label class="gp-toggle" id="adhesionRow"><span>Hide brim / skirt</span><input type="checkbox" id="hideAdhesion" /></label>
+              </div>
+            </section>
+            <section class="gp-panel" data-panel="inspect">
+              <h3>Inspect a segment</h3>
+              <p class="gp-hint">Click the model to read the G-code segment under the cursor (source mapping).</p>
+              <div class="gp-mono" id="pickResult">—</div>
+            </section>
+
+            <!-- APPEARANCE -->
+            <section class="gp-panel" data-panel="appearance" hidden>
+              <h3>Color mode</h3>
+              <select id="colorMode" class="gp-input"></select>
+              <p class="gp-reason" id="colorModeReason"></p>
+            </section>
+            <section class="gp-panel" data-panel="appearance" hidden>
+              <h3>Scene</h3>
+              <div class="gp-field">
+                <label for="theme">Theme</label>
+                <select id="theme" class="gp-input">
+                  <option value="default">Studio (dark)</option>
+                  <option value="docgrey">Documentation grey</option>
+                  <option value="blueprint">Blueprint</option>
+                  <option value="light">Light</option>
+                  <option value="bedplate">Bed plate</option>
+                </select>
+              </div>
+              <div class="gp-field">
+                <label for="material">Extrusion material</label>
+                <select id="material" class="gp-input">
+                  <option value="matte">Matte</option>
+                  <option value="glossy">Glossy</option>
+                </select>
+              </div>
+            </section>
+
+            <!-- VIEW -->
+            <section class="gp-panel" data-panel="view" hidden>
+              <h3>Camera</h3>
+              <div class="gp-field">
+                <label>Projection</label>
+                <div class="gp-segment" id="projSeg">
+                  <button data-proj="perspective" class="gp-on">Perspective</button>
+                  <button data-proj="orthographic">Orthographic</button>
+                </div>
+              </div>
+              <div class="gp-field">
+                <label>Preset views</label>
+                <div class="gp-row" id="viewBtns">
+                  <button class="gp-btn" data-view="top">Top</button>
+                  <button class="gp-btn" data-view="front">Front</button>
+                  <button class="gp-btn" data-view="right">Right</button>
+                  <button class="gp-btn" data-view="iso">Iso</button>
+                </div>
+              </div>
+              <div class="gp-row">
+                <button class="gp-btn" id="saveView">Save view</button>
+                <button class="gp-btn" id="restoreView" disabled>Restore</button>
+              </div>
+            </section>
+            <section class="gp-panel" data-panel="view" hidden>
+              <h3>Framing</h3>
+              <div class="gp-field">
+                <label>Frame content</label>
+                <div class="gp-segment" id="frameSeg">
+                  <button data-frame="all" class="gp-on">Whole job</button>
+                  <button data-frame="object">Object only</button>
+                </div>
+              </div>
+              <label class="gp-toggle"><span>Build-volume cage</span><input type="checkbox" id="cage" checked /></label>
+            </section>
+
+            <!-- RENDERING -->
+            <section class="gp-panel" data-panel="rendering" hidden>
+              <h3>Quality</h3>
+              <div class="gp-field">
+                <label for="quality">Geometry</label>
+                <select id="quality" class="gp-input">
+                  <option value="auto">Auto</option>
+                  <option value="tubes">Tubes (3D)</option>
+                  <option value="lines">Lines (fast)</option>
+                </select>
+              </div>
+              <div class="gp-field">
+                <label for="qualityMode">Fidelity policy</label>
+                <select id="qualityMode" class="gp-input">
+                  <option value="adaptive">Adaptive (default)</option>
+                  <option value="full">Full</option>
+                  <option value="fast">Fast</option>
+                </select>
+              </div>
+            </section>
+            <section class="gp-panel" data-panel="rendering" hidden>
+              <h3>Loading & interaction</h3>
+              <div class="gp-field">
+                <label for="progressive">Progressive preview</label>
+                <select id="progressive" class="gp-input">
+                  <option value="auto">Auto</option>
+                  <option value="lines">Lines curtain</option>
+                  <option value="hold">Hold (single reveal)</option>
+                  <option value="off">Off</option>
+                </select>
+              </div>
+              <label class="gp-toggle"><span>Reduce detail while moving</span><input type="checkbox" id="interactionQuality" /></label>
+            </section>
+
+            <!-- MACHINE -->
+            <section class="gp-panel" data-panel="machine" hidden>
+              <h3>Build volume</h3>
+              <p class="gp-hint" id="machineNote">Load a file to see its machine geometry.</p>
+              <div class="gp-mono" id="machineInfo">—</div>
+            </section>
+
+            <!-- PROGRESS -->
+            <section class="gp-panel" data-panel="progress" hidden>
+              <h3>Live progress (simulated)</h3>
+              <p class="gp-hint">Simulate a print in progress from a telemetry source, honestly mapped to the toolpath.</p>
+              <div class="gp-field">
+                <label for="progressTier">Telemetry source</label>
+                <select id="progressTier" class="gp-input">
+                  <option value="byte">File byte offset (exact)</option>
+                  <option value="percent-bytes">Percent of bytes</option>
+                  <option value="layer">Current layer (Klipper)</option>
+                  <option value="percent-job">Percent of job (Bambu)</option>
+                  <option value="mismatch">Identity mismatch (stale)</option>
+                </select>
+              </div>
+              <div class="gp-row">
+                <button class="gp-btn gp-primary" id="progressPlay" disabled>Play</button>
+              </div>
+              <p class="gp-reason" id="progressNote"></p>
+            </section>
+
+            <!-- CNC (contextual) -->
+            <section class="gp-panel" data-panel="cnc" hidden>
+              <h3>CNC / laser</h3>
+              <p class="gp-hint">This file reads as a CNC/laser toolpath. Try cut-vs-rapid or power coloring in Appearance.</p>
+              <div class="gp-mono" id="cncInfo">—</div>
+            </section>
+
+            <!-- DIAGNOSTICS -->
+            <section class="gp-panel" data-panel="diagnostics" hidden>
+              <h3>Capabilities</h3>
+              <div id="capBadges" class="gp-row" style="margin-bottom: var(--gp-space-3)"></div>
+              <h3>Render diagnostics</h3>
+              <button class="gp-btn" id="showStats">Read render stats</button>
+              <pre id="renderStats">Load a file, then read the render stats (backend, GPU, geometry, timings).</pre>
+            </section>
+            <section class="gp-panel" data-panel="prepare" hidden>
+              <h3>Source model</h3>
+              <p class="gp-hint" id="modelBlurb">Pick a model and press Load to view it before slicing.</p>
+              <div class="gp-mono" id="modelInfo" style="margin-top: var(--gp-space-3)">—</div>
+            </section>
+          </div>
+        </aside>
+      </div>
+
+      <!-- ============ SCRUB STRIP ============ -->
+      <div class="gp-scrub" id="scrubStrip">
+        <div class="gp-segment" id="scrubMode">
+          <button data-scrub="layers" class="gp-on">Layers</button>
+          <button data-scrub="segments">Segments</button>
+          <button data-scrub="time">Time</button>
+        </div>
+        <div class="track" data-track="layers">
+          <span class="rng">Layer</span>
+          <input type="range" id="startLayer" class="gp-range" min="0" max="0" value="0" disabled />
+          <input type="range" id="endLayer" class="gp-range" min="0" max="0" value="0" disabled />
+          <span class="rng" id="layerRangeLbl">0–0</span>
+        </div>
+        <div class="track" data-track="segments" hidden>
+          <span class="rng">Segment</span>
+          <input type="range" id="scrub" class="gp-range" min="0" max="0" value="0" disabled />
+          <span class="rng" id="scrubLbl">0</span>
+        </div>
+        <div class="track" data-track="time" hidden>
+          <span class="rng">Time</span>
+          <input type="range" id="timeScrub" class="gp-range" min="0" max="1000" value="1000" disabled />
+          <span class="rng" id="timeScrubLbl">—</span>
+        </div>
+        <div class="gp-row">
+          <button class="gp-icon-btn" id="scrubReset" title="Show all">⟲</button>
+        </div>
+      </div>
+
+      <!-- ============ STATUS BAR ============ -->
+      <footer class="gp-statusbar">
+        <span id="status">Ready — pick a sample and press Load.</span>
+        <span class="sep">·</span>
+        <span class="disclosure" id="disclosure"></span>
+      </footer>
+    </div>
+
+    <script type="module" src="/src/main.js"></script>
   </body>
 </html>

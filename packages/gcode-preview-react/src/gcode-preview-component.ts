@@ -31,7 +31,7 @@ import type {
   Theme,
   TubeOptions
 } from '@chestnutlabs/gcode-renderer-three';
-import type { MachineGeometry, ProgressObservation } from '@chestnutlabs/toolpath-core';
+import type { FeatureRoleValue, MachineGeometry, ProgressObservation } from '@chestnutlabs/toolpath-core';
 import type { WireParseOptions, WorkerLike } from '@chestnutlabs/gcode-parser';
 import {
   useGcodePreview,
@@ -88,6 +88,9 @@ export interface GcodePreviewProps {
   showRetractions?: boolean;
   /** #306/#6: show the build-volume wireframe cage (independent of the bed/plate). Default true. */
   showVolumeCage?: boolean;
+  /** DD-031 G3: feature roles to hide (e.g. `[FeatureRole.Skirt, FeatureRole.Brim]`). Declarative form
+   *  of `controls.setFeatureRoleVisible`; gate on `capabilities.featureRoles`. */
+  hiddenFeatureRoles?: FeatureRoleValue[];
   /** DD-006 live progress observation; null hides the overlay. */
   progress?: ProgressObservation | null;
   /** Worker factory escape hatch (DD-005 slim/custom entries; D2). */
@@ -156,6 +159,8 @@ function GcodePreviewImpl(props: GcodePreviewProps, ref: ForwardedRef<GcodePrevi
   // Callbacks live in a ref so the event subscription is stable across renders.
   const cbRef = useRef(props);
   cbRef.current = props;
+  // Tracks which roles THIS prop last hid, so we diff prev→next and don't disturb roles hidden elsewhere.
+  const prevHiddenRef = useRef<FeatureRoleValue[]>([]);
   useEffect(() => {
     return preview.onEvent((e: PreviewEvent) => {
       const p = cbRef.current;
@@ -231,6 +236,7 @@ function GcodePreviewImpl(props: GcodePreviewProps, ref: ForwardedRef<GcodePrevi
     cameraState,
     theme,
     buildVolume,
+    hiddenFeatureRoles,
     progress
   } = props;
   useEffect(() => {
@@ -291,6 +297,14 @@ function GcodePreviewImpl(props: GcodePreviewProps, ref: ForwardedRef<GcodePrevi
   useEffect(() => {
     if (buildVolume !== undefined && 'bed' in buildVolume) preview.controls.setBuildVolume(buildVolume);
   }, [buildVolume]);
+  useEffect(() => {
+    // Feature-role visibility (DD-031 G3): diff prev→next so we only toggle roles this prop owns.
+    const next = hiddenFeatureRoles ?? [];
+    const prev = prevHiddenRef.current;
+    for (const role of prev) if (!next.includes(role)) preview.controls.setFeatureRoleVisible(role, true);
+    for (const role of next) if (!prev.includes(role)) preview.controls.setFeatureRoleVisible(role, false);
+    prevHiddenRef.current = [...next];
+  }, [hiddenFeatureRoles]);
   useEffect(() => {
     if (progress === null || progress === undefined) preview.clearProgress();
     else preview.observeProgress(progress);

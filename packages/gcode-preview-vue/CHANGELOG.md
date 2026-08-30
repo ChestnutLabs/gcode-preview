@@ -1,5 +1,76 @@
 # @chestnutlabs/gcode-preview-vue
 
+## 0.20.0
+
+### Minor Changes
+
+- [#427](https://github.com/ChestnutLabs/gcode-preview/pull/427) [`8810ba4`](https://github.com/ChestnutLabs/gcode-preview/commit/8810ba43f1641362e1705e713a8afe93659f740a) Thanks [@sobechestnut-dev](https://github.com/sobechestnut-dev)! - Close the dark-capability gaps so no shipped capability is reachable only through the
+  `raw.renderer()` escape hatch, with full parity across all four framework adapters (DD-031).
+
+  **New on the public controller (`GcodePreviewControls`), so it flows to every adapter's `controls`:**
+  - `getRenderStats()` — the DD-027 render-diagnostics snapshot (backend, GPU, geometry mode, build
+    parallelism, timings), previously reachable only on the Three renderer. Returns `null` on the 2D
+    renderer (which produces no GPU/geometry diagnostics — never a fabricated stats object).
+  - `pickSegment(ndcX, ndcY, threshold?)` — source-mapping / segment picking, previously renderer-only.
+  - `isColorModeAvailable(mode)` — the honest per-file color-mode capability gate.
+
+  **New capability-aware state (`GcodePreviewState`):** `availableColorModes`, `hasRetractions`,
+  `hasColorChanges` — refreshed after each parse, so a UI can offer and _explain_ controls instead of
+  guessing (e.g. gray out feature coloring on a file with no feature roles, with a reason).
+
+  **Adapter parity:**
+  - `hiddenFeatureRoles` is now a declarative prop (Vue/React/Svelte) and a `hidden-feature-roles`
+    attribute (Web Component) — the declarative form of `setFeatureRoleVisible` (hide Skirt/Brim to
+    declutter a part). Gate it on `capabilities.featureRoles`.
+  - `capture()` is now a top-level method on the Vue/React/Svelte handles too, matching the Web
+    Component's `element.capture()`.
+  - Web Component: `renderer`/`adjacentLayers` gain property accessors; the package now also re-exports
+    `RendererMode` and `PreviewRenderer`.
+
+  All additive — existing code keeps working unchanged; the 2D renderer honors the widened contract as
+  documented no-ops / honest `null`. The portable behavioral suite is extended (layer-range, color-mode
+  gating, diagnostics + picking reachability) and gains a controls-completeness parity guard so a
+  capability can no longer ship in core and silently vanish from an adapter.
+
+- [#427](https://github.com/ChestnutLabs/gcode-preview/pull/427) [`b25ddb6`](https://github.com/ChestnutLabs/gcode-preview/commit/b25ddb68fdf4a5b12689c67f411e7d8c316086bb) Thanks [@sobechestnut-dev](https://github.com/sobechestnut-dev)! - Make interactive **source-model viewing** (STL / 3MF) a first-class, declarative half of the SDK —
+  the Prepare side alongside the toolpath Preview side — so consumers no longer have to drop to the
+  imperative `createModelViewer` engine to show a model in a framework (DD-031).
+
+  **New framework-neutral controller** (`@chestnutlabs/gcode-model-renderer`):
+  - `createModelPreviewController(options)` — the Prepare-side analogue of `gcode-preview-core`'s toolpath
+    controller. It wraps the existing `createModelViewer` engine unchanged and adds what a framework
+    binding needs: canvas-deferred construction with `bindCanvas` (rebuilding on a canvas swap and
+    replaying the last source), a reactive `getState()`/`onStateChange()` snapshot derived from the
+    engine's events (`ModelPreviewState`: `loading`/`ready`/`rendererSupported`/`objectCount`/`materials`/
+    `instancedCount`/`decimationApplied`/`bounds`/`plates`/`hasPlates`/`cameraState`/`progress`/`error`),
+    and an op queue for calls made before the canvas binds. `ModelPreviewControls` exposes `setSource`,
+    `setView`, get/`setCameraState`, `setBackground`, `setInteractionQuality`, `setRenderScope`, `frame`,
+    `resize`, and `capture`.
+  - A portable model behavioral suite ships via the `@chestnutlabs/gcode-model-renderer/testing` subpath
+    (`runModelBehavioralSuite`) with controls/state completeness parity guards.
+
+  **New `/model` adapter subpath on every framework** — thin shells over the one controller, mirroring
+  each framework's toolpath idiom:
+  - `@chestnutlabs/gcode-preview-react/model` — `useModelViewer` hook + `<ModelViewer>` component.
+  - `@chestnutlabs/gcode-preview-vue/model` — `useModelViewer` composable + `<ModelViewer>` component.
+  - `@chestnutlabs/gcode-preview-svelte/model` — `createModelViewer` store/action + the raw
+    `@chestnutlabs/gcode-preview-svelte/model/ModelViewer.svelte` component.
+  - `@chestnutlabs/gcode-preview-element/model` (+ `/model/define`) — the `<gcode-model-viewer>` custom
+    element (tag chosen to avoid the reserved `<model-viewer>`).
+
+  All additive — the toolpath surface is unchanged, and toolpath-only consumers don't pull the model
+  renderer (it lives behind the opt-in `/model` subpath). Every adapter passes the portable model
+  behavioral suite; each package gains `@chestnutlabs/gcode-model-renderer` as a dependency.
+
+### Patch Changes
+
+- Updated dependencies [[`718d1bd`](https://github.com/ChestnutLabs/gcode-preview/commit/718d1bde45856b58c37580d629da6d177f9f2004), [`8810ba4`](https://github.com/ChestnutLabs/gcode-preview/commit/8810ba43f1641362e1705e713a8afe93659f740a), [`b25ddb6`](https://github.com/ChestnutLabs/gcode-preview/commit/b25ddb68fdf4a5b12689c67f411e7d8c316086bb)]:
+  - @chestnutlabs/gcode-renderer-three@0.20.0
+  - @chestnutlabs/gcode-preview-core@0.20.0
+  - @chestnutlabs/gcode-model-renderer@0.20.0
+  - @chestnutlabs/gcode-parser@0.20.0
+  - @chestnutlabs/toolpath-core@0.20.0
+
 ## 0.19.0
 
 ### Patch Changes

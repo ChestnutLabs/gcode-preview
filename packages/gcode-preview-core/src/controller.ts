@@ -30,6 +30,7 @@ import type {
   ProgressivePreview,
   QualityMode,
   QualityPolicy,
+  RenderStats,
   RenderTargetCanvas,
   Theme,
   TubeOptions
@@ -170,8 +171,35 @@ export interface GcodePreviewState {
    */
   totalTimeMs: number | null;
   timeEstimateSource: 'slicer' | 'kinematic' | null;
+  /**
+   * Which color modes the current file can actually support (DD-031 G6) — the capability-aware list a
+   * consumer UI should offer, so it can gray out (and explain) the rest rather than fabricating colors.
+   * Empty before a parse / before the renderer is ready. `single`/`tool`/`moveKind` are always present.
+   */
+  availableColorModes: ColorModeName[];
+  /** True when the current file carries retraction/deretraction events the markers can show (DD-031 G6). */
+  hasRetractions: boolean;
+  /** True when the current file carries M600 color-change boundaries (DD-031 G6). */
+  hasColorChanges: boolean;
   error: { code: string; message: string } | null;
 }
+
+/** The discriminant of {@link ColorMode} — the color-mode identifiers, for capability lists. */
+export type ColorModeName = ColorMode['mode'];
+
+/** Every color mode the engine can render, in menu order — the domain `availableColorModes` filters. */
+export const ALL_COLOR_MODES: readonly ColorModeName[] = [
+  'single',
+  'tool',
+  'feature',
+  'colorChange',
+  'filament',
+  'feedrate',
+  'object',
+  'layerHeight',
+  'power',
+  'moveKind'
+];
 
 export interface GcodePreviewControls {
   setLayerRange(startLayer: number, endLayer: number): void;
@@ -223,6 +251,25 @@ export interface GcodePreviewControls {
    * is ready or on the 2D renderer (which cannot render-to-target). The caller owns the `Blob`.
    */
   capture(opts?: CaptureOptions): Promise<Blob>;
+  /**
+   * Render diagnostics snapshot (DD-027, DD-031 G1) — backend, WebGL version, GPU (hardware/software),
+   * geometry mode, build parallelism + worker count, draw calls, tube-byte budget, and parse/build/
+   * first-frame timings — or null before the first render and on the 2D renderer (which produces none).
+   * Reachable through the public surface so a diagnostics panel needs no `raw.renderer()`.
+   */
+  getRenderStats(): RenderStats | null;
+  /**
+   * Pick the IR segment under a pointer in normalized device coords ([-1, 1], y up), or null (DD-031 G2,
+   * #184). Powers source-mapping/inspection UI. The 3D renderer raycasts the toolpath; the 2D renderer
+   * returns null (no picking yet). `threshold` widens the hit test (world units).
+   */
+  pickSegment(ndcX: number, ndcY: number, threshold?: number): number | null;
+  /**
+   * Capability gate for a color mode against the current file (DD-031 G6) — mirrors
+   * {@link GcodePreviewState.availableColorModes} for a one-off query. `false` when the file lacks the
+   * channel the mode reads; always `true` before a parse (optimistic, like `setColorMode`).
+   */
+  isColorModeAvailable(mode: ColorModeName): boolean;
 }
 
 export interface PreviewController {
@@ -262,6 +309,9 @@ const INITIAL_STATE: GcodePreviewState = {
   disclosure: '',
   totalTimeMs: null,
   timeEstimateSource: null,
+  availableColorModes: [],
+  hasRetractions: false,
+  hasColorChanges: false,
   error: null
 };
 
@@ -381,7 +431,12 @@ export function createPreviewController(options: PreviewControllerOptions = {}):
     // Replay control calls made during the (async) load, in order.
     for (const op of pendingOps) op(r);
     pendingOps.length = 0;
-    if (lastIR !== null) mutate({ layerCount: r.layerCount, segmentCount: r.segmentCount });
+    if (lastIR !== null) {
+      mutate({ layerCount: r.layerCount, segmentCount: r.segmentCount });
+      // The renderer bound after a parse already completed (on-demand 3D load) — refresh capability
+      // state so a UI that mounted pre-render still gets accurate available-mode data (DD-031 G6).
+      refreshCapabilityState();
+    }
   }
 
   function bindCanvas(canvas: HTMLCanvasElement | null): void {
@@ -525,6 +580,10 @@ export function createPreviewController(options: PreviewControllerOptions = {}):
         warnings: result.ir.header.warnings,
         metadata: result.metadata
       });
+      // DD-031 G6: populate the capability-aware state (available color modes, retraction/color-change
+      // presence) now the renderer holds this file's IR. No-op if the (async 3D) renderer isn't ready
+      // yet — applyRendererReady refreshes it when the renderer binds.
+      refreshCapabilityState();
       return { ok: true, result };
     } catch (err) {
       if (err instanceof CancelledError) {
@@ -540,6 +599,19 @@ export function createPreviewController(options: PreviewControllerOptions = {}):
       mutate({ parsing: false, parseProgress: null });
       if (activeParse === run) activeParse = null;
     }
+  }
+
+  // DD-031 G6: refresh the capability-aware state a consumer UI reads to offer/explain controls
+  // (available color modes, retraction/color-change presence). Derived from the renderer, which owns
+  // the honest IR capability gates. No-op until the renderer is bound and has the IR.
+  function refreshCapabilityState(): void {
+    if (renderer === null) return;
+    const r = renderer;
+    mutate({
+      availableColorModes: ALL_COLOR_MODES.filter((m) => r.isColorModeAvailable(m)),
+      hasRetractions: r.hasRetractions,
+      hasColorChanges: r.hasColorChanges
+    });
   }
 
   const controls: GcodePreviewControls = {
@@ -576,6 +648,11 @@ export function createPreviewController(options: PreviewControllerOptions = {}):
       renderer !== null && typeof renderer.capture === 'function'
         ? renderer.capture(opts)
         : Promise.reject(new CaptureUnsupportedError('capture unavailable: renderer not ready or unsupported')),
+    // Value-returning queries can't queue: before the renderer is ready they answer honestly
+    // (null diagnostics/pick; optimistic color-mode availability, re-checkable after parse-complete).
+    getRenderStats: () => (renderer !== null ? renderer.getRenderStats() : null),
+    pickSegment: (ndcX, ndcY, threshold) => (renderer !== null ? renderer.pickSegment(ndcX, ndcY, threshold) : null),
+    isColorModeAvailable: (mode) => (renderer !== null ? renderer.isColorModeAvailable(mode) : true),
     setCameraState: (s) => withRenderer((r) => r.setCameraState(s)),
     setTheme: (t) => withRenderer((r) => r.setTheme(t)),
     setBuildVolume: (def) => {

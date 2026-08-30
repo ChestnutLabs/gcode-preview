@@ -19,7 +19,8 @@
     "vue": "^3.4.0",
     "@chestnutlabs/gcode-colors": "file:../../packages/gcode-colors",
     "@chestnutlabs/gcode-renderer-2d": "file:../../packages/gcode-renderer-2d",
-    "@chestnutlabs/gcode-model-renderer": "file:../../packages/gcode-model-renderer"
+    "@chestnutlabs/gcode-model-renderer": "file:../../packages/gcode-model-renderer",
+    "@chestnutlabs/gcode-preview-core": "file:../../packages/gcode-preview-core"
   },
   "devDependencies": {
     "vite": "^6.0.0"

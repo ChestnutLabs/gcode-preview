@@ -33,6 +33,28 @@
         "tools/example-svelte"
       ],
       "port": 5202
+    },
+    {
+      "name": "example-vue",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "run",
+        "dev",
+        "--prefix",
+        "tools/example-vue"
+      ],
+      "port": 5203
+    },
+    {
+      "name": "example-webcomponent",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "run",
+        "dev",
+        "--prefix",
+        "tools/example-webcomponent"
+      ],
+      "port": 5204
     }
   ]
 }
