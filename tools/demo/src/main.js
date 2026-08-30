@@ -22,12 +22,10 @@ import {
   MODEL_FIXTURE_BY_ID,
   count,
   duration,
-  bytes,
   timeSourceNote
 } from '../../demo-kit/index.js';
 import { downloadToolpathStl } from './stl-export.js';
 
-const $ = (id) => document.getElementById(id);
 const els = {};
 for (const el of document.querySelectorAll('[id]')) els[el.id] = el;
 

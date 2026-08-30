@@ -47,11 +47,7 @@ const ATTW_EXTRA_ARGS = {
   // compiled by the CONSUMER's Svelte toolchain (DD-007 phase 7; the model viewer added
   // in DD-031). attw only models node/bundler resolution, so those entrypoints
   // legitimately do not resolve for it. The JS/TS surface (`.`, `./model`) is still fully checked.
-  'gcode-preview-svelte': [
-    '--exclude-entrypoints',
-    './GcodePreview.svelte',
-    './model/ModelViewer.svelte'
-  ]
+  'gcode-preview-svelte': ['--exclude-entrypoints', './GcodePreview.svelte', './model/ModelViewer.svelte']
 };
 
 function run(args, cwd, label) {

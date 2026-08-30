@@ -42,6 +42,9 @@ describe('capture — includeBuildVolume', () => {
     const canvas = document.createElement('canvas');
     let toTarget = false;
     let capturedVisible: boolean | null = null;
+    // Definite-assignment forward reference: the stub's render closure reads the renderer's
+    // volumeGroup lazily, but the renderer is constructed with that stub — assigned once below.
+    // eslint-disable-next-line prefer-const
     let renderer!: ToolpathRenderer;
     const volGroup = () => (renderer as unknown as { volumeGroup: { visible: boolean } | null }).volumeGroup;
     const stub: GLRendererLike & {
