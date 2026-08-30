@@ -493,7 +493,8 @@ els.projToggle.addEventListener('click', () => {
   void cur;
 });
 // Camera presets + frame route to whichever viewer is active (toolpath or source model).
-const activeControls = () => (mode === 'prepare' && modelController !== null ? modelController.controls : preview.controls);
+const activeControls = () =>
+  mode === 'prepare' && modelController !== null ? modelController.controls : preview.controls;
 document
   .querySelectorAll('[data-view]')
   .forEach((b) => b.addEventListener('click', () => activeControls().setView(b.dataset.view)));

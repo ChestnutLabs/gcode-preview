@@ -46,7 +46,8 @@ let modelInfo = null; // last ModelReadyInfo (Prepare)
 // ---- fixture pickers: one <select>, repopulated per mode from the shared demo-kit ----
 function fillPreviewFixtures() {
   $('fixture').innerHTML = FIXTURE_GROUPS.map(
-    (g) => `<optgroup label="${g.group}">${g.items.map((i) => `<option value="${i.id}">${i.label}</option>`).join('')}</optgroup>`
+    (g) =>
+      `<optgroup label="${g.group}">${g.items.map((i) => `<option value="${i.id}">${i.label}</option>`).join('')}</optgroup>`
   ).join('');
   $('fixture').value = 'skirt-brim';
 }
@@ -125,7 +126,7 @@ function setMode(m) {
   // default footer line; events (disclosure / errors) overwrite it
   $('disclosure').textContent = prepare
     ? 'Prepare: view the source model before slicing.'
-    : FIXTURE_BY_ID[$('fixture').value]?.blurb ?? 'Pick a fixture to begin.';
+    : (FIXTURE_BY_ID[$('fixture').value]?.blurb ?? 'Pick a fixture to begin.');
 }
 $('modePreview').addEventListener('click', () => setMode('preview'));
 $('modePrepare').addEventListener('click', () => setMode('prepare'));
@@ -142,7 +143,10 @@ function applyColorMode() {
   if (legend) {
     $('legendTitle').textContent = mode.label;
     $('legend').innerHTML = legend
-      .map(([label, rgb]) => `<span class="gp-legend-item"><span class="gp-swatch" style="background:${rgbCss(rgb)}"></span>${label}</span>`)
+      .map(
+        ([label, rgb]) =>
+          `<span class="gp-legend-item"><span class="gp-swatch" style="background:${rgbCss(rgb)}"></span>${label}</span>`
+      )
       .join('');
   }
 }

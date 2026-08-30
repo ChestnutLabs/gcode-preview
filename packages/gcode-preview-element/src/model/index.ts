@@ -4,11 +4,7 @@
  * (DD-031). Registration is a function (`defineGcodeModelViewer`) so this entry stays side-effect-free;
  * import `.../model/define` to auto-register. A thin shell over `createModelPreviewController`.
  */
-export {
-  GcodeModelViewerElement,
-  defineGcodeModelViewer,
-  DEFAULT_MODEL_TAG
-} from './gcode-model-viewer-element.js';
+export { GcodeModelViewerElement, defineGcodeModelViewer, DEFAULT_MODEL_TAG } from './gcode-model-viewer-element.js';
 
 // Shared contracts pass through unchanged (re-export, never redeclare).
 export type {

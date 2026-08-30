@@ -115,7 +115,10 @@ function onReady(summary) {
   if (st) {
     hasRetractions.value = st.hasRetractions;
     time.value = { ms: st.totalTimeMs, src: st.timeEstimateSource };
-    if (!st.availableColorModes.includes(colorModeId.value) && colorModeReason(colorModeId.value, summary.capabilities) !== '') {
+    if (
+      !st.availableColorModes.includes(colorModeId.value) &&
+      colorModeReason(colorModeId.value, summary.capabilities) !== ''
+    ) {
       colorModeId.value = 'single';
     }
   }
@@ -167,7 +170,13 @@ function modeDisabled(id) {
         <option v-for="i in g.items" :key="i.id" :value="i.id">{{ i.label }}</option>
       </optgroup>
     </select>
-    <select v-else class="gp-input" style="width: 220px" :value="modelFixtureId" @change="loadModel($event.target.value)">
+    <select
+      v-else
+      class="gp-input"
+      style="width: 220px"
+      :value="modelFixtureId"
+      @change="loadModel($event.target.value)"
+    >
       <option v-for="m in MODEL_FIXTURES" :key="m.id" :value="m.id">{{ m.label }}</option>
     </select>
     <button class="gp-btn gp-primary" @click="prepare ? loadModel() : load()">Load</button>
@@ -259,7 +268,9 @@ function modeDisabled(id) {
           <section class="gp-panel">
             <h3>Filter</h3>
             <div v-if="layers > 0" class="gp-field">
-              <label>Top layer <span class="gp-value">{{ topLayer }} / {{ Math.max(0, layers - 1) }}</span></label>
+              <label
+                >Top layer <span class="gp-value">{{ topLayer }} / {{ Math.max(0, layers - 1) }}</span></label
+              >
               <input class="gp-range" type="range" :min="0" :max="Math.max(0, layers - 1)" v-model.number="topLayer" />
             </div>
             <label class="gp-toggle" :class="featureRolesKnown ? '' : 'gp-disabled'">

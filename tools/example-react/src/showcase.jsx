@@ -245,7 +245,8 @@ function App() {
           {prepare && modelInfo && (
             <div className="sc-count">
               {formatCount(modelInfo.objectCount)} object{modelInfo.objectCount === 1 ? '' : 's'}
-              {modelInfo.instancedCount > modelInfo.objectCount && ` · ${formatCount(modelInfo.instancedCount)} placements`}
+              {modelInfo.instancedCount > modelInfo.objectCount &&
+                ` · ${formatCount(modelInfo.instancedCount)} placements`}
             </div>
           )}
         </div>
@@ -283,7 +284,10 @@ function App() {
                   {layers > 0 && (
                     <div className="gp-field">
                       <label>
-                        Top layer <span className="gp-value">{topLayer} / {Math.max(0, layers - 1)}</span>
+                        Top layer{' '}
+                        <span className="gp-value">
+                          {topLayer} / {Math.max(0, layers - 1)}
+                        </span>
                       </label>
                       <input
                         className="gp-range"
@@ -332,7 +336,9 @@ function App() {
                   </button>
                   {stats && (
                     <div style={{ marginTop: 'var(--gp-space-3)' }} className="gp-mono">
-                      <div>backend: {stats.backend} ({stats.capability})</div>
+                      <div>
+                        backend: {stats.backend} ({stats.capability})
+                      </div>
                       <div>geometry: {stats.geometryMode}</div>
                       <div>segments: {formatCount(stats.renderedSegmentCount ?? 0)}</div>
                       <div>draw calls: {stats.drawCalls ?? '—'}</div>
@@ -362,7 +368,10 @@ function App() {
                     <div>objects: {formatCount(modelInfo.objectCount)}</div>
                     <div>placements: {formatCount(modelInfo.instancedCount)}</div>
                     <div>
-                      materials: <span className={`gp-badge ${confidenceTier(modelInfo.materials).cls}`}>{confidenceTier(modelInfo.materials).label}</span>
+                      materials:{' '}
+                      <span className={`gp-badge ${confidenceTier(modelInfo.materials).cls}`}>
+                        {confidenceTier(modelInfo.materials).label}
+                      </span>
                     </div>
                     {modelInfo.plates && <div>plates: {modelInfo.plates.list.length}</div>}
                   </div>
@@ -392,7 +401,10 @@ function App() {
               )}
         </div>
         <div className="sc-spacer" />
-        <span>{disclosure || (prepare ? 'Prepare: view the source model before slicing.' : fx ? fx.blurb : 'Pick a fixture to begin.')}</span>
+        <span>
+          {disclosure ||
+            (prepare ? 'Prepare: view the source model before slicing.' : fx ? fx.blurb : 'Pick a fixture to begin.')}
+        </span>
       </footer>
     </>
   );

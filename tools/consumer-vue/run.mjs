@@ -31,6 +31,7 @@ const PACKAGES = [
   'gcode-bgcode',
   'gcode-parser',
   'gcode-renderer-three',
+  'gcode-model-renderer',
   'gcode-renderer-2d',
   'gcode-preview-core',
   'gcode-preview-vue'

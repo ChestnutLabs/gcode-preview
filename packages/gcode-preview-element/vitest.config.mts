@@ -16,7 +16,9 @@ export default defineConfig({
       '@chestnutlabs/gcode-model-renderer/testing': fileURLToPath(
         new URL('../gcode-model-renderer/src/model-testing.ts', import.meta.url)
       ),
-      '@chestnutlabs/gcode-model-renderer': fileURLToPath(new URL('../gcode-model-renderer/src/index.ts', import.meta.url)),
+      '@chestnutlabs/gcode-model-renderer': fileURLToPath(
+        new URL('../gcode-model-renderer/src/index.ts', import.meta.url)
+      ),
       '@chestnutlabs/gcode-colors': fileURLToPath(new URL('../gcode-colors/src/index.ts', import.meta.url)),
       '@chestnutlabs/gcode-renderer-2d': fileURLToPath(new URL('../gcode-renderer-2d/src/index.ts', import.meta.url)),
       '@chestnutlabs/gcode-parser': fileURLToPath(new URL('../gcode-parser/src/index.ts', import.meta.url)),

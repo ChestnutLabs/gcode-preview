@@ -133,9 +133,7 @@ export const INITIAL_MODEL_STATE: ModelPreviewState = {
   error: null
 };
 
-export function createModelPreviewController(
-  options: ModelPreviewControllerOptions = {}
-): ModelPreviewController {
+export function createModelPreviewController(options: ModelPreviewControllerOptions = {}): ModelPreviewController {
   let snapshot: ModelPreviewState = { ...INITIAL_MODEL_STATE };
   const stateListeners = new Set<(s: ModelPreviewState) => void>();
   const mutate = (patch: Partial<ModelPreviewState>): void => {

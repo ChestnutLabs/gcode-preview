@@ -12,6 +12,7 @@
     "@chestnutlabs/gcode-colors": "file:tarballs/chestnutlabs-gcode-colors.tgz",
     "@chestnutlabs/gcode-containers": "file:tarballs/chestnutlabs-gcode-containers.tgz",
     "@chestnutlabs/gcode-dialects": "file:tarballs/chestnutlabs-gcode-dialects.tgz",
+    "@chestnutlabs/gcode-model-renderer": "file:tarballs/chestnutlabs-gcode-model-renderer.tgz",
     "@chestnutlabs/gcode-parser": "file:tarballs/chestnutlabs-gcode-parser.tgz",
     "@chestnutlabs/gcode-preview-vue": "file:tarballs/chestnutlabs-gcode-preview-vue.tgz",
     "@chestnutlabs/gcode-renderer-2d": "file:tarballs/chestnutlabs-gcode-renderer-2d.tgz",

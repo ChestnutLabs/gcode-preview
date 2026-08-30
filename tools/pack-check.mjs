@@ -43,11 +43,15 @@ const npmCmd = process.platform === 'win32' ? 'npm.cmd' : 'npm';
 
 // Documented attw exceptions (DD-008 §8 allows these when recorded with a reason).
 const ATTW_EXTRA_ARGS = {
-  // The raw `.svelte` component ships under the `"svelte"` export condition and is
-  // compiled by the CONSUMER's Svelte toolchain (DD-007 phase 7). attw only models
-  // node/bundler resolution, so that entrypoint legitimately does not resolve for it.
-  // The JS/TS surface (`.`) is still fully checked.
-  'gcode-preview-svelte': ['--exclude-entrypoints', './GcodePreview.svelte']
+  // The raw `.svelte` components ship under the `"svelte"` export condition and are
+  // compiled by the CONSUMER's Svelte toolchain (DD-007 phase 7; the model viewer added
+  // in DD-031). attw only models node/bundler resolution, so those entrypoints
+  // legitimately do not resolve for it. The JS/TS surface (`.`, `./model`) is still fully checked.
+  'gcode-preview-svelte': [
+    '--exclude-entrypoints',
+    './GcodePreview.svelte',
+    './model/ModelViewer.svelte'
+  ]
 };
 
 function run(args, cwd, label) {
