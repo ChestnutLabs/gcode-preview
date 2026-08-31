@@ -166,7 +166,7 @@ Set each **Disposition** to one of \`Status: reviewed\` / \`Status: no-change-ne
 
 - **Product review:** pending — README / Pages homepage / feature gallery still describe the product accurately for this release.
 - **Docs review:** pending — manual, package READMEs, examples, and quick-start match the shipped API.
-- **Visual review:** pending — every changed user-facing capability is visually documented, or the coverage matrix records why not.
+- **Visual review:** pending — every changed user-facing capability is visually documented, or the coverage matrix records why not. **UI parity:** if the app/controls/adapters changed, the app-UI screenshots (\`docs/media/app-*.png\`, regenerate with \`npm run docs:shots:app\`) and the capability renders (\`npm run docs:shots\`) show the CURRENT UI — the README must not lead with a screenshot from an older layout — and the live demos (\`npm run docs:demos\` → Pages \`/demos/\`) build and run on the published SDK.
 
 _Resolve each marker above by replacing \`pending\` with \`resolved\` once reconciled._
 `;

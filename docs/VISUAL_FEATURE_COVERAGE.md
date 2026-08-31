@@ -118,6 +118,32 @@ capabilities, so the per-capability rows below are unchanged):
   look. App-UI screenshots of Prepare mode were captured for review but, like the toolpath showcase
   shots, are not yet canonical `docs/media` (same harness gap).
 
+## This pass (2026-08-30, v0.20.0 docs/demo parity) — RESOLVES the app-UI + demo gaps above
+
+The two deferrals from the previous pass (app-UI media not canonical; interactive demos not published)
+are now closed:
+
+- **App-UI screenshots are now canonical + reproducible.** A new manifest-driven harness
+  (`tools/screenshots/capture-app.mjs` + `app-shots.manifest.json`, run via `npm run docs:shots:app`)
+  captures the actual Feature Lab application surface — studio-dark chrome — by compositing the real
+  render into the DOM. Committed shots: `app-control-panel` (the lead controls shot, replaces the old
+  mid-grey `app-control-panel`), `app-appearance` (color modes), `app-diagnostics` (capabilities +
+  `getRenderStats`, replaces the stale pre-Feature-Lab `diagnostics-panel`), `app-prepare` (Prepare /
+  source model). These are the *application* look (dark), deliberately distinct from the mid-grey
+  capability renders — both are now first-class classes in the media set.
+- **Live interactive demos are published to GitHub Pages** (`tools/docs/build-demos.mjs`, `npm run
+  docs:demos`, wired into `docs-pages.yml`): the Feature Lab and all four framework showcases + minimal
+  examples under `/demos/*`, on the published SDK, with a product-facing landing at `/demos/`. The
+  README, Pages homepage, and feature gallery now lead with "Try the live demo" and the interactive
+  application surface, not only renders.
+- **README/Pages refreshed against v0.20.0:** the README hero is now the Feature Lab UI; a Prepare +
+  Preview pairing and a controls/capabilities pairing appear early; the homepage hero + a demos
+  banner + a Prepare/Preview card were added; the gallery gained a "Try it live" section and swapped
+  the stale `diagnostics-panel` for `app-diagnostics`.
+- **Reproducibility / release gate:** `docs:shots` (capability renders) and `docs:shots:app` (app-UI)
+  regenerate the media; the RELEASE_REVIEW Visual disposition now explicitly covers app-UI + live-demo
+  parity so a future cut can't advertise a stale UI (see the release template).
+
 ## 1. Toolpath inspection
 
 | Capability | User-facing | Demo | Media | README | Pages gallery | Manual/pkg | Status |
@@ -169,7 +195,7 @@ capabilities, so the per-capability rows below are unchanged):
 | Renderer build stages (`stage` event) | ✅ | ❌ | — | ✅ (prose) | gallery | concept-workers | needs animation |
 | Interaction-aware quality | ✅ | ❌ | — | ✅ (prose) | gallery | concept-workers | needs animation |
 | Disclosed decimation / degradation | ✅ | ✅ (disclosure) | — | ✅ (prose) | gallery | concept-workers | needs screenshot (disclosure text) |
-| Render diagnostics (`getRenderStats`) | ✅ | ✅ (panel) | `diagnostics-panel` | ✅ | gallery | concept-workers | covered — panel-in-context screenshot in the gallery |
+| Render diagnostics (`getRenderStats`) | ✅ | ✅ (panel) | `app-diagnostics` | ✅ | gallery | concept-workers | covered — current Feature Lab Diagnostics tab (capability badges + stats) in the gallery |
 | Geometry worker pool (parallel tubes) | ✅ | ❌ | — | mention | gallery | concept-workers | not visually meaningful (diagnostics panel proxies it) |
 | WebGL context-loss recovery | ✅ | ❌ | — | mention | — | — | not visually meaningful |
 
@@ -193,7 +219,7 @@ capabilities, so the per-capability rows below are unchanged):
 | STL presentation still | ✅ | model page | (in pair) | ✅ | gallery | model-renderer README | covered |
 | 3MF material/color presentation | ✅ | model page | (in pair) | ✅ | gallery | model-renderer README | covered |
 | Interactive model viewer (`createModelViewer`) | ✅ | model-viewer page + Feature Lab (Prepare) | — | ✅ (prose) | gallery | model-renderer README | covered (interactive) — Feature Lab + all 4 showcases have a Prepare mode; animation still nice-to-have |
-| Model-viewer framework adapters (`<ModelViewer>` / `/model`) | ✅ | Feature Lab + 4 showcases (Prepare) + model.html minimals | — | ✅ (table) | — | adapters + 4 READMEs | covered (code + examples); app-UI media pending harness support |
+| Model-viewer framework adapters (`<ModelViewer>` / `/model`) | ✅ | Feature Lab + 4 showcases (Prepare) + model.html minimals + **live demos on Pages** | `app-prepare` | ✅ (table + README pairing) | homepage + gallery | adapters + 4 READMEs | covered — app-UI shot + running demos |
 | Multi-object files | ✅ | model page | — | mention | gallery | — | needs screenshot |
 | Multi-plate files + per-plate render | ✅ | ❌ | — | ❌ | gallery | — | needs demo exposure + needs comparison |
 | Render scope / object subsets (`RenderScope`) | ✅ | ❌ | — | ❌ | gallery | recipes | needs demo exposure + needs comparison |
@@ -235,8 +261,8 @@ capabilities, so the per-capability rows below are unchanged):
 
 | Capability | User-facing | Demo | Media | README | Pages gallery | Manual/pkg | Status |
 |---|:---:|:---:|:---:|:---:|:---:|:---:|---|
-| Vue / React / Svelte / Web Component adapters | ✅ | two-tier examples + Feature Lab | — | ✅ (table) | — | adapters | covered (code + examples) — each adapter has a minimal + showcase example on the shared design language; canonical app-UI media pending harness support |
-| Capability-aware consumer UX (gated modes + reasons, confidence tiers, contextual controls) | ✅ | Feature Lab + 4 showcases | — | ✅ (prose) | — | adapters | demonstrated in demo + examples; review captures exist (dark app UI), not yet canonical mid-grey media |
+| Vue / React / Svelte / Web Component adapters | ✅ | two-tier examples + Feature Lab + **live demos on Pages** | `app-control-panel` | ✅ (table) | homepage + gallery | adapters | covered — each adapter has a minimal + showcase example, all runnable on the Pages demos site |
+| Capability-aware consumer UX (gated modes + reasons, confidence tiers, contextual controls) | ✅ | Feature Lab + 4 showcases | `app-appearance`, `app-diagnostics` | ✅ | gallery + README | adapters | covered — app-UI shots show gated modes + capability badges (captured by capture-app.mjs) |
 | Headless toolpath still (`renderStill`) | ✅ | still page | — | ✅ | gallery | reference/still-render | needs screenshot (server-thumbnail context) |
 | Headless model still (`renderModelStill`) | ✅ | model page | `model-render-stl-3mf` | ✅ | gallery | model-renderer README | covered |
 | Off-thread parsing / cancellation / limits | ✅ | ✅ | — | ✅ (prose) | — | concept-workers | not visually meaningful |

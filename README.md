@@ -3,24 +3,28 @@
 **Show a 3D print or CNC/laser job in the browser — before, during, or after it runs.**
 Drop `.gcode`, `.gcode.3mf`, or Prusa `.bgcode` into a web page and get an interactive toolpath
 view: orbit it, clip it to a layer, scrub through it, color it by feature or speed, and overlay
-live printer progress. Parsing runs in a Web Worker, so a 250 MB file never freezes your UI.
+live printer progress. Or view the **source model** (STL / 3MF) before it's sliced. Parsing runs in
+a Web Worker, so a 250 MB file never freezes your UI.
 
 [![npm](https://img.shields.io/npm/v/@chestnutlabs/gcode-preview-react?label=npm&color=cb3837)](https://www.npmjs.com/package/@chestnutlabs/gcode-preview-react)
 [![license](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 [![docs](https://img.shields.io/badge/docs-manual%20%2B%20API-2ea44f)](https://chestnutlabs.github.io/gcode-preview/)
 ![node](https://img.shields.io/badge/node-%E2%89%A522-339933)
 
-![3DBenchy rendered as extrusion tubes with per-feature coloring — perimeters, infill, and skirt in distinct colors — on a neutral grey build plate](docs/media/viewer-benchy-tubes.png)
+![The G-code Preview Feature Lab — a 3DBenchy colored by feature role in the viewport, with the inspector rail (move-visibility toggles, feature-role hide, segment inspection), a color-mode legend, camera controls, a layers/segments/time scrub strip, and honest capability badges](docs/media/app-control-panel.png)
+
+**▶ [Try the live demo](https://chestnutlabs.github.io/gcode-preview/demos/)** — open the interactive **Feature Lab**, or the **React / Vue / Svelte / Web Component** examples, right in your browser. Nothing is uploaded; parsing runs in a Web Worker.
 
 ---
 
 ## What it is
 
-G-code Preview turns a sliced G-code file into an interactive picture of the actual toolpath. It
-reads the file the way the printer will — every move, layer, feature, and tool change — and draws
-it with Three.js (or a Canvas 2D fallback for low-GPU devices). It ships as a set of
-`@chestnutlabs/*` npm packages with ready-made **Vue, React, Svelte, and Web Component** components,
-all built on one shared engine.
+G-code Preview covers **both halves** of looking at a print job. **Preview** turns a sliced G-code
+file into an interactive picture of the actual toolpath — reading the file the way the printer will,
+every move, layer, feature, and tool change, drawn with Three.js (or a Canvas 2D fallback for
+low-GPU devices). **Prepare** shows the **source model** (STL / 3MF) before slicing — the object,
+its parts, and its material colors. It ships as a set of `@chestnutlabs/*` npm packages with
+ready-made **Vue, React, Svelte, and Web Component** components, all built on one shared engine.
 
 One rule runs through the whole thing: **it shows what it can prove and refuses to fake the rest.**
 If a slicer didn't record feature types, the viewer says so instead of inventing colors. If live
@@ -30,7 +34,22 @@ telemetry only reports a percentage, it draws an uncertainty band, not a false-p
 npm install @chestnutlabs/gcode-preview-react three   # or -vue / -svelte / -element
 ```
 
-![The demo application: a control panel — corpus picker, layer and time scrub, an honest "54.2 min (slicer estimate)" print time, display toggles — beside a fully rendered 3DBenchy with feature coloring](docs/media/app-control-panel.png)
+### Two modes, one SDK — Prepare & Preview
+
+| Prepare — the source model | Preview — the sliced toolpath |
+|---|---|
+| ![The Feature Lab in Prepare mode: a colored 3MF source model (red, amber, green stacked blocks) with a Source Model panel reporting 3 objects, 3 placements, and materials: known](docs/media/app-prepare.png) | ![The Feature Lab in Preview mode: a 3DBenchy colored by feature role with the inspector rail, feature legend, camera controls, and layer/segment scrub](docs/media/app-control-panel.png) |
+| **STL / 3MF** solid model — objects, materials, model controls, honest material-color tier. | **Sliced G-code** — layers, features, speed, travel, retractions, and toolpath controls. |
+
+The controls and capabilities are front-and-centre, not hidden behind a render:
+
+| Color modes, capability-gated | Render diagnostics & capabilities |
+|---|---|
+| ![The Appearance tab: a color-by selector (single / tool / feature / speed / object / layer height) with the active feature-role legend; modes the file can't support are greyed out](docs/media/app-appearance.png) | ![The Diagnostics tab: capability confidence badges and getRenderStats() output — backend, GPU, geometry mode, segment and draw-call counts, worker pool](docs/media/app-diagnostics.png) |
+
+You can drive all of this yourself in the **[live demos](https://chestnutlabs.github.io/gcode-preview/demos/)**. A cropped beauty render — the same engine, no UI:
+
+![3DBenchy rendered as extrusion tubes with per-feature coloring — perimeters, infill, and skirt in distinct colors — on a neutral grey build plate](docs/media/viewer-benchy-tubes.png)
 
 ## Why you'd use it
 
@@ -173,14 +192,16 @@ every FDM file is byte-for-byte unchanged. See
 ### Framework integration
 
 Four adapters over one engine, with matching options, events, and TypeScript types — enforced by a
-shared behavioral test suite that runs against all four in CI:
+shared behavioral test suite (with a controls/state parity guard) that runs against all four in CI.
+Each adapter exposes **both** viewers: the toolpath `<GcodePreview>` from the package root, and the
+source-model `<ModelViewer>` from the package's **`/model`** subpath (the Prepare side).
 
-| Adapter | Package | Component + lower-level API |
-|---|---|---|
-| **Vue 3** | [`@chestnutlabs/gcode-preview-vue`](packages/gcode-preview-vue) | `<GcodePreview>` + `useGcodePreview()` composable |
-| **React** | [`@chestnutlabs/gcode-preview-react`](packages/gcode-preview-react) | `<GcodePreview>` + `useGcodePreview()` hook (StrictMode-safe) |
-| **Svelte** | [`@chestnutlabs/gcode-preview-svelte`](packages/gcode-preview-svelte) | `<GcodePreview>` + `createGcodePreview()` store/action |
-| **Web Component** | [`@chestnutlabs/gcode-preview-element`](packages/gcode-preview-element) | `<gcode-preview>` custom element, no framework peer |
+| Adapter | Package | Preview (toolpath) | Prepare (source model, `/model`) |
+|---|---|---|---|
+| **Vue 3** | [`@chestnutlabs/gcode-preview-vue`](packages/gcode-preview-vue) | `<GcodePreview>` + `useGcodePreview()` | `<ModelViewer>` + `useModelViewer()` |
+| **React** | [`@chestnutlabs/gcode-preview-react`](packages/gcode-preview-react) | `<GcodePreview>` + `useGcodePreview()` (StrictMode-safe) | `<ModelViewer>` + `useModelViewer()` |
+| **Svelte** | [`@chestnutlabs/gcode-preview-svelte`](packages/gcode-preview-svelte) | `<GcodePreview>` + `createGcodePreview()` | `<ModelViewer>` + `createModelViewer()` |
+| **Web Component** | [`@chestnutlabs/gcode-preview-element`](packages/gcode-preview-element) | `<gcode-preview>` (no framework peer) | `<gcode-model-viewer>` |
 
 ### Browser & performance architecture
 
@@ -244,11 +265,15 @@ const { canvas, materials, cacheKey } = await renderModelStill(
 // materials: 'known' when the source carried colors, 'unavailable' when it didn't.
 ```
 
-Need it live rather than as a thumbnail — a "View in 3D" for the part? `createModelViewer` is the
-interactive analogue of the still: it orbits, zooms, and pans the same STL / 3MF (including production
-multicolor) with camera presets and the same serializable camera state, over the shared camera and
-orbit controls. See the
-[model-renderer README](packages/gcode-model-renderer/README.md#interactive-viewer).
+Need it live rather than as a thumbnail — a "View in 3D" for the part? Interactive source-model
+viewing is a **first-class, declarative half of the SDK**: drop `<ModelViewer source={…} />` from any
+framework's **`/model`** subpath (`@chestnutlabs/gcode-preview-{react,vue,svelte}/model`, or
+`<gcode-model-viewer>` from the Web Component) and orbit/zoom/pan the same STL / 3MF (including
+production multicolor) with camera presets, serializable camera state, per-plate render scope, and the
+honest `materials` capability tier — the same parity (props, events, lifecycle, cleanup) as the
+toolpath component. It wraps the framework-neutral `createModelPreviewController` over the shared
+`createModelViewer` engine. See the [adapters guide](docs/manual/adapters.md) ("Two viewers: Preview
+and Prepare") and the [model-renderer README](packages/gcode-model-renderer/README.md).
 
 **Multi-plate, multi-object, or just a subset.** A 3MF project can hold several plates and many
 objects. Parse or render **one plate at a time** (`parseOptions.plate`), and a **render scope**

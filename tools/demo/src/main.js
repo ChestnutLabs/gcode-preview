@@ -454,6 +454,12 @@ els.railToggle.addEventListener('click', () => els.main.classList.toggle('gp-rai
 els.travel.addEventListener('change', () => preview.controls.setKindVisible('travel', els.travel.checked));
 els.wipe.addEventListener('change', () => preview.controls.setKindVisible('wipe', els.wipe.checked));
 els.retractions.addEventListener('change', () => preview.controls.setShowRetractions(els.retractions.checked));
+// Apply the initial move-visibility state — the renderer's defaults otherwise disagree with the
+// unchecked/checked boxes (e.g. travel would render though "Travel moves" is off). Queued until the
+// renderer resolves, then replayed.
+preview.controls.setKindVisible('travel', els.travel.checked);
+preview.controls.setKindVisible('wipe', els.wipe.checked);
+preview.controls.setShowRetractions(els.retractions.checked);
 els.hideAdhesion.addEventListener('change', () => {
   const visible = !els.hideAdhesion.checked;
   preview.controls.setFeatureRoleVisible(FeatureRole.Skirt, visible);

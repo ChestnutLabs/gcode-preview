@@ -55,6 +55,14 @@
         "tools/example-webcomponent"
       ],
       "port": 5204
+    },
+    {
+      "name": "docs-site",
+      "runtimeExecutable": "node",
+      "runtimeArgs": [
+        "tools/docs/serve-site.mjs"
+      ],
+      "port": 5098
     }
   ]
 }

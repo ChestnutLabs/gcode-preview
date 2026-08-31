@@ -78,6 +78,33 @@ node tools/screenshots/capture.mjs cnc-cut-vs-rapid color-speed-calicat
 
 Override the demo URL with `DEMO_URL` (default `http://localhost:5199`).
 
+## App-UI shots (the application surface)
+
+`capture.mjs` captures mid-grey capability **renders** (what the toolpath/model looks like).
+[`capture-app.mjs`](capture-app.mjs) is its sibling for the actual **application surface** — the
+Feature Lab's control/inspector rail, color-mode selector, tabs, diagnostics, and the Preview/Prepare
+modes — in the shipped **studio-dark** chrome. These are the README/homepage/gallery images that must
+show the *current* UI (e.g. `docs/media/app-control-panel.png`, `app-appearance`, `app-diagnostics`,
+`app-prepare`). Manifest: [`app-shots.manifest.json`](app-shots.manifest.json).
+
+```sh
+npm run docs:shots        # all capability renders (capture.mjs)
+npm run docs:shots:app    # all app-UI shots (capture-app.mjs)
+node tools/screenshots/capture-app.mjs app-diagnostics   # one app shot
+```
+
+It composites the real render into the DOM (`capture()` → dataURL → viewport background → screenshot),
+since `page.screenshot` can't grab a WebGL canvas without `preserveDrawingBuffer`. Run it against the
+Feature Lab dev server (`:5199`) or the built static site (`DEMO_URL=http://localhost:5098/demos/feature-lab`
+after `npm run docs:demos` + `node tools/docs/serve-site.mjs`).
+
+## Live demos on Pages
+
+[`tools/docs/build-demos.mjs`](../docs/build-demos.mjs) (`npm run docs:demos`) builds the Feature Lab
+and the four framework examples and stages them into the Pages artifact under `docs-site/demos/*` with
+a product-facing landing. It runs after `docs:build` in `docs-pages.yml`. Verify the built artifact
+locally with `node tools/docs/serve-site.mjs` (`:5098`).
+
 ## How it works (and why)
 
 - For each shot it navigates to the right page, selects the corpus file, parses, applies the shot's

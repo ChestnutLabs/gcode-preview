@@ -13,6 +13,12 @@ on:
       - 'packages/**'
       - 'typedoc.json'
       - 'tools/docs/**'
+      - 'tools/demo/**'
+      - 'tools/demo-kit/**'
+      - 'tools/example-react/**'
+      - 'tools/example-vue/**'
+      - 'tools/example-svelte/**'
+      - 'tools/example-webcomponent/**'
       - 'docs/manual/**'
       - 'docs/media/**'
       - '.github/workflows/docs-pages.yml'
@@ -39,6 +45,8 @@ jobs:
           cache: 'npm'
       - run: npm ci
       - run: npm run docs:build
+      # Build the live, interactive demos into the Pages artifact (docs-site/demos/*).
+      - run: npm run docs:demos
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:
