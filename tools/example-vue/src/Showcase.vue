@@ -29,7 +29,9 @@ import {
   confidenceTier,
   rgbCss,
   count as formatCount,
-  duration as formatDuration
+  duration as formatDuration,
+  DOC_VIEWPORT_THEME,
+  DOC_VIEWPORT_BG
 } from '../../demo-kit/index.js';
 
 const ADHESION_ROLES = [FeatureRole.Skirt, FeatureRole.Brim];
@@ -199,6 +201,7 @@ function modeDisabled(id) {
         :show-travel="showTravel"
         :show-retractions="showRetractions"
         :view="view"
+        :theme="DOC_VIEWPORT_THEME"
         frame-content="object"
         quality="auto"
         @ready="onReady"
@@ -211,7 +214,7 @@ function modeDisabled(id) {
         ref="modelViewer"
         :source="modelSource"
         :view="view"
-        background="transparent"
+        :background="DOC_VIEWPORT_BG"
         @ready="onModelReady"
         @error="disclosure = `Model error: ${$event.code} — ${$event.message}`"
       />

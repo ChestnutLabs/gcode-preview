@@ -93,8 +93,12 @@ npm run docs:shots:app    # all app-UI shots (capture-app.mjs)
 node tools/screenshots/capture-app.mjs app-diagnostics   # one app shot
 ```
 
-It composites the real render into the DOM (`capture()` → dataURL → viewport background → screenshot),
-since `page.screenshot` can't grab a WebGL canvas without `preserveDrawingBuffer`. Run it against the
+It composites the real render into the DOM (copy the live canvas → dataURL → viewport background →
+screenshot), since `page.screenshot` can't grab a WebGL canvas without `preserveDrawingBuffer`. It
+copies the **live** canvas rather than `controls.capture()`: capture()'s render-to-target readback is
+in linear colour space (no sRGB output encoding), which would darken the mid-grey documentation
+workspace to its linear value. So the viewport reads as the same mid-grey as the capability renders.
+Run it against the
 Feature Lab dev server (`:5199`) or the built static site (`DEMO_URL=http://localhost:5098/demos/feature-lab`
 after `npm run docs:demos` + `node tools/docs/serve-site.mjs`).
 

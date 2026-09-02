@@ -46,6 +46,7 @@ function onReady(summary) {
       :source="source"
       :layer-range="layers > 0 ? [0, topLayer] : null"
       :show-travel="false"
+      :theme="{ background: '#6d7176' }"
       @ready="onReady"
     />
   </main>

@@ -28,7 +28,9 @@
     confidenceTier,
     rgbCss,
     count as formatCount,
-    duration as formatDuration
+    duration as formatDuration,
+    DOC_VIEWPORT_THEME,
+    DOC_VIEWPORT_BG
   } from '../../demo-kit/index.js';
 
   const ADHESION_ROLES = [FeatureRole.Skirt, FeatureRole.Brim];
@@ -209,6 +211,7 @@
         {showTravel}
         {showRetractions}
         {view}
+        theme={DOC_VIEWPORT_THEME}
         frameContent="object"
         quality="auto"
         on:ready={onReady}
@@ -221,7 +224,7 @@
         bind:this={modelViewer}
         source={modelSource}
         {view}
-        background="transparent"
+        background={DOC_VIEWPORT_BG}
         on:ready={onModelReady}
         on:error={(e) => (disclosure = `Model error: ${e.detail.code} — ${e.detail.message}`)}
       />

@@ -26,7 +26,9 @@ import {
   confidenceTier,
   rgbCss,
   count as formatCount,
-  duration as formatDuration
+  duration as formatDuration,
+  DOC_VIEWPORT_THEME,
+  DOC_VIEWPORT_BG
 } from '../../demo-kit/index.js';
 import '../../demo-kit/tokens.css';
 
@@ -193,6 +195,7 @@ function App() {
               showTravel={showTravel}
               showRetractions={showRetractions}
               view={view}
+              theme={DOC_VIEWPORT_THEME}
               frameContent="object"
               quality="auto"
               onReady={onReady}
@@ -205,7 +208,7 @@ function App() {
               ref={modelRef}
               source={modelSource}
               view={view}
-              background="transparent"
+              background={DOC_VIEWPORT_BG}
               onReady={(info) => setModelInfo(info)}
               onError={(e) => setDisclosure(`Model error: ${e.code} — ${e.message}`)}
             />

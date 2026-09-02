@@ -7,8 +7,11 @@
  * only pretty renders. Manifest: app-shots.manifest.json.
  *
  * Because page.screenshot cannot grab a WebGL canvas without preserveDrawingBuffer, we composite the
- * real render into the DOM: capture() → dataURL → set as the viewport-wrap background → hide the live
- * canvas → screenshot the full page. The studio-dark chrome IS the shipped product look.
+ * real render into the DOM: copy the live canvas (drawImage → toDataURL) → set as the viewport-wrap
+ * background → hide the live canvas → screenshot the full page. We copy the live canvas rather than
+ * controls.capture(), whose render-to-target readback is LINEAR and would darken the mid-grey theme
+ * (see the composite step). The dark chrome IS the shipped product look; the viewport is the shared
+ * documentation mid-grey, matching capture.mjs's capability renders.
  *
  * Prerequisites (same as capture.mjs):
  *   1. Build the workspace packages.  2. Start the Feature Lab:  npm run dev --prefix tools/demo (:5199).
@@ -86,41 +89,44 @@ async function captureApp(page, shot) {
   }
 
   // Frame + preset view on whichever viewer is active.
-  await page.evaluate(
-    (v) => {
-      const c = window.viewer.model && document.getElementById('modelView') && !document.getElementById('modelView').hidden
+  await page.evaluate((v) => {
+    const c =
+      window.viewer.model && document.getElementById('modelView') && !document.getElementById('modelView').hidden
         ? window.viewer.model().controls
         : window.viewer.preview.controls;
-      c.setView(v || 'iso');
-      c.frame();
-    },
-    shot.view
-  );
+    c.setView(v || 'iso');
+    c.frame();
+  }, shot.view);
   await page.waitForTimeout(700);
   // Read render diagnostics AFTER the build has settled (so the panel matches the shown model).
   if (shot.readStats) await page.evaluate(() => document.getElementById('showStats')?.click());
   await page.waitForTimeout(150);
 
   // Composite the real render into the viewport-wrap, then screenshot the whole app.
-  const dataUrl = await page.evaluate(async () => {
-    const active =
-      document.getElementById('modelView') && !document.getElementById('modelView').hidden
-        ? window.viewer.model().controls
-        : window.viewer.preview.controls;
-    const blob = await active.capture({ format: 'image/png' });
-    const url = await new Promise((res) => {
-      const fr = new FileReader();
-      fr.onload = () => res(fr.result);
-      fr.readAsDataURL(blob);
-    });
+  //
+  // Copy the LIVE canvas backing store (drawImage → toDataURL) rather than `controls.capture()`.
+  // capture() renders to an off-screen WebGLRenderTarget and reads the pixels back in LINEAR colour
+  // space — no sRGB output encoding — which darkens the mid-grey documentation workspace to its linear
+  // value (#6d7176 → ~#272a2e). The live canvas the visitor actually sees is sRGB-correct, so copying
+  // it (repaint first, since the demo runs without preserveDrawingBuffer) yields the true colours.
+  await page.evaluate(() => {
+    const prepare = !!document.getElementById('modelView') && !document.getElementById('modelView').hidden;
+    const src = document.getElementById(prepare ? 'modelView' : 'view');
+    // Repaint the live canvas right before copying so its backing store is current: the toolpath stage
+    // runs without preserveDrawingBuffer, and the model's preserved buffer can hold only a background
+    // clear by copy time. frame() re-renders the model synchronously (there is no bare render()).
+    if (prepare) window.viewer.model()?.controls.frame();
+    else window.viewer.preview.raw.renderer().render();
+    const c = document.createElement('canvas');
+    c.width = src.width;
+    c.height = src.height;
+    c.getContext('2d').drawImage(src, 0, 0);
     const wrap = document.querySelector('.gp-viewport-wrap');
-    wrap.style.backgroundImage = `url(${url})`;
+    wrap.style.backgroundImage = `url(${c.toDataURL('image/png')})`;
     wrap.style.backgroundSize = 'cover';
     wrap.style.backgroundPosition = 'center';
     for (const cv of wrap.querySelectorAll('canvas')) cv.style.opacity = '0';
-    return url.slice(0, 24);
   });
-  void dataUrl;
   await page.waitForTimeout(200);
   const png = await page.screenshot({ type: 'png' });
   const out = resolve(MEDIA, `${shot.name}.png`);

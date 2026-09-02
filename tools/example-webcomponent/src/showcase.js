@@ -25,7 +25,9 @@ import {
   confidenceTier,
   rgbCss,
   count as formatCount,
-  duration as formatDuration
+  duration as formatDuration,
+  DOC_VIEWPORT_THEME,
+  DOC_VIEWPORT_BG
 } from '../../demo-kit/index.js';
 import '../../demo-kit/tokens.css';
 
@@ -35,6 +37,12 @@ const $ = (id) => document.getElementById(id);
 
 const view = $('view');
 const modelView = $('modelView');
+
+// Both viewers render into the shared documentation mid-grey workspace (theme/background are object
+// properties on the elements, not attributes) so the Web Component demo matches the Feature Lab, the
+// other framework showcases, and the docs imagery.
+view.theme = DOC_VIEWPORT_THEME;
+modelView.background = DOC_VIEWPORT_BG;
 let caps = {};
 let layers = 0;
 let segments = 0;

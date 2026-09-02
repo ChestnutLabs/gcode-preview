@@ -45,5 +45,5 @@
   {/if}
 </header>
 <main>
-  <GcodePreview {source} layerRange={layers > 0 ? [0, topLayer] : null} showTravel={false} on:ready={onReady} />
+  <GcodePreview {source} layerRange={layers > 0 ? [0, topLayer] : null} showTravel={false} theme={{ background: '#6d7176' }} on:ready={onReady} />
 </main>

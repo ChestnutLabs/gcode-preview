@@ -39,5 +39,5 @@
   {/if}
 </header>
 <main>
-  <ModelViewer {source} background="transparent" on:ready={onReady} />
+  <ModelViewer {source} background="#6d7176" on:ready={onReady} />
 </main>
