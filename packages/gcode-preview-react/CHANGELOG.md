@@ -1,5 +1,18 @@
 # @chestnutlabs/gcode-preview-react
 
+## 0.20.1
+
+### Patch Changes
+
+- [`672fe42`](https://github.com/ChestnutLabs/gcode-preview/commit/672fe42c9391608adb3b816a6369d86b9f34307e) Thanks [@sobechestnut-dev](https://github.com/sobechestnut-dev)! - Fix `<ModelViewer>` / `useModelViewer` (React) leaking its controller on unmount. The hook now disposes the model-preview controller when the component unmounts — matching the toolpath hook and the Vue/Svelte/Web-Component adapters — so in-flight `setSource` operations settle and resources are released.
+
+- Updated dependencies [[`672fe42`](https://github.com/ChestnutLabs/gcode-preview/commit/672fe42c9391608adb3b816a6369d86b9f34307e), [`672fe42`](https://github.com/ChestnutLabs/gcode-preview/commit/672fe42c9391608adb3b816a6369d86b9f34307e), [`672fe42`](https://github.com/ChestnutLabs/gcode-preview/commit/672fe42c9391608adb3b816a6369d86b9f34307e)]:
+  - @chestnutlabs/gcode-renderer-three@0.20.1
+  - @chestnutlabs/gcode-parser@0.20.1
+  - @chestnutlabs/gcode-model-renderer@0.20.1
+  - @chestnutlabs/gcode-preview-core@0.20.1
+  - @chestnutlabs/toolpath-core@0.20.1
+
 ## 0.20.0
 
 ### Minor Changes
