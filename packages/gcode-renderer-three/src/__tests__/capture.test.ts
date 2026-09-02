@@ -6,6 +6,7 @@
  * validated in the browser, not in Node.
  */
 import { describe, expect, it } from 'vitest';
+import { SRGBColorSpace } from 'three';
 import { ToolpathRenderer, type GLRendererLike } from '../index.js';
 import { flipRowsRGBA, resolveCaptureSize } from '../capture.js';
 
@@ -86,6 +87,38 @@ describe('capture — includeBuildVolume', () => {
     expect(probe.capturedVisible()).toBe(true); // default: the build volume is part of the capture
     expect(probe.volumeVisible()).toBe(true);
     probe.renderer.dispose();
+  });
+});
+
+describe('capture — colour space (regression: too-dark thumbnails)', () => {
+  it('renders the capture target as sRGB so readback matches the canvas / renderStill', async () => {
+    const canvas = document.createElement('canvas');
+    let targetColorSpace: string | null = null;
+    const stub: GLRendererLike & {
+      setRenderTarget: (t: unknown) => void;
+      readRenderTargetPixels: () => void;
+    } = {
+      render: () => undefined,
+      setSize: () => undefined,
+      dispose: () => undefined,
+      domElement: canvas,
+      setRenderTarget: (t) => {
+        if (t !== null) targetColorSpace = (t as { texture: { colorSpace: string } }).texture.colorSpace;
+      },
+      readRenderTargetPixels: () => undefined
+    };
+    const renderer = new ToolpathRenderer({
+      canvas,
+      quality: 'lines',
+      createRenderer: () => stub as unknown as GLRendererLike,
+      scheduleFrame: () => undefined
+    });
+    // Encoding the pixels is browser-only and may reject after the render — but the off-screen render
+    // (and the target whose colour space we assert) happens first. A default (linear) target here would
+    // make readRenderTargetPixels return too-dark bytes (#6d7176 → ~#272a2e); sRGB matches the canvas.
+    await renderer.capture().catch(() => undefined);
+    expect(targetColorSpace).toBe(SRGBColorSpace);
+    renderer.dispose();
   });
 });
 

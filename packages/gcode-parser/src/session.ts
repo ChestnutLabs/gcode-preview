@@ -123,6 +123,10 @@ export class GcodeParseSession {
   cancel(): void {
     const active = this.active;
     if (active === null || this.worker === null) return;
+    // Idempotent: a second cancel() on the same in-flight parse (e.g. the controller cancels before a
+    // re-parse) must not schedule a second backstop. Overwriting cancelTimer would orphan the first
+    // timer, which then fires later and terminates whatever parse is running by then — wedging it.
+    if (active.cancelTimer !== undefined) return;
     this.worker.postMessage({ v: PROTOCOL_VERSION, type: 'cancel', id: active.id });
     active.cancelTimer = setTimeout(() => {
       // Last-resort backstop (§5.2): the cooperative path failed to acknowledge.

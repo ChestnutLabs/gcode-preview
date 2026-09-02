@@ -372,6 +372,10 @@ export class GcodePreviewElement extends HTMLElement {
     this.controller = null;
     this.canvasEl = null;
     this.shadowRoot?.replaceChildren();
+    // A reconnect builds a FRESH controller with all roles visible. prevHiddenRoles tracks what the
+    // previous controller had hidden; if we don't reset it, the prev→next diff on re-apply sees no
+    // change and re-hides nothing, so hidden skirt/brim reappear permanently after a DOM move.
+    this.prevHiddenRoles = [];
   }
 
   attributeChangedCallback(name: string, _old: string | null, value: string | null): void {
@@ -446,6 +450,13 @@ export class GcodePreviewElement extends HTMLElement {
     c.setScrubTime(this.scrubTime);
     this.applyHiddenRoles(this.hiddenFeatureRoles);
     this.applyProgress();
+    // Camera framing set BEFORE connect: attributeChangedCallback/the cameraState setter both no-op
+    // while controller === null, so the initial `view` attribute and any pre-connect cameraState must
+    // be applied here or they're silently dropped (the <gcode-model-viewer> element already does this).
+    // Apply the preset view first, then let an explicit cameraState override it.
+    const view = this.getAttribute('view');
+    if (view !== null) c.setView(view as CameraView);
+    if (this._cameraState !== null) c.setCameraState(this._cameraState);
   }
 
   /** Feature-role visibility (DD-031 G3): diff prev→next so we only toggle roles this attribute owns. */

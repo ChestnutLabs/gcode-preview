@@ -9,7 +9,7 @@
  * The camera types live here (not in the toolpath renderer) so the stage has no dependency on
  * toolpath concepts; the toolpath renderer re-exports them for import-path stability.
  */
-import { Color, OrthographicCamera, PerspectiveCamera, Scene, Vector3, WebGLRenderTarget } from 'three';
+import { Color, OrthographicCamera, PerspectiveCamera, Scene, SRGBColorSpace, Vector3, WebGLRenderTarget } from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import type { Vec3 } from '@chestnutlabs/toolpath-core';
 import {
@@ -360,7 +360,12 @@ export class InteractiveStage {
     }
     const gl = this.gl;
     const { w, h } = resolveCaptureSize(opts, this.canvas.width, this.canvas.height);
+    // The render target's texture MUST declare sRGB so three applies the same linear→sRGB output
+    // encoding it gives the canvas. A default (NoColorSpace/linear) target makes readRenderTargetPixels
+    // return LINEAR bytes — the whole capture (background AND geometry colours) comes back too dark
+    // (e.g. #6d7176 → ~#272a2e), diverging from the canvas view and from renderStill's toDataURL path.
     const target = new WebGLRenderTarget(w, h);
+    target.texture.colorSpace = SRGBColorSpace;
     // Frame the capture at its OWN aspect (not the viewport's) so a differently-shaped thumbnail is not
     // distorted; reuse the stage's projection machinery, then restore the live aspect.
     const prevAspect = this.aspect;
