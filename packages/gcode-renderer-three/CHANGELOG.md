@@ -1,5 +1,17 @@
 # @chestnutlabs/gcode-renderer-three
 
+## 0.20.1
+
+### Patch Changes
+
+- [`672fe42`](https://github.com/ChestnutLabs/gcode-preview/commit/672fe42c9391608adb3b816a6369d86b9f34307e) Thanks [@sobechestnut-dev](https://github.com/sobechestnut-dev)! - Fix `capture()` returning too-dark (linear colour-space) pixels. The interactive capture path rendered into a render target without sRGB output encoding, so `controls.capture()` and `ModelViewer.capture()` read back linear-space pixels — backgrounds and geometry colours came out darker than both the live canvas and `renderStill` (e.g. a `#6d7176` background captured as `#272a2e`). The capture render target now declares sRGB, so captured images match the on-screen view.
+
+- [`672fe42`](https://github.com/ChestnutLabs/gcode-preview/commit/672fe42c9391608adb3b816a6369d86b9f34307e) Thanks [@sobechestnut-dev](https://github.com/sobechestnut-dev)! - Fix `GeometryWorkerPool.dispose()` hanging an in-flight build. Disposing the pool mid-build (e.g. on canvas rebind or renderer teardown) dropped the parked build requests without settling them, so the streaming build's `Promise.all` never resolved and the build coroutine leaked. Dispose now rejects in-flight requests and the build stops cleanly.
+
+- Updated dependencies []:
+  - @chestnutlabs/gcode-colors@0.20.1
+  - @chestnutlabs/toolpath-core@0.20.1
+
 ## 0.20.0
 
 ### Minor Changes

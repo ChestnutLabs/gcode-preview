@@ -1,5 +1,17 @@
 # @chestnutlabs/gcode-parser
 
+## 0.20.1
+
+### Patch Changes
+
+- [`672fe42`](https://github.com/ChestnutLabs/gcode-preview/commit/672fe42c9391608adb3b816a6369d86b9f34307e) Thanks [@sobechestnut-dev](https://github.com/sobechestnut-dev)! - Fix a parse-session hang on a double `cancel()`. A second `cancel()` while a cancel was already pending (e.g. the controller cancelling before a re-parse) overwrote the terminate backstop timer and orphaned the first — which could later terminate an unrelated in-flight parse and wedge the controller at `parsing: true`. `cancel()` is now idempotent while a cancel is already pending.
+
+- Updated dependencies []:
+  - @chestnutlabs/gcode-bgcode@0.20.1
+  - @chestnutlabs/gcode-containers@0.20.1
+  - @chestnutlabs/gcode-dialects@0.20.1
+  - @chestnutlabs/toolpath-core@0.20.1
+
 ## 0.20.0
 
 ### Patch Changes
