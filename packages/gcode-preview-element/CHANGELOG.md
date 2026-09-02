@@ -1,5 +1,18 @@
 # @chestnutlabs/gcode-preview-element
 
+## 0.20.1
+
+### Patch Changes
+
+- [`672fe42`](https://github.com/ChestnutLabs/gcode-preview/commit/672fe42c9391608adb3b816a6369d86b9f34307e) Thanks [@sobechestnut-dev](https://github.com/sobechestnut-dev)! - Fix `<gcode-preview>` connect/disconnect defects: the initial `view` attribute (and a `cameraState` set before connect) are now applied on connect instead of being dropped, and `hidden-feature-roles` is re-applied after the element is moved/reconnected in the DOM (previously the hidden roles reappeared permanently on reconnect).
+
+- Updated dependencies [[`672fe42`](https://github.com/ChestnutLabs/gcode-preview/commit/672fe42c9391608adb3b816a6369d86b9f34307e), [`672fe42`](https://github.com/ChestnutLabs/gcode-preview/commit/672fe42c9391608adb3b816a6369d86b9f34307e), [`672fe42`](https://github.com/ChestnutLabs/gcode-preview/commit/672fe42c9391608adb3b816a6369d86b9f34307e)]:
+  - @chestnutlabs/gcode-renderer-three@0.20.1
+  - @chestnutlabs/gcode-parser@0.20.1
+  - @chestnutlabs/gcode-model-renderer@0.20.1
+  - @chestnutlabs/gcode-preview-core@0.20.1
+  - @chestnutlabs/toolpath-core@0.20.1
+
 ## 0.20.0
 
 ### Minor Changes
