@@ -18,6 +18,8 @@ const layerMax = document.getElementById('layerMax');
 
 // Hide travel moves for a clean first view (property; the element defaults showTravel to true).
 view.showTravel = false;
+// Render into the shared documentation mid-grey workspace (theme is an object property).
+view.theme = { background: '#6d7176' };
 
 let layers = 0;
 

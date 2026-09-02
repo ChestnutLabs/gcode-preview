@@ -33,6 +33,6 @@ function load(event) {
     </span>
   </header>
   <main>
-    <ModelViewer :source="source" background="transparent" @ready="info = $event" />
+    <ModelViewer :source="source" background="#6d7176" @ready="info = $event" />
   </main>
 </template>

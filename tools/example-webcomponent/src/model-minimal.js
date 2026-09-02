@@ -15,6 +15,9 @@ const view = document.getElementById('view');
 const fixture = document.getElementById('fixture');
 const info = document.getElementById('info');
 
+// Render into the shared documentation mid-grey workspace (background property; also a `background` attr).
+view.background = '#6d7176';
+
 // Populate the picker from the shared model fixtures.
 fixture.insertAdjacentHTML(
   'beforeend',

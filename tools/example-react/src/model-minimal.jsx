@@ -41,7 +41,7 @@ function App() {
         )}
       </header>
       <main>
-        <ModelViewer source={source} background="transparent" onReady={(i) => setInfo(i)} />
+        <ModelViewer source={source} background="#6d7176" onReady={(i) => setInfo(i)} />
       </main>
     </>
   );

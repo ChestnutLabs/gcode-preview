@@ -97,6 +97,28 @@ describe('GeometryWorkerPool (DD-028)', () => {
     }
   });
 
+  it('dispose() mid-build settles buildStreaming instead of hanging (regression)', async () => {
+    // Workers that never reply — every pump parks on its in-flight dispatch. Before the fix, dispose()
+    // dropped those parked promises and Promise.all never settled, hanging the build coroutine forever.
+    const stalling = (): GeometryWorkerLike => ({ onmessage: null, postMessage() {}, terminate() {} });
+    const pool = new GeometryWorkerPool(2, stalling);
+    const ir = makeIR(4, 20);
+    const reqs = buildChunks(ir, { decimation: 1, targetSegmentsPerChunk: 20 })
+      .chunks.filter((c) => c.kind === 'extrude')
+      .map((c, i) => reqFromChunk(c, i, 8));
+    expect(reqs.length).toBeGreaterThan(0);
+    let settled = false;
+    const done = pool
+      .buildStreaming(reqs, () => undefined)
+      .then(() => {
+        settled = true;
+      });
+    await Promise.resolve(); // let the pumps park on the never-answering workers
+    pool.dispose();
+    await done; // must resolve, not hang (vitest would otherwise time out)
+    expect(settled).toBe(true);
+  });
+
   it('handles a single-worker pool and an empty request list', async () => {
     const pool = new GeometryWorkerPool(1, syncWorker);
     expect(await pool.buildAll([])).toEqual([]);

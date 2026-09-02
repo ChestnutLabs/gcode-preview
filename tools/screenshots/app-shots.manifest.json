@@ -1,0 +1,44 @@
+{
+  "note": "App-UI documentation shots (DD-031 docs/demo parity). Unlike shots.manifest.json (mid-grey capability RENDERS), these capture the actual Feature Lab APPLICATION surface — the control/inspector rail, color-mode selector, tabs, diagnostics, and the Preview/Prepare modes — so the README/docs show the interactive product, not just pretty renders. Driven by capture-app.mjs against the running Feature Lab (tools/demo, :5199). The studio-dark chrome IS the product look (not the mid-grey capture look).",
+  "shots": [
+    {
+      "name": "app-control-panel",
+      "mode": "preview",
+      "fixture": "benchy",
+      "tab": "inspect",
+      "color": "feature",
+      "view": "iso",
+      "caption": "The Feature Lab: the inspector rail (move-visibility toggles, feature-role hide, segment inspection) beside a 3DBenchy colored by feature role, with the layer/segment scrub and honest capability badges.",
+      "alt": "The G-code Preview Feature Lab application — a 3DBenchy colored by feature role in the viewport, a floating feature-role legend, camera controls, a layers/segments/time scrub strip, an inspector rail with move-visibility toggles, and capability badges (featureRoles known, feedrate known) in the status bar"
+    },
+    {
+      "name": "app-appearance",
+      "mode": "preview",
+      "fixture": "benchy",
+      "tab": "appearance",
+      "color": "feature",
+      "view": "iso",
+      "caption": "The Appearance tab: the color-mode selector (single / tool / feature / speed / object / layer height / …), each capability-gated to what the file can prove, with the active legend.",
+      "alt": "The Feature Lab Appearance tab showing the color-by selector with feature role active, a legend of outer wall / inner wall / infill / support colors, and color modes greyed out when the file can't support them"
+    },
+    {
+      "name": "app-diagnostics",
+      "mode": "preview",
+      "fixture": "benchy",
+      "tab": "diagnostics",
+      "color": "feature",
+      "view": "iso",
+      "readStats": true,
+      "caption": "The Diagnostics tab reading getRenderStats(): backend (hardware vs software WebGL), GPU, geometry mode, segment/vertex counts, draw calls, and timings — honest nulls, never guesses.",
+      "alt": "The Feature Lab Diagnostics tab showing render diagnostics — backend 3d-webgl, geometry tubes, segment and draw-call counts, and the GPU renderer string — plus capability confidence badges"
+    },
+    {
+      "name": "app-prepare",
+      "mode": "prepare",
+      "fixture": "colored-3mf",
+      "view": "iso",
+      "caption": "Prepare mode: interactive source-model viewing (STL / 3MF) — the same app viewing a colored 3MF before slicing, with the honest materials capability tier and object/placement counts.",
+      "alt": "The Feature Lab in Prepare mode showing a colored 3MF source model (red, amber, green stacked blocks), a Source Model panel reporting 3 objects, 3 placements, and materials: known, and camera controls"
+    }
+  ]
+}

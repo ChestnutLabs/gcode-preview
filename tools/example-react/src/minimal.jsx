@@ -54,6 +54,7 @@ function App() {
           source={source}
           layerRange={layers > 0 ? [0, topLayer] : null}
           showTravel={false}
+          theme={{ background: '#6d7176' }}
           onReady={(s) => {
             setLayers(s.layers);
             setTopLayer(Math.max(0, s.layers - 1));

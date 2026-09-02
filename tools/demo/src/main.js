@@ -50,6 +50,10 @@ const THEMES = {
   }
 };
 const themeFor = () => ({ ...(THEMES[els.theme.value] ?? {}), materialPreset: els.material.value });
+// The Prepare (model) viewport shares the toolpath theme's background so both halves read as one
+// workspace — the canonical documentation mid-grey by default, not the page's app chrome behind a
+// transparent canvas.
+const modelBg = () => THEMES[els.theme.value]?.background ?? '#6d7176';
 
 // ---- controller (the published core, 3D by default) ----
 const preview = createPreviewController({
@@ -70,7 +74,7 @@ let modelInfo = null;
 
 function ensureModel() {
   if (modelController !== null) return modelController;
-  modelController = createModelPreviewController({ background: 'transparent', interactionQuality: 'auto' });
+  modelController = createModelPreviewController({ background: modelBg(), interactionQuality: 'auto' });
   modelController.bindCanvas(els.modelView);
   modelController.onEvent((e) => {
     if (e.type === 'ready') {
@@ -313,7 +317,10 @@ function stageLabel(e) {
 
 function onReady() {
   ready = true;
-  els.countPill.hidden = false;
+  // Toolpath overlays belong to Preview only. A parse can settle just after a switch to Prepare
+  // (its callback still fires), so gate the pill on the current mode or a stale toolpath pill leaks
+  // over the source model.
+  els.countPill.hidden = mode !== 'preview';
   enableControls(true);
   // scrub ranges
   const state = preview.getState();
@@ -341,7 +348,7 @@ preview.onStateChange((state) => {
     ready && !state.hasRetractions ? 'Retraction markers — none in this file' : 'Retraction markers';
   // disclosure + time
   els.disclosure.textContent = state.disclosure ?? '';
-  if (state.totalTimeMs != null) {
+  if (state.totalTimeMs != null && mode === 'preview') {
     els.timePill.hidden = false;
     els.timeLbl.textContent = duration(state.totalTimeMs);
     els.timeLbl.title = `Estimate: ${timeSourceNote(state.timeEstimateSource)}`;
@@ -454,6 +461,12 @@ els.railToggle.addEventListener('click', () => els.main.classList.toggle('gp-rai
 els.travel.addEventListener('change', () => preview.controls.setKindVisible('travel', els.travel.checked));
 els.wipe.addEventListener('change', () => preview.controls.setKindVisible('wipe', els.wipe.checked));
 els.retractions.addEventListener('change', () => preview.controls.setShowRetractions(els.retractions.checked));
+// Apply the initial move-visibility state — the renderer's defaults otherwise disagree with the
+// unchecked/checked boxes (e.g. travel would render though "Travel moves" is off). Queued until the
+// renderer resolves, then replayed.
+preview.controls.setKindVisible('travel', els.travel.checked);
+preview.controls.setKindVisible('wipe', els.wipe.checked);
+preview.controls.setShowRetractions(els.retractions.checked);
 els.hideAdhesion.addEventListener('change', () => {
   const visible = !els.hideAdhesion.checked;
   preview.controls.setFeatureRoleVisible(FeatureRole.Skirt, visible);
@@ -473,7 +486,10 @@ els.view.addEventListener('click', (ev) => {
 
 // ============ wiring: appearance ============
 els.colorMode.addEventListener('change', applyColorMode);
-els.theme.addEventListener('change', () => preview.controls.setTheme(themeFor()));
+els.theme.addEventListener('change', () => {
+  preview.controls.setTheme(themeFor());
+  modelController?.controls.setBackground(modelBg());
+});
 els.material.addEventListener('change', () => preview.controls.setTheme(themeFor()));
 
 // ============ wiring: view ============

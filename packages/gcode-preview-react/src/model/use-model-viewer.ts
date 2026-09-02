@@ -5,7 +5,7 @@
  * — never a separate viewer implementation (the D1 drift firewall). Shared contracts are re-exported
  * from the controller.
  */
-import { useCallback, useMemo, useRef, useSyncExternalStore } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useSyncExternalStore } from 'react';
 import {
   createModelPreviewController,
   type ModelPreviewController,
@@ -60,6 +60,23 @@ export function useModelViewer(options: UseModelViewerOptions = {}): ModelViewer
   const subscribe = useCallback((cb: () => void) => ensure().onStateChange(() => cb()), [ensure]);
   const getSnapshot = useCallback(() => ensure().getState(), [ensure]);
   const state = useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
+
+  // Own the controller's lifecycle: (re)create on mount (StrictMode's second setup lands here) and
+  // DISPOSE on unmount. Without this the GL engine was freed via the canvas-ref-null path but the
+  // controller was never disposed, so in-flight setSource promises never settled and the controller
+  // leaked — the toolpath hook already does this; the model hook must match.
+  useEffect(() => {
+    const c = ensure();
+    // Refs attach BEFORE StrictMode's dispose/recreate cycle: rebind the delivered canvas to the fresh
+    // controller (refs never re-fire) so it renders again after a remount.
+    if (slot.current.canvas !== null && c.raw.viewer() === null) {
+      c.bindCanvas(slot.current.canvas);
+    }
+    return () => {
+      slot.current.controller?.dispose();
+      slot.current.disposed = true;
+    };
+  }, [ensure]);
 
   const stateRef = useRef(state);
   stateRef.current = state;

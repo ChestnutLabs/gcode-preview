@@ -93,7 +93,16 @@ export class GeometryWorkerPool {
       while (!this.disposed) {
         const i = next++;
         if (i >= requests.length) return;
-        const response = await this.dispatch(worker, requests[i]);
+        let response: GeometryBuildResponse;
+        try {
+          response = await this.dispatch(worker, requests[i]);
+        } catch (err) {
+          // dispose() rejects the in-flight request so this await unblocks (a terminated worker fires
+          // no message/error of its own). Treat a dispose-driven rejection as a clean stop; re-throw a
+          // genuine worker error so the batch still fails fast.
+          if (this.disposed) return;
+          throw err;
+        }
         if (this.disposed) return;
         onResult(i, response);
       }
@@ -116,8 +125,12 @@ export class GeometryWorkerPool {
 
   dispose(): void {
     this.disposed = true;
+    // Reject every in-flight request BEFORE terminating: a terminated worker fires no message/error, so
+    // any `pump` parked at `await dispatch(...)` would otherwise never settle and `buildStreaming` would
+    // hang forever (leaking its coroutine + closures). pump swallows this rejection when disposed.
+    for (const p of this.current.values()) p.reject(new Error('E_POOL_DISPOSED: geometry pool disposed mid-build'));
+    this.current.clear();
     for (const w of this.workers) w.terminate();
     this.workers.length = 0;
-    this.current.clear();
   }
 }

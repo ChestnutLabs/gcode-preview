@@ -3,18 +3,25 @@
     <p class="gp-tagline">Show a 3D print or CNC/laser job in the browser — before, during, or after it runs.</p>
     <p>Drop <code>.gcode</code>, <code>.gcode.3mf</code>, or Prusa <code>.bgcode</code> into a page and get an interactive toolpath: orbit it, clip to a layer, scrub it, color by feature or speed, overlay live progress. Parsing runs off the main thread, so a 250&nbsp;MB file never freezes the UI — with <strong>Vue, React, Svelte</strong>, and <strong>Web&nbsp;Component</strong> adapters over one engine.</p>
     <div class="gp-actions">
-      <a class="gp-btn gp-btn-primary" href="#install">Get started</a>
+      <a class="gp-btn gp-btn-primary" href="https://chestnutlabs.github.io/gcode-preview/demos/">▶ Try the live demo</a>
+      <a class="gp-btn" href="#install">Get started</a>
       <a class="gp-btn" href="https://chestnutlabs.github.io/gcode-preview/documents/Feature_gallery.html">Feature gallery</a>
       <a class="gp-btn" href="https://chestnutlabs.github.io/gcode-preview/api/">API reference</a>
       <a class="gp-btn" href="https://github.com/ChestnutLabs/gcode-preview">GitHub</a>
     </div>
   </div>
   <div class="gp-hero-media">
-    <img src="https://chestnutlabs.github.io/gcode-preview/media/viewer-benchy-tubes.png" alt="3DBenchy rendered as extrusion tubes with per-feature coloring on a neutral grey build plate">
+    <a href="https://chestnutlabs.github.io/gcode-preview/demos/feature-lab/index.html"><img src="https://chestnutlabs.github.io/gcode-preview/media/app-control-panel.png" alt="The G-code Preview Feature Lab application — a 3DBenchy colored by feature role with the inspector rail, color-mode legend, camera controls, layer/segment scrub, and capability badges"></a>
   </div>
 </div>
 
+<p class="gp-demos-banner"><strong>▶ <a href="https://chestnutlabs.github.io/gcode-preview/demos/">Try the live demos</a></strong> — the interactive <a href="https://chestnutlabs.github.io/gcode-preview/demos/feature-lab/index.html">Feature Lab</a>, and <a href="https://chestnutlabs.github.io/gcode-preview/demos/react/showcase.html">React</a> / <a href="https://chestnutlabs.github.io/gcode-preview/demos/vue/showcase.html">Vue</a> / <a href="https://chestnutlabs.github.io/gcode-preview/demos/svelte/showcase.html">Svelte</a> / <a href="https://chestnutlabs.github.io/gcode-preview/demos/webcomponent/showcase.html">Web&nbsp;Component</a> examples, running in your browser on the published SDK.</p>
+
 <ul class="gp-cards">
+  <li class="gp-card">
+    <img src="https://chestnutlabs.github.io/gcode-preview/media/app-prepare.png" alt="">
+    <div class="gp-card-body"><h3><a href="https://chestnutlabs.github.io/gcode-preview/demos/feature-lab/index.html">Prepare &amp; Preview</a></h3><p>Two viewers, one SDK: the sliced-G-code toolpath and the source model (STL / 3MF) — a <code>&lt;ModelViewer&gt;</code> on every framework's <code>/model</code> subpath.</p></div>
+  </li>
   <li class="gp-card">
     <img src="https://chestnutlabs.github.io/gcode-preview/media/layer-clip-benchy.png" alt="">
     <div class="gp-card-body"><h3><a href="https://chestnutlabs.github.io/gcode-preview/documents/Feature_gallery.html">Toolpath inspection</a></h3><p>Layer clip, segment &amp; time scrub, travel / retraction / seam markers, source-line mapping.</p></div>
@@ -107,6 +114,6 @@ viewer is reachable without switching APIs.
   [Parametric programs (RS274NGC)](concept-parametric-programs.md).
 - **API reference** — pick a package in the sidebar (`toolpath-core`, `gcode-parser`, …).
 
-> **Status:** published — all fourteen `@chestnutlabs/*` packages are on npm (latest `v0.20.0`,
+> **Status:** published — all fourteen `@chestnutlabs/*` packages are on npm (latest `v0.20.1`,
 > lockstep-versioned with provenance). Governance and epic status live in the
 > [repository docs](https://github.com/ChestnutLabs/gcode-preview/tree/dev/docs).

@@ -60,6 +60,44 @@ describe('gcode-preview custom element (#149)', () => {
     el.remove();
   });
 
+  it('applies the initial `view` attribute on connect (regression)', async () => {
+    defineGcodePreview();
+    // `view` set as an attribute before connect: applyRuntimeState must apply it (attributeChangedCallback
+    // no-ops while controller === null). Before the fix it was dropped, so the camera stayed at the default.
+    const withTop = makeEl(document.createElement('canvas'));
+    withTop.setAttribute('view', 'top');
+    document.body.appendChild(withTop);
+    await settle();
+    const topCam = withTop.controls.getCameraState();
+
+    const dflt = makeEl(document.createElement('canvas'));
+    document.body.appendChild(dflt);
+    await settle();
+    const defaultCam = dflt.controls.getCameraState();
+
+    expect(topCam).not.toEqual(defaultCam); // the top view actually reoriented the camera
+    withTop.remove();
+    dflt.remove();
+  });
+
+  it('re-applies hidden-feature-roles after a DOM reconnect (regression)', async () => {
+    defineGcodePreview();
+    const el = makeEl(document.createElement('canvas'));
+    el.setAttribute('hidden-feature-roles', '6,7');
+    el.source = new Uint8Array(1000);
+    document.body.appendChild(el);
+    await settle();
+    expect([...el.raw.renderer()!.getHiddenFeatureRoles()].sort()).toEqual([6, 7]);
+
+    el.remove();
+    document.body.appendChild(el); // reconnect builds a FRESH (all-visible) controller
+    await settle();
+    // Before the fix, prevHiddenRoles wasn't reset on disconnect, so the prev→next diff toggled nothing
+    // and skirt/brim reappeared permanently. It must be re-hidden on the fresh controller.
+    expect([...el.raw.renderer()!.getHiddenFeatureRoles()].sort()).toEqual([6, 7]);
+    el.remove();
+  });
+
   it('applies a property set BEFORE connect, and leaks no workers across reconnect', async () => {
     defineGcodePreview();
     const created0 = SuiteStubWorker.created;

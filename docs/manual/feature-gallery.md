@@ -14,6 +14,32 @@ on a neutral slicer/CAD viewport — nothing mocked. This page is the visual com
 
 > New here? Start with the [getting-started guide](index.md), then come back to browse the breadth.
 
+> The capability shots below are **real renders** on a neutral mid-grey documentation viewport. The
+> application shots in this first section show the **live Feature Lab** in its studio-dark chrome —
+> the actual interactive product.
+
+## Try it live — Prepare & Preview
+
+**▶ [Open the live demos](https://chestnutlabs.github.io/gcode-preview/demos/)** — the interactive
+[Feature Lab](https://chestnutlabs.github.io/gcode-preview/demos/feature-lab/index.html) and the
+[React](https://chestnutlabs.github.io/gcode-preview/demos/react/showcase.html) /
+[Vue](https://chestnutlabs.github.io/gcode-preview/demos/vue/showcase.html) /
+[Svelte](https://chestnutlabs.github.io/gcode-preview/demos/svelte/showcase.html) /
+[Web Component](https://chestnutlabs.github.io/gcode-preview/demos/webcomponent/showcase.html)
+examples, running in your browser on the published `@chestnutlabs/*` packages.
+
+The SDK covers **both halves** of looking at a print job — the sliced toolpath (Preview) and the
+source model (Prepare), each with real controls:
+
+| Preview — the sliced toolpath | Prepare — the source model |
+|---|---|
+| ![The Feature Lab in Preview mode: a 3DBenchy colored by feature role with the inspector rail, feature legend, camera controls, and layer/segment scrub](../media/app-control-panel.png) | ![The Feature Lab in Prepare mode: a colored 3MF source model with a Source Model panel reporting objects, placements, and materials: known](../media/app-prepare.png) |
+| Layers, features, speed, travel, retractions, source-line picking — the toolpath controls. | STL / 3MF solid model — objects, materials, model controls, honest material-color tier. |
+
+| Color modes, capability-gated | Render diagnostics & capabilities |
+|---|---|
+| ![The Feature Lab Appearance tab: a color-by selector with the active feature-role legend; unsupported modes greyed out](../media/app-appearance.png) | ![The Feature Lab Diagnostics tab: capability badges and getRenderStats output](../media/app-diagnostics.png) |
+
 ## Toolpath inspection
 
 The core job: turn a sliced file into an interactive picture of the actual moves the machine makes.
@@ -88,7 +114,7 @@ clean `hold` reveal**, staged preparation progress, and **`getRenderStats()`** d
 hardware-vs-software GPU, draw calls, timings — never fabricated). See
 [workers, streaming & performance](concept-workers.md).
 
-![The demo's Render diagnostics panel populated beside the render — backend 3d-webgl (WebGL 2), software ANGLE/SwiftShader GPU, geometry tubes, segment and draw counts, tube bytes, and timings](../media/diagnostics-panel.png)
+![The Feature Lab Diagnostics tab: capability confidence badges and getRenderStats() output beside the render — backend 3d-webgl (WebGL 2), software ANGLE/SwiftShader GPU, geometry tubes, segment and draw-call counts, vertex count, tube bytes, worker pool, and timings](../media/app-diagnostics.png)
 
 *`getRenderStats()` in context — every value read from the actual render, never fabricated; here
 reporting a software (SwiftShader) backend, `108,725 / 108,729` segments, 92 draw calls, and the
@@ -126,8 +152,11 @@ STL is a single neutral object; **3MF** brings multi-object structure and per-ob
 **material colors** — and when the source *doesn't* declare colors, the render says
 `materials: 'unavailable'` rather than inventing one. A 3MF project can hold several **plates** and
 many **objects**: render **one plate at a time** and narrow to a **render scope** (a plate, or a
-subset of objects) for a single thumbnail. Headless `renderModelStill` and interactive
-`createModelViewer` share the look. See the
+subset of objects) for a single thumbnail. Headless `renderModelStill` and the interactive viewer
+share the look — and as of v0.20.0 the interactive viewer is a **first-class framework adapter**:
+`<ModelViewer>` on every framework's `/model` subpath (`<gcode-model-viewer>` for the Web Component),
+the Prepare side shown at the top of this page. See the
+[adapters guide](adapters.md) and the
 [model-renderer README](https://github.com/ChestnutLabs/gcode-preview/blob/dev/packages/gcode-model-renderer/README.md).
 
 ## Machine geometry
@@ -156,9 +185,11 @@ Canned drilling cycles (`G81`/`G82`/`G83`) expand; controller support is **hones
 
 ## Framework integration
 
-The whole viewer ships as drop-in **Vue, React, Svelte, and Web Component** components over one shared
-engine, plus a lower-level API (composable / hook / store / action) for building your own controls,
-and a headless `renderStill` for server thumbnails. See [framework adapters](adapters.md).
+Both viewers ship as drop-in **Vue, React, Svelte, and Web Component** components over one shared
+engine — the toolpath `<GcodePreview>` from the package root and the source-model `<ModelViewer>` from
+the `/model` subpath — plus a lower-level API (composable / hook / store / action) for building your
+own controls, and a headless `renderStill` for server thumbnails. Try them in the
+[live demos](https://chestnutlabs.github.io/gcode-preview/demos/); see [framework adapters](adapters.md).
 
 ---
 
