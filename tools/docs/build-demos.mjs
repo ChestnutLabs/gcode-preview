@@ -44,14 +44,16 @@ const DEMOS = [
     dir: 'tools/demo',
     slug: 'feature-lab',
     label: 'Feature Lab',
-    blurb: 'Explore the complete capability surface — Preview (sliced G-code) and Prepare (source model), color modes, layer/segment scrub, feature visibility, camera, and live render diagnostics.',
+    blurb:
+      'Explore the complete capability surface — Preview (sliced G-code) and Prepare (source model), color modes, layer/segment scrub, feature visibility, camera, and live render diagnostics.',
     entries: [{ href: 'index.html', label: 'Open Feature Lab' }]
   },
   {
     dir: 'tools/example-react',
     slug: 'react',
     label: 'React',
-    blurb: 'The published @chestnutlabs/gcode-preview-react adapter — a full Preview/Prepare showcase plus minimal getting-started pages.',
+    blurb:
+      'The published @chestnutlabs/gcode-preview-react adapter — a full Preview/Prepare showcase plus minimal getting-started pages.',
     entries: [
       { href: 'showcase.html', label: 'Showcase' },
       { href: 'minimal.html', label: 'Minimal (G-code)' },
@@ -62,7 +64,8 @@ const DEMOS = [
     dir: 'tools/example-vue',
     slug: 'vue',
     label: 'Vue',
-    blurb: 'The published @chestnutlabs/gcode-preview-vue adapter — a full Preview/Prepare showcase plus minimal getting-started pages.',
+    blurb:
+      'The published @chestnutlabs/gcode-preview-vue adapter — a full Preview/Prepare showcase plus minimal getting-started pages.',
     entries: [
       { href: 'showcase.html', label: 'Showcase' },
       { href: 'minimal.html', label: 'Minimal (G-code)' },
@@ -73,7 +76,8 @@ const DEMOS = [
     dir: 'tools/example-svelte',
     slug: 'svelte',
     label: 'Svelte',
-    blurb: 'The published @chestnutlabs/gcode-preview-svelte adapter — a full Preview/Prepare showcase plus minimal getting-started pages.',
+    blurb:
+      'The published @chestnutlabs/gcode-preview-svelte adapter — a full Preview/Prepare showcase plus minimal getting-started pages.',
     entries: [
       { href: 'showcase.html', label: 'Showcase' },
       { href: 'minimal.html', label: 'Minimal (G-code)' },
@@ -84,7 +88,8 @@ const DEMOS = [
     dir: 'tools/example-webcomponent',
     slug: 'webcomponent',
     label: 'Web Component',
-    blurb: 'The framework-free @chestnutlabs/gcode-preview-element (<gcode-preview> / <gcode-model-viewer>) — a full Preview/Prepare showcase plus minimal getting-started pages.',
+    blurb:
+      'The framework-free @chestnutlabs/gcode-preview-element (<gcode-preview> / <gcode-model-viewer>) — a full Preview/Prepare showcase plus minimal getting-started pages.',
     entries: [
       { href: 'showcase.html', label: 'Showcase' },
       { href: 'minimal.html', label: 'Minimal (G-code)' },
@@ -96,7 +101,19 @@ const DEMOS = [
 // Corpus scope: publicDir copies the whole test-data tree into each dist; keep only what the demos
 // actually fetch (the MIT sample G-code + container/annotation fixtures), drop goldens/baselines/etc.
 const CORPUS_KEEP = new Set(['gcodes', 'fixtures']);
-const KEEP_TOP = new Set(['assets', 'index.html', 'minimal.html', 'showcase.html', 'model.html', 'model-viewer.html', '2d.html', 'still.html', 'validate.html', 'favicon.ico', 'vite.svg']);
+const KEEP_TOP = new Set([
+  'assets',
+  'index.html',
+  'minimal.html',
+  'showcase.html',
+  'model.html',
+  'model-viewer.html',
+  '2d.html',
+  'still.html',
+  'validate.html',
+  'favicon.ico',
+  'vite.svg'
+]);
 
 const run = (cmd, cwd) => execSync(cmd, { cwd, stdio: 'inherit' });
 
@@ -132,9 +149,7 @@ for (const demo of DEMOS) {
 
 // ---- product-facing landing page ----
 const card = (d) => {
-  const links = d.entries
-    .map((e) => `<a class="lnk" href="./${d.slug}/${e.href}">${e.label}</a>`)
-    .join('');
+  const links = d.entries.map((e) => `<a class="lnk" href="./${d.slug}/${e.href}">${e.label}</a>`).join('');
   return `<article class="card">
       <h2>${d.label}</h2>
       <p>${d.blurb}</p>
