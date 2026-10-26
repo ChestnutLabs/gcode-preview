@@ -44,7 +44,9 @@
     }
   },
   "files": [
-    "dist"
+    "dist",
+    "LICENSE",
+    "NOTICE.md"
   ],
   "publishConfig": {
     "access": "public"
