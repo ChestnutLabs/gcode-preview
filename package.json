@@ -59,6 +59,7 @@
     "test:consumer-vue": "node tools/consumer-vue/run.mjs",
     "verify:registry": "node tools/consumer-vue/run-registry.mjs",
     "pack:check": "node tools/pack-check.mjs",
+    "pack:license-check": "node tools/pack-license-check.mjs",
     "docs:links": "node tools/link-check.mjs",
     "docs:api": "typedoc",
     "docs:api:watch": "typedoc --watch",

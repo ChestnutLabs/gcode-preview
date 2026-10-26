@@ -35,7 +35,9 @@
     }
   },
   "files": [
-    "dist"
+    "dist",
+    "LICENSE",
+    "NOTICE.md"
   ],
   "scripts": {
     "build": "tsc -p tsconfig.json",
