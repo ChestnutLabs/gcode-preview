@@ -9,6 +9,7 @@ import { describe, expect, it } from 'vitest';
 import { PerspectiveCamera, Vector3, type OrthographicCamera } from 'three';
 import type { CameraState, ControlsLike, GLRendererLike } from '@chestnutlabs/gcode-renderer-three';
 import { createModelViewer } from '../model-viewer.js';
+import { createModelPreviewController } from '../model-preview.js';
 import { parseStl, repairFacetNormals } from '../stl.js';
 import { IDENTITY_MAT4, type ModelScene } from '../scene-model.js';
 
@@ -18,7 +19,8 @@ function stubControls(camera: PerspectiveCamera | OrthographicCamera) {
     object: camera,
     target: new Vector3(),
     enabled: true,
-    update: () => undefined,
+    // Like OrbitControls, a programmatic update() emits `change` — the stage must not read it as a user move.
+    update: () => c.fire('change'),
     dispose: () => undefined,
     addEventListener: (t, cb) => {
       (listeners[t] ??= []).push(cb);
@@ -108,8 +110,8 @@ describe('model viewer framing', () => {
     await viewer.setSource(PLATE);
     const e = ndcExtent(viewer.getCameraState()!, w / h, PLATE);
     expect(Math.max(e.x, e.y)).toBeLessThanOrEqual(1);
-    // Tight, not a loose bounding-sphere pose: the limiting axis fills most of the canvas.
-    expect(Math.max(e.x, e.y)).toBeGreaterThan(0.8);
+    // Tight, not a loose bounding-sphere pose: the limiting axis fills the canvas up to the 1.1 margin.
+    expect(Math.max(e.x, e.y)).toBeCloseTo(1 / 1.1, 2);
     // Centred: the projected box is not pushed to one side by perspective.
     expect(Math.abs(e.cx)).toBeLessThan(0.03);
     expect(Math.abs(e.cy)).toBeLessThan(0.03);
@@ -125,7 +127,12 @@ describe('model viewer framing', () => {
     expect(Math.max(fitted.x, fitted.y)).toBeLessThanOrEqual(1);
     expect(Math.max(fitted.x, fitted.y)).toBeGreaterThan(0.8);
 
-    controls().fire('start'); // user orbit/zoom/pan begins
+    controls().fire('start'); // a bare click (start, no camera change) is not a user move
+    viewer.resize(800, 700);
+    const stillFitted = ndcExtent(viewer.getCameraState()!, 800 / 700, PLATE);
+    expect(Math.max(stillFitted.x, stillFitted.y)).toBeCloseTo(1 / 1.1, 2);
+
+    controls().fire('change'); // user orbit/zoom/pan (pointer, wheel, touch or keyboard) moves the camera
     const before = viewer.getCameraState()!;
     viewer.resize(1200, 400);
     expect(viewer.getCameraState()!.position).toEqual(before.position);
@@ -135,6 +142,37 @@ describe('model viewer framing', () => {
     const after = ndcExtent(viewer.getCameraState()!, 1, PLATE);
     expect(Math.max(after.x, after.y)).toBeLessThanOrEqual(1);
     expect(Math.max(after.x, after.y)).toBeGreaterThan(0.8);
+    viewer.dispose();
+  });
+
+  it('a preset view chosen while auto-framing stays fitted, along that view, across resizes', async () => {
+    const { viewer } = makeViewer();
+    viewer.resize(800, 600);
+    await viewer.setSource(PLATE);
+    viewer.setView('top');
+    viewer.resize(375, 700);
+    const s = viewer.getCameraState()!;
+    // Still looking straight down (scene +Y), and fitted for the new aspect.
+    expect(s.position.x - s.target.x).toBeCloseTo(0, 3);
+    expect(s.position.z - s.target.z).toBeCloseTo(0, 3);
+    expect(s.position.y).toBeGreaterThan(s.target.y);
+    const e = ndcExtent(s, 375 / 700, PLATE);
+    expect(Math.max(e.x, e.y)).toBeCloseTo(1 / 1.1, 2);
+    viewer.dispose();
+  });
+
+  it('a hidden (0×0) resize leaves a finite camera and the next real size re-fits', async () => {
+    const { viewer } = makeViewer();
+    viewer.resize(800, 600);
+    await viewer.setSource(PLATE);
+    viewer.resize(0, 0);
+    const s = viewer.getCameraState()!;
+    for (const v of [s.position.x, s.position.y, s.position.z, s.target.x, s.target.y, s.target.z]) {
+      expect(Number.isFinite(v)).toBe(true);
+    }
+    viewer.resize(375, 700);
+    const e = ndcExtent(viewer.getCameraState()!, 375 / 700, PLATE);
+    expect(Math.max(e.x, e.y)).toBeCloseTo(1 / 1.1, 2);
     viewer.dispose();
   });
 
@@ -162,6 +200,50 @@ describe('model viewer framing', () => {
     viewer.resize(300, 900);
     expect(viewer.getCameraState()!.position).toEqual(before.position);
     viewer.dispose();
+  });
+});
+
+describe('model preview controller (framework adapters)', () => {
+  function sizedCanvas(w: number, h: number): HTMLCanvasElement {
+    const canvas = document.createElement('canvas');
+    Object.defineProperty(canvas, 'clientWidth', { configurable: true, get: () => w });
+    Object.defineProperty(canvas, 'clientHeight', { configurable: true, get: () => h });
+    return canvas;
+  }
+
+  it('sizes the engine to the bound canvas, so adapters get the aspect-aware fit without calling resize', async () => {
+    const canvas = sizedCanvas(375, 700);
+    const sizes: number[][] = [];
+    const c = createModelPreviewController({
+      createRenderer: () => ({
+        render: () => 0,
+        setSize: (w: number, h: number) => sizes.push([w, h]),
+        dispose: () => 0,
+        domElement: canvas
+      }),
+      createControls: (cam) => stubControls(cam)
+    });
+    c.bindCanvas(canvas);
+    await c.controls.setSource(PLATE);
+    expect(sizes[0]).toEqual([375, 700]);
+    const e = ndcExtent(c.raw.viewer()!.getCameraState()!, 375 / 700, PLATE);
+    expect(Math.max(e.x, e.y)).toBeCloseTo(1 / 1.1, 2);
+    c.dispose();
+  });
+
+  it('forwards autoFrameOnResize to the engine', async () => {
+    const canvas = sizedCanvas(800, 600);
+    const c = createModelPreviewController({
+      autoFrameOnResize: false,
+      createRenderer: () => ({ render: () => 0, setSize: () => 0, dispose: () => 0, domElement: canvas }),
+      createControls: (cam) => stubControls(cam)
+    });
+    c.bindCanvas(canvas);
+    await c.controls.setSource(PLATE);
+    const before = c.raw.viewer()!.getCameraState()!;
+    c.controls.resize(300, 900);
+    expect(c.raw.viewer()!.getCameraState()!.position).toEqual(before.position);
+    c.dispose();
   });
 });
 

@@ -296,7 +296,8 @@ export function createModelViewer(canvas: RenderTargetCanvas, options: ModelView
     },
     resize(width, height) {
       stage?.resize(width, height);
-      if (autoFrameOnResize && autoFraming) fit(true);
+      // A hidden (0×0) canvas has no aspect to fit; keep the pose and re-fit on the next real size.
+      if (autoFrameOnResize && autoFraming && width > 0 && height > 0) fit(true);
     },
     frame() {
       autoFraming = true;

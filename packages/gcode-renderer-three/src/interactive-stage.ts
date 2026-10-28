@@ -93,7 +93,11 @@ export interface InteractiveStageOptions {
   createControls?: (camera: PerspectiveCamera | OrthographicCamera, domElement: HTMLElement) => ControlsLike;
   /** Emitted once per gesture after the camera settles, with the new pose (#275/M6). */
   onCameraChanged?: (state: CameraState) => void;
-  /** Emitted when a user gesture (orbit/zoom/pan, pointer or keyboard) starts moving the camera. */
+  /**
+   * Emitted when the USER moves the camera (orbit/zoom/pan by pointer, wheel, touch, or keyboard) —
+   * on each such camera change, never for the stage's own programmatic moves, and not for a bare click
+   * that leaves the camera where it was.
+   */
   onInteractionStart?: () => void;
   /** WebGL context lost — the owner should treat GPU resources as gone. */
   onContextLost?: () => void;
@@ -127,6 +131,8 @@ export class InteractiveStage {
   private readonly onContextRestoredCb: (() => void) | undefined;
   private contextLost = false;
   private disposedFlag = false;
+  /** True while the stage itself drives `controls.update()`, so its `change` is not read as a user move. */
+  private programmaticMove = false;
 
   private readonly onContextLost = (ev: Event): void => {
     ev.preventDefault();
@@ -174,9 +180,13 @@ export class InteractiveStage {
         this.controls.zoomToCursor = true;
         // Keyboard-operable camera for embedders (DD-004 a11y, #275/M4), scoped to the canvas.
         this.controls.listenToKeyEvents(domEl);
-        this.controls.addEventListener('change', () => this.onInteractionFrame());
-        const onStart = opts.onInteractionStart;
-        if (onStart) this.controls.addEventListener('start', () => onStart());
+        // OrbitControls fires `change` for pointer, wheel, touch AND keyboard moves (keyboard dispatches no
+        // `start`/`end`), so user intent is "a `change` the stage did not cause itself".
+        const onUserMove = opts.onInteractionStart;
+        this.controls.addEventListener('change', () => {
+          if (!this.programmaticMove) onUserMove?.();
+          this.onInteractionFrame();
+        });
         // Two-way camera state (#275/M6): after a gesture settles, publish the new pose. `end` fires once
         // per gesture (not per frame like `change`).
         this.controls.addEventListener('end', () => {
@@ -228,9 +238,20 @@ export class InteractiveStage {
     this.updateCameraProjection();
     if (this.controls) {
       this.controls.object = next;
-      this.controls.update();
+      this.updateControls();
     }
     this.render();
+  }
+
+  /** `controls.update()` on behalf of the stage (programmatic, not a user gesture). */
+  private updateControls(): void {
+    if (!this.controls) return;
+    this.programmaticMove = true;
+    try {
+      this.controls.update();
+    } finally {
+      this.programmaticMove = false;
+    }
   }
 
   /** The live orbit target: `controls.target` when interactive, else the last framed target (#268). */
@@ -256,7 +277,7 @@ export class InteractiveStage {
     this.updateCameraProjection();
     if (this.controls) {
       this.controls.target.copy(target);
-      this.controls.update();
+      this.updateControls();
     }
     this.render();
   }
@@ -288,7 +309,7 @@ export class InteractiveStage {
     this.framedTarget.copy(target);
     if (this.controls) {
       this.controls.target.copy(target);
-      this.controls.update();
+      this.updateControls();
     }
     this.render();
   }
@@ -310,7 +331,7 @@ export class InteractiveStage {
       this.controls.target.copy(target);
       this.controls.minDistance = Math.max(1, radius * 0.15);
       this.controls.maxDistance = radius * 30;
-      this.controls.update();
+      this.updateControls();
     }
     this.render();
   }
@@ -334,6 +355,7 @@ export class InteractiveStage {
     // Camera basis: d points at the camera, r/u span the image plane.
     const right = new Vector3().crossVectors(up, dir).normalize();
     const camUp = new Vector3().crossVectors(dir, right);
+    if (!(this.aspect > 0) || !Number.isFinite(this.aspect)) return; // no viewport to fit (hidden canvas)
     const tanV = Math.tan(((this.perspectiveCamera.fov / 2) * Math.PI) / 180) / margin;
     const tanH = tanV * this.aspect;
     // Corners in camera-basis coords relative to the box center: x right, y up, z toward the camera.
@@ -380,6 +402,10 @@ export class InteractiveStage {
       distance = solveDistance();
     }
     target.addScaledVector(right, ox).addScaledVector(camUp, oy);
+    // Keep the whole box inside the depth range for very large models.
+    const far = Math.max(10000, (distance + radius * 2) * 1.05);
+    this.perspectiveCamera.far = far;
+    this.orthographicCamera.far = far;
     this.viewHalfHeight = Math.max(1e-3, Math.max(halfH, halfW / Math.max(1e-6, this.aspect)) * margin);
     this.framedTarget.copy(target);
     const cam = this.activeCameraRef;
@@ -392,7 +418,7 @@ export class InteractiveStage {
       this.controls.target.copy(target);
       this.controls.minDistance = Math.max(1, radius * 0.15);
       this.controls.maxDistance = Math.max(distance * 4, radius * 30);
-      this.controls.update();
+      this.updateControls();
     }
     this.render();
   }
