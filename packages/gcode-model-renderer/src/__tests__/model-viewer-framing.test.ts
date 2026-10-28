@@ -176,6 +176,21 @@ describe('model viewer framing', () => {
     viewer.dispose();
   });
 
+  it('a model loaded while the canvas is hidden (0×0) is fitted in the default 3/4 view', async () => {
+    const { viewer } = makeViewer();
+    viewer.resize(800, 600);
+    viewer.resize(0, 0); // e.g. a hidden Prepare tab whose observer reports 0×0
+    await viewer.setSource(PLATE);
+    viewer.resize(800, 600);
+    const s = viewer.getCameraState()!;
+    const d = [s.position.x - s.target.x, s.position.y - s.target.y, s.position.z - s.target.z];
+    const len = Math.hypot(d[0], d[1], d[2]);
+    const want = [-1.2, 1.6, 1.8];
+    const wl = Math.hypot(...want);
+    for (let i = 0; i < 3; i++) expect(d[i] / len).toBeCloseTo(want[i] / wl, 3);
+    viewer.dispose();
+  });
+
   it('setCameraState hands the camera to the caller (no re-fit on resize)', async () => {
     const { viewer } = makeViewer();
     viewer.resize(800, 600);

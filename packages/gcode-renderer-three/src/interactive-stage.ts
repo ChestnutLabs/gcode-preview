@@ -184,7 +184,10 @@ export class InteractiveStage {
         // `start`/`end`), so user intent is "a `change` the stage did not cause itself".
         const onUserMove = opts.onInteractionStart;
         this.controls.addEventListener('change', () => {
-          if (!this.programmaticMove) onUserMove?.();
+          // The stage's own moves (fit, view presets) are a single repaint, never an interaction frame:
+          // they get no `end`, so DD-020's reduced detail would never be restored.
+          if (this.programmaticMove) return;
+          onUserMove?.();
           this.onInteractionFrame();
         });
         // Two-way camera state (#275/M6): after a gesture settles, publish the new pose. `end` fires once
@@ -448,7 +451,8 @@ export class InteractiveStage {
 
   resize(width: number, height: number): void {
     if (this.disposedFlag) return;
-    this.aspect = width / Math.max(1, height);
+    // A hidden (0×0) canvas keeps the last real aspect, so framing done meanwhile stays valid.
+    if (width > 0 && height > 0) this.aspect = width / height;
     this.updateCameraProjection();
     this.gl.setSize(width, height, false);
     this.render();
