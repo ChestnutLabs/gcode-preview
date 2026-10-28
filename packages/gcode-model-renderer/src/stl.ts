@@ -65,7 +65,10 @@ export function parseStl(source: Uint8Array | ArrayBuffer, limits?: ModelLimits)
 
   const positions = new Float32Array(posAttr.array as ArrayLike<number>);
   const normAttr = geom.getAttribute('normal');
-  const normals = normAttr !== undefined ? new Float32Array(normAttr.array as ArrayLike<number>) : undefined;
+  const normals =
+    normAttr !== undefined
+      ? repairFacetNormals(positions, new Float32Array(normAttr.array as ArrayLike<number>))
+      : undefined;
   const bounds = boundsOf(positions);
   geom.dispose();
 
@@ -81,6 +84,44 @@ export function parseStl(source: Uint8Array | ArrayBuffer, limits?: ModelLimits)
       plates: 'unavailable'
     }
   };
+}
+
+/**
+ * STL facet normals are advisory and many exporters write `0 0 0` (or garbage). A zero/non-finite normal
+ * lights the facet black, so replace each degenerate one with the face normal from its winding; valid
+ * file normals are kept. A triangle with no area keeps a zero normal (it covers no pixels).
+ */
+export function repairFacetNormals(positions: Float32Array, normals: Float32Array): Float32Array {
+  for (let t = 0; t + 8 < normals.length && t + 8 < positions.length; t += 9) {
+    const nx = normals[t];
+    const ny = normals[t + 1];
+    const nz = normals[t + 2];
+    const len = Math.hypot(nx, ny, nz);
+    if (Number.isFinite(len) && len > 1e-6) continue;
+    const ax = positions[t + 3] - positions[t];
+    const ay = positions[t + 4] - positions[t + 1];
+    const az = positions[t + 5] - positions[t + 2];
+    const bx = positions[t + 6] - positions[t];
+    const by = positions[t + 7] - positions[t + 1];
+    const bz = positions[t + 8] - positions[t + 2];
+    let cx = ay * bz - az * by;
+    let cy = az * bx - ax * bz;
+    let cz = ax * by - ay * bx;
+    const cl = Math.hypot(cx, cy, cz);
+    if (cl > 0) {
+      cx /= cl;
+      cy /= cl;
+      cz /= cl;
+    } else {
+      cx = cy = cz = 0;
+    }
+    for (let v = 0; v < 9; v += 3) {
+      normals[t + v] = cx;
+      normals[t + v + 1] = cy;
+      normals[t + v + 2] = cz;
+    }
+  }
+  return normals;
 }
 
 function boundsOf(positions: Float32Array): ModelBounds {

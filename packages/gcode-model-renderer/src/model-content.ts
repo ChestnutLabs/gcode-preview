@@ -32,6 +32,9 @@ const NEUTRAL_COLOR: RGB = [0.8, 0.8, 0.82];
 export interface ModelFraming {
   center: Vector3;
   radius: number;
+  /** The model bounds as a scene-space (Y-up) box, for an aspect-aware fit. */
+  sceneMin: Vector3;
+  sceneMax: Vector3;
 }
 
 /**
@@ -76,7 +79,10 @@ export class ModelContent {
     const [maxX, maxY, maxZ] = scene.bounds.max;
     const center = new Vector3((minX + maxX) / 2, (minY + maxY) / 2, (minZ + maxZ) / 2);
     const radius = Math.max(1e-3, center.distanceTo(new Vector3(minX, minY, minZ)));
-    this.framedModel = { center, radius };
+    // Model Z-up → scene Y-up: (x, y, z) → (x, z, −y), matching the root rotation.
+    const sceneMin = new Vector3(minX, minZ, -maxY);
+    const sceneMax = new Vector3(maxX, maxZ, -minY);
+    this.framedModel = { center, radius, sceneMin, sceneMax };
   }
 
   /** The framing of the last-set scene (`null` before the first {@link setScene}). */

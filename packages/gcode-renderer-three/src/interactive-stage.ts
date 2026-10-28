@@ -93,6 +93,8 @@ export interface InteractiveStageOptions {
   createControls?: (camera: PerspectiveCamera | OrthographicCamera, domElement: HTMLElement) => ControlsLike;
   /** Emitted once per gesture after the camera settles, with the new pose (#275/M6). */
   onCameraChanged?: (state: CameraState) => void;
+  /** Emitted when a user gesture (orbit/zoom/pan, pointer or keyboard) starts moving the camera. */
+  onInteractionStart?: () => void;
   /** WebGL context lost — the owner should treat GPU resources as gone. */
   onContextLost?: () => void;
   /** WebGL context restored — the owner rebuilds its scene content here. */
@@ -173,6 +175,8 @@ export class InteractiveStage {
         // Keyboard-operable camera for embedders (DD-004 a11y, #275/M4), scoped to the canvas.
         this.controls.listenToKeyEvents(domEl);
         this.controls.addEventListener('change', () => this.onInteractionFrame());
+        const onStart = opts.onInteractionStart;
+        if (onStart) this.controls.addEventListener('start', () => onStart());
         // Two-way camera state (#275/M6): after a gesture settles, publish the new pose. `end` fires once
         // per gesture (not per frame like `change`).
         this.controls.addEventListener('end', () => {
@@ -309,6 +313,93 @@ export class InteractiveStage {
       this.controls.update();
     }
     this.render();
+  }
+
+  /**
+   * Fit a scene-space axis-aligned box to the viewport: the camera looks at the box center along
+   * `direction` (target→camera; default the shared 3/4 pose) and backs off just far enough that every
+   * corner lands inside BOTH the vertical and the horizontal field of view at the current aspect, with
+   * `margin` (≥1, default 1.1) of slack. The orthographic frustum is sized to the same projected extent,
+   * so a projection toggle keeps the apparent size. Unlike {@link frameTo}'s bounding-sphere pose this
+   * is tight: a wide/flat model fills a wide canvas instead of overflowing a narrow one.
+   */
+  fitBox(min: Vector3, max: Vector3, opts: { direction?: Vector3; margin?: number } = {}): void {
+    if (this.disposedFlag) return;
+    const margin = Math.max(1, opts.margin ?? 1.1);
+    const target = new Vector3().addVectors(min, max).multiplyScalar(0.5);
+    const radius = Math.max(1e-3, target.distanceTo(max));
+    const dir = (opts.direction?.clone() ?? new Vector3(-1.2, 1.6, 1.8)).normalize();
+    if (!Number.isFinite(dir.x) || dir.lengthSq() === 0) dir.set(-1.2, 1.6, 1.8).normalize();
+    const up = this.upForViewDir(dir);
+    // Camera basis: d points at the camera, r/u span the image plane.
+    const right = new Vector3().crossVectors(up, dir).normalize();
+    const camUp = new Vector3().crossVectors(dir, right);
+    const tanV = Math.tan(((this.perspectiveCamera.fov / 2) * Math.PI) / 180) / margin;
+    const tanH = tanV * this.aspect;
+    // Corners in camera-basis coords relative to the box center: x right, y up, z toward the camera.
+    const corners: [number, number, number][] = [];
+    let halfW = 0;
+    let halfH = 0;
+    const p = new Vector3();
+    for (let i = 0; i < 8; i++) {
+      p.set(i & 1 ? max.x : min.x, i & 2 ? max.y : min.y, i & 4 ? max.z : min.z).sub(target);
+      const c: [number, number, number] = [p.dot(right), p.dot(camUp), p.dot(dir)];
+      corners.push(c);
+      halfW = Math.max(halfW, Math.abs(c[0]));
+      halfH = Math.max(halfH, Math.abs(c[1]));
+    }
+    // Perspective: nearer corners project larger, so the box center is not the centre of its image. Slide
+    // the target across the image plane (ox, oy) until the projected extent is centred, re-solving the
+    // distance each pass so every corner sits inside both FOVs. Converges in a few passes.
+    let ox = 0;
+    let oy = 0;
+    let distance = 0;
+    const solveDistance = (): number => {
+      let d = radius * 0.5;
+      for (const [x, y, z] of corners) d = Math.max(d, z + Math.abs(x - ox) / tanH, z + Math.abs(y - oy) / tanV);
+      return d;
+    };
+    const perspective = this.activeCameraRef === this.perspectiveCamera;
+    distance = solveDistance();
+    for (let pass = 0; perspective && pass < 6; pass++) {
+      let uMin = Infinity;
+      let uMax = -Infinity;
+      let vMin = Infinity;
+      let vMax = -Infinity;
+      for (const [x, y, z] of corners) {
+        const depth = Math.max(1e-6, distance - z);
+        const u = (x - ox) / depth;
+        const v = (y - oy) / depth;
+        uMin = Math.min(uMin, u);
+        uMax = Math.max(uMax, u);
+        vMin = Math.min(vMin, v);
+        vMax = Math.max(vMax, v);
+      }
+      ox += ((uMin + uMax) / 2) * distance;
+      oy += ((vMin + vMax) / 2) * distance;
+      distance = solveDistance();
+    }
+    target.addScaledVector(right, ox).addScaledVector(camUp, oy);
+    this.viewHalfHeight = Math.max(1e-3, Math.max(halfH, halfW / Math.max(1e-6, this.aspect)) * margin);
+    this.framedTarget.copy(target);
+    const cam = this.activeCameraRef;
+    cam.up.copy(up);
+    cam.zoom = 1;
+    cam.position.copy(target).addScaledVector(dir, distance);
+    cam.lookAt(target);
+    this.updateCameraProjection();
+    if (this.controls) {
+      this.controls.target.copy(target);
+      this.controls.minDistance = Math.max(1, radius * 0.15);
+      this.controls.maxDistance = Math.max(distance * 4, radius * 30);
+      this.controls.update();
+    }
+    this.render();
+  }
+
+  /** The current view direction (orbit target → camera, unit). */
+  viewDirection(): Vector3 {
+    return this.activeCameraRef.position.clone().sub(this.currentTarget()).normalize();
   }
 
   /** Toggle interaction-aware quality (DD-020). `'off'` restores full detail immediately. */

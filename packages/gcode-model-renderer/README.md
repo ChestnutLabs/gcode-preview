@@ -88,6 +88,13 @@ restore a pose (the same serializable `CameraState` as the toolpath renderer), `
 source formats become viewable by registering a `ModelLoader` for a new `kind`, with no change to the
 viewer's API (design: [DD-021](../../docs/design/DD-021-interactive-model-viewer.md)).
 
+The first frame and `frame()` (a "Reset view" button) fit the model's bounding box to the canvas: a
+wide, flat part fills a wide canvas and still fits a narrow 375 px panel, centered with a small margin.
+Until the user orbits, zooms, or pans, each `resize(w, h)` re-fits the model, so a sidebar collapse
+or a window resize never leaves it cropped. After the user moves the camera, `resize` keeps their
+view, and `frame()` hands framing back to the viewer. Pass `autoFrameOnResize: false` to keep the
+first framing across resizes. The `camera-changed` event fires only when a user gesture settles.
+
 Prefer to build your own scene? `parseStl` / `parse3mf` return a three-free `ModelScene`, and both the
 still and the viewer accept a pre-built `ModelScene` directly.
 

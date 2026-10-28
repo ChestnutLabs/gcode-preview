@@ -65,6 +65,12 @@ export interface ModelViewerOptions {
    * consumer owns all wording/i18n. Events from a superseded load are not emitted.
    */
   onProgress?: (progress: LoadProgress) => void;
+  /**
+   * Re-fit the camera to the model when the canvas is resized (`resize()`), until the user moves the
+   * camera (orbit/zoom/pan or `setCameraState`); after that their view is kept. `frame()` (Reset view),
+   * a new source, or a render-scope change resumes auto-framing. Default `true`.
+   */
+  autoFrameOnResize?: boolean;
 }
 
 /** What the source actually carried, surfaced on `ready` (never fabricated — DD-001). */
@@ -94,6 +100,7 @@ export interface ModelReadyInfo {
 
 export type ModelViewerEvent =
   | { type: 'ready'; info: ModelReadyInfo }
+  /** Fires once per user camera gesture (orbit/zoom/pan) after it settles — never for programmatic moves. */
   | { type: 'camera-changed'; state: CameraState }
   | { type: 'error'; code: string; message: string }
   | { type: 'renderer-unsupported'; feature: string; message: string }
@@ -111,7 +118,10 @@ export interface ModelViewer {
   setBackground(bg: ModelBackground): void;
   setInteractionQuality(mode: 'off' | 'auto'): void;
   resize(width: number, height: number): void;
-  /** Re-fit the camera to the current model bounds. */
+  /**
+   * Re-fit the camera to the current model bounds (the default 3/4 view), fitting the bounding box to
+   * the canvas aspect and field of view. Also resumes auto-framing on resize.
+   */
   frame(): void;
   /**
    * Render only a subset of the current source (DD-030 D2): `{ plateId }`, `{ objectIds }`, or an
@@ -170,7 +180,17 @@ export function createModelViewer(canvas: RenderTargetCanvas, options: ModelView
   // Monotonic token for last-wins overlapping setSource (stale async results are discarded).
   let sourceToken = 0;
 
+  const autoFrameOnResize = options.autoFrameOnResize ?? true;
+  // True while the camera is library-framed; a user gesture (or setCameraState) hands it to the user.
+  let autoFraming = true;
+
   let stage: InteractiveStage | null = null;
+  /** Fit the current model's box to the viewport (aspect + FOV aware); `keepDirection` keeps the view angle. */
+  const fit = (keepDirection = false): void => {
+    const f = content.framing;
+    if (f === null || stage === null) return;
+    stage.fitBox(f.sceneMin, f.sceneMax, keepDirection ? { direction: stage.viewDirection() } : {});
+  };
   try {
     stage = new InteractiveStage({
       canvas,
@@ -180,6 +200,9 @@ export function createModelViewer(canvas: RenderTargetCanvas, options: ModelView
       createRenderer: options.createRenderer ?? ((c) => createDefaultGLRenderer(c, { alpha: true })),
       ...(options.createControls ? { createControls: options.createControls } : {}),
       onCameraChanged: (state) => emit({ type: 'camera-changed', state }),
+      onInteractionStart: () => {
+        autoFraming = false;
+      },
       onContextLost: () => emit({ type: 'context-lost' }),
       onContextRestored: () => {
         // GPU resources are gone; rebuild meshes from the retained scene and reframe, mirroring the
@@ -187,8 +210,7 @@ export function createModelViewer(canvas: RenderTargetCanvas, options: ModelView
         const shown = scopedScene();
         if (shown !== null && stage !== null) {
           content.setScene(shown);
-          const f = content.framing;
-          if (f !== null) stage.frameTo(f.center, f.radius);
+          if (autoFraming) fit(true);
         }
         emit({ type: 'context-restored' });
       }
@@ -236,8 +258,8 @@ export function createModelViewer(canvas: RenderTargetCanvas, options: ModelView
       const total = shown.objects.length;
       progress({ stage: 'building-geometry', done: 0, total, unit: 'objects' });
       content.setScene(shown, (done) => progress({ stage: 'building-geometry', done, total, unit: 'objects' }));
-      const f = content.framing;
-      if (f !== null) stage.frameTo(f.center, f.radius);
+      autoFraming = true;
+      fit();
       progress({ stage: 'ready' });
       emit({ type: 'ready', info });
       return info;
@@ -255,11 +277,14 @@ export function createModelViewer(canvas: RenderTargetCanvas, options: ModelView
     setSource,
     setView(view) {
       stage?.setView(view as CameraView);
+      // While library-framed, a preset view is fitted too (and stays fitted across resizes).
+      if (autoFraming) fit(true);
     },
     getCameraState() {
       return stage ? stage.getCameraState() : null;
     },
     setCameraState(state) {
+      autoFraming = false;
       stage?.setCameraState(state);
     },
     setBackground(bg) {
@@ -271,19 +296,19 @@ export function createModelViewer(canvas: RenderTargetCanvas, options: ModelView
     },
     resize(width, height) {
       stage?.resize(width, height);
+      if (autoFrameOnResize && autoFraming) fit(true);
     },
     frame() {
-      const f = content.framing;
-      if (f !== null) stage?.frameTo(f.center, f.radius);
+      autoFraming = true;
+      fit();
     },
     setRenderScope(scope) {
       currentScope = scope;
       const shown = scopedScene();
       if (shown === null || stage === null) return; // no source yet — applied on the next setSource
       content.setScene(shown);
-      const f = content.framing;
-      if (f !== null) stage.frameTo(f.center, f.radius);
-      stage.render();
+      autoFraming = true;
+      fit();
     },
     capture(opts) {
       if (stage === null) {
