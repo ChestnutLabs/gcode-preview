@@ -56,7 +56,8 @@ from the protected `Release / publish` workflow on a tag from `main` — never f
    and nothing else — triggers publication.
 5. **`Release / publish` workflow:** verifies the tag is on `main`, fresh `npm ci`, then the full
    repository gate (build, root + package suites, typeCheck, lint, license, docs links, consumer
-   fixture, pack-check, sync-check) before a dependency-ordered `npm publish` ×14 with **npm
+   fixture, pack-check, sync-check, and `pack:license-check`, which fails if any tarball would ship
+   without `LICENSE` and `NOTICE.md`) before a dependency-ordered `npm publish` ×14 with **npm
    provenance**. The orchestrator (`tools/release/publish.mjs`) refuses real publishes outside the
    workflow; `npm run release:dry-run` is the local rehearsal (it exercises the full pack +
    validation path without uploading).

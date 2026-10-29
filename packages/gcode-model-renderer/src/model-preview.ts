@@ -55,6 +55,8 @@ export interface ModelPreviewControllerOptions {
   createRenderer?: (canvas: RenderTargetCanvas) => GLRendererLike;
   /** Injected orbit controls (tests). */
   createControls?: NonNullable<InteractiveStageOptions['createControls']>;
+  /** Re-fit the model on canvas resize until the user moves the camera (default `true`). */
+  autoFrameOnResize?: boolean;
 }
 
 /** Reactive snapshot of the model viewer, derived from engine events. Immutable — every change replaces it. */
@@ -167,6 +169,7 @@ export function createModelPreviewController(options: ModelPreviewControllerOpti
     ...(options.renderScope ? { renderScope: options.renderScope } : {}),
     ...(options.createRenderer ? { createRenderer: options.createRenderer } : {}),
     ...(options.createControls ? { createControls: options.createControls } : {}),
+    ...(options.autoFrameOnResize !== undefined ? { autoFrameOnResize: options.autoFrameOnResize } : {}),
     // Fold progress into state, then hand it to the consumer's callback.
     onProgress: (p: LoadProgress): void => {
       mutate({ progress: p, loading: p.stage !== 'ready' });
@@ -211,8 +214,40 @@ export function createModelPreviewController(options: ModelPreviewControllerOpti
     });
   };
 
+  /** Detaches the bound canvas's size tracking (ResizeObserver + window-resize fallback). */
+  let unsizeCanvas: (() => void) | null = null;
+
+  /**
+   * Keep the engine sized to a DOM canvas's CSS box, mirroring the toolpath controller: an initial fit,
+   * a ResizeObserver, and a window-resize fallback (observers may never fire in embedded panes). A
+   * zero-sized (hidden) canvas is skipped. OffscreenCanvas hosts size themselves via `controls.resize`.
+   */
+  const trackCanvasSize = (canvas: RenderTargetCanvas, v: ModelViewer): void => {
+    const el = canvas as Partial<HTMLCanvasElement>;
+    if (typeof el.getBoundingClientRect !== 'function') return;
+    const fit = (): void => {
+      const w = el.clientWidth ?? 0;
+      const h = el.clientHeight ?? 0;
+      if (w > 0 && h > 0) v.resize(w, h);
+    };
+    fit();
+    let ro: ResizeObserver | null = null;
+    if (typeof ResizeObserver !== 'undefined') {
+      ro = new ResizeObserver(fit);
+      ro.observe(canvas as HTMLCanvasElement);
+    }
+    const hasWindow = typeof window !== 'undefined';
+    if (hasWindow) window.addEventListener('resize', fit);
+    unsizeCanvas = () => {
+      ro?.disconnect();
+      if (hasWindow) window.removeEventListener('resize', fit);
+    };
+  };
+
   function bindCanvas(canvas: RenderTargetCanvas | null): void {
     if (disposed || canvas === boundCanvas) return;
+    unsizeCanvas?.();
+    unsizeCanvas = null;
     // Tear down the engine bound to the previous canvas.
     if (engine !== null) {
       unsubEngine?.();
@@ -226,6 +261,7 @@ export function createModelPreviewController(options: ModelPreviewControllerOpti
     const v = createModelViewer(canvas, engineOptions);
     engine = v;
     wire(v);
+    trackCanvasSize(canvas, v);
     for (const op of pendingOps) op(v);
     pendingOps.length = 0;
     // Replay the last source so the model persists across a canvas rebind.
@@ -294,6 +330,8 @@ export function createModelPreviewController(options: ModelPreviewControllerOpti
   function dispose(): void {
     if (disposed) return;
     disposed = true;
+    unsizeCanvas?.();
+    unsizeCanvas = null;
     unsubEngine?.();
     unsubEngine = null;
     engine?.dispose();

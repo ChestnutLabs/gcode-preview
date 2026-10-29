@@ -37,6 +37,8 @@ jobs:
           cache: 'npm'
           registry-url: 'https://registry.npmjs.org'
       - run: npm ci
+      # Owner ruling 6a (AnyBridge#2765): no tarball goes out without LICENSE + NOTICE.md.
+      - run: npm run pack:license-check
       # Full repository gate — identical to the required CI check, before anything uploads.
       - run: npm run build
       - run: npm run test

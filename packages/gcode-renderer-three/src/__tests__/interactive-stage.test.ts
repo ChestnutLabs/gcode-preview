@@ -160,3 +160,53 @@ describe('InteractiveStage', () => {
     expect(h.events.lost).toBe(0);
   });
 });
+
+describe('InteractiveStage — programmatic moves vs user moves (fitBox / auto-frame)', () => {
+  function realisticStage() {
+    const canvas = document.createElement('canvas');
+    const ratios: number[] = [];
+    let userMoves = 0;
+    let controls: ReturnType<typeof stubControls> | null = null;
+    const stage = new InteractiveStage({
+      canvas,
+      scene: new Scene(),
+      interactionQuality: 'auto',
+      createRenderer: () => ({
+        render: () => 0,
+        setSize: () => 0,
+        setPixelRatio: (r: number) => ratios.push(r),
+        dispose: () => 0,
+        domElement: canvas
+      }),
+      createControls: (cam) => {
+        controls = stubControls(cam);
+        // Like OrbitControls: a programmatic update() emits `change`.
+        controls.update = () => controls!.fire('change');
+        return controls;
+      },
+      onInteractionStart: () => userMoves++
+    });
+    return { stage, ratios, controls: () => controls!, userMoves: () => userMoves };
+  }
+
+  it("the stage's own fits never count as user moves nor drop interaction quality", () => {
+    const h = realisticStage();
+    h.stage.resize(800, 400);
+    h.stage.fitBox(new Vector3(0, 0, 0), new Vector3(100, 6, 30));
+    h.stage.frameTo(new Vector3(0, 0, 0), 50);
+    h.stage.setView('top');
+    expect(h.userMoves()).toBe(0);
+    expect(h.ratios).toEqual([]);
+    h.controls().fire('change'); // a real user orbit/zoom/pan/keyboard move
+    expect(h.userMoves()).toBe(1);
+    h.stage.dispose();
+  });
+
+  it('a hidden (0×0) resize keeps the last real aspect', () => {
+    const h = realisticStage();
+    h.stage.resize(800, 400);
+    h.stage.resize(0, 0);
+    expect(h.stage.perspectiveCamera.aspect).toBe(2);
+    h.stage.dispose();
+  });
+});

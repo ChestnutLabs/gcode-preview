@@ -12,10 +12,10 @@
   parses them literally. Delete rows only for packages that did not change.
 -->
 
-# Release review — v0.20.1
+# Release review — v0.21.0
 
-**Review version:** v0.20.1
-**Changed-capability inventory diffed against:** `v0.20.0`
+**Review version:** v0.21.0
+**Changed-capability inventory diffed against:** `v0.20.1`
 
 This artifact records the per-release **Public Product + Documentation + Visual** reconciliation:
 before the `dev` -> `main` promotion, compare the changed capabilities below against the README,
@@ -28,18 +28,16 @@ each disposition. Guidance: CLAUDE.md "Public-docs completion check" and
 
 | Package | Changed src files | Changelog summary | Disposition |
 |---|--:|---|---|
-| `@chestnutlabs/gcode-parser` | 2 | Fix a parse-session hang on a double `cancel()`. A second `cancel()` while a cancel was already pending (e.g. the controller cancelling befo | Status: reviewed |
-| `@chestnutlabs/gcode-preview-element` | 2 | Fix `<gcode-preview>` connect/disconnect defects: the initial `view` attribute (and a `cameraState` set before connect) are now applied on c | Status: reviewed |
-| `@chestnutlabs/gcode-preview-react` | 2 | Fix `<ModelViewer>` / `useModelViewer` (React) leaking its controller on unmount. The hook now disposes the model-preview controller when th | Status: reviewed |
-| `@chestnutlabs/gcode-renderer-three` | 4 | Fix `capture()` returning too-dark (linear colour-space) pixels. The interactive capture path rendered into a render target without sRGB out | Status: reviewed |
+| `@chestnutlabs/gcode-model-renderer` | 5 | Model viewer framing and STL lighting fixes (AnyBridge Customizer): | Status: reviewed |
+| `@chestnutlabs/gcode-renderer-three` | 2 | Model viewer framing and STL lighting fixes (AnyBridge Customizer): | Status: reviewed |
 
 Set each **Disposition** to one of `Status: reviewed` / `Status: no-change-needed` /
 `Status: not-applicable` (never `Status: pending`).
 
 ## Global dispositions
 
-- **Product review:** resolved — v0.20.1 is a correctness patch with **no API or product-surface change**. README / Pages homepage / feature gallery remain accurate; the `docs/README.md` "Current state" now leads with the v0.20.1 patch and its five fixes.
-- **Docs review:** resolved — no public API changed, so the manual, package READMEs, examples, and quick-start still match the shipped API. Each fix carries a changeset → per-package CHANGELOG entry, and the deferred/related findings are tracked in issues #430–#435.
-- **Visual review:** resolved — no UI/visual change. The app-UI screenshots and capability renders still show the current UI (the demo screenshot harness copies the live sRGB-correct canvas, so it was never affected by the `capture()` colour-space bug this patch fixes), and the live demos build/run on the published SDK. The `capture()` fix is verified in-browser (a `#6d7176` scene round-trips through `capture()` as `#6d7176`, not the previous linear `#272a2e`).
+- **Product review:** resolved — the change makes the existing interactive model viewer frame and size correctly. README / Pages homepage / feature gallery describe the model viewer at the capability level and stay accurate; `docs/README.md` "Current state" leads with v0.21.0.
+- **Docs review:** resolved — the `gcode-model-renderer` README "Interactive viewer" section documents the fit, re-frame-on-resize, `autoFrameOnResize`, and that `camera-changed` fires only for user gestures. The only API additions are the optional `autoFrameOnResize` option and the `InteractiveStage` `fitBox`/`viewDirection`/`onInteractionStart` members; quick-start and examples need no change (adapters inherit the behaviour). Parity (DD-031): fixed once in `createModelPreviewController`, so React/Vue/Svelte/Web Component `/model` all inherit canvas sizing, fit and re-frame; no new control/state field, so the parity guard lists are unchanged.
+- **Visual review:** resolved — no documentation image changes. The capability renders use `renderModelStill`, whose framing is unchanged. The Feature Lab Prepare viewport (`docs/media/app-prepare.png`) now frames the model somewhat tighter, but the UI and the shown capability are the same, so the screenshot still represents the software. Verified in a real browser: zero-normal STL renders shaded, wide/square/narrow canvases fit and centre, and the React `/model` example's canvas buffer now tracks its CSS box.
 
-_All markers resolved: this patch changes behaviour (bug fixes) with no product/docs/visual surface change; the capture colour fix was validated in a real browser._
+_Resolve each marker above by replacing `pending` with `resolved` once reconciled._

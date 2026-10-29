@@ -82,7 +82,8 @@ for (const name of PACKAGES) {
   const parsed = JSON.parse(packJson);
   const files = parsed[0].files.map((f) => f.path.replace(/\\/g, '/')).sort();
   next[name] = files;
-  const allowedRoots = /^(dist\/|package\.json$|README(\.md)?$|LICENSE(\.md)?$|CHANGELOG\.md$|GcodePreview\.svelte$)/;
+  const allowedRoots =
+    /^(dist\/|package\.json$|README(\.md)?$|LICENSE(\.md)?$|NOTICE\.md$|CHANGELOG\.md$|GcodePreview\.svelte$)/;
   const stray = files.filter((f) => !allowedRoots.test(f));
   if (stray.length > 0) {
     process.stderr.write(`  ✗ unexpected tarball contents: ${stray.join(', ')}\n`);

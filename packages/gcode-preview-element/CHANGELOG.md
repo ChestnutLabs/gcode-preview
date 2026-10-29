@@ -1,5 +1,16 @@
 # @chestnutlabs/gcode-preview-element
 
+## 0.21.0
+
+### Patch Changes
+
+- Updated dependencies [[`ae84362`](https://github.com/ChestnutLabs/gcode-preview/commit/ae8436236d1fbf94520ab70777d6325e75d8fb21)]:
+  - @chestnutlabs/gcode-model-renderer@0.21.0
+  - @chestnutlabs/gcode-renderer-three@0.21.0
+  - @chestnutlabs/gcode-preview-core@0.21.0
+  - @chestnutlabs/gcode-parser@0.21.0
+  - @chestnutlabs/toolpath-core@0.21.0
+
 ## 0.20.1
 
 ### Patch Changes

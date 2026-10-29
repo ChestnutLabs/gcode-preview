@@ -1,5 +1,7 @@
 {
   "toolpath-core": [
+    "LICENSE",
+    "NOTICE.md",
     "README.md",
     "dist/bounds.d.ts",
     "dist/bounds.d.ts.map",
@@ -34,6 +36,8 @@
     "package.json"
   ],
   "gcode-colors": [
+    "LICENSE",
+    "NOTICE.md",
     "README.md",
     "dist/colors.d.ts",
     "dist/colors.d.ts.map",
@@ -44,6 +48,8 @@
     "package.json"
   ],
   "gcode-dialects": [
+    "LICENSE",
+    "NOTICE.md",
     "README.md",
     "dist/annotate.d.ts",
     "dist/annotate.d.ts.map",
@@ -87,6 +93,8 @@
     "package.json"
   ],
   "gcode-containers": [
+    "LICENSE",
+    "NOTICE.md",
     "README.md",
     "dist/gcode-3mf.d.ts",
     "dist/gcode-3mf.d.ts.map",
@@ -100,6 +108,8 @@
     "package.json"
   ],
   "gcode-bgcode": [
+    "LICENSE",
+    "NOTICE.md",
     "README.md",
     "dist/adapter.d.ts",
     "dist/adapter.d.ts.map",
@@ -119,6 +129,8 @@
     "package.json"
   ],
   "gcode-parser": [
+    "LICENSE",
+    "NOTICE.md",
     "README.md",
     "dist/growable.d.ts",
     "dist/growable.d.ts.map",
@@ -156,6 +168,8 @@
     "package.json"
   ],
   "gcode-renderer-three": [
+    "LICENSE",
+    "NOTICE.md",
     "README.md",
     "dist/build-volume.d.ts",
     "dist/build-volume.d.ts.map",
@@ -217,6 +231,8 @@
     "package.json"
   ],
   "gcode-renderer-2d": [
+    "LICENSE",
+    "NOTICE.md",
     "README.md",
     "dist/index.d.ts",
     "dist/index.d.ts.map",
@@ -227,6 +243,8 @@
     "package.json"
   ],
   "gcode-model-renderer": [
+    "LICENSE",
+    "NOTICE.md",
     "README.md",
     "dist/cache-key.d.ts",
     "dist/cache-key.d.ts.map",
@@ -270,6 +288,8 @@
     "package.json"
   ],
   "gcode-preview-core": [
+    "LICENSE",
+    "NOTICE.md",
     "README.md",
     "dist/color-resolve.d.ts",
     "dist/color-resolve.d.ts.map",
@@ -295,6 +315,8 @@
     "package.json"
   ],
   "gcode-preview-vue": [
+    "LICENSE",
+    "NOTICE.md",
     "README.md",
     "dist/gcode-preview-component.d.ts",
     "dist/gcode-preview-component.d.ts.map",
@@ -317,6 +339,8 @@
     "package.json"
   ],
   "gcode-preview-react": [
+    "LICENSE",
+    "NOTICE.md",
     "README.md",
     "dist/gcode-preview-component.d.ts",
     "dist/gcode-preview-component.d.ts.map",
@@ -339,6 +363,8 @@
     "package.json"
   ],
   "gcode-preview-svelte": [
+    "LICENSE",
+    "NOTICE.md",
     "README.md",
     "dist/GcodePreview.svelte",
     "dist/create-gcode-preview.d.ts",
@@ -357,6 +383,8 @@
     "package.json"
   ],
   "gcode-preview-element": [
+    "LICENSE",
+    "NOTICE.md",
     "README.md",
     "dist/define.d.ts",
     "dist/define.d.ts.map",

@@ -36,6 +36,8 @@ jobs:
           node-version: '22.x'
           cache: "npm"
       - run: npm ci
+      # Owner ruling 6a (AnyBridge#2765): every tarball lists LICENSE + NOTICE.md. Needs no build.
+      - run: npm run pack:license-check
       - run: npm run build
       - run: npm run test
       - run: npm run test:packages
