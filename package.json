@@ -39,7 +39,7 @@
     "rollup-plugin-typescript2": "^0.36.0",
     "three": "0.178.0",
     "typedoc": "^0.28.7",
-    "vitest": "^4.1.0"
+    "vitest": "^4.1.12"
   },
   "scripts": {
     "dev:build": "export NODE_ENV=development; rollup -c",
