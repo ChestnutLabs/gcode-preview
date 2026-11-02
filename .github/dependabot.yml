@@ -1,0 +1,33 @@
+# Dependabot: grouped SECURITY update PRs only (no version-update PRs).
+#
+# - open-pull-requests-limit: 0 turns off version updates. Security updates have their
+#   own fixed limit of 10 and are not affected.
+# - No target-branch: security updates always go to the default branch (dev). Setting
+#   target-branch would make every option below stop applying to security updates.
+# - The `security` group gives one PR per lockfile directory per run.
+# - Security PRs are only raised while the repo setting "Dependabot security updates"
+#   is on (Settings > Code security). That toggle belongs to the owner.
+# - Every directory with its own package-lock.json is listed. Add new ones here.
+version: 2
+updates:
+  - package-ecosystem: npm
+    directories:
+      - "/"
+      - "/tools/consumer-smoke/electron-app"
+      - "/tools/consumer-smoke/vite-app"
+      - "/tools/consumer-vue"
+      - "/tools/demo"
+      - "/tools/example-react"
+      - "/tools/example-svelte"
+      - "/tools/example-vue"
+      - "/tools/example-webcomponent"
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 0
+    groups:
+      security:
+        applies-to: security-updates
+        patterns:
+          - "*"
+    labels:
+      - "type:maintenance"
