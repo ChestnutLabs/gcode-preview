@@ -8,6 +8,6 @@
     "smoke": "electron ."
   },
   "devDependencies": {
-    "electron": "^33.4.11"
+    "electron": "^45.2.1"
   }
 }
