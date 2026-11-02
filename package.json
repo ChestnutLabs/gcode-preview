@@ -30,7 +30,7 @@
     "@typescript-eslint/parser": "^8.36.0",
     "eslint": "^8.57.1",
     "eslint-plugin-tsdoc": "^0.5.2",
-    "happy-dom": "^20.0.0",
+    "happy-dom": "^21.0.4",
     "prettier": "^3.6.2",
     "publint": "^0.3.22",
     "rollup": "^4.44.2",
