@@ -30,7 +30,7 @@
     "@typescript-eslint/parser": "^8.36.0",
     "eslint": "^8.57.1",
     "eslint-plugin-tsdoc": "^0.5.2",
-    "happy-dom": "^20.0.0",
+    "happy-dom": "^21.0.4",
     "prettier": "^3.6.2",
     "publint": "^0.3.22",
     "rollup": "^4.44.2",
@@ -39,7 +39,7 @@
     "rollup-plugin-typescript2": "^0.36.0",
     "three": "0.178.0",
     "typedoc": "^0.28.7",
-    "vitest": "^4.1.0"
+    "vitest": "^4.1.12"
   },
   "scripts": {
     "dev:build": "export NODE_ENV=development; rollup -c",
@@ -60,6 +60,7 @@
     "verify:registry": "node tools/consumer-vue/run-registry.mjs",
     "pack:check": "node tools/pack-check.mjs",
     "pack:license-check": "node tools/pack-license-check.mjs",
+    "check:no-runtime-deps": "node tools/check-no-runtime-deps.mjs",
     "docs:links": "node tools/link-check.mjs",
     "docs:api": "typedoc",
     "docs:api:watch": "typedoc --watch",

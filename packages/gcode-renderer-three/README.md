@@ -1,6 +1,6 @@
 # @chestnutlabs/gcode-renderer-three
 
-Three.js **toolpath renderer** consuming [`ToolpathIR`](../toolpath-core) for the Chestnut Labs
+Three.js **toolpath renderer** consuming [`ToolpathIR`](../toolpath-core/README.md) for the Chestnut Labs
 G-code Preview stack (design: DD-004, live-progress overlay: DD-006).
 
 > **Peer dependency:** `three` (supported range `^0.178.0`) — install it alongside this package.
@@ -29,7 +29,7 @@ renderer.setLayerRange(0, 42);
 renderer.setProgress(mapped); // DD-006 MappedProgress overlay
 ```
 
-Most applications should consume this through [`@chestnutlabs/gcode-preview-core`](../gcode-preview-core)
+Most applications should consume this through [`@chestnutlabs/gcode-preview-core`](../gcode-preview-core/README.md)
 or a framework adapter, which own the parse→render lifecycle.
 
 Part of [Chestnut Labs G-code Preview](../../README.md) · MIT

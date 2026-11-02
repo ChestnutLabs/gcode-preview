@@ -1,7 +1,7 @@
 # @chestnutlabs/gcode-preview-element
 
 A framework-free **`<gcode-preview>` Web Component** for the Chestnut Labs G-code viewer — a thin
-custom-element shell over [`@chestnutlabs/gcode-preview-core`](../gcode-preview-core), the same engine
+custom-element shell over [`@chestnutlabs/gcode-preview-core`](../gcode-preview-core/README.md), the same engine
 the Vue/React/Svelte adapters wrap. Use it from plain HTML, Angular, or any framework — **no peer
 framework dependency**.
 
@@ -130,5 +130,5 @@ tools/example-webcomponent` (port 5204).
 ## Workers
 
 By default the batteries worker parses off-thread. To supply a custom/slim worker, set the
-`createWorker` factory property (see the [Vue README](../gcode-preview-vue) for the shared worker
+`createWorker` factory property (see the [Vue README](../gcode-preview-vue/README.md) for the shared worker
 notes). The element passes the same behavioral parity suite as the Vue/React/Svelte adapters.
