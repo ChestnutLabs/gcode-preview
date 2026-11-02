@@ -1,3 +1,4 @@
+import { mount } from 'svelte';
 import ModelMinimal from './ModelMinimal.svelte';
 
-new ModelMinimal({ target: document.getElementById('app') });
+mount(ModelMinimal, { target: document.getElementById('app') });

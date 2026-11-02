@@ -1,3 +1,4 @@
+import { mount } from 'svelte';
 import Minimal from './Minimal.svelte';
 
-new Minimal({ target: document.getElementById('app') });
+mount(Minimal, { target: document.getElementById('app') });
