@@ -34,11 +34,11 @@ afterEach(() => {
 });
 
 describe('runtimeDepProblems', () => {
-  it('passes sibling deps with plain versions, the allowed peers, and ignores dev deps', () => {
+  it('passes sibling deps with exact versions, the allowed peers, and ignores dev deps', () => {
     const root = makeRepo({
       alpha: {
         dependencies: { '@chestnutlabs/beta': '0.0.1' },
-        optionalDependencies: { '@chestnutlabs/beta': '^0.0.1' },
+        optionalDependencies: { '@chestnutlabs/beta': '0.22.0-next.1' },
         peerDependencies: { three: '>=0.160.0', vue: '^3.4.0', react: '^18 || ^19', svelte: '^4.0.0 || ^5.0.0' },
         devDependencies: { 'left-pad': '1.0.0' }
       },
@@ -75,22 +75,47 @@ describe('runtimeDepProblems', () => {
     ]);
   });
 
-  it('fails a sibling name whose spec is an alias, git, URL or local path', () => {
+  it('passes exact lockstep versions in both runtime fields', () => {
+    for (const field of ['dependencies', 'optionalDependencies']) {
+      for (const spec of ['0.0.1', '0.22.0-next.1']) {
+        const root = makeRepo({ alpha: { [field]: { '@chestnutlabs/beta': spec } }, beta: {} });
+        expect(runtimeDepProblems(root)).toEqual([]);
+      }
+    }
+  });
+
+  it('fails a sibling name whose spec is a range, alias, git, URL or local path, in both runtime fields', () => {
     const specs = [
+      '^0.0.1',
+      '~0.0.1',
+      '*',
+      // Start with a valid version but carry more: the pattern must be anchored and the prerelease charset tight.
+      '0.0.1 || 0.0.2',
+      '0.0.1-next.1 || 0.0.2',
       'npm:left-pad@1',
+      'NPM:left-pad@1',
       'git+https://example.com/x.git',
       'git://example.com/x.git',
       'github:someone/x',
+      'GITHUB:someone/x',
+      'gitlab:someone/x',
+      'someone/x',
+      'someone/x#main',
       'https://example.com/x.tgz',
-      'http://example.com/x.tgz',
       'file:../beta',
-      'link:../beta'
+      'link:../beta',
+      '../beta',
+      '/abs/beta',
+      '~/beta',
+      './x.tgz'
     ];
-    for (const spec of specs) {
-      const root = makeRepo({ alpha: { dependencies: { '@chestnutlabs/beta': spec } }, beta: {} });
-      expect(runtimeDepProblems(root)).toEqual([
-        `@chestnutlabs/alpha (packages/alpha/package.json): dependencies entry "@chestnutlabs/beta": "${spec}" must be a plain version, not an alias or URL`
-      ]);
+    for (const field of ['dependencies', 'optionalDependencies']) {
+      for (const spec of specs) {
+        const root = makeRepo({ alpha: { [field]: { '@chestnutlabs/beta': spec } }, beta: {} });
+        expect(runtimeDepProblems(root)).toEqual([
+          `@chestnutlabs/alpha (packages/alpha/package.json): ${field} entry "@chestnutlabs/beta": "${spec}" is not an exact version; internal deps must be an exact lockstep version`
+        ]);
+      }
     }
   });
 

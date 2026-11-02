@@ -6,8 +6,9 @@
  * consumer. This check keeps it that way. For every `packages/<pkg>/package.json`:
  *
  *   (1) `dependencies` and `optionalDependencies` (npm installs both for the consumer) may only name
- *       a workspace sibling: an @chestnutlabs/* name that some packages/* manifest declares, with a
- *       plain version spec (no npm: alias, git, github:, http(s):, file: or link: source);
+ *       a workspace sibling (an @chestnutlabs/* name that some packages/* manifest declares), pinned to
+ *       an exact lockstep version such as 0.21.0 or 0.22.0-next.1. Ranges (^, ~, *), npm: aliases and
+ *       every git, URL or path source fail; the release flow (sync-internal-ranges.mjs) writes exact pins;
  *   (2) `peerDependencies` may only name the allow-listed framework peers below.
  *
  * `devDependencies` are not checked. Adding a third-party runtime dependency or a new peer therefore
@@ -22,7 +23,8 @@ import { fileURLToPath } from 'node:url';
 export const RUNTIME_FIELDS = ['dependencies', 'optionalDependencies'];
 // npm >= 7 auto-installs non-optional peers into consumers, so each allowed peer is a reviewed runtime dep.
 export const ALLOWED_PEERS = new Set(['three', 'vue', 'react', 'svelte']);
-const NON_REGISTRY_SPEC = /^(npm:|git\+|git:|github:|https?:|file:|link:)/;
+// Allow-list, not deny-list: npm accepts many non-registry spec forms (owner/repo, ../dir, gitlab:, …).
+const LOCKSTEP_VERSION = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/;
 
 /** The workspace manifests under `<root>/packages`, in a stable (name-sorted) order. */
 function readManifests(root) {
@@ -48,8 +50,10 @@ export function runtimeDepProblems(root) {
       for (const [dep, spec] of Object.entries(pkg[field] ?? {})) {
         if (!siblings.has(dep)) {
           problems.push(`${where}: ${field} entry "${dep}": "${spec}" is not a workspace sibling package`);
-        } else if (NON_REGISTRY_SPEC.test(spec)) {
-          problems.push(`${where}: ${field} entry "${dep}": "${spec}" must be a plain version, not an alias or URL`);
+        } else if (!LOCKSTEP_VERSION.test(spec)) {
+          problems.push(
+            `${where}: ${field} entry "${dep}": "${spec}" is not an exact version; internal deps must be an exact lockstep version`
+          );
         }
       }
     }
