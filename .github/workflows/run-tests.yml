@@ -38,6 +38,8 @@ jobs:
       - run: npm ci
       # Owner ruling 6a (AnyBridge#2765): every tarball lists LICENSE + NOTICE.md. Needs no build.
       - run: npm run pack:license-check
+      # Packet D: published packages declare no third-party runtime deps (siblings only). Needs no build.
+      - run: npm run check:no-runtime-deps
       - run: npm run build
       - run: npm run test
       - run: npm run test:packages
