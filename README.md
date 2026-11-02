@@ -476,7 +476,7 @@ row inspects the *toolpath*, the bottom row presents the *source model* (see
   four framework adapters.
 
 Design rationale, boundaries, and the accepted architecture live in
-[`docs/design/`](docs/design); the [docs index](docs/README.md) maps the whole set. Fourteen
+[`docs/design/`](docs/design/README.md); the [docs index](docs/README.md) maps the whole set. Fourteen
 packages publish to npm in lockstep (currently **v0.21.0**) with npm provenance.
 
 ## Development
