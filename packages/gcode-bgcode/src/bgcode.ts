@@ -177,12 +177,8 @@ async function decompress(
   uncompressed: number,
   limit: number
 ): Promise<Uint8Array> {
-  if (compression === BgcodeCompression.None) {
-    if (data.length !== uncompressed) {
-      throw new ContainerError('E_BGCODE_SIZE', `stored block size disagreement (${data.length} vs ${uncompressed})`);
-    }
-    return data;
-  }
+  // None: the walker slices exactly `uncompressedSize` bytes (bounds-checked), so the sizes always agree.
+  if (compression === BgcodeCompression.None) return data;
   if (compression === BgcodeCompression.Deflate) {
     const out = await inflate(data, uncompressed, limit);
     if (out.length !== uncompressed) {

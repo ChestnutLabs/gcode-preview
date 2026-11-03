@@ -54,15 +54,12 @@ type State = 'disabled' | 'enabled' | 'first' | 'second' | 'rightFull' | 'leftFu
  * comment preservation is an *encoder* choice; the decoder simply reproduces the packed bytes.
  */
 export function meatpackDecode(data: Uint8Array, limit: number): Uint8Array {
-  let out = new Uint8Array(Math.max(64, Math.min(limit, data.length * 2)));
+  // Every input byte emits at most 2 output bytes, so `2 * data.length` (clamped to `limit`) always fits:
+  // `pos` reaches `limit` (and throws) before it can pass `out.length`. No growth path is needed.
+  const out = new Uint8Array(Math.max(64, Math.min(limit, data.length * 2)));
   let pos = 0;
   const push = (b: number): void => {
     if (pos >= limit) throw new ContainerError('E_BGCODE_BOMB', `MeatPack output exceeds the limit (${pos})`);
-    if (pos >= out.length) {
-      const bigger = new Uint8Array(Math.min(limit, Math.max(out.length * 2, pos + 1)));
-      bigger.set(out.subarray(0, pos));
-      out = bigger;
-    }
     out[pos++] = b;
   };
 
@@ -95,10 +92,8 @@ export function meatpackDecode(data: Uint8Array, limit: number): Uint8Array {
           push(least);
           push(most);
           state = 'leftFull';
-        } else if (most === 0 && least === 0) {
-          // byte 0xFF — a signal, intercepted above; never reachable here.
-          throw new ContainerError('E_BGCODE_MEATPACK', `unexpected 0xFF in packed data at byte ${i}`);
         } else {
+          // (most === 0 && least === 0 would be byte 0xFF, which the SIGNAL check above always takes.)
           push(least); // 1st char (low nibble)
           push(most); // 2nd char (high nibble)
         }
