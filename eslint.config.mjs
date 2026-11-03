@@ -24,11 +24,9 @@ export default [
       '@typescript-eslint/no-unsafe-declaration-merging': 'off'
     }
   },
-  // The old `src/.eslintrc.js` re-extended `eslint:recommended`. For its JS files that switches core
-  // `no-unused-vars` back on (the root turns it off); keep that. Its TS files follow the
-  // typescript-eslint preset like every other TS file (core no-undef/no-unused-vars misfire on TS
-  // parameter properties under ESLint 10; tsc and @typescript-eslint/no-unused-vars cover them).
-  { files: ['src/**/*.js'], rules: { ...js.configs.recommended.rules } },
+  // Core no-unused-vars on the legacy root library's JS (src/babel.config.js). CI's `eslint -c .eslintrc.js`
+  // never applied src/.eslintrc.js, so this is a deliberate tightening (#445); it lints clean.
+  { files: ['src/**/*.js'], rules: { 'no-unused-vars': 'error' } },
   // TSDoc syntax on the public package surface (E11 phase 4, DD-013 D5). WARN-only for now —
   // it baselines the current gaps; the docs accuracy gate (typedoc warning budget in
   // tools/docs/build-api.mjs) is the enforcing check. Flip to 'error' once the gaps are closed.

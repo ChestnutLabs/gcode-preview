@@ -1,7 +1,7 @@
 // @vitest-environment node
 /**
- * Pins the flat ESLint config (eslint.config.mjs) to the rules the old ESLint 8 `.eslintrc.js` setup
- * enforced (#445). The ESLint 8 effective rules are frozen in lint-config.eslint8-baseline.json; the only
+ * Pins the flat ESLint config (eslint.config.mjs) to the rules the old ESLint 8 setup enforced in CI
+ * (`eslint -c .eslintrc.js .`, #445). The ESLint 8 effective rules are frozen in lint-config.eslint8-baseline.json; the only
  * allowed differences are listed literally below. Changing a lint rule on purpose means updating the
  * baseline (or the lists here) in the same PR.
  */
@@ -29,29 +29,11 @@ const ADDED_UPSTREAM = [
 ];
 // no-new-symbol's successor, switched on wherever no-new-symbol was.
 const SUCCESSOR = { 'no-new-symbol': 'no-new-native-nonconstructor' };
-// src/**/*.ts now follows the typescript-eslint preset like every other TS file: the core rules the old
-// src/.eslintrc.js switched back on (and that misfire on TS syntax under ESLint 10) stay off there.
-const SRC_TS_CORE_OFF = [
-  'constructor-super',
-  'getter-return',
-  'no-class-assign',
-  'no-const-assign',
-  'no-dupe-args',
-  'no-dupe-class-members',
-  'no-dupe-keys',
-  'no-func-assign',
-  'no-import-assign',
-  'no-new-symbol',
-  'no-obj-calls',
-  'no-redeclare',
-  'no-setter-return',
-  'no-this-before-super',
-  'no-undef',
-  'no-unreachable',
-  'no-unsafe-negation',
-  'no-unused-vars',
-  'no-with'
-];
+// Deliberate tightenings over what CI enforced (sample path -> rules).
+const TIGHTENED = {
+  // Core no-unused-vars on the legacy root library's JS: CI's `eslint -c .eslintrc.js` left it off.
+  'src/babel.config.js': { 'no-unused-vars': [2] }
+};
 
 const defaults = {};
 for (const [name, rule] of builtinRules) defaults[name] = rule.meta?.defaultOptions;
@@ -78,10 +60,10 @@ function normalize(rules) {
 
 function expectedFor(sample) {
   const rules = { ...baseline.common, ...baseline.paths[sample] };
-  if (/^src\/.*\.ts$/.test(sample)) for (const name of SRC_TS_CORE_OFF) delete rules[name];
   for (const [old, next] of Object.entries(SUCCESSOR)) if (rules[old]) rules[next] = rules[old];
   for (const name of REMOVED_UPSTREAM) delete rules[name];
   for (const name of ADDED_UPSTREAM) rules[name] = [2];
+  Object.assign(rules, TIGHTENED[sample]);
   return Object.fromEntries(Object.entries(rules).sort(([a], [b]) => (a < b ? -1 : 1)));
 }
 
