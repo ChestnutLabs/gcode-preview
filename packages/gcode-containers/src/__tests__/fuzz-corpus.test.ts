@@ -127,10 +127,7 @@ describe('extractEntry fuzz property replay (fuzz-extract-entry.mjs seeds)', () 
     expect(adversarial.length).toBe(6);
   });
 
-  const seeds = [
-    ...inputs.map((n) => join(corpusDir, n)),
-    ...adversarial.map((n) => join(adversarialDir, n))
-  ];
+  const seeds = [...inputs.map((n) => join(corpusDir, n)), ...adversarial.map((n) => join(adversarialDir, n))];
   for (const file of seeds) {
     it(`typed extract-stage errors or exact bytes for ${basename(file)}`, async () => {
       await expect(exerciseExtract(new Uint8Array(readFileSync(file)))).resolves.toBeUndefined();

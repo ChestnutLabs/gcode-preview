@@ -227,7 +227,10 @@ const smallSettings = Buffer.from(JSON.stringify({ printer_model: 'Chestnut Test
 const okPlate = { name: 'Metadata/plate_1.gcode', data: plateGcode(1, 10), deflate: true };
 writeAdv(
   'adv-metadata-bad-crc.gcode.3mf',
-  makeZip([okPlate, { name: 'Metadata/project_settings.config', data: smallSettings, deflate: true, corrupt: { crc: true } }])
+  makeZip([
+    okPlate,
+    { name: 'Metadata/project_settings.config', data: smallSettings, deflate: true, corrupt: { crc: true } }
+  ])
 );
 writeAdv(
   'adv-metadata-size-lie.gcode.3mf',

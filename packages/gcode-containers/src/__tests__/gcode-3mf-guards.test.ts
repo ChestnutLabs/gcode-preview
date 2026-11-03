@@ -113,7 +113,8 @@ describe('metadata bounds and integrity (through extractEntry)', () => {
     expect(opened.metadata.warnings).toEqual([
       {
         code: 'container-metadata-invalid',
-        message: "project_settings.config unreadable: expanded size of 'metadata/project_settings.config' differs from headers"
+        message:
+          "project_settings.config unreadable: expanded size of 'metadata/project_settings.config' differs from headers"
       }
     ]);
   });

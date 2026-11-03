@@ -42,7 +42,9 @@ export async function fuzz(data) {
       out = await extractEntry(bytes, entry, FUZZ_STREAM_CAP);
     } catch (e) {
       if (e instanceof ContainerError) {
-        if (!EXTRACT_CODES.has(e.code)) throw new Error(`unexpected extract-stage code ${e.code}: ${e.message}`);
+        if (!EXTRACT_CODES.has(e.code)) {
+          throw new Error(`unexpected extract-stage code ${e.code}: ${e.message}`, { cause: e });
+        }
         continue;
       }
       throw e;

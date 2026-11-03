@@ -420,7 +420,7 @@
         "adversarial"
       ],
       "expectedCapabilities": {},
-      "sizeTier": "tiny",
+      "sizeTier": "adversarial",
       "limitations": "Deliberately malformed (Packet 2 sweep G1). Metadata/project_settings.config carries a CRC that does not match its bytes (both headers agree). Must open with a container-metadata-invalid warning (CRC mismatch); the plate still opens."
     },
     {
@@ -438,7 +438,7 @@
         "adversarial"
       ],
       "expectedCapabilities": {},
-      "sizeTier": "tiny",
+      "sizeTier": "adversarial",
       "limitations": "Deliberately malformed (Packet 2 sweep G1). project_settings.config headers claim one byte fewer than the entry inflates to (real CRC). Must open with a container-metadata-invalid warning (expanded size differs from headers)."
     },
     {
@@ -456,7 +456,7 @@
         "adversarial"
       ],
       "expectedCapabilities": {},
-      "sizeTier": "tiny",
+      "sizeTier": "adversarial",
       "limitations": "Deliberately malformed (Packet 2 sweep G1). EOCD central-directory offset is the zip64 sentinel 0xFFFFFFFF. Must FAIL with E_CONTAINER_ZIP64."
     },
     {
@@ -474,7 +474,7 @@
         "adversarial"
       ],
       "expectedCapabilities": {},
-      "sizeTier": "tiny",
+      "sizeTier": "adversarial",
       "limitations": "Deliberately malformed (Packet 2 sweep G1). EOCD central-directory offset points at end of file. Must FAIL with E_CONTAINER_FORMAT (central directory extends past the archive)."
     },
     {
@@ -492,7 +492,7 @@
         "adversarial"
       ],
       "expectedCapabilities": {},
-      "sizeTier": "tiny",
+      "sizeTier": "adversarial",
       "limitations": "Deliberately malformed (Packet 2 sweep G1). An entry name containing NUL next to a valid plate. The NUL entry must be dropped with a container-entry-hostile-name warning; the valid plate still opens."
     },
     {
@@ -510,7 +510,7 @@
         "adversarial"
       ],
       "expectedCapabilities": {},
-      "sizeTier": "tiny",
+      "sizeTier": "adversarial",
       "limitations": "Deliberately malformed (Packet 2 sweep G1). The only plate uses compression method 12 (bzip2) in both headers. Streaming it must FAIL with E_CONTAINER_METHOD."
     },
     {
