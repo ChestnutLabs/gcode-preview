@@ -81,9 +81,17 @@ export interface BgcodeDecodeResult {
 }
 
 export interface BgcodeDecodeOptions {
-  /** Hard cap on total decoded G-code bytes — decompression-bomb defense (default 512 MiB). */
+  /**
+   * Hard cap on total decoded G-code bytes — decompression-bomb defense (default 512 MiB). Must be a
+   * non-negative safe integer; anything else (`NaN`, `Infinity`, negative, fractional, non-number)
+   * throws `E_BGCODE_OPTION` before any decoding.
+   */
   maxOutputBytes?: number;
-  /** Also decode the metadata (INI) + thumbnail blocks into `settings`/`thumbnails` (default false). */
+  /**
+   * Also decode the metadata (INI) + thumbnail blocks into `settings`/`thumbnails` (default false).
+   * These blocks share a fixed 32 MiB internal budget, separate from `maxOutputBytes`; a file whose
+   * metadata + thumbnails exceed it fails with `E_BGCODE_BOMB`.
+   */
   metadata?: boolean;
 }
 
@@ -103,6 +111,13 @@ function parseIni(text: string): Record<string, string> {
 }
 
 const DEFAULT_MAX_OUTPUT = 512 * 1024 * 1024;
+
+/**
+ * Internal, non-configurable aggregate budget for every metadata + thumbnail block (#450). PrusaSlicer
+ * caps each thumbnail below 1000x1000, so one is at most ~5 MB (QOI, all-RGBA); 32 MiB fits six of
+ * those plus the INI blocks. A real PrusaSlicer 2.9 file carries ~125 KB in total.
+ */
+const META_BUDGET = 32 * 1024 * 1024;
 
 function readU16(b: Uint8Array, o: number): number {
   return b[o] | (b[o + 1] << 8);
@@ -133,6 +148,7 @@ async function inflate(data: Uint8Array, expected: number, limit: number): Promi
   const reader = ds.readable.getReader();
   // The writer promise must never float unobserved: a corrupt stream errors BOTH ends, and an
   // unawaited writer rejection crashes the process (the #131 fuzzer lesson from gcode-containers).
+  // Captured here (never rejects); a writer error seen after a clean read end is re-thrown below.
   let writeError: unknown;
   const writeAll = (async () => {
     await writer.write(data);
@@ -142,10 +158,17 @@ async function inflate(data: Uint8Array, expected: number, limit: number): Promi
   });
   const chunks: Uint8Array[] = [];
   let total = 0;
+  // `done` is set only once the reader drained AND the writer settled. Any other exit (the BOMB guard,
+  // corrupt deflate) reaches the `finally` with `done` false, and the reader MUST be cancelled before
+  // awaiting writeAll: once nobody reads, the writer is parked on backpressure and writeAll never
+  // settles (a hostile block that inflates past the cap froze the load — same bug as #452 in zip.ts).
+  // Cancelling the readable errors the writable, which releases the writer.
+  let done = false;
   try {
     for (;;) {
-      const { done, value } = await reader.read();
-      if (done) break;
+      const r = await reader.read();
+      if (r.done) break;
+      const value = r.value;
       if (value !== undefined && value.byteLength > 0) {
         total += value.byteLength;
         if (total > expected || total > limit) {
@@ -155,11 +178,16 @@ async function inflate(data: Uint8Array, expected: number, limit: number): Promi
       }
     }
     await writeAll;
+    done = true; // both ends settled: nothing left to cancel
     if (writeError !== undefined) throw writeError;
   } catch (err) {
-    await writeAll; // settled by construction; never rejects
     if (err instanceof ContainerError) throw err;
     throw new ContainerError('E_BGCODE_INFLATE', `deflate failed: ${err instanceof Error ? err.message : err}`);
+  } finally {
+    if (!done) {
+      await reader.cancel().catch(() => undefined);
+      await writeAll; // never rejects (see its .catch above)
+    }
   }
   const out = new Uint8Array(total);
   let o = 0;
@@ -215,7 +243,12 @@ function decode(encoding: number, bytes: Uint8Array, limit: number): Uint8Array 
  * an unbounded read/allocation.
  */
 export async function openBgcode(bytes: Uint8Array, opts: BgcodeDecodeOptions = {}): Promise<BgcodeDecodeResult> {
-  const limit = opts.maxOutputBytes ?? DEFAULT_MAX_OUTPUT;
+  const max = opts.maxOutputBytes;
+  // NaN/Infinity would silently disable every cap (`total > NaN` is never true) — reject, never clamp.
+  if (max !== undefined && !(Number.isSafeInteger(max) && max >= 0)) {
+    throw new ContainerError('E_BGCODE_OPTION', `maxOutputBytes must be a non-negative integer (got ${String(max)})`);
+  }
+  const limit = max ?? DEFAULT_MAX_OUTPUT;
   const len = bytes.length;
   if (len < 10) throw new ContainerError('E_BGCODE_TRUNCATED', 'file shorter than the 10-byte header');
   if (!sniffBgcode(bytes)) throw new ContainerError('E_BGCODE_MAGIC', 'missing "GCDE" magic');
@@ -232,6 +265,7 @@ export async function openBgcode(bytes: Uint8Array, opts: BgcodeDecodeOptions = 
   const settings: Record<string, string> = {};
   const thumbnails: BgcodeThumbnail[] = [];
   let totalOut = 0;
+  let metaUsed = 0; // bytes decoded so far from metadata + thumbnail blocks, against META_BUDGET
   let off = 10;
 
   while (off < len) {
@@ -283,19 +317,30 @@ export async function openBgcode(bytes: Uint8Array, opts: BgcodeDecodeOptions = 
       if (totalOut > limit)
         throw new ContainerError('E_BGCODE_BOMB', `decoded G-code exceeds the output limit (${totalOut})`);
       gcodeParts.push(decoded);
-    } else if (wantMeta && isThumb) {
-      // Thumbnails are stored as image bytes (PrusaSlicer uses None compression); decompress if flagged.
-      const raw = await decompress(compression, data, uncompressedSize, limit);
-      thumbnails.push({
-        format: THUMB_FORMAT[thumbFormat] ?? 'unknown',
-        width: thumbWidth,
-        height: thumbHeight,
-        bytes: raw.slice()
-      });
-    } else if (wantMeta && (type === 0 || type === 2 || type === 3 || type === 4)) {
-      // File/Printer/Print/Slicer metadata: an INI block (encoding 0), maybe DEFLATE-compressed.
-      const ini = await decompress(compression, data, uncompressedSize, limit);
-      Object.assign(settings, parseIni(new TextDecoder().decode(ini)));
+    } else if (wantMeta && (isThumb || type === 0 || type === 2 || type === 3 || type === 4)) {
+      // Thumbnail or File/Printer/Print/Slicer metadata. Checked against the shared budget on the
+      // DECLARED size before any allocation; decompress enforces output === declared size.
+      const metaLeft = META_BUDGET - metaUsed;
+      if (uncompressedSize > metaLeft) {
+        throw new ContainerError(
+          'E_BGCODE_BOMB',
+          `metadata/thumbnail blocks exceed the internal budget (${metaUsed + uncompressedSize})`
+        );
+      }
+      const raw = await decompress(compression, data, uncompressedSize, metaLeft);
+      metaUsed += raw.length;
+      if (isThumb) {
+        // Thumbnails are stored as image bytes (PrusaSlicer uses None compression); decompress if flagged.
+        thumbnails.push({
+          format: THUMB_FORMAT[thumbFormat] ?? 'unknown',
+          width: thumbWidth,
+          height: thumbHeight,
+          bytes: raw.slice()
+        });
+      } else {
+        // An INI block (encoding 0), maybe DEFLATE-compressed — only ever within the budget.
+        Object.assign(settings, parseIni(new TextDecoder().decode(raw)));
+      }
     }
   }
 
