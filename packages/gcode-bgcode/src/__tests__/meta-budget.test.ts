@@ -19,6 +19,7 @@ const THUMB = 5;
 const NONE = 0;
 const DEFLATE = 1;
 const HS11 = 2;
+const META4 = 4; // spec §5.2 metadata block type 4 — a decoded metadata type with no other coverage
 
 const gcode: AssembleBlock = { type: GCODE, compression: NONE, encoding: 0, data: enc('G1 X1\n') };
 
@@ -100,6 +101,13 @@ describe('#450 metadata + thumbnail budget (32 MiB, internal)', () => {
     const r = await openBgcode(f, { metadata: true });
     expect(r.thumbnails[0].bytes.length).toBe(16777216);
     expect(r.settings.k).toBe('v');
+  });
+
+  it('decodes a type-4 metadata block (the only in-budget metadata type without other coverage)', async () => {
+    const block: AssembleBlock = { type: META4, compression: DEFLATE, encoding: 0, data: enc('x\nprint_key = yes') };
+    const f = await assembleBgcode([gcode, block], { checksum: 'none' });
+    const r = await openBgcode(f, { metadata: true });
+    expect(r.settings.print_key).toBe('yes');
   });
 
   it('the aggregate at budget+1 throws, before the INI block is decoded or parsed', async () => {
