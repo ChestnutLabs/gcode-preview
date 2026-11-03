@@ -17,6 +17,12 @@ render(result.ir);
 session.dispose();
 ```
 
+> **Bytes are handed to the worker, not copied.** A `Uint8Array` passed to `parse()` has its buffer
+> transferred to the worker, so it is empty (`byteLength === 0`) afterwards. To parse the same file
+> again, for example to switch plates with `{ plate: 1 }`, keep a copy and pass `bytes.slice()`
+> each time. Passing the already-transferred bytes rejects with `E_POST_FAILED`; the session stays
+> usable.
+
 ## Workers
 
 - **Batteries default (zero setup):** the session creates its own worker via the bundler-native
