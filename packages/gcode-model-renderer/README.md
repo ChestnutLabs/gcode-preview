@@ -10,7 +10,7 @@ toolpath renderer, which answers *"how does this print/cut run?"* (design: DD-01
 
 Use it for file-browser thumbnails, library cards, and "what's in this file" previews — the picture a
 slicer shows of a part, not the toolpath. For inspecting the actual moves (layers, travel, seams,
-color modes, live progress), use [`@chestnutlabs/gcode-renderer-three`](../gcode-renderer-three)
+color modes, live progress), use [`@chestnutlabs/gcode-renderer-three`](../gcode-renderer-three/README.md)
 instead.
 
 - **STL and 3MF** — a bare STL is a single object with no declared material; a 3MF brings its own

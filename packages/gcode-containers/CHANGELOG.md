@@ -1,5 +1,34 @@
 # @chestnutlabs/gcode-containers
 
+## 0.21.1
+
+### Patch Changes
+
+- [#452](https://github.com/ChestnutLabs/gcode-preview/pull/452) [`95724d5`](https://github.com/ChestnutLabs/gcode-preview/commit/95724d5e4cd5d9b09d7598f421f693c3d096efb7) Thanks [@sobechestnut-dev](https://github.com/sobechestnut-dev)! - Fix a hostile `.gcode.3mf` / 3MF file freezing the load instead of failing with an error. When a compressed entry's headers claimed a small size but the data expanded past the size limit, `streamEntry` (and `extractEntry`, `openGcode3mf` plate streaming, and 3MF model loading on top of it) stopped reading and then waited forever for the decompressor, so the load never finished. It now rejects with `E_CONTAINER_LIMIT_EXPANDED` as intended. Leaving a `streamEntry` loop early (`break` / `return()`) also releases the decompressor now, where it previously stayed pending.
+
+- [#457](https://github.com/ChestnutLabs/gcode-preview/pull/457) [`8d4464f`](https://github.com/ChestnutLabs/gcode-preview/commit/8d4464fbf9a24f942a71752838a9c0dc186917d9) Thanks [@sobechestnut-dev](https://github.com/sobechestnut-dev)! - The archive-wide expanded-size cap (`maxExpandedBytesTotal`, default 1 GiB) is now enforced. It was
+  declared but never checked, so a crafted model 3MF could expand far past 1 GiB (up to 512 MB per part,
+  thousands of parts) when loaded into the model viewer. Every entry extracted from one archive now
+  counts toward the total. Re-reading the same entry (for example, re-opening a plate) counts once. Going
+  over fails with `E_CONTAINER_LIMIT_TOTAL`, which the model viewer reports as `E_MODEL_TOO_LARGE`. The
+  model viewer's total is fixed at 1 GiB, about twice what the default 5M-triangle limit lets through.
+
+  `ContainerLimits` values are now validated: a field that is present but not a non-negative integer
+  (`NaN`, `Infinity`, negative, fractional) throws `E_CONTAINER_OPTION` before anything is extracted,
+  instead of silently switching that cap off. An absent field still uses its default.
+
+  New export: `ExpansionBudget`, plus an optional `budget` argument on `extractEntry` and `streamEntry`,
+  for callers that extract several entries from one archive themselves. The `cap` argument of those two
+  functions is now validated the same way: a `cap` that is not a non-negative integer throws
+  `E_CONTAINER_OPTION`, so passing `Infinity` to mean "uncapped" no longer works — omit `budget`/use a
+  large finite `cap` instead.
+
+  The model 3MF loader now reports every extraction failure of its parts (corrupt data, CRC mismatch) as
+  a `ModelParseError` (`E_MODEL_PARSE`); a few paths used to surface a raw `ContainerError`.
+
+- Updated dependencies []:
+  - @chestnutlabs/toolpath-core@0.21.1
+
 ## 0.21.0
 
 ### Patch Changes

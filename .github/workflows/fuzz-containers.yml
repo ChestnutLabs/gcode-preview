@@ -27,6 +27,7 @@ jobs:
         target:
           - { name: read-directory, file: fuzz-read-directory.mjs, sync: '--sync=true' }
           - { name: stream-entry, file: fuzz-stream-entry.mjs, sync: '--sync=false' }
+          - { name: extract-entry, file: fuzz-extract-entry.mjs, sync: '--sync=false' }
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -44,6 +45,7 @@ jobs:
         run: |
           mkdir -p /tmp/corpus
           cp test-data/fixtures/containers/*.gcode.3mf /tmp/corpus/ || true
+          cp test-data/fixtures/containers/adversarial/*.gcode.3mf /tmp/corpus/ || true
           cp test-data/fixtures/fuzz-regressions/* /tmp/corpus/ 2>/dev/null || true
       - name: Fuzz ${{ matrix.target.name }}
         run: |
@@ -60,3 +62,29 @@ jobs:
             oom-*
             timeout-*
           if-no-files-found: ignore
+
+  # A scheduled failure is otherwise silent: nobody watches the Actions tab, and
+  # stream-entry timed out every week from 2026-07-27 before anyone noticed.
+  # Open one tracking issue, then comment on it for each later failing run.
+  alert:
+    needs: fuzz
+    if: failure() && github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+    steps:
+      - name: Open or comment on the tracking issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          TITLE="fuzz-containers scheduled run failing"
+          NUM=$(gh issue list --search "\"$TITLE\" in:title" --json number,title \
+            --jq "map(select(.title == \"$TITLE\")) | first | .number")
+          if [ -n "$NUM" ]; then
+            gh issue comment "$NUM" --body "Still failing: $RUN_URL"
+          else
+            gh issue create --title "$TITLE" \
+              --body "The scheduled fuzz-containers run failed: $RUN_URL. Download the crash-*/timeout-* artifacts from the run, minimize, and commit the input to test-data/fixtures/fuzz-regressions/."
+          fi

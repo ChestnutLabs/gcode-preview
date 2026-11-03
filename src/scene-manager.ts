@@ -852,8 +852,7 @@ export class SceneManager {
     const minZ = this.job.layers[this._startLayer - 1]?.z;
     const maxZ = this.job.layers[this._endLayer - 1]?.z;
 
-    let clippingPlanes: Plane[] = [];
-    clippingPlanes = this.createClippingPlanes(minZ, maxZ);
+    const clippingPlanes: Plane[] = this.createClippingPlanes(minZ, maxZ);
 
     const material = new LineMaterial({
       color: Number(color.getHex()),

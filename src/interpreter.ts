@@ -2,7 +2,6 @@ import { Path, PathType } from './path';
 import { GCodeCommand } from './gcode-parser';
 import { Job } from './job';
 
-// eslint-disable-next-line no-unused-vars
 type Method = (...args: unknown[]) => unknown;
 // type LookupTable = { [key: string]: Method | undefined };
 
@@ -15,7 +14,6 @@ type Method = (...args: unknown[]) => unknown;
  * including linear moves (G0/G1), arcs (G2/G3), unit changes (G20/G21), and tool selection.
  */
 export class Interpreter {
-  // eslint-disable-next-line no-unused-vars
   [key: string]: (...args: unknown[]) => unknown;
 
   // TODO: maybe these props should move to the Job class
@@ -208,8 +206,8 @@ export class Interpreter {
     const zStep = zDist / totalSegments;
 
     // get points for the arc
-    let px = state.x;
-    let py = state.y;
+    let px: number;
+    let py: number;
     let pz = state.z;
     // calculate segments
     let currentAngle = arcCurrentAngle;

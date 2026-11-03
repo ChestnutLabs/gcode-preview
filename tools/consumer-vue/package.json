@@ -22,7 +22,7 @@
     "@chestnutlabs/gcode-preview-core": "file:tarballs/chestnutlabs-gcode-preview-core.tgz"
   },
   "devDependencies": {
-    "happy-dom": "^15.0.0",
+    "happy-dom": "^21.0.0",
     "vitest": "^4.0.0"
   }
 }

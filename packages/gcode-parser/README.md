@@ -2,7 +2,7 @@
 
 Worker-safe G-code parse core and session client for the Chestnut Labs G-code Preview stack
 (design: DD-003). Parses `.gcode` / `.gcode.3mf` **off the main thread** into
-[`ToolpathIR`](../toolpath-core), with streaming input, progressive partial previews for large
+[`ToolpathIR`](../toolpath-core/README.md), with streaming input, progressive partial previews for large
 files, resource limits, cancellation, and an adversarial-input corpus behind it.
 
 ```ts
@@ -17,6 +17,12 @@ render(result.ir);
 session.dispose();
 ```
 
+> **Bytes are handed to the worker, not copied.** A `Uint8Array` passed to `parse()` has its buffer
+> transferred to the worker, so it is empty (`byteLength === 0`) afterwards. To parse the same file
+> again, for example to switch plates with `{ plate: 1 }`, keep a copy and pass `bytes.slice()`
+> each time. Passing the already-transferred bytes rejects with `E_POST_FAILED`; the session stays
+> usable.
+
 ## Workers
 
 - **Batteries default (zero setup):** the session creates its own worker via the bundler-native
@@ -27,7 +33,7 @@ session.dispose();
 
 Wire options accept dialect selection, container/plate selection (`plate` for multi-plate
 `.gcode.3mf`), and resource limits. Most applications should consume this through
-[`@chestnutlabs/gcode-preview-core`](../gcode-preview-core) or a framework adapter rather than
+[`@chestnutlabs/gcode-preview-core`](../gcode-preview-core/README.md) or a framework adapter rather than
 directly.
 
 Part of [Chestnut Labs G-code Preview](../../README.md) · MIT

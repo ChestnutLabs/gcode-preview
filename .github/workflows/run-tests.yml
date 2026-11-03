@@ -38,6 +38,8 @@ jobs:
       - run: npm ci
       # Owner ruling 6a (AnyBridge#2765): every tarball lists LICENSE + NOTICE.md. Needs no build.
       - run: npm run pack:license-check
+      # Packet D: published packages declare no third-party runtime deps (siblings only). Needs no build.
+      - run: npm run check:no-runtime-deps
       - run: npm run build
       - run: npm run test
       - run: npm run test:packages
@@ -68,3 +70,31 @@ jobs:
       - run: npm run test
       - run: npm run test:packages
       - run: npm run test:consumer-vue
+
+  # Issue #444: the Svelte adapter declares peer svelte ^4 || ^5 but its build is tsc + a raw copy of the
+  # .svelte files and its tests read them as text. This job compiles and mounts the shipped components
+  # under each major (latest of the major; the ^4.0.0 floor itself is not exercised). Self-contained
+  # harness per leg in tools/svelte-compat/ (own lock); needs the root install only so the sibling
+  # packages' third-party imports (three, ...) resolve. Not a required check.
+  svelte-compat:
+
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        svelte: [4, 5]
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.x'
+          cache: "npm"
+          cache-dependency-path: |
+            package-lock.json
+            tools/svelte-compat/svelte${{ matrix.svelte }}/package-lock.json
+      - run: npm ci --ignore-scripts
+      - run: npm ci --ignore-scripts
+        working-directory: tools/svelte-compat/svelte${{ matrix.svelte }}
+      - run: npm test
+        working-directory: tools/svelte-compat/svelte${{ matrix.svelte }}

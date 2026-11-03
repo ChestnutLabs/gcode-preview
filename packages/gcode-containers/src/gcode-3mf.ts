@@ -11,12 +11,13 @@
 import type { MachineGeometry, FilamentInfo, Point2 } from '@chestnutlabs/toolpath-core';
 import {
   ContainerError,
-  DEFAULT_CONTAINER_LIMITS,
+  ExpansionBudget,
   canonicalName,
   crc32,
   crc32Final,
   extractEntry,
   readDirectory,
+  resolveContainerLimits,
   streamEntry,
   type ContainerLimits,
   type ZipEntry
@@ -62,10 +63,11 @@ const RAW_WHITELIST = [
 ];
 
 export function sniffGcode3mf(prefix: Uint8Array, name?: string): boolean {
-  const magic = prefix.length >= 4 && ZIP_MAGIC.every((b, i) => prefix[i] === b);
-  if (!magic) return false;
-  // Extension hint refines but never overrides the magic (a .zip named .gcode is still not a container).
-  return name === undefined || /\.(gcode\.)?3mf$/i.test(name) || true;
+  // The ZIP local-file magic alone decides; `name` is kept only for the public signature (any archive
+  // whose bytes start with the magic sniffs as a container). A prefix shorter than the magic fails too:
+  // its missing bytes read as undefined, which never equals a magic byte.
+  void name;
+  return ZIP_MAGIC.every((b, i) => prefix[i] === b);
 }
 
 /** Bambu/Orca `printable_area`: ["0x0","256x0","256x256","0x256"] or "0x0,256x0,..." */
@@ -132,10 +134,10 @@ function filamentsFromSettings(settings: Record<string, unknown>): FilamentInfo[
   }));
 }
 
-export async function openGcode3mf(
-  bytes: Uint8Array,
-  limits: ContainerLimits = DEFAULT_CONTAINER_LIMITS
-): Promise<OpenedContainer> {
+export async function openGcode3mf(bytes: Uint8Array, requested?: ContainerLimits): Promise<OpenedContainer> {
+  const limits = resolveContainerLimits(requested);
+  // One budget per opened archive: metadata + every plate stream share maxExpandedBytesTotal (#449).
+  const budget = new ExpansionBudget(limits.maxExpandedBytesTotal);
   const dir = readDirectory(bytes, limits);
   const warnings = [...dir.warnings];
 
@@ -187,7 +189,9 @@ export async function openGcode3mf(
       });
     } else {
       try {
-        const text = new TextDecoder().decode(await extractEntry(bytes, settingsEntry, limits.maxMetadataBytes));
+        const text = new TextDecoder().decode(
+          await extractEntry(bytes, settingsEntry, limits.maxMetadataBytes, budget)
+        );
         const settings = JSON.parse(text) as Record<string, unknown>;
         machine = machineFromSettings(settings);
         filaments = filamentsFromSettings(settings);
@@ -215,7 +219,7 @@ export async function openGcode3mf(
         throw new ContainerError('E_CONTAINER_NO_PAYLOAD', `plate ${index} does not exist (${plates.length} plates)`);
       }
       // Stream with incremental caps; verify CRC + size at end-of-stream.
-      const gen = streamEntry(bytes, plate.entry, limits.maxExpandedBytesPerEntry);
+      const gen = streamEntry(bytes, plate.entry, limits.maxExpandedBytesPerEntry, budget);
       let crc = 0xffffffff;
       let total = 0;
       return {

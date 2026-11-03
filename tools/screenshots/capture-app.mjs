@@ -19,7 +19,6 @@
  *
  * Run:  node tools/screenshots/capture-app.mjs [shotName ...]   (no args → all)
  */
-/* eslint-env node, browser */
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
 import { readFileSync } from 'node:fs';

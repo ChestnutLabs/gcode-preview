@@ -15,6 +15,7 @@ declare class TextEncoder {
 
 interface MinimalReader<T> {
   read(): Promise<{ done: boolean; value?: T }>;
+  cancel(reason?: unknown): Promise<void>;
   releaseLock?(): void;
 }
 

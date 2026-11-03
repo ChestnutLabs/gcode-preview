@@ -24,7 +24,7 @@ export function matchPrintingObjectStart(trimmed: string): { id: string; name?: 
   if (idm === null) return null;
   // Name: prefer an explicit `name:<…>` suffix (Bambu), else a quoted or bare name BEFORE the id
   // (OrcaSlicer / Anycubic), rejecting `unique` / `unique label` filler.
-  let name = '';
+  let name: string;
   const suffix = /\bname:\s*(.+?)\s*$/i.exec(trimmed);
   if (suffix !== null) {
     name = suffix[1].trim();

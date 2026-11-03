@@ -8,7 +8,7 @@
  *   - central/local header agreement (name, sizes, method)
  *   - encrypted-entry rejection
  *   - duplicate canonical-name handling
- *   - incremental expanded-byte caps (a lying header cannot balloon memory)
+ *   - incremental expanded-byte caps, per entry and per archive (a lying header cannot balloon memory)
  * Zip64 is detected and rejected with a structured error (v1 scope; .gcode.3mf
  * payloads are far below 4 GB).
  */
@@ -39,6 +39,63 @@ export const DEFAULT_CONTAINER_LIMITS: ContainerLimits = {
   maxExpandedBytesTotal: 1024 * 1024 * 1024,
   maxMetadataBytes: 8 * 1024 * 1024
 };
+
+/** NaN/Infinity/negative/fractional would silently disable a cap (`x > NaN` is never true) — reject, never clamp. */
+function checkLimit(name: string, value: unknown): void {
+  if (!(Number.isSafeInteger(value) && (value as number) >= 0)) {
+    throw new ContainerError('E_CONTAINER_OPTION', `${name} must be a non-negative integer (got ${String(value)})`);
+  }
+}
+
+/**
+ * Validate a caller's limits: a PRESENT field must be a non-negative integer (else `E_CONTAINER_OPTION`);
+ * an absent field falls back to its §7.2 default.
+ */
+export function resolveContainerLimits(limits?: Partial<ContainerLimits>): ContainerLimits {
+  const out = { ...DEFAULT_CONTAINER_LIMITS };
+  if (limits === undefined) return out;
+  for (const key of Object.keys(DEFAULT_CONTAINER_LIMITS) as (keyof ContainerLimits)[]) {
+    const v = limits[key];
+    if (v === undefined) continue;
+    checkLimit(key, v);
+    out[key] = v;
+  }
+  return out;
+}
+
+/**
+ * The per-archive `maxExpandedBytesTotal` budget (#449). Create ONE per opened archive and pass it to every
+ * `extractEntry`/`streamEntry` call on that archive. It charges DISTINCT expanded bytes: each entry is charged
+ * its high-water mark once, so re-streaming the same entry (e.g. re-opening a plate) does not charge twice,
+ * while distinct entries sum toward the total. Over budget → `E_CONTAINER_LIMIT_TOTAL`.
+ */
+export class ExpansionBudget {
+  private readonly charged = new Map<string, number>();
+  private used = 0;
+
+  constructor(readonly total: number) {
+    checkLimit('maxExpandedBytesTotal', total);
+  }
+
+  /** Bytes `name` may expand to: what is left, plus what `name` already holds. */
+  remainingFor(name: string): number {
+    return this.total - this.used + (this.charged.get(name) ?? 0);
+  }
+
+  /** Record that `name` has produced `produced` bytes so far; throws when that would pass the total. */
+  charge(name: string, produced: number): void {
+    const prev = this.charged.get(name) ?? 0;
+    if (produced <= prev) return;
+    if (this.used + produced - prev > this.total) {
+      throw new ContainerError(
+        'E_CONTAINER_LIMIT_TOTAL',
+        `entry '${name}' takes the archive past its ${this.total} B expanded total; extraction stopped`
+      );
+    }
+    this.used += produced - prev;
+    this.charged.set(name, produced);
+  }
+}
 
 export interface ZipEntry {
   /** Canonical name: forward slashes, no traversal — see canonicalName(). */
@@ -108,6 +165,7 @@ export interface ZipDirectory {
 
 /** Parse the central directory (discovery only — no payload inflate). */
 export function readDirectory(bytes: Uint8Array, limits: ContainerLimits): ZipDirectory {
+  limits = resolveContainerLimits(limits);
   // Locate EOCD: scan backward over the last 64KB+22 for the signature.
   const scanStart = Math.max(0, bytes.length - (64 * 1024 + 22));
   let eocd = -1;
@@ -234,13 +292,20 @@ const INFLATE_CHUNK = 256 * 1024;
 
 /**
  * Extract one entry fully in memory with incremental caps + streaming CRC.
- * `cap` bounds the expanded size REGARDLESS of what headers claim.
+ * `cap` bounds the expanded size REGARDLESS of what headers claim, and must be a non-negative integer —
+ * `NaN`/`Infinity`/negative/fractional throws `E_CONTAINER_OPTION` (no value means "uncapped"). `budget`,
+ * when given, also charges the archive-wide `maxExpandedBytesTotal` (see {@link ExpansionBudget}).
  */
-export async function extractEntry(bytes: Uint8Array, entry: ZipEntry, cap: number): Promise<Uint8Array> {
+export async function extractEntry(
+  bytes: Uint8Array,
+  entry: ZipEntry,
+  cap: number,
+  budget?: ExpansionBudget
+): Promise<Uint8Array> {
   const out: Uint8Array[] = [];
   let total = 0;
   let crc = 0xffffffff;
-  for await (const chunk of streamEntry(bytes, entry, cap)) {
+  for await (const chunk of streamEntry(bytes, entry, cap, budget)) {
     out.push(chunk);
     total += chunk.byteLength;
     crc = crc32(chunk, crc);
@@ -263,15 +328,29 @@ export async function extractEntry(bytes: Uint8Array, entry: ZipEntry, cap: numb
 /**
  * Stream an entry's expanded bytes with an incremental cap. CRC verification
  * for the streaming path is the CALLER's job via crc32/crc32Final (the plate
- * pipeline verifies at end-of-stream); extractEntry() verifies internally.
+ * pipeline verifies at end-of-stream); extractEntry() verifies internally. `cap` must be a non-negative
+ * integer, else `E_CONTAINER_OPTION`. `budget` charges the archive-wide total per chunk, like `cap` does
+ * per entry.
  */
-export async function* streamEntry(bytes: Uint8Array, entry: ZipEntry, cap: number): AsyncGenerator<Uint8Array> {
+export async function* streamEntry(
+  bytes: Uint8Array,
+  entry: ZipEntry,
+  cap: number,
+  budget?: ExpansionBudget
+): AsyncGenerator<Uint8Array> {
+  checkLimit('cap', cap);
   const dataStart = locatePayload(bytes, entry);
   const compressed = bytes.subarray(dataStart, dataStart + entry.compressedSize);
   if (entry.uncompressedSize > cap) {
     throw new ContainerError(
       'E_CONTAINER_LIMIT_EXPANDED',
       `entry '${entry.name}' claims ${entry.uncompressedSize} B (> cap ${cap})`
+    );
+  }
+  if (budget !== undefined && entry.uncompressedSize > budget.remainingFor(entry.name)) {
+    throw new ContainerError(
+      'E_CONTAINER_LIMIT_TOTAL',
+      `entry '${entry.name}' claims ${entry.uncompressedSize} B, past the archive's ${budget.total} B expanded total`
     );
   }
   let produced = 0;
@@ -283,6 +362,7 @@ export async function* streamEntry(bytes: Uint8Array, entry: ZipEntry, cap: numb
         `entry '${entry.name}' expanded past ${cap} B — headers lied; extraction stopped`
       );
     }
+    budget?.charge(entry.name, produced);
     return chunk;
   };
   if (entry.method === 0) {
@@ -304,30 +384,41 @@ export async function* streamEntry(bytes: Uint8Array, entry: ZipEntry, cap: numb
   // deflate data the stream errors BOTH ends, and an unawaited writer promise
   // crashes the process as an unhandled rejection even though the reader path
   // converts its copy of the error (found by the #131 fuzzer — see the
-  // fuzz-regressions corpus). Capture instead of floating.
-  let writeError: unknown;
+  // fuzz-regressions corpus). Swallow it here: the reader always sees the same
+  // error (a writer error errors the readable, and the readable only closes
+  // after the writer closed cleanly), so the reader path is the one that reports.
   const writeAll = (async () => {
     for (let o = 0; o < compressed.byteLength; o += INFLATE_CHUNK) {
       await writer.write(compressed.subarray(o, Math.min(o + INFLATE_CHUNK, compressed.byteLength)));
     }
     await writer.close();
-  })().catch((e: unknown) => {
-    writeError = e;
-  });
+  })().catch(() => undefined);
+  // `done` is set only after the inflater drained and the writer finished. Any
+  // other exit — a guard throw (headers lied, cap tripped), corrupt deflate, or
+  // the consumer leaving early via break/return() — reaches the `finally` with
+  // `done` false. There the reader MUST be cancelled before awaiting writeAll:
+  // once nobody reads, the writer is parked on backpressure and writeAll would
+  // never settle (a hostile .gcode.3mf/3MF froze the load instead of erroring).
+  // Cancelling the readable errors the writable, which releases the writer.
+  let done = false;
   try {
     for (;;) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      if (value !== undefined && value.byteLength > 0) yield guard(value);
+      const r = await reader.read();
+      if (r.done) break;
+      if (r.value !== undefined && r.value.byteLength > 0) yield guard(r.value);
     }
     await writeAll;
-    if (writeError !== undefined) throw writeError;
+    done = true;
   } catch (err) {
-    await writeAll; // settled by construction; never rejects
     if (err instanceof ContainerError) throw err;
     throw new ContainerError(
       'E_CONTAINER_INFLATE',
       `inflate failed for '${entry.name}': ${err instanceof Error ? err.message : err}`
     );
+  } finally {
+    if (!done) {
+      await reader.cancel().catch(() => undefined);
+      await writeAll; // never rejects (see its .catch above)
+    }
   }
 }

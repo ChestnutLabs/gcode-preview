@@ -17,7 +17,6 @@
  *   No args  → every shot in the manifest.
  *   Names    → just those shots.
  */
-/* eslint-env node, browser */
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
 import { readFileSync } from 'node:fs';

@@ -1,4 +1,5 @@
+import { mount } from 'svelte';
 import Showcase from './Showcase.svelte';
 import '../../demo-kit/tokens.css';
 
-new Showcase({ target: document.getElementById('app') });
+mount(Showcase, { target: document.getElementById('app') });

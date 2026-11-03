@@ -9,6 +9,7 @@
 export {
   ContainerError,
   DEFAULT_CONTAINER_LIMITS,
+  ExpansionBudget,
   canonicalName,
   crc32,
   crc32Final,
