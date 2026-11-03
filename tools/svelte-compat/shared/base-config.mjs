@@ -34,7 +34,8 @@ export function compileSvelte(compiler, major) {
         const out = compiler.compile(code, {
           filename: file,
           generate: major === 5 ? 'client' : 'dom',
-          css: 'injected'
+          css: 'injected',
+          dev: true
         });
         return { code: out.js.code, map: out.js.map };
       }
@@ -62,9 +63,7 @@ export function legConfig({ compiler, major }) {
     test: {
       include: ['*.test.mjs'],
       environment: 'happy-dom',
-      globals: false,
-      // Inline svelte so its internals resolve through the same conditions + dedupe as the components.
-      server: { deps: { inline: [/svelte/] } }
+      globals: false
     }
   };
 }

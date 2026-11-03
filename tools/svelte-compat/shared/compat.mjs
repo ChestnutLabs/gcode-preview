@@ -173,6 +173,9 @@ export function registerCompat({ describe, it, expect, svelte, compiler, expecte
       expect(target.querySelector('canvas')?.getAttribute('aria-label')).toBe('3D source-model preview');
       await settle();
       expect(ready.length).toBe(1);
+      handle.setProps({ source: makeStlModelSource() });
+      await settle();
+      expect(ready.length).toBe(2);
       const viewer = handle.instance.viewer; // Svelte 4 clears the instance's exports on $destroy()
       handle.destroy();
       await settle();
