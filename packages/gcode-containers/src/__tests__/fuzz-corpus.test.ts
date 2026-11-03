@@ -17,6 +17,7 @@ import { readDirectory, streamEntry, ContainerError } from '../index.js';
 
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..', '..');
 const corpusDir = join(repoRoot, 'test-data', 'fixtures', 'fuzz-regressions');
+const containersDir = join(repoRoot, 'test-data', 'fixtures', 'containers');
 
 const FUZZ_LIMITS = {
   maxEntries: 64,
@@ -58,4 +59,28 @@ describe('fuzzing regression corpus (#131)', () => {
       await expect(exercise(bytes)).resolves.toBeUndefined();
     });
   }
+});
+
+describe('scheduled stream-entry fuzz timeout seed', () => {
+  // adv-size-lie made the weekly fuzz-containers stream-entry job time out every
+  // week from 2026-07-27: streamEntry never settled once the cap tripped mid-stream.
+  it('adv-size-lie settles at the fuzz cap with E_CONTAINER_LIMIT_EXPANDED', async () => {
+    const bytes = new Uint8Array(readFileSync(join(containersDir, 'adv-size-lie.gcode.3mf')));
+    const codes: string[] = [];
+    const run = (async () => {
+      for (const entry of readDirectory(bytes, FUZZ_LIMITS).entries) {
+        try {
+          for await (const _chunk of streamEntry(bytes, entry, CAP)) void _chunk;
+        } catch (e) {
+          codes.push(e instanceof ContainerError ? e.code : `untyped: ${String(e)}`);
+        }
+      }
+    })();
+    let t: ReturnType<typeof setTimeout> | undefined;
+    const timer = new Promise<never>((_, reject) => {
+      t = setTimeout(() => reject(new Error('adv-size-lie did not settle within 5000 ms')), 5000);
+    });
+    await Promise.race([run, timer]).finally(() => clearTimeout(t));
+    expect(codes).toEqual(['E_CONTAINER_LIMIT_EXPANDED']);
+  });
 });
