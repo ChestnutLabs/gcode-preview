@@ -1,0 +1,16 @@
+{
+  "name": "svelte-compat-5",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "description": "CI-only harness: compiles and mounts the shipped Svelte adapter components under Svelte 5 (issue #444). Not published.",
+  "scripts": {
+    "test": "vitest run --maxWorkers=8"
+  },
+  "devDependencies": {
+    "happy-dom": "^21.0.4",
+    "svelte": "^5.55.10",
+    "vite": "^6.4.5",
+    "vitest": "^4.1.12"
+  }
+}
