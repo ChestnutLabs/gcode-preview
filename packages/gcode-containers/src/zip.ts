@@ -304,30 +304,41 @@ export async function* streamEntry(bytes: Uint8Array, entry: ZipEntry, cap: numb
   // deflate data the stream errors BOTH ends, and an unawaited writer promise
   // crashes the process as an unhandled rejection even though the reader path
   // converts its copy of the error (found by the #131 fuzzer — see the
-  // fuzz-regressions corpus). Capture instead of floating.
-  let writeError: unknown;
+  // fuzz-regressions corpus). Swallow it here: the reader always sees the same
+  // error (a writer error errors the readable, and the readable only closes
+  // after the writer closed cleanly), so the reader path is the one that reports.
   const writeAll = (async () => {
     for (let o = 0; o < compressed.byteLength; o += INFLATE_CHUNK) {
       await writer.write(compressed.subarray(o, Math.min(o + INFLATE_CHUNK, compressed.byteLength)));
     }
     await writer.close();
-  })().catch((e: unknown) => {
-    writeError = e;
-  });
+  })().catch(() => undefined);
+  // `done` is set only after the inflater drained and the writer finished. Any
+  // other exit — a guard throw (headers lied, cap tripped), corrupt deflate, or
+  // the consumer leaving early via break/return() — reaches the `finally` with
+  // `done` false. There the reader MUST be cancelled before awaiting writeAll:
+  // once nobody reads, the writer is parked on backpressure and writeAll would
+  // never settle (a hostile .gcode.3mf/3MF froze the load instead of erroring).
+  // Cancelling the readable errors the writable, which releases the writer.
+  let done = false;
   try {
     for (;;) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      if (value !== undefined && value.byteLength > 0) yield guard(value);
+      const r = await reader.read();
+      if (r.done) break;
+      if (r.value !== undefined && r.value.byteLength > 0) yield guard(r.value);
     }
     await writeAll;
-    if (writeError !== undefined) throw writeError;
+    done = true;
   } catch (err) {
-    await writeAll; // settled by construction; never rejects
     if (err instanceof ContainerError) throw err;
     throw new ContainerError(
       'E_CONTAINER_INFLATE',
       `inflate failed for '${entry.name}': ${err instanceof Error ? err.message : err}`
     );
+  } finally {
+    if (!done) {
+      await reader.cancel().catch(() => undefined);
+      await writeAll; // never rejects (see its .catch above)
+    }
   }
 }
