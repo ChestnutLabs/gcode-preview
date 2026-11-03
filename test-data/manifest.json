@@ -665,7 +665,7 @@
         "adversarial"
       ],
       "expectedCapabilities": {},
-      "sizeTier": "tiny",
+      "sizeTier": "adversarial",
       "limitations": "Deliberately malformed for the Packet 2 bgcode guard sweep; must FAIL with the structured error in test-data/fixtures/bgcode/adversarial/README.md."
     },
     {
@@ -683,7 +683,7 @@
         "adversarial"
       ],
       "expectedCapabilities": {},
-      "sizeTier": "tiny",
+      "sizeTier": "adversarial",
       "limitations": "Deliberately malformed for the Packet 2 bgcode guard sweep; must FAIL with the structured error in test-data/fixtures/bgcode/adversarial/README.md."
     },
     {
@@ -701,7 +701,7 @@
         "adversarial"
       ],
       "expectedCapabilities": {},
-      "sizeTier": "tiny",
+      "sizeTier": "adversarial",
       "limitations": "Deliberately malformed for the Packet 2 bgcode guard sweep; must FAIL with the structured error in test-data/fixtures/bgcode/adversarial/README.md."
     },
     {
@@ -719,7 +719,7 @@
         "adversarial"
       ],
       "expectedCapabilities": {},
-      "sizeTier": "tiny",
+      "sizeTier": "adversarial",
       "limitations": "Deliberately malformed for the Packet 2 bgcode guard sweep; must FAIL with the structured error in test-data/fixtures/bgcode/adversarial/README.md."
     },
     {
@@ -737,7 +737,7 @@
         "adversarial"
       ],
       "expectedCapabilities": {},
-      "sizeTier": "tiny",
+      "sizeTier": "adversarial",
       "limitations": "Deliberately malformed for the Packet 2 bgcode guard sweep; must FAIL with the structured error in test-data/fixtures/bgcode/adversarial/README.md."
     },
     {
@@ -755,7 +755,7 @@
         "adversarial"
       ],
       "expectedCapabilities": {},
-      "sizeTier": "tiny",
+      "sizeTier": "adversarial",
       "limitations": "Deliberately malformed for the Packet 2 bgcode guard sweep; must FAIL with the structured error in test-data/fixtures/bgcode/adversarial/README.md."
     }
   ]

@@ -13,3 +13,5 @@ Tiny, deliberately malformed `.bgcode` files, one per decoder guard. Each must F
 | `meatpack-bad-cmd.bgcode` | MeatPack stream with an unknown command (`FF FF 00`) | `E_BGCODE_MEATPACK` |
 | `aggregate-over-cap.bgcode` | two 60-byte G-code blocks; 120 bytes total, over a 100-byte `maxOutputBytes` | `E_BGCODE_BOMB` |
 | `unknown-encoding.bgcode` | G-code block encoding id 3 (only 0–2 exist) | `E_BGCODE_UNSUPPORTED_ENCODING` |
+
+The `deflate-over-declared.bgcode` bytes come from Node's zlib (generated on Node 24.16.0); another Node/zlib version may emit different bytes, so treat the committed file as canonical.
