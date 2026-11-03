@@ -649,6 +649,114 @@
       },
       "sizeTier": "small",
       "limitations": "Not a real print; a minimized crash reproduction. Streaming its single entry must raise E_CONTAINER_INFLATE, never crash the process."
+    },
+    {
+      "id": "bgcode-adv-deflate-over-declared",
+      "path": "test-data/fixtures/bgcode/adversarial/deflate-over-declared.bgcode",
+      "sha256": "9b8c5f2dd5386f2f72f9061bc8df7f8a397aa10b582232db5a18b1252d32f11f",
+      "bytes": 40,
+      "origin": "Chestnut-constructed bgcode fixture (tools/fixtures/make-bgcode-adversarial.mjs, deterministic)",
+      "contributor": "chestnutlabs",
+      "redistribution": "chestnut-original-mit",
+      "slicer": "synthetic (Prusa .bgcode v1 structure)",
+      "targetFamily": "FDM (container)",
+      "features": [
+        "container",
+        "adversarial"
+      ],
+      "expectedCapabilities": {},
+      "sizeTier": "adversarial",
+      "limitations": "Deliberately malformed for the Packet 2 bgcode guard sweep; must FAIL with the structured error in test-data/fixtures/bgcode/adversarial/README.md."
+    },
+    {
+      "id": "bgcode-adv-checksum-type-2",
+      "path": "test-data/fixtures/bgcode/adversarial/checksum-type-2.bgcode",
+      "sha256": "1e9ae67d9f78b0059ba20dee5392260d92da0dd4dcfaf134a6203f333cb2deaf",
+      "bytes": 26,
+      "origin": "Chestnut-constructed bgcode fixture (tools/fixtures/make-bgcode-adversarial.mjs, deterministic)",
+      "contributor": "chestnutlabs",
+      "redistribution": "chestnut-original-mit",
+      "slicer": "synthetic (Prusa .bgcode v1 structure)",
+      "targetFamily": "FDM (container)",
+      "features": [
+        "container",
+        "adversarial"
+      ],
+      "expectedCapabilities": {},
+      "sizeTier": "adversarial",
+      "limitations": "Deliberately malformed for the Packet 2 bgcode guard sweep; must FAIL with the structured error in test-data/fixtures/bgcode/adversarial/README.md."
+    },
+    {
+      "id": "bgcode-adv-truncated-crc",
+      "path": "test-data/fixtures/bgcode/adversarial/truncated-crc.bgcode",
+      "sha256": "1fa13d259d7f6bda2ed37478fa556b8b7f5f3496bca4b9081df7782e3c208201",
+      "bytes": 28,
+      "origin": "Chestnut-constructed bgcode fixture (tools/fixtures/make-bgcode-adversarial.mjs, deterministic)",
+      "contributor": "chestnutlabs",
+      "redistribution": "chestnut-original-mit",
+      "slicer": "synthetic (Prusa .bgcode v1 structure)",
+      "targetFamily": "FDM (container)",
+      "features": [
+        "container",
+        "adversarial"
+      ],
+      "expectedCapabilities": {},
+      "sizeTier": "adversarial",
+      "limitations": "Deliberately malformed for the Packet 2 bgcode guard sweep; must FAIL with the structured error in test-data/fixtures/bgcode/adversarial/README.md."
+    },
+    {
+      "id": "bgcode-adv-meatpack-bad-cmd",
+      "path": "test-data/fixtures/bgcode/adversarial/meatpack-bad-cmd.bgcode",
+      "sha256": "fae7642aa4f92e1e5d849c066f9f7288090232b4e85a20887e33ab8893e2206f",
+      "bytes": 27,
+      "origin": "Chestnut-constructed bgcode fixture (tools/fixtures/make-bgcode-adversarial.mjs, deterministic)",
+      "contributor": "chestnutlabs",
+      "redistribution": "chestnut-original-mit",
+      "slicer": "synthetic (Prusa .bgcode v1 structure)",
+      "targetFamily": "FDM (container)",
+      "features": [
+        "container",
+        "adversarial"
+      ],
+      "expectedCapabilities": {},
+      "sizeTier": "adversarial",
+      "limitations": "Deliberately malformed for the Packet 2 bgcode guard sweep; must FAIL with the structured error in test-data/fixtures/bgcode/adversarial/README.md."
+    },
+    {
+      "id": "bgcode-adv-aggregate-over-cap",
+      "path": "test-data/fixtures/bgcode/adversarial/aggregate-over-cap.bgcode",
+      "sha256": "7c83fc6ff0ebfe598dfb3047a3663c098af21e236853d8e61f2edd62db8d8f3f",
+      "bytes": 158,
+      "origin": "Chestnut-constructed bgcode fixture (tools/fixtures/make-bgcode-adversarial.mjs, deterministic)",
+      "contributor": "chestnutlabs",
+      "redistribution": "chestnut-original-mit",
+      "slicer": "synthetic (Prusa .bgcode v1 structure)",
+      "targetFamily": "FDM (container)",
+      "features": [
+        "container",
+        "adversarial"
+      ],
+      "expectedCapabilities": {},
+      "sizeTier": "adversarial",
+      "limitations": "Deliberately malformed for the Packet 2 bgcode guard sweep; must FAIL with the structured error in test-data/fixtures/bgcode/adversarial/README.md."
+    },
+    {
+      "id": "bgcode-adv-unknown-encoding",
+      "path": "test-data/fixtures/bgcode/adversarial/unknown-encoding.bgcode",
+      "sha256": "32898dc609863b0390df5abdbec4e935d3df658ed0160442b976fffc5b4a5509",
+      "bytes": 30,
+      "origin": "Chestnut-constructed bgcode fixture (tools/fixtures/make-bgcode-adversarial.mjs, deterministic)",
+      "contributor": "chestnutlabs",
+      "redistribution": "chestnut-original-mit",
+      "slicer": "synthetic (Prusa .bgcode v1 structure)",
+      "targetFamily": "FDM (container)",
+      "features": [
+        "container",
+        "adversarial"
+      ],
+      "expectedCapabilities": {},
+      "sizeTier": "adversarial",
+      "limitations": "Deliberately malformed for the Packet 2 bgcode guard sweep; must FAIL with the structured error in test-data/fixtures/bgcode/adversarial/README.md."
     }
   ]
 }
