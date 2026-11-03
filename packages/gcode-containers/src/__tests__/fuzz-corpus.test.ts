@@ -10,14 +10,16 @@
  * what turns a one-time finding into a permanent regression.
  */
 import { readdirSync, readFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { basename, dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, it, expect } from 'vitest';
-import { readDirectory, streamEntry, ContainerError } from '../index.js';
+import { crc32 as referenceCrc32 } from 'node:zlib';
+import { readDirectory, streamEntry, extractEntry, ContainerError } from '../index.js';
 
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..', '..');
 const corpusDir = join(repoRoot, 'test-data', 'fixtures', 'fuzz-regressions');
 const containersDir = join(repoRoot, 'test-data', 'fixtures', 'containers');
+const adversarialDir = join(containersDir, 'adversarial');
 
 const FUZZ_LIMITS = {
   maxEntries: 64,
@@ -46,7 +48,42 @@ async function exercise(bytes: Uint8Array): Promise<void> {
   }
 }
 
+/** Mirror of fuzz/fuzz-extract-entry.mjs: typed errors from the extract stage only; success = exact bytes. */
+const EXTRACT_CODES = new Set([
+  'E_CONTAINER_FORMAT',
+  'E_CONTAINER_ENCRYPTED',
+  'E_CONTAINER_HEADER_MISMATCH',
+  'E_CONTAINER_LIMIT_EXPANDED',
+  'E_CONTAINER_METHOD',
+  'E_CONTAINER_INFLATE',
+  'E_CONTAINER_CRC'
+]);
+
+async function exerciseExtract(bytes: Uint8Array): Promise<void> {
+  let dir;
+  try {
+    dir = readDirectory(bytes, FUZZ_LIMITS);
+  } catch (e) {
+    if (e instanceof ContainerError) return;
+    throw e;
+  }
+  for (const entry of dir.entries) {
+    let out: Uint8Array;
+    try {
+      out = await extractEntry(bytes, entry, CAP);
+    } catch (e) {
+      if (e instanceof ContainerError && EXTRACT_CODES.has(e.code)) continue;
+      throw e;
+    }
+    expect(out.byteLength).toBeLessThanOrEqual(CAP);
+    expect(out.byteLength).toBe(entry.uncompressedSize);
+    expect(referenceCrc32(out)).toBe(entry.crc32);
+  }
+}
+
 const inputs = readdirSync(corpusDir).filter((f) => !f.startsWith('.') && f !== 'README.md');
+
+const adversarial = readdirSync(adversarialDir).filter((f) => f.endsWith('.gcode.3mf'));
 
 describe('fuzzing regression corpus (#131)', () => {
   it('has at least one committed regression input', () => {
@@ -83,4 +120,17 @@ describe('scheduled stream-entry fuzz timeout seed', () => {
     await Promise.race([run, timer]).finally(() => clearTimeout(t));
     expect(codes).toEqual(['E_CONTAINER_LIMIT_EXPANDED']);
   });
+});
+
+describe('extractEntry fuzz property replay (fuzz-extract-entry.mjs seeds)', () => {
+  it('seeds the six committed adversarial inputs', () => {
+    expect(adversarial.length).toBe(6);
+  });
+
+  const seeds = [...inputs.map((n) => join(corpusDir, n)), ...adversarial.map((n) => join(adversarialDir, n))];
+  for (const file of seeds) {
+    it(`typed extract-stage errors or exact bytes for ${basename(file)}`, async () => {
+      await expect(exerciseExtract(new Uint8Array(readFileSync(file)))).resolves.toBeUndefined();
+    });
+  }
 });

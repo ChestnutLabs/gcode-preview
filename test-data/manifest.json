@@ -406,6 +406,114 @@
       "limitations": "Must FAIL with the explanatory E_CONTAINER_NO_PAYLOAD (model/project, not sliced)."
     },
     {
+      "id": "container-adv-metadata-bad-crc",
+      "path": "test-data/fixtures/containers/adversarial/adv-metadata-bad-crc.gcode.3mf",
+      "sha256": "1aee89e90ddfa1fefc3e98bc7223452f678eaa43bb83732eeee2b51a28ef3171",
+      "bytes": 503,
+      "origin": "Chestnut-constructed container fixture (tools/fixtures/make-gcode-3mf.mjs, deterministic)",
+      "contributor": "chestnutlabs",
+      "redistribution": "chestnut-original-mit",
+      "slicer": "synthetic (Bambu/Orca .gcode.3mf structure)",
+      "targetFamily": "FDM (container)",
+      "features": [
+        "container",
+        "adversarial"
+      ],
+      "expectedCapabilities": {},
+      "sizeTier": "adversarial",
+      "limitations": "Deliberately malformed (Packet 2 sweep G1). Metadata/project_settings.config carries a CRC that does not match its bytes (both headers agree). Must open with a container-metadata-invalid warning (CRC mismatch); the plate still opens."
+    },
+    {
+      "id": "container-adv-metadata-size-lie",
+      "path": "test-data/fixtures/containers/adversarial/adv-metadata-size-lie.gcode.3mf",
+      "sha256": "42f1f8c8fc02300b51fea25216ffeac013c3173963bef51b4452f735570838d4",
+      "bytes": 503,
+      "origin": "Chestnut-constructed container fixture (tools/fixtures/make-gcode-3mf.mjs, deterministic)",
+      "contributor": "chestnutlabs",
+      "redistribution": "chestnut-original-mit",
+      "slicer": "synthetic (Bambu/Orca .gcode.3mf structure)",
+      "targetFamily": "FDM (container)",
+      "features": [
+        "container",
+        "adversarial"
+      ],
+      "expectedCapabilities": {},
+      "sizeTier": "adversarial",
+      "limitations": "Deliberately malformed (Packet 2 sweep G1). project_settings.config headers claim one byte fewer than the entry inflates to (real CRC). Must open with a container-metadata-invalid warning (expanded size differs from headers)."
+    },
+    {
+      "id": "container-adv-zip64-eocd",
+      "path": "test-data/fixtures/containers/adversarial/adv-zip64-eocd.gcode.3mf",
+      "sha256": "fff91ea5d313b20ac84f92c5c79100568df94393babe40cdb23b6a8c2e8197bc",
+      "bytes": 321,
+      "origin": "Chestnut-constructed container fixture (tools/fixtures/make-gcode-3mf.mjs, deterministic)",
+      "contributor": "chestnutlabs",
+      "redistribution": "chestnut-original-mit",
+      "slicer": "synthetic (Bambu/Orca .gcode.3mf structure)",
+      "targetFamily": "FDM (container)",
+      "features": [
+        "container",
+        "adversarial"
+      ],
+      "expectedCapabilities": {},
+      "sizeTier": "adversarial",
+      "limitations": "Deliberately malformed (Packet 2 sweep G1). EOCD central-directory offset is the zip64 sentinel 0xFFFFFFFF. Must FAIL with E_CONTAINER_ZIP64."
+    },
+    {
+      "id": "container-adv-cd-past-eof",
+      "path": "test-data/fixtures/containers/adversarial/adv-cd-past-eof.gcode.3mf",
+      "sha256": "c3bb4c7dc00fb96834e42c7ae4583386680513cdc5b7a02d07c5276379350e84",
+      "bytes": 321,
+      "origin": "Chestnut-constructed container fixture (tools/fixtures/make-gcode-3mf.mjs, deterministic)",
+      "contributor": "chestnutlabs",
+      "redistribution": "chestnut-original-mit",
+      "slicer": "synthetic (Bambu/Orca .gcode.3mf structure)",
+      "targetFamily": "FDM (container)",
+      "features": [
+        "container",
+        "adversarial"
+      ],
+      "expectedCapabilities": {},
+      "sizeTier": "adversarial",
+      "limitations": "Deliberately malformed (Packet 2 sweep G1). EOCD central-directory offset points at end of file. Must FAIL with E_CONTAINER_FORMAT (central directory extends past the archive)."
+    },
+    {
+      "id": "container-adv-nul-name",
+      "path": "test-data/fixtures/containers/adversarial/adv-nul-name.gcode.3mf",
+      "sha256": "c9e09136d0b1ff7628f89c4b78f00634b452cabf0b7c4e81a88c823ff4178d31",
+      "bytes": 446,
+      "origin": "Chestnut-constructed container fixture (tools/fixtures/make-gcode-3mf.mjs, deterministic)",
+      "contributor": "chestnutlabs",
+      "redistribution": "chestnut-original-mit",
+      "slicer": "synthetic (Bambu/Orca .gcode.3mf structure)",
+      "targetFamily": "FDM (container)",
+      "features": [
+        "container",
+        "adversarial"
+      ],
+      "expectedCapabilities": {},
+      "sizeTier": "adversarial",
+      "limitations": "Deliberately malformed (Packet 2 sweep G1). An entry name containing NUL next to a valid plate. The NUL entry must be dropped with a container-entry-hostile-name warning; the valid plate still opens."
+    },
+    {
+      "id": "container-adv-method-12",
+      "path": "test-data/fixtures/containers/adversarial/adv-method-12.gcode.3mf",
+      "sha256": "48912fbac8c63ab3adcd89a96240e066cf8f84cdb85f1ef4b31e044412f42a30",
+      "bytes": 459,
+      "origin": "Chestnut-constructed container fixture (tools/fixtures/make-gcode-3mf.mjs, deterministic)",
+      "contributor": "chestnutlabs",
+      "redistribution": "chestnut-original-mit",
+      "slicer": "synthetic (Bambu/Orca .gcode.3mf structure)",
+      "targetFamily": "FDM (container)",
+      "features": [
+        "container",
+        "adversarial"
+      ],
+      "expectedCapabilities": {},
+      "sizeTier": "adversarial",
+      "limitations": "Deliberately malformed (Packet 2 sweep G1). The only plate uses compression method 12 (bzip2) in both headers. Streaming it must FAIL with E_CONTAINER_METHOD."
+    },
+    {
       "id": "dialect-prusa-style",
       "path": "test-data/fixtures/dialects/prusa-style-sample.gcode",
       "sha256": "6ea4aafc7383d2820ca384ba2919aba751195adcd8cf72b249bf62b44039fad8",
