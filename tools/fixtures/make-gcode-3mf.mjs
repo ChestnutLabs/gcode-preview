@@ -32,7 +32,7 @@ const crc32 = (b) => {
 const u16 = (n) => Buffer.from([n & 0xff, (n >> 8) & 0xff]);
 const u32 = (n) => Buffer.from([n & 0xff, (n >> 8) & 0xff, (n >> 16) & 0xff, (n >> 24) & 0xff]);
 
-/** entries: {name, data:Buffer, deflate?:bool, corrupt?:{crc?|localName?|encrypted?|truncate?}} */
+/** entries: {name, data:Buffer, deflate?:bool, corrupt?:{crc?|localName?|encrypted?|truncate?|uncompressedSize?|method?}} */
 function makeZip(entries) {
   const locals = [];
   const centrals = [];
@@ -41,10 +41,11 @@ function makeZip(entries) {
     const nameBuf = Buffer.from(e.name, 'utf8');
     const data = e.data;
     const comp = e.deflate ? zlib.deflateRawSync(data) : data;
-    const method = e.deflate ? 8 : 0;
+    const method = e.corrupt?.method ?? (e.deflate ? 8 : 0);
     let crc = crc32(data);
     if (e.corrupt?.crc) crc = (crc ^ 0xdeadbeef) >>> 0;
     const flags = e.corrupt?.encrypted ? 0x1 : 0;
+    const usize = e.corrupt?.uncompressedSize ?? data.length; // a lie in BOTH headers
     const localName = e.corrupt?.localName ? Buffer.from(e.corrupt.localName, 'utf8') : nameBuf;
     const local = Buffer.concat([
       u32(0x04034b50),
@@ -55,7 +56,7 @@ function makeZip(entries) {
       u16(0x2100),
       u32(crc),
       u32(comp.length),
-      u32(data.length),
+      u32(usize),
       u16(localName.length),
       u16(0),
       localName,
@@ -73,7 +74,7 @@ function makeZip(entries) {
         u16(0x2100),
         u32(crc),
         u32(comp.length),
-        u32(data.length),
+        u32(usize),
         u16(nameBuf.length),
         u16(0),
         u16(0),
@@ -218,4 +219,44 @@ write(
   // CRC stays correct for the REAL data; size check must trip first via cap accounting.
   write('adv-size-lie.gcode.3mf', zip);
 }
+// Packet 2 sweep (G1): one tiny input per guard the unit tests also build in memory. These are
+// committed so the weekly fuzz job can seed from them (fuzz-containers.yml).
+fs.mkdirSync(path.join(outDir, 'adversarial'), { recursive: true });
+const writeAdv = (name, buf) => write(path.join('adversarial', name), buf);
+const smallSettings = Buffer.from(JSON.stringify({ printer_model: 'Chestnut Test Printer X1' }), 'utf8');
+const okPlate = { name: 'Metadata/plate_1.gcode', data: plateGcode(1, 10), deflate: true };
+writeAdv(
+  'adv-metadata-bad-crc.gcode.3mf',
+  makeZip([okPlate, { name: 'Metadata/project_settings.config', data: smallSettings, deflate: true, corrupt: { crc: true } }])
+);
+writeAdv(
+  'adv-metadata-size-lie.gcode.3mf',
+  makeZip([
+    okPlate,
+    {
+      name: 'Metadata/project_settings.config',
+      data: smallSettings,
+      deflate: true,
+      corrupt: { uncompressedSize: smallSettings.length - 1 }
+    }
+  ])
+);
+{
+  const zip = makeZip([okPlate]);
+  u32(0xffffffff).copy(zip, zip.length - 22 + 16); // EOCD cdOffset = zip64 sentinel
+  writeAdv('adv-zip64-eocd.gcode.3mf', zip);
+}
+{
+  const zip = makeZip([okPlate]);
+  u32(zip.length).copy(zip, zip.length - 22 + 16); // EOCD cdOffset = EOF
+  writeAdv('adv-cd-past-eof.gcode.3mf', zip);
+}
+writeAdv(
+  'adv-nul-name.gcode.3mf',
+  makeZip([{ name: 'Metadata/plate_\u0000.gcode', data: Buffer.from('G1 X9'), deflate: false }, okPlate])
+);
+writeAdv(
+  'adv-method-12.gcode.3mf',
+  makeZip([{ name: 'Metadata/plate_1.gcode', data: plateGcode(1, 10), deflate: false, corrupt: { method: 12 } }])
+);
 console.log('done');

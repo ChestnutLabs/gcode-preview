@@ -62,10 +62,11 @@ const RAW_WHITELIST = [
 ];
 
 export function sniffGcode3mf(prefix: Uint8Array, name?: string): boolean {
-  const magic = prefix.length >= 4 && ZIP_MAGIC.every((b, i) => prefix[i] === b);
-  if (!magic) return false;
   // Extension hint refines but never overrides the magic (a .zip named .gcode is still not a container).
-  return name === undefined || /\.(gcode\.)?3mf$/i.test(name) || true;
+  // So the magic alone decides; `name` is kept for the public signature. A prefix shorter than the
+  // magic fails too: its missing bytes read as undefined.
+  void name;
+  return ZIP_MAGIC.every((b, i) => prefix[i] === b);
 }
 
 /** Bambu/Orca `printable_area`: ["0x0","256x0","256x256","0x256"] or "0x0,256x0,..." */
