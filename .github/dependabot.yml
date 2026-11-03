@@ -21,6 +21,8 @@ updates:
       - "/tools/example-svelte"
       - "/tools/example-vue"
       - "/tools/example-webcomponent"
+      - "/tools/svelte-compat/svelte4"
+      - "/tools/svelte-compat/svelte5"
     schedule:
       interval: weekly
     open-pull-requests-limit: 0
