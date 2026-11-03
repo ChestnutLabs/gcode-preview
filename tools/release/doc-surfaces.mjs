@@ -191,7 +191,7 @@ function cmpSemver(a, b) {
 export function previousReleaseTag(version) {
   const cur = parseReleaseTag('v' + version);
   if (!cur) return null;
-  let raw = '';
+  let raw;
   try {
     raw = execFileSync('git', ['tag', '--list', 'v*'], { cwd: repoRoot, encoding: 'utf8' });
   } catch {
@@ -257,7 +257,7 @@ export function changedCapabilityInventory(version) {
 
   const filesByPkg = new Map();
   if (prevTag) {
-    let out = '';
+    let out;
     try {
       out = execFileSync('git', ['diff', '--name-only', `${prevTag}..HEAD`, '--', 'packages'], {
         cwd: repoRoot,

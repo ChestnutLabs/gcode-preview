@@ -122,7 +122,7 @@ describe('progress contract fixtures (DD-006 §9)', () => {
           try {
             assertStep(result, step.expect);
           } catch (err) {
-            throw new Error(`${file} step ${i}: ${(err as Error).message}`);
+            throw new Error(`${file} step ${i}: ${(err as Error).message}`, { cause: err });
           }
         });
       });

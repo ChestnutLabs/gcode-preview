@@ -66,7 +66,7 @@ export function createDialectRunner(adapters: DialectAdapter[]): DialectRunnerFa
       // Detection: best confidence per kind; ambiguous ties select none for that kind.
       const byKind = new Map<string, { adapter: DialectAdapter; detection: DialectDetection }[]>();
       for (const adapter of pool) {
-        let detection: DialectDetection | null = null;
+        let detection: DialectDetection | null;
         try {
           detection = adapter.detect(detect);
         } catch {

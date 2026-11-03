@@ -83,7 +83,6 @@ describe('BuildVolume', () => {
       const sceneRemoveSpy = vi.spyOn(mockScene, 'remove');
       buildVolume.update();
 
-      // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
       const group = buildVolume['_group']!;
       const spies = group.children
         .filter((c): c is typeof c & { dispose: () => void } => 'dispose' in c)

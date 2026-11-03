@@ -378,7 +378,7 @@ export class InteractiveStage {
     // distance each pass so every corner sits inside both FOVs. Converges in a few passes.
     let ox = 0;
     let oy = 0;
-    let distance = 0;
+    let distance: number;
     const solveDistance = (): number => {
       let d = radius * 0.5;
       for (const [x, y, z] of corners) d = Math.max(d, z + Math.abs(x - ox) / tanH, z + Math.abs(y - oy) / tanV);
