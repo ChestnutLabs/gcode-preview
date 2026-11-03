@@ -155,7 +155,7 @@ if (files.length > 0) {
 
     // Parse only (no dialects).
     let t0 = performance.now();
-    const bare = parseGcodeToIR(text, { parserVersion: 'bench' });
+    parseGcodeToIR(text, { parserVersion: 'bench' });
     const parseMs = performance.now() - t0;
 
     // Parse + classify (dialect runner), like the worker does.

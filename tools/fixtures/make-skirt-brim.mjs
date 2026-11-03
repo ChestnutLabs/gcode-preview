@@ -8,7 +8,6 @@
  * MIT-clean, deterministic, hand-generated (Chestnut Labs). Regenerate:
  *   node tools/fixtures/make-skirt-brim.mjs
  */
-/* eslint-env node */
 import { writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';

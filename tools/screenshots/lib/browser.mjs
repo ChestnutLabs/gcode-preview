@@ -10,7 +10,6 @@
  *   technique the repo's own VR harness uses; avoids the compositor stall that a
  *   live rAF loop causes under headless SwiftShader.
  */
-/* eslint-env node */
 import { chromium } from 'playwright-core';
 import { existsSync, readdirSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
