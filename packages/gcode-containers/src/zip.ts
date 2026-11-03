@@ -292,8 +292,9 @@ const INFLATE_CHUNK = 256 * 1024;
 
 /**
  * Extract one entry fully in memory with incremental caps + streaming CRC.
- * `cap` bounds the expanded size REGARDLESS of what headers claim; `budget`, when given, also charges the
- * archive-wide `maxExpandedBytesTotal` (see {@link ExpansionBudget}).
+ * `cap` bounds the expanded size REGARDLESS of what headers claim, and must be a non-negative integer —
+ * `NaN`/`Infinity`/negative/fractional throws `E_CONTAINER_OPTION` (no value means "uncapped"). `budget`,
+ * when given, also charges the archive-wide `maxExpandedBytesTotal` (see {@link ExpansionBudget}).
  */
 export async function extractEntry(
   bytes: Uint8Array,
@@ -327,8 +328,9 @@ export async function extractEntry(
 /**
  * Stream an entry's expanded bytes with an incremental cap. CRC verification
  * for the streaming path is the CALLER's job via crc32/crc32Final (the plate
- * pipeline verifies at end-of-stream); extractEntry() verifies internally. `budget` charges the
- * archive-wide total per chunk, like `cap` does per entry.
+ * pipeline verifies at end-of-stream); extractEntry() verifies internally. `cap` must be a non-negative
+ * integer, else `E_CONTAINER_OPTION`. `budget` charges the archive-wide total per chunk, like `cap` does
+ * per entry.
  */
 export async function* streamEntry(
   bytes: Uint8Array,

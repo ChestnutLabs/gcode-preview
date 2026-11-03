@@ -15,7 +15,10 @@ model viewer's total is fixed at 1 GiB, about twice what the default 5M-triangle
 instead of silently switching that cap off. An absent field still uses its default.
 
 New export: `ExpansionBudget`, plus an optional `budget` argument on `extractEntry` and `streamEntry`,
-for callers that extract several entries from one archive themselves.
+for callers that extract several entries from one archive themselves. The `cap` argument of those two
+functions is now validated the same way: a `cap` that is not a non-negative integer throws
+`E_CONTAINER_OPTION`, so passing `Infinity` to mean "uncapped" no longer works — omit `budget`/use a
+large finite `cap` instead.
 
 The model 3MF loader now reports every extraction failure of its parts (corrupt data, CRC mismatch) as
 a `ModelParseError` (`E_MODEL_PARSE`); a few paths used to surface a raw `ContainerError`.
