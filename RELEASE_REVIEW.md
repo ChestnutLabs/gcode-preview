@@ -12,10 +12,10 @@
   parses them literally. Delete rows only for packages that did not change.
 -->
 
-# Release review — v0.21.0
+# Release review — v0.21.1
 
-**Review version:** v0.21.0
-**Changed-capability inventory diffed against:** `v0.20.1`
+**Review version:** v0.21.1
+**Changed-capability inventory diffed against:** `v0.21.0`
 
 This artifact records the per-release **Public Product + Documentation + Visual** reconciliation:
 before the `dev` -> `main` promotion, compare the changed capabilities below against the README,
@@ -28,16 +28,23 @@ each disposition. Guidance: CLAUDE.md "Public-docs completion check" and
 
 | Package | Changed src files | Changelog summary | Disposition |
 |---|--:|---|---|
-| `@chestnutlabs/gcode-model-renderer` | 5 | Model viewer framing and STL lighting fixes (AnyBridge Customizer): | Status: reviewed |
-| `@chestnutlabs/gcode-renderer-three` | 2 | Model viewer framing and STL lighting fixes (AnyBridge Customizer): | Status: reviewed |
+| `@chestnutlabs/gcode-bgcode` | 7 | A hostile `.bgcode` whose DEFLATE block inflates past the output cap (or past its own declared size) now | Status: pending |
+| `@chestnutlabs/gcode-containers` | 10 | Fix a hostile `.gcode.3mf` / 3MF file freezing the load instead of failing with an error. When a compressed entry's headers claimed a small  | Status: pending |
+| `@chestnutlabs/gcode-dialects` | 2 | _(version bump only — no src changelog summary)_ | Status: pending |
+| `@chestnutlabs/gcode-model-renderer` | 2 | The archive-wide expanded-size cap (`maxExpandedBytesTotal`, default 1 GiB) is now enforced. It was | Status: pending |
+| `@chestnutlabs/gcode-parser` | 2 | Fix the preview getting stuck after re-parsing the same bytes. Parsing a `Uint8Array` hands its buffer to the worker, which leaves it empty. | Status: pending |
+| `@chestnutlabs/gcode-preview-core` | 1 | _(version bump only — no src changelog summary)_ | Status: pending |
+| `@chestnutlabs/gcode-preview-vue` | 2 | _(version bump only — no src changelog summary)_ | Status: pending |
+| `@chestnutlabs/gcode-renderer-three` | 1 | _(version bump only — no src changelog summary)_ | Status: pending |
+| `@chestnutlabs/toolpath-core` | 1 | _(version bump only — no src changelog summary)_ | Status: pending |
 
 Set each **Disposition** to one of `Status: reviewed` / `Status: no-change-needed` /
 `Status: not-applicable` (never `Status: pending`).
 
 ## Global dispositions
 
-- **Product review:** resolved — the change makes the existing interactive model viewer frame and size correctly. README / Pages homepage / feature gallery describe the model viewer at the capability level and stay accurate; `docs/README.md` "Current state" leads with v0.21.0.
-- **Docs review:** resolved — the `gcode-model-renderer` README "Interactive viewer" section documents the fit, re-frame-on-resize, `autoFrameOnResize`, and that `camera-changed` fires only for user gestures. The only API additions are the optional `autoFrameOnResize` option and the `InteractiveStage` `fitBox`/`viewDirection`/`onInteractionStart` members; quick-start and examples need no change (adapters inherit the behaviour). Parity (DD-031): fixed once in `createModelPreviewController`, so React/Vue/Svelte/Web Component `/model` all inherit canvas sizing, fit and re-frame; no new control/state field, so the parity guard lists are unchanged.
-- **Visual review:** resolved — no documentation image changes. The capability renders use `renderModelStill`, whose framing is unchanged. The Feature Lab Prepare viewport (`docs/media/app-prepare.png`) now frames the model somewhat tighter, but the UI and the shown capability are the same, so the screenshot still represents the software. Verified in a real browser: zero-normal STL renders shaded, wide/square/narrow canvases fit and centre, and the React `/model` example's canvas buffer now tracks its CSS box.
+- **Product review:** pending — README / Pages homepage / feature gallery still describe the product accurately for this release.
+- **Docs review:** pending — manual, package READMEs, examples, and quick-start match the shipped API.
+- **Visual review:** pending — every changed user-facing capability is visually documented, or the coverage matrix records why not. **UI parity:** if the app/controls/adapters changed, the app-UI screenshots (`docs/media/app-*.png`, regenerate with `npm run docs:shots:app`) and the capability renders (`npm run docs:shots`) show the CURRENT UI — the README must not lead with a screenshot from an older layout — and the live demos (`npm run docs:demos` → Pages `/demos/`) build and run on the published SDK.
 
 _Resolve each marker above by replacing `pending` with `resolved` once reconciled._

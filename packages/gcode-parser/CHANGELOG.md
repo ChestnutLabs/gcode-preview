@@ -1,5 +1,17 @@
 # @chestnutlabs/gcode-parser
 
+## 0.21.1
+
+### Patch Changes
+
+- [#455](https://github.com/ChestnutLabs/gcode-preview/pull/455) [`a00f525`](https://github.com/ChestnutLabs/gcode-preview/commit/a00f52513f10b3afbc09ddb04dfe74f7c3885602) Thanks [@sobechestnut-dev](https://github.com/sobechestnut-dev)! - Fix the preview getting stuck after re-parsing the same bytes. Parsing a `Uint8Array` hands its buffer to the worker, which leaves it empty. Parsing that same array again (for example to show a different plate) made the send to the worker fail, and the session never cleared its in-progress parse, so every later parse, even of a new file, failed with `E_BUSY` until the preview was disposed. That parse now fails cleanly with `E_POST_FAILED` and the preview keeps working. To parse the same file again, pass a copy (`bytes.slice()`).
+
+- Updated dependencies [[`5065e91`](https://github.com/ChestnutLabs/gcode-preview/commit/5065e91e794c9234713000948d65e3a4fd778b94), [`5065e91`](https://github.com/ChestnutLabs/gcode-preview/commit/5065e91e794c9234713000948d65e3a4fd778b94), [`95724d5`](https://github.com/ChestnutLabs/gcode-preview/commit/95724d5e4cd5d9b09d7598f421f693c3d096efb7), [`8d4464f`](https://github.com/ChestnutLabs/gcode-preview/commit/8d4464fbf9a24f942a71752838a9c0dc186917d9)]:
+  - @chestnutlabs/gcode-bgcode@0.21.1
+  - @chestnutlabs/gcode-containers@0.21.1
+  - @chestnutlabs/gcode-dialects@0.21.1
+  - @chestnutlabs/toolpath-core@0.21.1
+
 ## 0.21.0
 
 ### Patch Changes
