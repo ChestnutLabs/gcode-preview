@@ -86,6 +86,13 @@ and are attributes or properties on the Web Component (see the Web Component not
 **Rendering** — `quality` · `qualityMode` · `progressivePreview` · `interactionQuality` · `tube`
 **Machine & progress** — `buildVolume` · `progress`
 
+A `Uint8Array` or `ArrayBuffer` given as `source` (or to `controls.parse`) is handed to the parse
+worker without copying, so that buffer is empty afterwards. Changing `parseOptions` alone does not
+re-parse. To parse the same file again, for example a different plate, set a new `source` that is a
+fresh copy (`bytes.slice()`), or call `controls.parse(bytes.slice(), { plate: 1 })`. Passing the
+already-used buffer fails with `E_POST_FAILED`, and the preview keeps working. A `File` source can
+be re-parsed as-is.
+
 Each fires the same events (naming follows each framework's idiom): parse lifecycle
 (`ready` / `parse-error` / `parse-cancelled` / `parse-progress`), staged preparation (`stage`),
 `build-complete`, `quality-fallback`, camera settle (`camera-change`), machine geometry
