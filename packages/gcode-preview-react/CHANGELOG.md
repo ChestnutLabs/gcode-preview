@@ -1,5 +1,16 @@
 # @chestnutlabs/gcode-preview-react
 
+## 0.21.1
+
+### Patch Changes
+
+- Updated dependencies [[`8d4464f`](https://github.com/ChestnutLabs/gcode-preview/commit/8d4464fbf9a24f942a71752838a9c0dc186917d9), [`a00f525`](https://github.com/ChestnutLabs/gcode-preview/commit/a00f52513f10b3afbc09ddb04dfe74f7c3885602)]:
+  - @chestnutlabs/gcode-model-renderer@0.21.1
+  - @chestnutlabs/gcode-parser@0.21.1
+  - @chestnutlabs/gcode-preview-core@0.21.1
+  - @chestnutlabs/gcode-renderer-three@0.21.1
+  - @chestnutlabs/toolpath-core@0.21.1
+
 ## 0.21.0
 
 ### Patch Changes

@@ -72,6 +72,13 @@ handle.
 <GcodePreview source={file} parseOptions={{ plate: 1 }} />
 ```
 
+`parseOptions.plate` selects the plate **at parse time**. To *switch* plates after the first render,
+start a fresh parse rather than only changing `parseOptions` — assign a new `source`, or call the
+imperative `controls.parse(bytes, { plate: 1 })`. When the source is a `Uint8Array`, parsing
+**transfers (empties) its buffer**, so re-parsing the same bytes needs a fresh copy — pass
+`bytes.slice()`. (Re-parsing a now-empty buffer fails cleanly with `E_POST_FAILED`; it no longer
+wedges the preview.)
+
 ## A custom worker (slim build, other bundlers, strict CSP)
 
 By default the adapters create a *batteries* worker (every dialect adapter + `.gcode.3mf`) via the

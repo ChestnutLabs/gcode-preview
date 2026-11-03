@@ -1,5 +1,29 @@
 # @chestnutlabs/gcode-bgcode
 
+## 0.21.1
+
+### Patch Changes
+
+- [#454](https://github.com/ChestnutLabs/gcode-preview/pull/454) [`5065e91`](https://github.com/ChestnutLabs/gcode-preview/commit/5065e91e794c9234713000948d65e3a4fd778b94) Thanks [@sobechestnut-dev](https://github.com/sobechestnut-dev)! - A hostile `.bgcode` whose DEFLATE block inflates past the output cap (or past its own declared size) now
+  fails promptly with `E_BGCODE_BOMB`. Before, the decoder threw internally but then waited forever on
+  the platform inflater, so loading such a file froze instead of erroring. Same fix as the
+  `.gcode.3mf` / 3MF stream fix in `@chestnutlabs/gcode-containers`.
+
+- [#454](https://github.com/ChestnutLabs/gcode-preview/pull/454) [`5065e91`](https://github.com/ChestnutLabs/gcode-preview/commit/5065e91e794c9234713000948d65e3a4fd778b94) Thanks [@sobechestnut-dev](https://github.com/sobechestnut-dev)! - `.bgcode` metadata and thumbnail blocks are now bounded: together they share a fixed 32 MiB budget,
+  separate from `maxOutputBytes`. Before, each block could decode up to the full `maxOutputBytes`
+  (512 MiB by default) and none of it was counted, so a small crafted file with many such blocks could
+  make memory grow without limit. A real PrusaSlicer 2.9 file carries about 125 KB of metadata and
+  thumbnails, and PrusaSlicer caps each thumbnail below 1000×1000, so real files are unaffected. A file over the budget fails with `E_BGCODE_BOMB`.
+
+  **Behaviour change:** `openBgcode`'s `maxOutputBytes` must now be a non-negative integer. `NaN` and
+  `Infinity` previously disabled every output cap without warning; they now throw `E_BGCODE_OPTION`, as
+  do `-1`, `1.5`, and non-numbers such as `'100'`. `0` and `undefined` (the 512 MiB default) are still
+  accepted. If you passed `Infinity` to mean "uncapped", pass a large finite value instead.
+
+- Updated dependencies [[`95724d5`](https://github.com/ChestnutLabs/gcode-preview/commit/95724d5e4cd5d9b09d7598f421f693c3d096efb7), [`8d4464f`](https://github.com/ChestnutLabs/gcode-preview/commit/8d4464fbf9a24f942a71752838a9c0dc186917d9)]:
+  - @chestnutlabs/gcode-containers@0.21.1
+  - @chestnutlabs/toolpath-core@0.21.1
+
 ## 0.21.0
 
 ### Patch Changes

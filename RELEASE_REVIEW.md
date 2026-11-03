@@ -12,10 +12,10 @@
   parses them literally. Delete rows only for packages that did not change.
 -->
 
-# Release review — v0.21.0
+# Release review — v0.21.1
 
-**Review version:** v0.21.0
-**Changed-capability inventory diffed against:** `v0.20.1`
+**Review version:** v0.21.1
+**Changed-capability inventory diffed against:** `v0.21.0`
 
 This artifact records the per-release **Public Product + Documentation + Visual** reconciliation:
 before the `dev` -> `main` promotion, compare the changed capabilities below against the README,
@@ -28,16 +28,23 @@ each disposition. Guidance: CLAUDE.md "Public-docs completion check" and
 
 | Package | Changed src files | Changelog summary | Disposition |
 |---|--:|---|---|
-| `@chestnutlabs/gcode-model-renderer` | 5 | Model viewer framing and STL lighting fixes (AnyBridge Customizer): | Status: reviewed |
-| `@chestnutlabs/gcode-renderer-three` | 2 | Model viewer framing and STL lighting fixes (AnyBridge Customizer): | Status: reviewed |
+| `@chestnutlabs/gcode-bgcode` | 7 | A hostile `.bgcode` whose DEFLATE block inflates past the output cap (or past its own declared size) now | Status: reviewed |
+| `@chestnutlabs/gcode-containers` | 10 | Fix a hostile `.gcode.3mf` / 3MF file freezing the load instead of failing with an error. When a compressed entry's headers claimed a small  | Status: reviewed |
+| `@chestnutlabs/gcode-dialects` | 2 | _(version bump only — no src changelog summary)_ | Status: no-change-needed |
+| `@chestnutlabs/gcode-model-renderer` | 2 | The archive-wide expanded-size cap (`maxExpandedBytesTotal`, default 1 GiB) is now enforced. It was | Status: reviewed |
+| `@chestnutlabs/gcode-parser` | 2 | Fix the preview getting stuck after re-parsing the same bytes. Parsing a `Uint8Array` hands its buffer to the worker, which leaves it empty. | Status: reviewed |
+| `@chestnutlabs/gcode-preview-core` | 1 | _(version bump only — no src changelog summary)_ | Status: no-change-needed |
+| `@chestnutlabs/gcode-preview-vue` | 2 | _(version bump only — no src changelog summary)_ | Status: no-change-needed |
+| `@chestnutlabs/gcode-renderer-three` | 1 | _(version bump only — no src changelog summary)_ | Status: no-change-needed |
+| `@chestnutlabs/toolpath-core` | 1 | _(version bump only — no src changelog summary)_ | Status: no-change-needed |
 
 Set each **Disposition** to one of `Status: reviewed` / `Status: no-change-needed` /
 `Status: not-applicable` (never `Status: pending`).
 
 ## Global dispositions
 
-- **Product review:** resolved — the change makes the existing interactive model viewer frame and size correctly. README / Pages homepage / feature gallery describe the model viewer at the capability level and stay accurate; `docs/README.md` "Current state" leads with v0.21.0.
-- **Docs review:** resolved — the `gcode-model-renderer` README "Interactive viewer" section documents the fit, re-frame-on-resize, `autoFrameOnResize`, and that `camera-changed` fires only for user gestures. The only API additions are the optional `autoFrameOnResize` option and the `InteractiveStage` `fitBox`/`viewDirection`/`onInteractionStart` members; quick-start and examples need no change (adapters inherit the behaviour). Parity (DD-031): fixed once in `createModelPreviewController`, so React/Vue/Svelte/Web Component `/model` all inherit canvas sizing, fit and re-frame; no new control/state field, so the parity guard lists are unchanged.
-- **Visual review:** resolved — no documentation image changes. The capability renders use `renderModelStill`, whose framing is unchanged. The Feature Lab Prepare viewport (`docs/media/app-prepare.png`) now frames the model somewhat tighter, but the UI and the shown capability are the same, so the screenshot still represents the software. Verified in a real browser: zero-normal STL renders shaded, wide/square/narrow canvases fit and centre, and the React `/model` example's canvas buffer now tracks its CSS box.
+- **Product review:** resolved — all four changed capabilities are hostile-input hardening fixes (inflate-past-cap no longer freezes the load; `.bgcode` metadata/thumbnail budget; archive-wide expanded-size cap enforced + limit validation; clean `E_POST_FAILED` on re-parsing transferred bytes). No new or changed user-facing *capability*, so the README, Pages homepage, and feature gallery still describe the product accurately. The `docs/README` "Current state" lead is updated to lead with v0.21.1.
+- **Docs review:** resolved — one gap found and closed: the parser re-parse fix (#455/#453) changes re-parse semantics, and the manual's `.gcode.3mf` multi-plate recipe only showed initial plate selection, so [`docs/manual/recipes.md`](docs/manual/recipes.md) now documents how to *switch* plates at runtime (start a fresh parse; `Uint8Array` buffers are transferred, so pass `bytes.slice()`). `docs/manual/adapters.md` makes no false re-parse claim on `dev`; its fuller caveat lands in the in-flight parser worker/session PR (adapters.md is that lane's file). Package READMEs and the quick-start are unaffected — no public API was added or changed. The new error codes (`E_CONTAINER_LIMIT_EXPANDED`, `E_CONTAINER_OPTION`, `E_POST_FAILED`) and the `ContainerLimits`/`cap` validation (NaN/Infinity now throw, so `Infinity`-as-uncapped no longer works) are captured in the package CHANGELOGs; no user-facing doc claimed the old behaviour.
+- **Visual review:** resolved — the four fixes are error-path / security hardening with no visual surface: no new UI, controls, adapter props, or rendered output. The app-UI screenshots, capability renders, live demos, and the Visual Feature Coverage Matrix need no change (failure-on-hostile-input is not a visually documented capability). README leads with no stale screenshot — the layout is unchanged since v0.21.0.
 
-_Resolve each marker above by replacing `pending` with `resolved` once reconciled._
+_All markers reconciled for v0.21.1 (hostile-file hardening patch)._
