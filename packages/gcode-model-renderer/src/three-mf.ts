@@ -16,7 +16,9 @@ import {
   readDirectory,
   extractEntry,
   filamentColoursFromSettings,
+  ContainerError,
   DEFAULT_CONTAINER_LIMITS,
+  ExpansionBudget,
   type ZipDirectory
 } from '@chestnutlabs/gcode-containers';
 import {
@@ -728,6 +730,16 @@ export async function parse3mf(
   }
 
   const climits = DEFAULT_CONTAINER_LIMITS;
+  // Every part and metadata entry of this archive shares one maxExpandedBytesTotal budget (#449).
+  const budget = new ExpansionBudget(climits.maxExpandedBytesTotal);
+  // An extraction failure as a model error: the archive-wide expanded total is a size limit, the rest is a parse failure.
+  const unzipFailure = (e: unknown): ModelParseError =>
+    e instanceof ContainerError && e.code === 'E_CONTAINER_LIMIT_TOTAL'
+      ? new ModelParseError(
+          'E_MODEL_TOO_LARGE',
+          `3MF expands past ${climits.maxExpandedBytesTotal} bytes: ${e.message}`
+        )
+      : new ModelParseError('E_MODEL_PARSE', `3MF unzip failed: ${(e as Error).message}`);
   let dir: ZipDirectory;
   try {
     dir = readDirectory(bytes, climits);
@@ -742,7 +754,12 @@ export async function parse3mf(
   if (mainEntry === undefined) {
     const rels = entryByName('_rels/.rels');
     if (rels !== undefined) {
-      const relXml = new TextDecoder().decode(await extractEntry(bytes, rels, climits.maxMetadataBytes));
+      let relXml: string;
+      try {
+        relXml = new TextDecoder().decode(await extractEntry(bytes, rels, climits.maxMetadataBytes, budget));
+      } catch (e) {
+        throw unzipFailure(e);
+      }
       const target = /Target="\/?([^"]+\.model)"/i.exec(relXml)?.[1];
       if (target !== undefined) mainEntry = entryByName(target.toLowerCase());
     }
@@ -756,7 +773,12 @@ export async function parse3mf(
     const key = entry.name.toLowerCase();
     const cached = partCache.get(key);
     if (cached !== undefined) return cached;
-    const xml = new TextDecoder().decode(await extractEntry(bytes, entry, climits.maxExpandedBytesPerEntry));
+    let xml: string;
+    try {
+      xml = new TextDecoder().decode(await extractEntry(bytes, entry, climits.maxExpandedBytesPerEntry, budget));
+    } catch (e) {
+      throw unzipFailure(e);
+    }
     const part = parseModelPart(xml, lim);
     partCache.set(key, part);
     return part;
@@ -791,7 +813,9 @@ export async function parse3mf(
     const settingsEntry = entryByName('metadata/project_settings.config');
     if (settingsEntry !== undefined) {
       try {
-        const json = new TextDecoder().decode(await extractEntry(bytes, settingsEntry, climits.maxMetadataBytes));
+        const json = new TextDecoder().decode(
+          await extractEntry(bytes, settingsEntry, climits.maxMetadataBytes, budget)
+        );
         const settings = JSON.parse(json) as Record<string, unknown>;
         paintPalette = hexPaletteToLinear(filamentColoursFromSettings(settings));
       } catch {
@@ -808,7 +832,9 @@ export async function parse3mf(
   const modelSettingsEntry = entryByName('metadata/model_settings.config');
   if (modelSettingsEntry !== undefined) {
     try {
-      const xml = new TextDecoder().decode(await extractEntry(bytes, modelSettingsEntry, climits.maxMetadataBytes));
+      const xml = new TextDecoder().decode(
+        await extractEntry(bytes, modelSettingsEntry, climits.maxMetadataBytes, budget)
+      );
       const m = /key="extruder"\s+value="(\d+)"/i.exec(xml);
       const n = m !== null ? parseInt(m[1], 10) : NaN;
       if (Number.isFinite(n) && n >= 1) defaultExtruderIdx = n - 1;

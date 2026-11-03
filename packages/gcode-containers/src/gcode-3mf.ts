@@ -11,12 +11,13 @@
 import type { MachineGeometry, FilamentInfo, Point2 } from '@chestnutlabs/toolpath-core';
 import {
   ContainerError,
-  DEFAULT_CONTAINER_LIMITS,
+  ExpansionBudget,
   canonicalName,
   crc32,
   crc32Final,
   extractEntry,
   readDirectory,
+  resolveContainerLimits,
   streamEntry,
   type ContainerLimits,
   type ZipEntry
@@ -133,10 +134,10 @@ function filamentsFromSettings(settings: Record<string, unknown>): FilamentInfo[
   }));
 }
 
-export async function openGcode3mf(
-  bytes: Uint8Array,
-  limits: ContainerLimits = DEFAULT_CONTAINER_LIMITS
-): Promise<OpenedContainer> {
+export async function openGcode3mf(bytes: Uint8Array, requested?: ContainerLimits): Promise<OpenedContainer> {
+  const limits = resolveContainerLimits(requested);
+  // One budget per opened archive: metadata + every plate stream share maxExpandedBytesTotal (#449).
+  const budget = new ExpansionBudget(limits.maxExpandedBytesTotal);
   const dir = readDirectory(bytes, limits);
   const warnings = [...dir.warnings];
 
@@ -188,7 +189,9 @@ export async function openGcode3mf(
       });
     } else {
       try {
-        const text = new TextDecoder().decode(await extractEntry(bytes, settingsEntry, limits.maxMetadataBytes));
+        const text = new TextDecoder().decode(
+          await extractEntry(bytes, settingsEntry, limits.maxMetadataBytes, budget)
+        );
         const settings = JSON.parse(text) as Record<string, unknown>;
         machine = machineFromSettings(settings);
         filaments = filamentsFromSettings(settings);
@@ -216,7 +219,7 @@ export async function openGcode3mf(
         throw new ContainerError('E_CONTAINER_NO_PAYLOAD', `plate ${index} does not exist (${plates.length} plates)`);
       }
       // Stream with incremental caps; verify CRC + size at end-of-stream.
-      const gen = streamEntry(bytes, plate.entry, limits.maxExpandedBytesPerEntry);
+      const gen = streamEntry(bytes, plate.entry, limits.maxExpandedBytesPerEntry, budget);
       let crc = 0xffffffff;
       let total = 0;
       return {
