@@ -1,5 +1,3 @@
-/* eslint-disable @typescript-eslint/no-empty-function */
-
 import { test, expect, vi, assert } from 'vitest';
 
 import { SceneManager } from '../scene-manager';

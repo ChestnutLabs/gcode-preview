@@ -110,7 +110,6 @@ export const GcodePreview = defineComponent({
     }
   },
   emits: {
-    /* eslint-disable @typescript-eslint/no-unused-vars -- emit validators document payloads */
     ready: (_summary: {
       segments: number;
       layers: number;
@@ -131,7 +130,6 @@ export const GcodePreview = defineComponent({
     'progress-presentation-changed': (_e: { mode: string; reason?: string }) => true,
     disclosure: (_text: string) => true,
     error: (_e: { code: string; message: string }) => true
-    /* eslint-enable @typescript-eslint/no-unused-vars */
   },
   setup(props, { emit, expose }) {
     const preview = useGcodePreview({
