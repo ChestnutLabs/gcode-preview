@@ -18,6 +18,7 @@ import {
   Mesh,
   MeshBasicMaterial,
   PlaneGeometry,
+  SRGBColorSpace,
   Shape,
   ShapeGeometry
 } from 'three';
@@ -171,6 +172,7 @@ function bedPlate(x0: number, y0: number, x1: number, y1: number, surface: BedSu
   });
   if (surface.texture) {
     const tex = new CanvasTexture(surface.texture);
+    tex.colorSpace = SRGBColorSpace; // a colour image: sample it as sRGB, not linear (#462)
     material.map = tex;
     material.needsUpdate = true;
   }
@@ -288,7 +290,9 @@ function bedShapeMesh(poly: Point2[], surface: BedSurface): Mesh {
     depthWrite: false
   });
   if (surface.texture) {
-    material.map = new CanvasTexture(surface.texture);
+    const tex = new CanvasTexture(surface.texture);
+    tex.colorSpace = SRGBColorSpace; // a colour image: sample it as sRGB, not linear (#462)
+    material.map = tex;
     material.needsUpdate = true;
   }
   const mesh = new Mesh(geom, material);

@@ -593,6 +593,22 @@ describe('ToolpathRenderer clipping/scrub/visibility/coloring (phase 3)', () => 
     expect(bb.min.z).toBeLessThan(0);
   });
 
+  it.each([
+    ['rectangular', { x: 200, y: 200, z: 250 }],
+    [
+      'circular',
+      { x: 200, y: 200, z: 250, shape: { kind: 'circular' as const, center: { x: 100, y: 100 }, diameter: 200 } }
+    ]
+  ])('a %s bed samples its plate texture as sRGB, not linear (#462)', (_label, def) => {
+    // A colour image tagged linear rendered #404040 as #898989 (browser repro on #462); sRGB round-trips.
+    const texture = { width: 8, height: 8 } as unknown as HTMLCanvasElement;
+    const vol = createBuildVolume(def, { bedSurface: { mode: 'solid', color: 0xffffff, texture } });
+    const plate = vol.children.find((c) => c.name === 'bedSurface') as Mesh;
+    const map = (plate.material as MeshBasicMaterial).map;
+    expect(map?.image).toBe(texture);
+    expect(map?.colorSpace).toBe('srgb');
+  });
+
   it('a rectangular bed (no shape) is byte-identical: no bedOutline, a full rectangular grid (DD-030)', () => {
     const rect = createBuildVolume({ x: 200, y: 200, z: 250 });
     expect(rect.children.find((c) => c.name === 'bedOutline')).toBeUndefined();
