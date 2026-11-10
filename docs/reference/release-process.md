@@ -66,16 +66,29 @@ from the protected `Release / publish` workflow on a tag from `main` — never f
 
 ## Auth (DD-008 D3 as amended)
 
-- **Intended:** npm **trusted publishing** (OIDC) — no long-lived token. Configured on npmjs
-  against the **user-owned `@chestnutlabs` scope** for this repository + the
-  `release-publish.yml` workflow (org conversion is deferred and not a `v0.1.0` blocker).
-- **Recorded fallback:** a granular automation token scoped to the published packages, stored as the
-  `NPM_TOKEN` secret (the workflow already wires it). If the registry cannot create *new* packages
-  via OIDC at first publish, `v0.1.0` uses the token and later releases switch to OIDC.
-- **Token must bypass 2FA** (learned cutting `v0.1.0`): with 2FA-on-publish set, a plain token gets
-  `E403 "Two-factor authentication or granular access token with bypass 2fa enabled is required"`.
-  Use a **classic _Automation_ token** (bypasses 2FA by design) or a **Granular** token with
-  **"Bypass 2FA" enabled** + read/write on the packages.
+- **Preferred direction:** npm **trusted publishing** (OIDC) — no long-lived token, no expiry, no
+  staging. Configured on npmjs (an owner step) against the **user-owned `@chestnutlabs` scope for
+  this repository + the `release-publish.yml` workflow (org conversion is deferred). The workflow
+  already grants `id-token: write` and provenance already runs on OIDC. Direct publish with a
+  granular token is itself being retired by npm in January 2027, so OIDC is required before then.
+- **Current mechanism (until OIDC is configured):** a **granular access token** stored as the
+  `NPM_TOKEN` repo secret (the workflow wires it as `NODE_AUTH_TOKEN`). npm removed classic
+  tokens (including the old "Automation" type) in Nov–Dec 2025; granular tokens are the only kind.
+  The token must have **all** of:
+  - **Read and write** permission on the `@chestnutlabs` packages/scope;
+  - **Direct publish** — *not* stage-only (a stage-only token fails with
+    `E403 E_STAGE_REQUIRED "This token can only publish to a staging area"`);
+  - **Bypass 2FA** enabled (otherwise
+    `E403 "Two-factor authentication or granular access token with bypass 2fa enabled is required"`).
+  Granular tokens expire (npm caps the lifetime); an expired token surfaces as a misleading
+  `E404 '<pkg>@<version>' is not in this registry`. Note the expiry date when rotating.
+- **Pre-publish probe:** the `Probe npm publish auth` step in `release-publish.yml` runs `npm whoami`
+  before the gate, so a **missing, expired or revoked** token fails in seconds with a clearly named
+  step instead of an E404 on the first package. It **cannot** verify read/write vs read-only,
+  stage-only, or Bypass 2FA: there is no non-publishing registry call that proves write access
+  (`npm publish --dry-run` does not authenticate, and `npm access list packages` reports the owner
+  account's rights, not the token's). Those three are token-creation properties — verify them when the
+  token is made. The probe becomes redundant once OIDC replaces the token.
 - 2FA-on-publish set on the owning account. These are **maintainer prerequisites** for phase 7,
   confirmed during the phase-6 rehearsal.
 - **GitHub Actions PR creation** (discovered at the first #130 run): the org-level setting
