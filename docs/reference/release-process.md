@@ -67,7 +67,7 @@ from the protected `Release / publish` workflow on a tag from `main` — never f
 ## Auth (DD-008 D3 as amended)
 
 - **Preferred direction:** npm **trusted publishing** (OIDC) — no long-lived token, no expiry, no
-  staging. Configured on npmjs (an owner step) against the **user-owned `@chestnutlabs` scope` for
+  staging. Configured on npmjs (an owner step) against the **user-owned `@chestnutlabs` scope for
   this repository + the `release-publish.yml` workflow (org conversion is deferred). The workflow
   already grants `id-token: write` and provenance already runs on OIDC. Direct publish with a
   granular token is itself being retired by npm in January 2027, so OIDC is required before then.
@@ -83,10 +83,12 @@ from the protected `Release / publish` workflow on a tag from `main` — never f
   Granular tokens expire (npm caps the lifetime); an expired token surfaces as a misleading
   `E404 '<pkg>@<version>' is not in this registry`. Note the expiry date when rotating.
 - **Pre-publish probe:** the `Probe npm publish auth` step in `release-publish.yml` runs `npm whoami`
-  and `npm access list packages @chestnutlabs` before the gate, so an expired, revoked or
-  read-only token fails in seconds with a clearly named step. It cannot detect a stage-only token or a
-  missing Bypass 2FA (those only show at publish time) — check those two settings when creating
-  the token. The probe becomes redundant once OIDC replaces the token.
+  before the gate, so a **missing, expired or revoked** token fails in seconds with a clearly named
+  step instead of an E404 on the first package. It **cannot** verify read/write vs read-only,
+  stage-only, or Bypass 2FA: there is no non-publishing registry call that proves write access
+  (`npm publish --dry-run` does not authenticate, and `npm access list packages` reports the owner
+  account's rights, not the token's). Those three are token-creation properties — verify them when the
+  token is made. The probe becomes redundant once OIDC replaces the token.
 - 2FA-on-publish set on the owning account. These are **maintainer prerequisites** for phase 7,
   confirmed during the phase-6 rehearsal.
 - **GitHub Actions PR creation** (discovered at the first #130 run): the org-level setting
