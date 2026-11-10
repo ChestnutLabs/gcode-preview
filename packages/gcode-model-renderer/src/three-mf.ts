@@ -732,14 +732,20 @@ export async function parse3mf(
   const climits = DEFAULT_CONTAINER_LIMITS;
   // Every part and metadata entry of this archive shares one maxExpandedBytesTotal budget (#449).
   const budget = new ExpansionBudget(climits.maxExpandedBytesTotal);
-  // An extraction failure as a model error: the archive-wide expanded total is a size limit, the rest is a parse failure.
-  const unzipFailure = (e: unknown): ModelParseError =>
-    e instanceof ContainerError && e.code === 'E_CONTAINER_LIMIT_TOTAL'
-      ? new ModelParseError(
-          'E_MODEL_TOO_LARGE',
-          `3MF expands past ${climits.maxExpandedBytesTotal} bytes: ${e.message}`
-        )
-      : new ModelParseError('E_MODEL_PARSE', `3MF unzip failed: ${(e as Error).message}`);
+  // An extraction failure as a model error: both container size limits (the archive-wide expanded total and the
+  // per-entry cap) are size limits, everything else (corrupt data, CRC) is a parse failure (#461).
+  const unzipFailure = (e: unknown): ModelParseError => {
+    if (e instanceof ContainerError && e.code === 'E_CONTAINER_LIMIT_TOTAL') {
+      return new ModelParseError(
+        'E_MODEL_TOO_LARGE',
+        `3MF expands past ${climits.maxExpandedBytesTotal} bytes: ${e.message}`
+      );
+    }
+    if (e instanceof ContainerError && e.code === 'E_CONTAINER_LIMIT_EXPANDED') {
+      return new ModelParseError('E_MODEL_TOO_LARGE', `3MF part is too large: ${e.message}`);
+    }
+    return new ModelParseError('E_MODEL_PARSE', `3MF unzip failed: ${(e as Error).message}`);
+  };
   let dir: ZipDirectory;
   try {
     dir = readDirectory(bytes, climits);
