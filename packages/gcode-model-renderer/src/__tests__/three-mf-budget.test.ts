@@ -1,19 +1,21 @@
 /**
  * #449: parse3mf charges every entry it extracts (rels, main part, settings, model_settings, external
  * parts) to ONE archive-wide `maxExpandedBytesTotal` budget, and maps the trip to
- * `E_MODEL_TOO_LARGE`. The real total is a fixed 1 GiB, so the container default is mocked to a small
- * value here; everything else in gcode-containers is the real code.
+ * `E_MODEL_TOO_LARGE`. #461: a single part over the per-entry cap maps to `E_MODEL_TOO_LARGE` too. The real
+ * caps are 1 GiB total / 512 MiB per entry, so the container defaults are mocked to small values here;
+ * everything else in gcode-containers is the real code.
  */
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { parse3mf } from '../three-mf.js';
 import { ModelParseError } from '../limits.js';
 import { buildZip, type BuildEntry } from '../../../gcode-containers/src/__tests__/zip-builder';
 
-const h = vi.hoisted(() => ({ total: 1024 * 1024 * 1024 }));
+const h = vi.hoisted(() => ({ total: 1024 * 1024 * 1024, perEntry: 512 * 1024 * 1024 }));
 vi.mock('@chestnutlabs/gcode-containers', async (importOriginal) => {
   const real = await importOriginal<typeof import('@chestnutlabs/gcode-containers')>();
   const limits = { ...real.DEFAULT_CONTAINER_LIMITS };
   Object.defineProperty(limits, 'maxExpandedBytesTotal', { get: () => h.total });
+  Object.defineProperty(limits, 'maxExpandedBytesPerEntry', { get: () => h.perEntry });
   return { ...real, DEFAULT_CONTAINER_LIMITS: limits };
 });
 
@@ -53,6 +55,11 @@ async function modelErr(p: Promise<unknown>): Promise<ModelParseError> {
 }
 
 describe('parse3mf expanded-total budget (#449)', () => {
+  beforeEach(() => {
+    h.total = 1024 * 1024 * 1024;
+    h.perEntry = 512 * 1024 * 1024;
+  });
+
   it('main + settings + model_settings + external part share one budget: at the total passes', async () => {
     h.total = SUM;
     const scene = await parse3mf(buildZip(ENTRIES).bytes);
@@ -100,5 +107,33 @@ describe('parse3mf expanded-total budget (#449)', () => {
     const e = await modelErr(parse3mf(bytes));
     expect(e.code).toBe('E_MODEL_PARSE');
     expect(e.message).toBe("3MF unzip failed: CRC mismatch for '3d/objects/object_1.model'");
+  });
+
+  // The external part is padded past the shell so only it trips the per-entry cap (the shell passes at the cap).
+  const BIG_EXTERNAL = EXTERNAL.replace('<resources>', `<resources>${' '.repeat(200)}`);
+  const BIG_ENTRIES: BuildEntry[] = [ENTRIES[0], { name: '3D/Objects/object_1.model', data: BIG_EXTERNAL }];
+
+  it('an external part over the per-entry cap → E_MODEL_TOO_LARGE, not E_MODEL_PARSE (#461)', async () => {
+    h.perEntry = BIG_EXTERNAL.length - 1;
+    const e = await modelErr(parse3mf(buildZip(BIG_ENTRIES).bytes));
+    expect(e.code).toBe('E_MODEL_TOO_LARGE');
+    expect(e.message).toBe(
+      `3MF part is too large: entry '3d/objects/object_1.model' claims ${BIG_EXTERNAL.length} B (> cap ${BIG_EXTERNAL.length - 1})`
+    );
+  });
+
+  it('the main model part over the per-entry cap → E_MODEL_TOO_LARGE, not E_MODEL_PARSE (#461)', async () => {
+    h.perEntry = SHELL.length - 1;
+    const e = await modelErr(parse3mf(buildZip(ENTRIES).bytes));
+    expect(e.code).toBe('E_MODEL_TOO_LARGE');
+    expect(e.message).toBe(
+      `3MF part is too large: entry '3d/3dmodel.model' claims ${SHELL.length} B (> cap ${SHELL.length - 1})`
+    );
+  });
+
+  it('every part exactly at the per-entry cap still loads (#461)', async () => {
+    h.perEntry = BIG_EXTERNAL.length;
+    const scene = await parse3mf(buildZip(BIG_ENTRIES).bytes);
+    expect(scene.objects).toHaveLength(1);
   });
 });
