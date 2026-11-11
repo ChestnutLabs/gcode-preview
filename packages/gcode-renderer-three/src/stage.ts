@@ -24,6 +24,8 @@ export interface GLRendererLike {
   render(scene: Scene, camera: Camera): void;
   setSize(width: number, height: number, updateStyle?: boolean): void;
   setPixelRatio?(ratio: number): void;
+  /** The current pixel ratio — DD-020 restores exactly this after a reduced-detail gesture (#435). */
+  getPixelRatio?(): number;
   dispose(): void;
   domElement: RenderTargetCanvas;
   // Render-target readback for interactive `capture()` (DD-030 D1). Optional: a real `WebGLRenderer`
