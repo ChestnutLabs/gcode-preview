@@ -29,8 +29,13 @@ export type { ModelLoader, ModelLoadOptions, ModelSourceInput } from './loaders.
 export { computeCacheKey, defaultEnvId } from './cache-key.js';
 export { DEFAULT_LIMITS, resolveLimits, ModelParseError } from './limits.js';
 export type { ModelLimits, ResolvedLimits } from './limits.js';
+// DD-032: the Studio look + lens presets, re-exported so a model-viewer consumer needs one import.
+export { studioTheme, STUDIO_CAMERA_FOV } from '@chestnutlabs/gcode-renderer-three';
+export type { Theme, BuildVolumeDef } from '@chestnutlabs/gcode-renderer-three';
+export type { ModelPlacement, PlacementOffset } from './placement.js';
 export { IDENTITY_MAT4, applyRenderScope } from './scene-model.js';
 export type {
+  ModelSceneSource,
   ModelScene,
   ModelObject,
   ModelMaterial,

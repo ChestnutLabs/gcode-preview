@@ -40,8 +40,9 @@ export interface CaptureOptions {
    * Include the build-volume group (grid + bed surface + origin + cage) in the capture. Default `true`
    * (the live view). Set `false` to exclude it for the off-screen render only — with
    * `background:'transparent'` this yields a clean toolpath-only cutout (parity with `ModelRenderer`
-   * thumbnails), without disturbing the live view. Honored by the 3D toolpath renderer; a no-op where
-   * there is no build volume (`ModelViewer`) or no capture (the 2D renderer).
+   * thumbnails), without disturbing the live view. Honored by the 3D toolpath renderer and, since DD-032,
+   * by the model viewer, where it hides the build plate and its contact shadow (a model viewer with no
+   * `buildVolume` has nothing to hide). A no-op where there is no capture (the 2D renderer).
    */
   includeBuildVolume?: boolean;
 }

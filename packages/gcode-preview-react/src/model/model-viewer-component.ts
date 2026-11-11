@@ -16,6 +16,8 @@ import {
   type ReactElement
 } from 'react';
 import type {
+  BuildVolumeDef,
+  Theme,
   CameraMode,
   CameraState,
   CameraView,
@@ -59,6 +61,12 @@ export interface ModelViewerProps {
   filamentPalette?: readonly (string | undefined)[];
   /** Loader registry (open `kind`). Default: STL + 3MF. */
   loaders?: readonly ModelLoader[];
+  /** Build plate under the model (DD-032): the full `BuildVolumeDef`; `null`/omitted = no plate. */
+  buildVolume?: BuildVolumeDef | null;
+  /** Plate/backdrop look, e.g. `studioTheme('dark')`; lights are deliberately not themed. Beats `background`. */
+  theme?: Theme;
+  /** Perspective lens in degrees, [10, 120] (default 50). Out of range throws `RangeError`. */
+  cameraFov?: number;
   /** Advanced/test: inject GL / orbit controls. */
   createRenderer?: (canvas: RenderTargetCanvas) => GLRendererLike;
   createControls?: NonNullable<InteractiveStageOptions['createControls']>;
@@ -83,6 +91,9 @@ function ModelViewerImpl(props: ModelViewerProps, ref: ForwardedRef<ModelViewerH
     limits,
     filamentPalette,
     loaders,
+    buildVolume,
+    theme,
+    cameraFov,
     createRenderer,
     createControls
   } = props;
@@ -96,6 +107,9 @@ function ModelViewerImpl(props: ModelViewerProps, ref: ForwardedRef<ModelViewerH
     ...(filamentPalette !== undefined ? { filamentPalette } : {}),
     ...(loaders !== undefined ? { loaders } : {}),
     ...(renderScope != null ? { renderScope } : {}),
+    ...(buildVolume != null ? { buildVolume } : {}),
+    ...(theme !== undefined ? { theme } : {}),
+    ...(cameraFov !== undefined ? { cameraFov } : {}),
     ...(createRenderer !== undefined ? { createRenderer } : {}),
     ...(createControls !== undefined ? { createControls } : {}),
     onProgress: (p) => cbRef.current.onProgress?.(p)
@@ -154,6 +168,16 @@ function ModelViewerImpl(props: ModelViewerProps, ref: ForwardedRef<ModelViewerH
   useEffect(() => {
     if (renderScope !== undefined) viewer.controls.setRenderScope(renderScope);
   }, [viewer, renderScope]);
+  // DD-032: look + lens — each prop one controls call (the controller remembers them across rebinds).
+  useEffect(() => {
+    if (buildVolume !== undefined) viewer.controls.setBuildVolume(buildVolume);
+  }, [viewer, buildVolume]);
+  useEffect(() => {
+    if (theme !== undefined) viewer.controls.setTheme(theme);
+  }, [viewer, theme]);
+  useEffect(() => {
+    if (cameraFov !== undefined) viewer.controls.setCameraFov(cameraFov);
+  }, [viewer, cameraFov]);
 
   return createElement('canvas', {
     ref: viewer.canvasRef,

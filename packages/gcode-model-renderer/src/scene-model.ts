@@ -96,10 +96,32 @@ export interface ModelPlateSummary {
   bounds: ModelBounds;
 }
 
+/**
+ * What the source file itself says about where its parts sit on a plate (DD-032 §4.3). Present only when the
+ * loader positively recognised the file; never inferred from geometry. The viewer uses it to decide how
+ * honestly it can draw a build plate under the model (`ModelPreviewState.placement`):
+ *
+ * - `slicerProject` is `'bambu-orca'` only when the 3MF carries a Bambu/Orca slicer project config
+ *   (`Metadata/project_settings.config` or `Metadata/model_settings.config`). Only such a file's transforms
+ *   can be read as plate coordinates; an STL, a CAD 3MF or a PrusaSlicer 3MF never sets it, so its parts are
+ *   drawn as `approximated`, not as placed.
+ * - `printableArea` is that project's declared bed (the axis-aligned box of its `printable_area` polygon,
+ *   mm). It is omitted when the file has no such field or it could not be read as a valid polygon (fewer than
+ *   three finite points, or zero area); the consumer's own build volume is used then.
+ *
+ * Absence means "the file did not say", never "the file says no".
+ */
+export interface ModelSceneSource {
+  slicerProject?: 'bambu-orca';
+  printableArea?: { min: readonly [number, number]; max: readonly [number, number] };
+}
+
 /** A presentation scene: one or more objects plus capability honesty about what the source carried. */
 export interface ModelScene {
   objects: ModelObject[];
   bounds: ModelBounds;
+  /** Where the file says its parts sit (DD-032). See {@link ModelSceneSource}; omitted when it says nothing. */
+  source?: ModelSceneSource;
   /**
    * Declared plate structure (DD-025). Present only when the source **explicitly** declares plates; a
    * consumer shows a plate selector only when `capabilities.plates === 'known'`. `active` is the source's
