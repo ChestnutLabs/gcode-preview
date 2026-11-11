@@ -15,6 +15,25 @@ import type { AnnotationSink } from './contracts.js';
 import { applyMarkerRanges, type RangeMarker } from './annotate.js';
 
 /**
+ * The name between the `printing object[,:]?` prefix and the `id` token at `idIndex`, found with
+ * index arithmetic only. (A lazy `(.+?)\s+id` scan re-fails at every `printing object` repeat and is
+ * quadratic on a hostile line.) The `id` must be preceded by whitespace; a trailing `unique` /
+ * `unique label` filler and one enclosing quote pair are stripped.
+ */
+function nameBeforeId(trimmed: string, idIndex: number): string {
+  const prefix = /printing object[,:]?\s*/i.exec(trimmed);
+  if (prefix === null) return '';
+  const start = prefix.index + prefix[0].length;
+  if (!/\s/.test(trimmed[idIndex - 1])) return '';
+  let name = trimmed.slice(start, idIndex).trim();
+  name = name.replace(/(?:^|\s)unique(?:\s+label)?$/i, '').trim();
+  if (name.length >= 2 && name.startsWith('"') && name.endsWith('"') && !name.slice(1, -1).includes('"')) {
+    name = name.slice(1, -1).trim();
+  }
+  return name;
+}
+
+/**
  * Match an object-start comment (the leading `; ` is already stripped) across all lineage formats,
  * returning the raw object id (stable per object) + optional name, or null.
  */
@@ -29,9 +48,7 @@ export function matchPrintingObjectStart(trimmed: string): { id: string; name?: 
   if (suffix !== null) {
     name = suffix[1].trim();
   } else {
-    const pre = /printing object[,:]?\s*(?:"([^"]*)"|(.+?))\s+(?:unique\s+(?:label\s+)?)?id:?/i.exec(trimmed);
-    name = (pre?.[1] ?? pre?.[2] ?? '').trim();
-    if (/^unique(\s+label)?$/i.test(name)) name = '';
+    name = nameBeforeId(trimmed, idm.index);
   }
   return { id: idm[1], name: name.length > 0 ? name : undefined };
 }
