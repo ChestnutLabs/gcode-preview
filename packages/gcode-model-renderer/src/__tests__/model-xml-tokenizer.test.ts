@@ -261,8 +261,8 @@ describe('differential vs the legacy regexes', () => {
       'containers'
     );
     const files = readdirSync(dir).filter((f) => f.endsWith('.3mf'));
-    let parts = 0;
-    let tokens = 0;
+    // fixture → [XML parts, tokens]. Readable fixtures only; a new fixture is added here deliberately.
+    const found: Record<string, [number, number]> = {};
     for (const f of files) {
       const bytes = new Uint8Array(readFileSync(join(dir, f)));
       let entries;
@@ -281,14 +281,19 @@ describe('differential vs the legacy regexes', () => {
         }
         const want = legacyTags(xml);
         expect(tags(xml), `${f}:${e.name}`).toEqual(want);
-        parts++;
-        tokens += want.length;
+        const [p, t] = found[f] ?? [0, 0];
+        found[f] = [p + 1, t + want.length];
       }
     }
-    // Guards against an empty corpus / a silently skipped loop. The committed model parts are tiny stubs
-    // (8 and 45 bytes: 1 + 3 tags), so the realistic-document case below carries the volume.
-    expect(parts).toBe(6);
-    expect(tokens).toBe(4);
+    // Guards against an empty corpus / a silently skipped loop, per fixture so an unrelated new fixture
+    // only adds its own line. The committed model parts are tiny stubs (8 and 45 bytes: 1 + 3 tags), so the
+    // realistic-document case below carries the volume. A fixture missing here, or missing from `found`, fails.
+    expect(found).toEqual({
+      'adv-bad-crc.gcode.3mf': [1, 0],
+      'mini-project.gcode.3mf': [2, 1],
+      'mini-thumbs.gcode.3mf': [1, 0],
+      'model-project.3mf': [2, 3]
+    });
   });
 
   it('a realistic Bambu/Orca-style model part (namespaces, production extension, materials, CRLF) is identical', () => {

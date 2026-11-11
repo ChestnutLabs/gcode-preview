@@ -103,7 +103,7 @@ describe('thumbnailsFor budget, caps and bad images', () => {
     const r = await opened.thumbnailsFor(0);
     expect(r.thumbnails).toEqual([]);
     expect(r.warnings).toHaveLength(1);
-    expect(r.warnings[0].code).toBe('container-thumbnail-invalid');
+    expect(r.warnings[0].code).toBe('metadata-truncated');
     expect(r.warnings[0].message).toBe(
       `Metadata/plate_1.png unreadable: entry 'metadata/plate_1.png' claims 124 B, past the archive's ${total} B expanded total`
     );
@@ -121,11 +121,16 @@ describe('thumbnailsFor budget, caps and bad images', () => {
 
   it('an image over maxMetadataBytes is skipped before it is read (metadata-truncated)', async () => {
     const img = png(4, 3, 100);
-    const opened = await openGcode3mf(settingsless([{ name: 'Metadata/plate_1.png', data: img }]), {
-      maxMetadataBytes: img.length - 1
-    });
+    // the valid 24 B small image (under the cap) must survive the oversize one before it
+    const opened = await openGcode3mf(
+      settingsless([
+        { name: 'Metadata/plate_1.png', data: img },
+        { name: 'Metadata/plate_1_small.png', data: png(2, 1) }
+      ]),
+      { maxMetadataBytes: img.length - 1 }
+    );
     const r = await opened.thumbnailsFor(0);
-    expect(r.thumbnails).toEqual([]);
+    expect(r.thumbnails.map((t) => [t.width, t.height])).toEqual([[2, 1]]);
     expect(r.warnings).toEqual([
       { code: 'metadata-truncated', message: 'Metadata/plate_1.png exceeds maxMetadataBytes; skipped' }
     ]);
@@ -192,9 +197,14 @@ describe('thumbnailsFor budget, caps and bad images', () => {
     ['truncated to 10 bytes', png(4, 3).subarray(0, 10)],
     ['text, not an image', new TextEncoder().encode('this is definitely not a png, it is text!')]
   ])('a %s image is dropped with a warning, not thrown', async (_label, data) => {
-    const opened = await openGcode3mf(settingsless([{ name: 'Metadata/plate_1.png', data }]));
+    const opened = await openGcode3mf(
+      settingsless([
+        { name: 'Metadata/plate_1.png', data },
+        { name: 'Metadata/plate_1_small.png', data: png(2, 1) }
+      ])
+    );
     const r = await opened.thumbnailsFor(0);
-    expect(r.thumbnails).toEqual([]);
+    expect(r.thumbnails.map((t) => [t.width, t.height])).toEqual([[2, 1]]);
     expect(r.warnings).toEqual([
       {
         code: 'container-thumbnail-invalid',
@@ -234,6 +244,17 @@ describe('readPngSize (IHDR probe)', () => {
     const b = png(4, 3);
     b[i] ^= 0x20; // IHDR → ihdr-ish
     expect(readPngSize(b)).toBeNull();
+  });
+
+  it('rejects an IHDR chunk whose length field is not 13', () => {
+    for (const len of [0, 12, 14, 0x0d000000]) {
+      const b = png(4, 3);
+      new DataView(b.buffer).setUint32(8, len);
+      expect(readPngSize(b)).toBeNull();
+    }
+    const ok = png(4, 3);
+    new DataView(ok.buffer).setUint32(8, 13);
+    expect(readPngSize(ok)).toEqual({ width: 4, height: 3 });
   });
 
   it('rejects a zero or out-of-range width/height', () => {

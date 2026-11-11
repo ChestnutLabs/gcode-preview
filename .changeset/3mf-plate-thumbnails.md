@@ -13,8 +13,10 @@ preview as a PNG next to its G-code, and the parser ignored them. Parsing a `.gc
 - Width and height come from the PNG header. An image that is not a PNG, is over `maxMetadataBytes`
   (8 MiB), fails its CRC, or does not fit in what is left of the archive's expanded-size budget is
   dropped with a warning. The plate's G-code always loads first and is never affected.
-- New warning code `container-thumbnail-invalid` (a plain string code; existing codes are unchanged).
-  An oversize image reuses `metadata-truncated`.
+- New warning code `container-thumbnail-invalid` (a plain string code; existing codes are unchanged),
+  used only when the image itself is bad: not a PNG, corrupt, or failing its CRC. An image dropped for
+  size reuses `metadata-truncated`, whether it was over `maxMetadataBytes` or the archive's expanded-size
+  budget had run out.
 - `@chestnutlabs/gcode-containers`: `OpenedContainer` gains `thumbnailsFor(plate)`, and the types
   `PlateThumbnail` / `PlateThumbnails` are exported. `plate` is the index into `plates`, not the number
   in the file name.

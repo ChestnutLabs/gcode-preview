@@ -264,7 +264,12 @@ export async function openGcode3mf(bytes: Uint8Array, requested?: ContainerLimit
           image = await extractEntry(bytes, entry, limits.maxMetadataBytes, budget);
         } catch (err) {
           out.warnings.push({
-            code: 'container-thumbnail-invalid',
+            // An exhausted archive-wide budget says nothing about the image itself: report it like the
+            // per-image cap (skipped for size), not as a corrupt image.
+            code:
+              err instanceof ContainerError && err.code === 'E_CONTAINER_LIMIT_TOTAL'
+                ? 'metadata-truncated'
+                : 'container-thumbnail-invalid',
             message: `${entry.rawName} unreadable: ${err instanceof Error ? err.message : err}`
           });
           continue;

@@ -8,6 +8,8 @@
 const PNG_SIGNATURE = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
 /** "IHDR". */
 const IHDR = [0x49, 0x48, 0x44, 0x52];
+/** IHDR chunk data length mandated by the PNG spec. */
+const IHDR_DATA_BYTES = 13;
 /** Signature (8) + length (4) + "IHDR" (4) + width (4) + height (4). */
 const MIN_HEADER_BYTES = 24;
 /** The PNG spec caps each dimension at 2^31 - 1. */
@@ -23,6 +25,8 @@ export function readPngSize(bytes: Uint8Array): { width: number; height: number 
     if (bytes[12 + i] !== IHDR[i]) return null;
   }
   const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  // The PNG spec fixes the IHDR data length at 13 bytes.
+  if (view.getUint32(8) !== IHDR_DATA_BYTES) return null;
   const width = view.getUint32(16);
   const height = view.getUint32(20);
   if (width < 1 || width > MAX_DIMENSION || height < 1 || height > MAX_DIMENSION) return null;

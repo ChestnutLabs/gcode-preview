@@ -387,7 +387,8 @@ describe('.gcode.3mf plate thumbnails through the worker (#483)', () => {
     expect(r.ir.header.complete).toBe(true);
     expect(r.ir.segments.count).toBe(201); // plate_1.gcode: 200 G1 moves + initial G0
     expect(dims(r)).toEqual(['image/png 2x1']); // the small image still fits; the big one does not
-    const w = r.ir.header.warnings.filter((x) => x.code === 'container-thumbnail-invalid');
+    expect(r.ir.header.warnings.filter((x) => x.code === 'container-thumbnail-invalid')).toEqual([]);
+    const w = r.ir.header.warnings.filter((x) => x.code === 'metadata-truncated');
     expect(w).toHaveLength(1);
     expect(w[0].message).toContain('Metadata/plate_1.png unreadable');
     expect(w[0].severity).toBe('warn');
