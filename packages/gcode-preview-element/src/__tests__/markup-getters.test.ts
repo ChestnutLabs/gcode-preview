@@ -165,6 +165,54 @@ describe('<gcode-model-viewer> camera-fov given in markup', () => {
   });
 });
 
+describe('<gcode-model-viewer> before connect: the last write wins, property or attribute', () => {
+  it('pixel-ratio: attribute 1.5 then property 2 → 2 is read and applied', () => {
+    const ratios: number[] = [];
+    const el = make(ratioRecordingGL(ratios));
+    el.setAttribute('pixel-ratio', '1.5');
+    el.pixelRatio = 2;
+    document.body.appendChild(el);
+    expect(ratios).toEqual([2]);
+    expect(el.pixelRatio).toBe(2);
+    el.remove();
+  });
+
+  it('pixel-ratio: property 2 then attribute 1.5 → 1.5 is read and applied', () => {
+    const ratios: number[] = [];
+    const el = make(ratioRecordingGL(ratios));
+    el.pixelRatio = 2;
+    el.setAttribute('pixel-ratio', '1.5');
+    document.body.appendChild(el);
+    expect(ratios).toEqual([1.5]);
+    expect(el.pixelRatio).toBe(1.5);
+    el.remove();
+  });
+
+  it('camera-fov: attribute 40 then property 32 → 32 is read and applied', async () => {
+    const gl = makeModelRecordingGL();
+    const el = make(gl);
+    el.setAttribute('camera-fov', '40');
+    el.cameraFov = 32;
+    document.body.appendChild(el);
+    await el.setSource(makeStlModelSource());
+    expect(gl.snapshot().fov).toBe(32);
+    expect(el.cameraFov).toBe(32);
+    el.remove();
+  });
+
+  it('camera-fov: property 32 then attribute 40 → 40 is read and applied', async () => {
+    const gl = makeModelRecordingGL();
+    const el = make(gl);
+    el.cameraFov = 32;
+    el.setAttribute('camera-fov', '40');
+    document.body.appendChild(el);
+    await el.setSource(makeStlModelSource());
+    expect(gl.snapshot().fov).toBe(40);
+    expect(el.cameraFov).toBe(40);
+    el.remove();
+  });
+});
+
 describe('<gcode-model-viewer> background given in markup', () => {
   it('the getter returns the markup background after connect, and it is drawn', async () => {
     const gl = makeModelRecordingGL();
