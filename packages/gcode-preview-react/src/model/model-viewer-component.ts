@@ -64,6 +64,8 @@ export interface ModelViewerProps {
   loaders?: readonly ModelLoader[];
   /** Build plate under the model (DD-032): the full `BuildVolumeDef`; `null`/omitted = no plate. */
   buildVolume?: BuildVolumeDef | null;
+  /** Show the build-volume wireframe cage over the plate (the plate, grid and shadow stay). Default true. */
+  showVolumeCage?: boolean;
   /** Plate/backdrop look, e.g. `studioTheme('dark')`; lights are deliberately not themed. Beats `background`. */
   theme?: Theme;
   /** Perspective lens in degrees, [10, 120] (default 50). Out of range throws `RangeError`. */
@@ -95,6 +97,7 @@ function ModelViewerImpl(props: ModelViewerProps, ref: ForwardedRef<ModelViewerH
     filamentPalette,
     loaders,
     buildVolume,
+    showVolumeCage,
     theme,
     cameraFov,
     pixelRatio,
@@ -177,6 +180,10 @@ function ModelViewerImpl(props: ModelViewerProps, ref: ForwardedRef<ModelViewerH
   useEffect(() => {
     if (buildVolume !== undefined) viewer.controls.setBuildVolume(buildVolume);
   }, [viewer, buildVolume]);
+  // Effect only (no construction option): it runs before the first frame, which the controller queues.
+  useEffect(() => {
+    viewer.controls.setBuildVolumeCage(showVolumeCage ?? true);
+  }, [viewer, showVolumeCage]);
   useEffect(() => {
     if (theme !== undefined) viewer.controls.setTheme(theme);
   }, [viewer, theme]);

@@ -75,6 +75,11 @@ export interface ModelPreviewControllerOptions {
    */
   buildVolume?: BuildVolumeDef | null;
   /**
+   * Draw the build-volume wireframe cage over the plate (default `true`). `false` drops only the cage: the
+   * plate, grid and shadow stay. Remembered across canvas rebinds.
+   */
+  showVolumeCage?: boolean;
+  /**
    * Plate/backdrop look, e.g. `studioTheme('dark')`. Only the plate and backdrop fields apply; lights and
    * `materialPreset` are deliberately not applicable to the model viewer (its lighting is unchanged).
    * `theme.background` beats `background` (the fallback tier). Invalid values throw `RangeError` synchronously.
@@ -141,6 +146,11 @@ export interface ModelPreviewControls {
   setBackground(bg: ModelBackground): void;
   /** Set or remove (`null`) the build plate; the model is re-placed and, while auto-framing, re-fitted. */
   setBuildVolume(def: BuildVolumeDef | null): void;
+  /**
+   * Show/hide the build-volume wireframe cage, independently of the plate (parity with the toolpath
+   * `setBuildVolumeCage`). The model does not move. Remembered across plate rebuilds and canvas rebinds.
+   */
+  setBuildVolumeCage(visible: boolean): void;
   /** Replace the plate/backdrop theme (replace semantics). Throws `RangeError` synchronously for invalid values. */
   setTheme(theme: Theme): void;
   /** Change the perspective lens, [10, 120]°. Throws `RangeError` synchronously outside it, even before a canvas binds. Remembered across canvas rebinds. */
@@ -222,6 +232,7 @@ export function createModelPreviewController(options: ModelPreviewControllerOpti
   let currentBuildVolume: BuildVolumeDef | null = options.buildVolume ?? null;
   let currentTheme: Theme | undefined = options.theme;
   let currentFov: number | undefined = options.cameraFov;
+  let currentCage: boolean = options.showVolumeCage ?? true;
   if (options.pixelRatio !== undefined) checkModelPixelRatio(options.pixelRatio);
   let currentPixelRatio: PixelRatioOption | undefined = options.pixelRatio;
 
@@ -238,6 +249,7 @@ export function createModelPreviewController(options: ModelPreviewControllerOpti
     ...(options.autoFrameOnResize !== undefined ? { autoFrameOnResize: options.autoFrameOnResize } : {}),
     ...(currentBuildVolume !== null ? { buildVolume: currentBuildVolume } : {}),
     ...(currentTheme !== undefined ? { theme: currentTheme } : {}),
+    showVolumeCage: currentCage,
     ...(currentFov !== undefined ? { cameraFov: currentFov } : {}),
     ...(currentPixelRatio !== undefined ? { pixelRatio: currentPixelRatio } : {}),
     // Fold progress into state, then hand it to the consumer's callback.
@@ -396,6 +408,10 @@ export function createModelPreviewController(options: ModelPreviewControllerOpti
         engine.setBuildVolume(def);
         syncPlacement();
       }
+    },
+    setBuildVolumeCage(visible) {
+      currentCage = visible;
+      if (engine !== null) engine.setBuildVolumeCage(visible);
     },
     setTheme(theme) {
       resolveTheme(theme); // synchronous RangeError, before and after a canvas binds

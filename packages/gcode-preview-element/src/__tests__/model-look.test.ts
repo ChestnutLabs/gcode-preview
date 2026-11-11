@@ -36,14 +36,14 @@ describe('<gcode-model-viewer> — DD-032 look', () => {
     await el.setSource(makeStlModelSource());
     expect(el.state.placement).toBe('approximated');
     expect(el.state.placementOffset).toEqual({ x: 45, y: 40, z: 0 });
-    expect(gl.snapshot()).toEqual({ fov: 32, plate: true, shadow: true, background: 'DataTexture' });
+    expect(gl.snapshot()).toEqual({ fov: 32, plate: true, cage: true, shadow: true, background: 'DataTexture' });
 
     el.buildVolume = { x: 200, y: 200, z: 100 };
     el.theme = { ...studioTheme('light'), background: null };
     el.cameraFov = 60;
     await settle();
     expect(el.state.placementOffset).toEqual({ x: 95, y: 90, z: 0 });
-    expect(gl.snapshot()).toEqual({ fov: 60, plate: true, shadow: true, background: 'null' });
+    expect(gl.snapshot()).toEqual({ fov: 60, plate: true, cage: true, shadow: true, background: 'null' });
 
     el.buildVolume = null;
     expect(el.state.placement).toBeNull();

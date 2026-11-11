@@ -85,6 +85,11 @@ export interface ModelViewerOptions {
    */
   buildVolume?: BuildVolumeDef | null;
   /**
+   * Draw the build-volume wireframe cage over the plate. Default `true`. `false` keeps the plate, its grid and
+   * the contact shadow and drops only the cage, as the toolpath viewer's `setBuildVolumeCage(false)` does.
+   */
+  showVolumeCage?: boolean;
+  /**
    * Plate/backdrop look (DD-032), e.g. `studioTheme('dark')`. Only the plate and backdrop fields apply
    * (`background`, `gridColor`, `gridOpacity`, `gridMajor`, `bedOutline`, `bedSurface`, `bedColor`,
    * `contactShadow`); lights and `materialPreset` are deliberately not applicable — the model rig is unchanged.
@@ -154,6 +159,12 @@ export interface ModelViewer {
   setBackground(bg: ModelBackground): void;
   /** Set or remove (`null`) the build plate. Re-places the model and, while auto-framing, re-fits the camera. */
   setBuildVolume(def: BuildVolumeDef | null): void;
+  /**
+   * Show/hide the build-volume wireframe cage, independently of the plate, grid and shadow (parity with the
+   * toolpath `setBuildVolumeCage`). The model does not move and the camera is not re-fitted. Remembered when the
+   * plate is rebuilt (a new bed, theme or scope).
+   */
+  setBuildVolumeCage(visible: boolean): void;
   /** Replace the plate/backdrop theme (replace semantics). Throws `RangeError` for an invalid opacity/`every`. */
   setTheme(theme: Theme): void;
   /** Change the perspective lens, [10, 120]° (`RangeError` outside it). Keeps apparent size; re-fits while auto-framing. */
@@ -219,7 +230,7 @@ export function createModelViewer(canvas: RenderTargetCanvas, options: ModelView
   const scene = new Scene();
   let backdrop: Backdrop | null = applyModelBackground(scene, theme, fallbackBackground, null);
   const content = new ModelContent(scene);
-  const plate = new ModelPlate(scene, options.buildVolume ?? null, theme);
+  const plate = new ModelPlate(scene, options.buildVolume ?? null, theme, options.showVolumeCage ?? true);
 
   // Retained so context-loss recovery can rebuild meshes from the last-set scene.
   let currentScene: ModelScene | null = null;
@@ -361,6 +372,10 @@ export function createModelViewer(canvas: RenderTargetCanvas, options: ModelView
       replate();
       // The presented bounds moved (new bed ⇒ new offset): while library-framed, re-fit to them.
       if (autoFraming) fit(true);
+      stage?.render();
+    },
+    setBuildVolumeCage(visible) {
+      plate.setCageVisible(visible);
       stage?.render();
     },
     setTheme(next) {

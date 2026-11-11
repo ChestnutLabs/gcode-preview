@@ -37,7 +37,15 @@ import type {
 } from '@chestnutlabs/gcode-renderer-three';
 
 /** Observed scalar attributes; rich options (source, cameraState, palettes, loaders, injectables) are property-only. */
-const OBSERVED = ['view', 'background', 'interaction-quality', 'camera-mode', 'camera-fov', 'pixel-ratio'] as const;
+const OBSERVED = [
+  'view',
+  'background',
+  'interaction-quality',
+  'camera-mode',
+  'camera-fov',
+  'pixel-ratio',
+  'show-volume-cage'
+] as const;
 
 /** A `camera-fov` attribute as a valid lens, or `undefined` (absent, non-numeric or outside [10, 120]). */
 function parseFovAttribute(value: string | null): number | undefined {
@@ -212,6 +220,16 @@ export class GcodeModelViewerElement extends HTMLElement {
     if (v === null) this.removeAttribute('camera-mode');
     else this.setAttribute('camera-mode', v);
   }
+  /**
+   * Build-volume wireframe cage over the plate (the plate, grid and shadow stay). Default `true`;
+   * `show-volume-cage="false"` hides it, as on `<gcode-preview>`. Reflects the attribute.
+   */
+  get showVolumeCage(): boolean {
+    return this.getAttribute('show-volume-cage') !== 'false';
+  }
+  set showVolumeCage(v: boolean) {
+    this.setAttribute('show-volume-cage', v ? 'true' : 'false');
+  }
 
   // ---- handle passthrough (parity with the other adapters) ----
   get state(): ModelPreviewState {
@@ -253,6 +271,7 @@ export class GcodeModelViewerElement extends HTMLElement {
     this.controller = createModelPreviewController({
       ...(this._buildVolume !== null ? { buildVolume: this._buildVolume } : {}),
       ...(this._theme !== undefined ? { theme: this._theme } : {}),
+      showVolumeCage: this.showVolumeCage,
       ...(fov !== undefined ? { cameraFov: fov } : {}),
       ...(pixelRatio !== undefined ? { pixelRatio } : {}),
       ...(this._loaders ? { loaders: this._loaders } : {}),
@@ -299,6 +318,9 @@ export class GcodeModelViewerElement extends HTMLElement {
         break;
       case 'camera-mode':
         // Construction-time only (projection switching post-mount is out of scope); no-op at runtime.
+        break;
+      case 'show-volume-cage':
+        c.setBuildVolumeCage(value !== 'false');
         break;
       case 'camera-fov': {
         // Invalid (or removed) ⇒ ignore and keep the last valid lens; callbacks must not throw.

@@ -45,14 +45,14 @@ describe('vue <ModelViewer> — DD-032 look props', () => {
     const viewer = comp.value!.viewer;
     expect(viewer.state.placement).toBe('approximated');
     expect(viewer.state.placementOffset).toEqual({ x: 45, y: 40, z: 0 });
-    expect(gl.snapshot()).toEqual({ fov: 32, plate: true, shadow: true, background: 'DataTexture' });
+    expect(gl.snapshot()).toEqual({ fov: 32, plate: true, cage: true, shadow: true, background: 'DataTexture' });
 
     props.buildVolume = { x: 200, y: 200, z: 100 };
     props.cameraFov = 60;
     props.theme = { ...studioTheme('light'), background: null };
     await settle();
     expect(viewer.state.placementOffset).toEqual({ x: 95, y: 90, z: 0 });
-    expect(gl.snapshot()).toEqual({ fov: 60, plate: true, shadow: true, background: 'null' });
+    expect(gl.snapshot()).toEqual({ fov: 60, plate: true, cage: true, shadow: true, background: 'null' });
 
     props.buildVolume = null;
     await settle();

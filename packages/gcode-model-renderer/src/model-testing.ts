@@ -39,12 +39,12 @@ export const MODEL_STUB_CONTROLS: NonNullable<ModelPreviewControllerOptions['cre
 
 /**
  * A stub GL that remembers what it was last asked to render, so an adapter test can assert the DD-032 look
- * reached the scene through the declarative props: the lens, whether a plate is in the scene, and the
- * background kind (`'null'` | `'Color'` | `'DataTexture'`).
+ * reached the scene through the declarative props: the lens, whether a plate is in the scene, whether its
+ * cage is drawn (`null` = no plate), and the background kind (`'null'` | `'Color'` | `'DataTexture'`).
  */
 export function makeModelRecordingGL(): {
   createRenderer: (canvas: RenderTargetCanvas) => GLRendererLike;
-  snapshot(): { fov: number; plate: boolean; shadow: boolean; background: string };
+  snapshot(): { fov: number; plate: boolean; cage: boolean | null; shadow: boolean; background: string };
 } {
   let last: { scene: Scene; camera: Camera } | null = null;
   return {
@@ -62,6 +62,8 @@ export function makeModelRecordingGL(): {
       return {
         fov: (camera as PerspectiveCamera).fov,
         plate: scene.getObjectByName('buildVolume') !== undefined,
+        // Whether the wireframe cage is drawn; `null` when there is no plate (so no cage) at all.
+        cage: scene.getObjectByName('volumeCage')?.visible ?? null,
         shadow: scene.getObjectByName('contactShadow') !== undefined,
         background: scene.background === null ? 'null' : scene.background.constructor.name
       };
@@ -151,6 +153,7 @@ export const REQUIRED_MODEL_CONTROLS: (keyof ModelPreviewControls)[] = [
   'setCameraState',
   'setBackground',
   'setBuildVolume',
+  'setBuildVolumeCage',
   'setTheme',
   'setCameraFov',
   'setPixelRatio',
@@ -262,6 +265,21 @@ export function runModelBehavioralSuite(name: string, api: TestApi, harness: Mod
       }
       expect(themeError).toBe('RangeError');
       a.controls.setCameraFov(32); // a valid lens is accepted
+      await a.dispose();
+    });
+
+    it('setBuildVolumeCage never moves the model: the placement is unchanged, before and after a source', async () => {
+      const a = await harness.create();
+      a.controls.setBuildVolume({ x: 100, y: 100, z: 100 });
+      a.controls.setBuildVolumeCage(false); // before a source (and, on some adapters, before the canvas binds)
+      await a.controls.setSource(makeStlModelSource());
+      await a.settle();
+      expect(a.getState().placement).toBe('approximated');
+      expect(a.getState().placementOffset).toMatchObject({ x: 45, y: 40, z: 0 });
+      a.controls.setBuildVolumeCage(true);
+      await a.settle();
+      expect(a.getState().placement).toBe('approximated');
+      expect(a.getState().placementOffset).toMatchObject({ x: 45, y: 40, z: 0 });
       await a.dispose();
     });
 
