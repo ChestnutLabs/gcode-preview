@@ -267,12 +267,15 @@ describe('lens (cameraFov)', () => {
     expect(events).not.toContain('camera-changed');
   });
 
-  it.each([9, 121, NaN])('cameraFov %s → RangeError (option and setter), lens unchanged', (fov) => {
-    expect(() => make({ cameraFov: fov })).toThrow(RangeError);
-    const r = make();
-    expect(() => r.setCameraFov(fov)).toThrow(RangeError);
-    expect(r.cameraFov).toBe(50);
-  });
+  it.each([9, 9.5, 9.9999, 120.0001, 120.5, 121, NaN])(
+    'cameraFov %s → RangeError (option and setter), lens unchanged',
+    (fov) => {
+      expect(() => make({ cameraFov: fov })).toThrow(RangeError);
+      const r = make();
+      expect(() => r.setCameraFov(fov)).toThrow(RangeError);
+      expect(r.cameraFov).toBe(50);
+    }
+  );
 });
 
 describe('lens validation order', () => {

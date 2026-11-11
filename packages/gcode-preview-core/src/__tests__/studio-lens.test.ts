@@ -70,10 +70,13 @@ describe('controller lens (DD-032 §4.2)', () => {
     c.dispose();
   });
 
-  it.each([9, 121, NaN])('renderer.cameraFov %s throws RangeError at construction', (fov) => {
-    expect(() => controller(fov)).toThrow(RangeError);
-    expect(() => controller(fov)).toThrow(`fov must be in [10, 120] degrees (got ${String(fov)})`);
-  });
+  it.each([9, 9.5, 9.9999, 120.0001, 120.5, 121, NaN])(
+    'renderer.cameraFov %s throws RangeError at construction',
+    (fov) => {
+      expect(() => controller(fov)).toThrow(RangeError);
+      expect(() => controller(fov)).toThrow(`fov must be in [10, 120] degrees (got ${String(fov)})`);
+    }
+  );
 
   it('setCameraFov throws synchronously before the 3D renderer has loaded, and queues a valid lens', async () => {
     const c = controller();
@@ -216,23 +219,26 @@ describe('renderStill lens + background precedence (DD-032)', () => {
     expect(b.last().fov).toBe(32);
   });
 
-  it.each([9, 121])('cameraFov %s rejects with RangeError before any parse or GL work', async (fov) => {
-    let made = 0;
-    const workers0 = SuiteStubWorker.created;
-    await expect(
-      renderStill(new Uint8Array([0x47, 0x31]), {
-        canvas: stubCanvas(),
-        cameraFov: fov,
-        createWorker: () => new SuiteStubWorker(),
-        createRenderer: (c) => {
-          made++;
-          return probeGL().gl(c);
-        }
-      })
-    ).rejects.toThrow(`fov must be in [10, 120] degrees (got ${fov})`);
-    expect(SuiteStubWorker.created - workers0).toBe(0);
-    expect(made).toBe(0);
-  });
+  it.each([9, 9.9999, 120.0001, 121])(
+    'cameraFov %s rejects with RangeError before any parse or GL work',
+    async (fov) => {
+      let made = 0;
+      const workers0 = SuiteStubWorker.created;
+      await expect(
+        renderStill(new Uint8Array([0x47, 0x31]), {
+          canvas: stubCanvas(),
+          cameraFov: fov,
+          createWorker: () => new SuiteStubWorker(),
+          createRenderer: (c) => {
+            made++;
+            return probeGL().gl(c);
+          }
+        })
+      ).rejects.toThrow(`fov must be in [10, 120] degrees (got ${fov})`);
+      expect(SuiteStubWorker.created - workers0).toBe(0);
+      expect(made).toBe(0);
+    }
+  );
 
   it("the theme's gradient beats the background option", async () => {
     const p = probeGL();
@@ -246,16 +252,23 @@ describe('renderStill lens + background precedence (DD-032)', () => {
     expect(bg.isDataTexture).toBe(true);
   });
 
-  it('the cutout recipe { ...studioTheme, background: null } + transparent: no gradient, no shadow', async () => {
+  it('the cutout recipe { ...studioTheme, background: null } + transparent: no gradient; the shadow follows the plate', async () => {
+    const cutout = { theme: { ...studioTheme('dark'), background: null }, background: 'transparent' as const };
+    // A still cutout omits the build volume, and the shadow belongs to the plate: no grey blob.
     const p = probeGL();
-    await renderStill(squareIR(), {
-      canvas: stubCanvas(),
-      theme: { ...studioTheme('dark'), background: null },
-      background: 'transparent',
-      createRenderer: p.gl
-    });
+    await renderStill(squareIR(), { canvas: stubCanvas(), ...cutout, createRenderer: p.gl });
     expect(p.last().background).toBeNull();
     expect(p.last().shadow).toBe(false);
+    // The same recipe WITH a plate keeps the shadow: the background never decides it, the plate does.
+    const q = probeGL();
+    await renderStill(squareIR(), {
+      canvas: stubCanvas(),
+      ...cutout,
+      buildVolume: { x: 200, y: 200, z: 200 },
+      createRenderer: q.gl
+    });
+    expect(q.last().background).toBeNull();
+    expect(q.last().shadow).toBe(true);
   });
 
   it('with a build volume the Studio still carries its contact shadow (it belongs to the plate)', async () => {

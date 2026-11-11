@@ -40,7 +40,7 @@ describe('<gcode-preview> camera-fov (DD-032)', () => {
     el.remove();
   });
 
-  it.each(['abc', '', ' ', '200', '9', 'NaN'])(
+  it.each(['abc', '', ' ', '200', '9', '9.9999', '120.0001', '120.5', 'NaN'])(
     'ignores a bad attribute value (%j) and keeps the last lens',
     async (bad) => {
       const el = makeEl();
@@ -49,6 +49,8 @@ describe('<gcode-preview> camera-fov (DD-032)', () => {
       await settle();
       expect(() => el.setAttribute('camera-fov', bad)).not.toThrow();
       expect(lens(el)).toBe(40);
+      // The getter reports the effective lens, not the bad attribute.
+      expect(el.cameraFov).toBe(40);
       el.remove();
     }
   );
@@ -92,12 +94,18 @@ describe('<gcode-preview> camera-fov (DD-032)', () => {
     expect(lens(el)).toBe(32);
     expect(() => (el.cameraFov = 121)).toThrow(RangeError);
     expect(() => (el.cameraFov = 9)).toThrow('fov must be in [10, 120] degrees (got 9)');
+    for (const bad of [9.5, 9.9999, 120.0001, 120.5]) expect(() => (el.cameraFov = bad)).toThrow(RangeError);
     expect(el.getAttribute('camera-fov')).toBe('32');
     el.cameraFov = 10;
     expect(lens(el)).toBe(10);
+    el.cameraFov = 120;
+    expect(lens(el)).toBe(120);
+    el.cameraFov = 10;
     el.cameraFov = null;
     expect(el.hasAttribute('camera-fov')).toBe(false);
     expect(lens(el)).toBe(10);
+    // Removing the attribute keeps the lens, and the getter says so.
+    expect(el.cameraFov).toBe(10);
     el.remove();
   });
 

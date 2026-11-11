@@ -7,7 +7,7 @@
 '@chestnutlabs/gcode-preview-element': minor
 ---
 
-The toolpath viewer now draws the Studio look (DD-032) and has a camera lens control. With no theme set
+The toolpath viewer now draws the Studio look and has a camera lens control. With no theme set
 and the default lens, it renders exactly as before.
 
 - **Studio look in the toolpath viewer.** `setTheme(studioTheme('dark' | 'light'))`, or the `theme` prop,

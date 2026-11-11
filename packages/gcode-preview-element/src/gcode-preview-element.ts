@@ -213,11 +213,11 @@ export class GcodePreviewElement extends HTMLElement {
    * DD-032: perspective lens in degrees, [10, 120] (default 50; `STUDIO_CAMERA_FOV` = 32). Reflects the
    * `camera-fov` attribute; `null` removes it and keeps the current lens. Setting the property out of
    * range throws `RangeError` (never clamped) and leaves the attribute unchanged. A markup/`setAttribute`
-   * value that is not a number in range is ignored: the element keeps the last valid lens.
+   * value that is not a number in range is ignored: the element keeps the last valid lens. Reads return the
+   * effective lens: a valid attribute, else the last valid lens, else `null` (none set yet).
    */
   get cameraFov(): number | null {
-    const a = this.getAttribute('camera-fov');
-    return a === null ? null : Number(a);
+    return parseFov(this.getAttribute('camera-fov')) ?? this.lastFov ?? null;
   }
   set cameraFov(v: number | null) {
     if (v !== null && !(v >= 10 && v <= 120)) {
@@ -510,9 +510,8 @@ export class GcodePreviewElement extends HTMLElement {
    * markup value never throws from the attribute callback and never resets the view.
    */
   private acceptFov(value: string | null): number | undefined {
-    // Number(null), Number('') and Number(' ') are all 0, and NaN fails both bounds: the range alone decides.
-    const n = Number(value);
-    if (n >= 10 && n <= 120) this.lastFov = n;
+    const n = parseFov(value);
+    if (n !== undefined) this.lastFov = n;
     return this.lastFov;
   }
 
@@ -609,4 +608,11 @@ function parseRoleList(value: string | null): number[] {
 export function defineGcodePreview(tag: string = DEFAULT_TAG): void {
   if (typeof customElements === 'undefined') return;
   if (customElements.get(tag) === undefined) customElements.define(tag, GcodePreviewElement);
+}
+
+/** A `camera-fov` attribute value as a lens in [10, 120], else `undefined` (DD-032). */
+function parseFov(value: string | null): number | undefined {
+  // Number(null), Number('') and Number(' ') are all 0, and NaN fails both bounds: the range alone decides.
+  const n = Number(value);
+  return n >= 10 && n <= 120 ? n : undefined;
 }
