@@ -146,13 +146,20 @@ export interface RenderStillResult {
 }
 
 /**
- * The rejection when the toolpath geometry build fails. Mirrors `ParseSessionError`'s shape (a stable
- * `code` for consumer branching plus the renderer's message) so a still job handles a parse failure and
- * a build failure the same way. `code` is the renderer's own error code (`E_GEOMETRY_BUILD`).
+ * The error {@link renderStill} rejects with when the toolpath geometry build fails (instead of never
+ * settling). Same shape as the parser's `ParseSessionError`, so a still job handles a parse failure and a
+ * build failure the same way: branch on `code`, show `message`.
+ *
+ * - `code` — the renderer's error code, e.g. `'E_GEOMETRY_BUILD'`.
+ * - `message` — the renderer's description of what failed.
+ *
+ * The internal renderer is already disposed when this rejection arrives.
  */
-class RenderStillError extends Error {
+export class RenderStillError extends Error {
   constructor(
+    /** The renderer's error code, e.g. `'E_GEOMETRY_BUILD'`. */
     public readonly code: string,
+    /** The renderer's description of what failed. */
     message: string
   ) {
     super(message);

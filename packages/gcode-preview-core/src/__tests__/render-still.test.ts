@@ -14,6 +14,8 @@ import {
 } from '@chestnutlabs/gcode-renderer-three';
 import { MoveKind, ToolpathIRBuilder, type ToolpathIR } from '@chestnutlabs/toolpath-core';
 import { renderStill } from '../render-still.js';
+// The public export (not the module) — consumers branch on `instanceof` the package-index class.
+import { RenderStillError } from '../index.js';
 import { makeTestIR, SuiteStubWorker } from '../testing.js';
 
 /** An IR with an extrusion segment plus a travel segment and a wipe segment (distinct geometry chunks). */
@@ -184,6 +186,7 @@ describe('renderStill (#132)', () => {
     if (outcome === 'hang' || outcome.ok) throw new Error(`expected a rejection, got ${JSON.stringify(outcome)}`);
     const err = outcome.error as { name: string; code: string; message: string };
     expect(err).toBeInstanceOf(Error);
+    expect(err).toBeInstanceOf(RenderStillError);
     expect(err.name).toBe('RenderStillError');
     expect(err.code).toBe('E_GEOMETRY_BUILD');
     expect(err.message).toBe('geometry boom');
