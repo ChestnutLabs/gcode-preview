@@ -53,14 +53,16 @@ describe('parse3mf → ModelScene.source', () => {
   });
 
   it('a consumer filamentPalette override still reads the declared bed', async () => {
+    // The override is the THIRD argument (`opts`); the second is `limits`.
     const s = await parse3mf(
       zip({
         name: 'Metadata/project_settings.config',
-        data: settings({ printable_area: ['0x0', '256x0', '256x256', '0x256'] })
+        data: settings({ printable_area: ['0x0', '256x0', '256x256', '0x256'], filament_colour: ['#FF0000'] })
       }),
+      undefined,
       { filamentPalette: ['#00ff00'] }
     );
-    expect(s.source?.printableArea).toEqual({ min: [0, 0], max: [256, 256] });
+    expect(s.source).toEqual({ slicerProject: 'bambu-orca', printableArea: { min: [0, 0], max: [256, 256] } });
   });
 
   it('an STL never carries a source', () => {

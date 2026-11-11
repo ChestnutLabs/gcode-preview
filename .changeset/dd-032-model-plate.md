@@ -7,7 +7,7 @@
 '@chestnutlabs/gcode-preview-element': minor
 ---
 
-The source-model viewer can draw a build plate (DD-032). It is opt-in: with no `buildVolume` the viewer and
+The source-model viewer can draw a build plate. It is opt-in: with no `buildVolume` the viewer and
 the stills render exactly as before.
 
 - **Plate.** `createModelViewer`, `createModelPreviewController` and `renderModelStill` take `buildVolume`
@@ -16,9 +16,11 @@ the stills render exactly as before.
   re-exported. Stills draw the plate too, so a saved thumbnail matches the live view.
 - **Honest placement.** A source file's transforms do not prove where its parts sit on a plate, so
   `ModelPreviewState` (and `ModelReadyInfo` and the still result) report `placement`: `'known'` (a
-  Bambu/Orca project whose parts lie on the bed, within 1 mm), `'inferred'` (such a project shifted by whole
-  multi-plate workspace cells), `'approximated'` (anything else: centred on the bed at z = 0), or `null`
-  (no plate drawn: no `buildVolume`, nothing shown, or the render scope spans more than one declared plate).
+  Bambu/Orca project made for your bed whose parts lie on your plate, within 1 mm), `'inferred'` (such a
+  project shifted by whole multi-plate workspace cells), `'approximated'` (anything else, centred on your
+  plate at z = 0; a project made for a different printer's bed is shown centred on your plate and labelled
+  approximated), or `null` (no plate drawn: no `buildVolume`, nothing shown, or the render scope spans more
+  than one declared plate).
   `placementOffset` is the offset applied. It is presentation-only: `ModelScene` and `bounds` stay authored,
   picking works through it, and the camera, resize re-fit and contact shadow use the presented position.
   The `inferred` rule uses an observed workspace-cell size and is pending a real two-plate fixture.

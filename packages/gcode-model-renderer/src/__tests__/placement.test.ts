@@ -58,9 +58,16 @@ describe('parsePrintableArea', () => {
     ['an empty coordinate', ['0x0', 'x0', '256x256']],
     ['a non-finite coordinate', ['0x0', 'Infinityx0', '256x256']],
     ['a zero-area (collinear) box', ['0x0', '10x0', '20x0']],
-    ['a zero-width box', ['5x0', '5x10', '5x20']]
+    ['a zero-width box', ['5x0', '5x10', '5x20']],
+    ['a 65-character point (rejected before splitting)', ['0x0', '256x0', '256x256', `0x${'0'.repeat(60)}256`]]
   ])('falls back (undefined) for %s', (_n, value) => {
     expect(parsePrintableArea(value)).toBeUndefined();
+  });
+
+  it('a 64-character point is still read (the cap is 64)', () => {
+    const p = `0x${'0'.repeat(59)}256`;
+    expect(p.length).toBe(64);
+    expect(parsePrintableArea(['0x0', '256x0', '256x256', p])).toEqual({ min: [0, 0], max: [256, 256] });
   });
 });
 
@@ -132,18 +139,80 @@ describe('computePlacement', () => {
     expect(r.placementOffset).toEqual({ x: 128 - 125, y: 128 - 125, z: 0 });
   });
 
-  it('the bed is the file printable_area when the project has one, else the consumer bed', () => {
-    const small: ModelSceneSource = { ...SLICER, printableArea: { min: [0, 0], max: [180, 180] } };
-    // On the consumer's 256 bed, but off the file's own 180 bed: not known, and centred on the FILE bed.
-    const r = place(scene([200, 100, 0], [250, 150, 20], { source: small }));
-    expect(r.placement).toBe('approximated');
-    expect(r.placementOffset).toEqual({ x: 90 - 225, y: 90 - 125, z: 0 });
-    // No printable_area: the consumer's bed decides.
-    expect(place(scene([200, 100, 0], [250, 150, 20], { source: SLICER })).placement).toBe('known');
-    // The file's cell is 180 × 1.2 = 216: a footprint one 216 cell over is inferred on the file bed.
-    const two = place(scene([300, 50, 0], [340, 90, 5], { source: small }));
-    expect(two.placement).toBe('inferred');
-    expect(two.placementOffset!.x).toBeCloseTo(-216, 6);
+  describe('the file printable_area is trusted only when it matches the drawn (consumer) bed', () => {
+    const fileBed = (min: [number, number], max: [number, number]): ModelSceneSource => ({
+      ...SLICER,
+      printableArea: { min, max }
+    });
+
+    it('a 350 mm file bed on a 256 mm plate: a part at x 300..320 is approximated, centred on 128,128', () => {
+      expect(place(scene([300, 100, 0], [320, 150, 20], { source: fileBed([0, 0], [350, 350]) }))).toEqual({
+        placement: 'approximated',
+        placementOffset: { x: -182, y: 3, z: 0 }
+      });
+    });
+
+    it('a 350 mm file bed: a part that is on both beds is still approximated, centred on the drawn bed', () => {
+      expect(place(scene([100, 100, 0], [150, 150, 20], { source: fileBed([0, 0], [350, 350]) }))).toEqual({
+        placement: 'approximated',
+        placementOffset: { x: 3, y: 3, z: 0 }
+      });
+    });
+
+    it('a hostile ±1e308 printable_area with a part at x 9000 is approximated, not known 9 m away', () => {
+      const hostile = parsePrintableArea(['-1e308x-1e308', '1e308x-1e308', '1e308x1e308', '-1e308x1e308']);
+      expect(hostile).toEqual({ min: [-1e308, -1e308], max: [1e308, 1e308] });
+      const r = place(scene([9000, 100, 0], [9020, 150, 20], { source: { ...SLICER, printableArea: hostile } }));
+      expect(r).toEqual({ placement: 'approximated', placementOffset: { x: -8882, y: 3, z: 0 } });
+    });
+
+    it('a 180 mm file bed on a 256 mm plate is approximated and centred on the drawn bed (128,128), not 90,90', () => {
+      expect(place(scene([200, 100, 0], [250, 150, 20], { source: fileBed([0, 0], [180, 180]) }))).toEqual({
+        placement: 'approximated',
+        placementOffset: { x: -97, y: 3, z: 0 }
+      });
+    });
+
+    it('a matching 256 mm file bed is known', () => {
+      expect(place(scene([200, 100, 0], [250, 150, 20], { source: fileBed([0, 0], [256, 256]) }))).toEqual({
+        placement: 'known',
+        placementOffset: { x: 0, y: 0, z: 0 }
+      });
+    });
+
+    it('a file bed within 1 mm (0..256.5) still matches: known, and inferred uses the 256 plate cell (307.2)', () => {
+      const near = fileBed([0, 0], [256.5, 256.5]);
+      expect(place(scene([200, 100, 0], [250, 150, 20], { source: near })).placement).toBe('known');
+      const two = place(scene([407.2, 100, 0], [457.2, 150, 20], { source: near }));
+      expect(two.placement).toBe('inferred');
+      expect(two.placementOffset!.x).toBeCloseTo(-307.2, 6);
+      expect(two.placementOffset!.y).toBe(0);
+      const below = place(scene([100, -207.2, 0], [150, -157.2, 20], { source: near }));
+      expect(below.placement).toBe('inferred');
+      expect(below.placementOffset!.y).toBeCloseTo(307.2, 6);
+    });
+
+    it('the match tolerance is 1 mm per edge: exactly 1 mm matches, 1.5 mm does not', () => {
+      const s = (min: [number, number], max: [number, number]) =>
+        place(scene([100, 100, 0], [150, 150, 20], { source: fileBed(min, max) })).placement;
+      expect(s([-1, -1], [257, 257])).toBe('known');
+      expect(s([-1.5, 0], [256, 256])).toBe('approximated');
+    });
+
+    it.each([
+      ['min x', [2, 0], [256, 256]],
+      ['min y', [0, 2], [256, 256]],
+      ['max x', [0, 0], [258, 256]],
+      ['max y', [0, 0], [256, 258]]
+    ] as const)('a file bed off by 2 mm on %s alone is approximated', (_e, min, max) => {
+      expect(place(scene([100, 100, 0], [150, 150, 20], { source: fileBed([...min], [...max]) })).placement).toBe(
+        'approximated'
+      );
+    });
+
+    it('no printable_area: the consumer bed decides (known)', () => {
+      expect(place(scene([200, 100, 0], [250, 150, 20], { source: SLICER })).placement).toBe('known');
+    });
   });
 
   it('a bed with a min corner offset places by that rectangle', () => {

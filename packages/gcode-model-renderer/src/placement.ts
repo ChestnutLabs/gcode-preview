@@ -3,7 +3,9 @@
  * where its parts sit ({@link ModelSceneSource}), the render scope, and the consumer's bed, decide how
  * honestly a build plate can be drawn under the model:
  *
- * - `known`        a Bambu/Orca project whose shown footprint lies on the bed (±1 mm): drawn where authored.
+ * - `known`        a Bambu/Orca project whose shown footprint lies on the bed (±1 mm): drawn where authored. A
+ *                  file `printable_area` that does not match the consumer's bed (±1 mm per edge) rules out
+ *                  `known` and `inferred`.
  * - `inferred`     a Bambu/Orca project whose footprint is off the bed by whole workspace cells: drawn with that
  *                  offset subtracted.
  * - `approximated` anything else (STL, CAD 3MF, PrusaSlicer 3MF, no checks pass): centred on the bed, dropped to z = 0.
@@ -47,10 +49,14 @@ export const WORKSPACE_CELL_FACTOR = 1.2;
 
 export const NO_PLACEMENT: PlacementResult = { placement: null, placementOffset: null };
 
+/** A `printable_area` point longer than this is rejected before it is split (no allocation for a huge string). */
+const MAX_POINT_CHARS = 64;
+
 /**
  * Read a Bambu/Orca `printable_area` (a JSON array of `"XxY"` strings) as the bed's axis-aligned box.
- * Anything else — not an array, a point that is not two finite numbers, fewer than three points, or a box with
- * no area — is `undefined`, so the caller falls back to the consumer's bed. No regex: `split('x')` + `Number`.
+ * Anything else — not an array, a point longer than 64 characters or not two finite numbers, fewer than three
+ * points, or a box with no area — is `undefined` (the file declared no usable bed). No regex: `split('x')` +
+ * `Number`.
  */
 export function parsePrintableArea(value: unknown): ModelSceneSource['printableArea'] {
   if (!Array.isArray(value) || value.length < 3) return undefined;
@@ -59,7 +65,7 @@ export function parsePrintableArea(value: unknown): ModelSceneSource['printableA
   let maxX = -Infinity;
   let maxY = -Infinity;
   for (const p of value) {
-    if (typeof p !== 'string') return undefined;
+    if (typeof p !== 'string' || p.length > MAX_POINT_CHARS) return undefined;
     const parts = p.split('x');
     if (parts.length !== 2 || parts[0].trim() === '' || parts[1].trim() === '') return undefined;
     const x = Number(parts[0]);
@@ -91,8 +97,20 @@ function onBed(b: ModelBounds, dx: number, dy: number, bed: PlacementBed): boole
   );
 }
 
+/** Whether every edge of `a` is within the on-bed tolerance of the same edge of `b`. */
+function edgesWithin(a: PlacementBed, b: PlacementBed): boolean {
+  const t = ON_BED_TOLERANCE_MM;
+  return (
+    Math.abs(a.min[0] - b.min[0]) <= t &&
+    Math.abs(a.min[1] - b.min[1]) <= t &&
+    Math.abs(a.max[0] - b.max[0]) <= t &&
+    Math.abs(a.max[1] - b.max[1]) <= t
+  );
+}
+
 /**
- * Decide placement for the shown scene.
+ * Decide placement for the shown scene. The file's `printable_area` is trusted only when it matches the
+ * consumer's bed (every edge within {@link ON_BED_TOLERANCE_MM}); a mismatched file bed is `approximated`.
  * @param full - the whole source (its `source` and declared `plates` describe the file)
  * @param shown - the scene actually drawn (`full` narrowed by `scope`)
  * @param scope - the active render scope, or `null`
@@ -113,9 +131,12 @@ export function computePlacement(
   const fb = shown.bounds;
   const slicer = full.source?.slicerProject === 'bambu-orca';
   const printable = full.source?.printableArea;
-  const bed: PlacementBed = slicer && printable !== undefined ? printable : consumerBed;
+  // The plate is always drawn on the consumer's bed, so every check and the centring use that bed. The file's
+  // `printable_area` is evidence only: a project made for a different bed cannot be `known` on this one.
+  const bed = consumerBed;
+  const fileBedMatches = printable !== undefined && edgesWithin(printable, bed);
 
-  if (slicer) {
+  if (slicer && (printable === undefined || fileBedMatches)) {
     if (onBed(fb, 0, 0, bed)) return { placement: 'known', placementOffset: { x: 0, y: 0, z: 0 } };
     const cellX = (bed.max[0] - bed.min[0]) * WORKSPACE_CELL_FACTOR;
     const cellY = (bed.max[1] - bed.min[1]) * WORKSPACE_CELL_FACTOR;

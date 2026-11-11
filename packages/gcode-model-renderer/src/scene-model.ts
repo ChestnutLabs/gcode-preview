@@ -107,7 +107,9 @@ export interface ModelPlateSummary {
  *   drawn as `approximated`, not as placed.
  * - `printableArea` is that project's declared bed (the axis-aligned box of its `printable_area` polygon,
  *   mm). It is omitted when the file has no such field or it could not be read as a valid polygon (fewer than
- *   three finite points, or zero area); the consumer's own build volume is used then.
+ *   three finite points, a point over 64 characters, or zero area). The plate is always drawn on the
+ *   consumer's build volume; a `printableArea` that does not match it within 1 mm per edge makes the
+ *   placement `approximated`.
  *
  * Absence means "the file did not say", never "the file says no".
  */
