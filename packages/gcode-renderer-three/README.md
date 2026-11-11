@@ -44,6 +44,21 @@ renderer.setBuildVolumeCage(false); // the preset is measured with the cage off
 `cameraFov` accepts 10-120 degrees and throws `RangeError` outside it. See the
 [Studio look and build plate guide](https://github.com/ChestnutLabs/gcode-preview/blob/dev/docs/manual/guide-looks-lens-plate.md).
 
+## Pixel ratio (opt-in)
+
+`ToolpathRenderer` (and `createModelViewer`) take `pixelRatio`: a number in (0, 4], or `'device'` for
+`min(devicePixelRatio, 2)`, followed live. `renderer.setPixelRatio(ratio)` changes it later. Anything else throws
+`RangeError`. Unset, the renderer keeps its own ratio and never calls the GL's `setPixelRatio`. `interactionQuality`
+lowers the ratio while you orbit and settles back on yours. The type is `PixelRatioOption`.
+
+```ts
+const renderer = new ToolpathRenderer({ canvas, pixelRatio: 'device' });
+```
+
+An unsized `capture()` is the resting drawing-buffer size when unset and the canvas's CSS size when set, so setting a
+ratio never changes the default capture size; pass `width`/`height` for a crisper image. Ratio 2 shades four times the
+fragments of ratio 1.
+
 ## Tighter limits on software GL
 
 On headless or software-rendered GL (CI, a VM, a remote desktop) a large file can exhaust memory long before it is

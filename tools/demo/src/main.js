@@ -110,7 +110,9 @@ function ensureModel() {
     // DD-032: a plate under the part, with the placement decision reported honestly in state.
     buildVolume: els.modelPlate.checked ? TWO_PLATE_BED : null,
     theme: modelThemeFor(),
-    cameraFov: Number(els.lens.value)
+    cameraFov: Number(els.lens.value),
+    // Follow the selector when the model viewer is created after the ratio was chosen (unset stays unset).
+    ...(els.pixelRatio.value === '' ? {} : { pixelRatio: ratioValue() })
   });
   modelController.bindCanvas(els.modelView);
   modelController.onStateChange(renderPlacement);
@@ -619,6 +621,21 @@ function applyLens() {
   }
 }
 els.lens.addEventListener('input', applyLens);
+// Pixel ratio: a number in (0, 4] or 'device'. Unset (the first option) makes no call, so the renderer keeps its own
+// ratio; once a ratio has been set there is no "unset" call, so that option re-applies 1, the renderer's default.
+function ratioValue() {
+  const v = els.pixelRatio.value;
+  return v === 'device' ? 'device' : v === '' ? 1 : Number(v);
+}
+function applyPixelRatio() {
+  try {
+    preview.controls.setPixelRatio(ratioValue());
+    modelController?.controls.setPixelRatio(ratioValue());
+  } catch (err) {
+    els.status.textContent = `Pixel ratio rejected: ${err.message}`;
+  }
+}
+els.pixelRatio.addEventListener('change', applyPixelRatio);
 els.modelPlate.addEventListener('change', () =>
   modelController?.controls.setBuildVolume(els.modelPlate.checked ? TWO_PLATE_BED : null)
 );

@@ -107,7 +107,22 @@ const theme = studioTheme('dark'); // module scope (or useMemo): a new object ea
 
 `cameraFov` takes 10-120 degrees (the default is 50) and throws `RangeError` outside it. The model viewer reports
 `placement` (`known` / `inferred` / `approximated`, or `null` with no plate) and `placementOffset` in `onReady` and its state.
-The 2D renderer ignores `theme` and `cameraFov`. See the [Studio look and build plate guide](https://github.com/ChestnutLabs/gcode-preview/blob/dev/docs/manual/guide-looks-lens-plate.md).
+The 2D renderer ignores `theme`; a lens call records a `renderer-unsupported` disclosure. See the [Studio look and build plate guide](https://github.com/ChestnutLabs/gcode-preview/blob/dev/docs/manual/guide-looks-lens-plate.md).
+
+### Pixel ratio
+
+Both components take an opt-in `pixelRatio`: a number in (0, 4], or `'device'` for `min(devicePixelRatio, 2)`, followed
+live. Anything else throws `RangeError`. Unset, the renderer keeps its own ratio. Ratio 2 shades four times the
+fragments of ratio 1, so prefer `'device'` on pages with one viewer. Imperatively: `controls.setPixelRatio(ratio)`.
+
+```tsx
+<GcodePreview source={file} pixelRatio="device" />;
+<ModelViewer source={model} pixelRatio={1.5} />;
+```
+
+An unsized `controls.capture()` is the resting drawing-buffer size when unset and the CSS size when set; with the
+built-in renderer a ratio never changes the default capture size, so pass `width`/`height` for a crisper image. The 2D
+renderer ignores it and records a `renderer-unsupported` disclosure.
 
 ## Examples
 

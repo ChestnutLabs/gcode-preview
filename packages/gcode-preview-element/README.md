@@ -133,8 +133,27 @@ cross-adapter tour, and `tools/example-webcomponent/model.html` for a runnable m
 `camera-fov` takes 10-120 degrees (the default is 50). **An invalid attribute value (non-numeric or outside that
 range) is ignored and the last valid lens is kept; setting the `cameraFov` property to an invalid value throws
 `RangeError`.** `<gcode-model-viewer>` reports `placement` (`known` / `inferred` / `approximated`, or `null` with no plate)
-and `placementOffset` in the `ready` event detail and its state. The 2D renderer ignores `theme` and `camera-fov`.
+and `placementOffset` in the `ready` event detail and its state. The 2D renderer ignores `theme`; a lens call records a
+`renderer-unsupported` disclosure.
 See the [Studio look and build plate guide](https://github.com/ChestnutLabs/gcode-preview/blob/dev/docs/manual/guide-looks-lens-plate.md).
+
+### Pixel ratio
+
+Both elements take an opt-in **`pixel-ratio` attribute** with a matching `pixelRatio` property: a number in (0, 4], or
+`device` for `min(devicePixelRatio, 2)`, followed live. Unset, the renderer keeps its own ratio. Ratio 2 shades four
+times the fragments of ratio 1, so prefer `device` on pages with one viewer.
+
+```html
+<gcode-preview pixel-ratio="device"></gcode-preview>
+<gcode-model-viewer pixel-ratio="1.5"></gcode-model-viewer>
+```
+
+**An invalid attribute value is ignored and the last valid ratio kept; setting the `pixelRatio` property to an invalid
+value throws `RangeError`.** The property getter returns the last valid ratio (`<gcode-preview>`: the effective ratio,
+or `null` if none was set; `<gcode-model-viewer>`: `undefined` if none). Imperatively: `controls.setPixelRatio(ratio)`.
+An unsized `controls.capture()` is the resting drawing-buffer size when unset and the CSS size when set; with the
+built-in renderer a ratio never changes the default capture size, so pass `width`/`height` for a crisper image. The 2D
+renderer ignores it and records a `renderer-unsupported` disclosure.
 
 ## Examples
 

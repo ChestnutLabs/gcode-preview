@@ -46,8 +46,29 @@ camera is orthographic is remembered and applied when you return to perspective.
 
 Imperatively: `controls.setCameraFov(deg)`. On the Web Component the lens is the `camera-fov` attribute: an invalid
 value is ignored and the last valid lens is kept, while setting the `cameraFov` **property** to an invalid value
-throws. The 2D renderer is a flat top-down view, so the lens, the `theme` and the cage do not apply to it (a
-deliberate difference between the renderers, not a gap).
+throws. The 2D renderer is a flat top-down view, so the `theme` and the cage are ignored, and a lens call records a
+`renderer-unsupported` disclosure instead of changing anything (a deliberate difference between the renderers, not a gap).
+
+## Sharpness on high-DPI screens
+
+By default the viewer keeps the renderer's own pixel ratio, which can look soft on a high-DPI display. Set
+`pixelRatio` to sharpen it: a number in (0, 4], or `'device'`, which follows `min(devicePixelRatio, 2)` and tracks a
+monitor change or browser zoom live. Unset changes nothing.
+
+```tsx
+<GcodePreview source={file} theme={studioTheme('dark')} pixelRatio="device" />;
+```
+
+The drawing buffer has ratio² times the pixels (4× at ratio 2, 2.25× at 1.5; arithmetic, not a measured benchmark), so use `'device'` on a page with one viewer, and leave it unset
+(or pick a number) when many viewers share a page or the GPU is weak. With `interactionQuality: 'auto'` the ratio
+still drops while you orbit and settles back on yours. Imperatively: `controls.setPixelRatio(ratio)`; on the Web
+Component it is the `pixel-ratio` attribute (an invalid value is ignored) and the `pixelRatio` property (an invalid
+value throws). Anything else throws `RangeError` and is never clamped; the 2D renderer records a
+`renderer-unsupported` disclosure.
+
+An unsized `controls.capture()` is the resting drawing-buffer size when unset and the canvas's CSS size when set. With
+the built-in renderer, setting a ratio never changes the default capture size; pass `width`/`height` for a crisper
+image. `renderStill` and `renderModelStill` have no pixel-ratio option; size them with `width`/`height`.
 
 ## Build plate in the model viewer
 
@@ -99,7 +120,7 @@ shadow for that capture.
 
 ## Try it
 
-The Feature Lab has a **Look** selector and a **Lens** slider on both Preview and Prepare, and a plate selector in
+The Feature Lab has a **Look** selector, a **Lens** slider and a **Pixel ratio** selector on both Preview and Prepare, and a plate selector in
 Prepare. The four framework showcases ([React](https://chestnutlabs.github.io/gcode-preview/demos/react/showcase.html),
 [Vue](https://chestnutlabs.github.io/gcode-preview/demos/vue/showcase.html),
 [Svelte](https://chestnutlabs.github.io/gcode-preview/demos/svelte/showcase.html),

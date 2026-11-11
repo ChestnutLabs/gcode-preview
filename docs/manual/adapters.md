@@ -83,7 +83,7 @@ and are attributes or properties on the Web Component (see the Web Component not
 `hiddenFeatureRoles`
 **Appearance** — `colorMode` · `theme`
 **View / camera** — `cameraMode` · `cameraFov` · `view` · `cameraState` · `frameContent` · `showVolumeCage`
-**Rendering** — `quality` · `qualityMode` · `progressivePreview` · `interactionQuality` · `tube`
+**Rendering** — `quality` · `qualityMode` · `progressivePreview` · `interactionQuality` · `pixelRatio` · `tube`
 **Machine & progress** — `buildVolume` · `progress`
 
 A `Uint8Array` or `ArrayBuffer` given as `source` (or to `controls.parse`) is handed to the parse
@@ -130,8 +130,30 @@ Deliberate differences, not drift:
   the property to an invalid value throws `RangeError`. `theme` and `buildVolume` are properties only (objects).
 - **Model viewer themes.** Only `background`, the grid and outline fields, `bedSurface` and `contactShadow` apply.
   `theme.background` beats the `background` prop, which is the fallback tier.
-- **2D renderer** (`renderer="2d"`). A flat top-down view: `theme`, `cameraFov` and the cage do not apply and are
-  ignored (no-ops). The 2D renderer has no 3D look to preset.
+- **2D renderer** (`renderer="2d"`). A flat top-down view: `theme` and the cage are ignored (no-ops); a lens or
+  pixel-ratio call records a `renderer-unsupported` disclosure. The 2D renderer has no 3D look to preset.
+
+## Pixel ratio (opt-in)
+
+`pixelRatio` sets the resting pixel ratio of the interactive 3D canvas: a number in (0, 4], or `'device'`, which
+follows `min(devicePixelRatio, 2)` live (monitor change, browser zoom). Anything else throws `RangeError` and is never
+clamped. Left unset, the renderer keeps its own ratio and nothing changes.
+
+| | Toolpath (`GcodePreview`) | Model viewer (`/model`) |
+| --- | --- | --- |
+| Ratio | `pixelRatio` / `pixel-ratio`, `controls.setPixelRatio(ratio)`; core: `renderer: { pixelRatio }` | `pixelRatio` / `pixel-ratio`, `controls.setPixelRatio(ratio)` |
+
+- **Fill cost.** Ratio 2 shades four times the fragments of ratio 1 (ratio squared). `'device'` suits a page with one
+  viewer; leave it unset, or use a number, for many viewers or weak GPUs. `interactionQuality: 'auto'` still lowers the
+  ratio while you orbit and settles back on yours.
+- **`capture()` size.** With no `width`/`height`, unset gives the resting drawing-buffer size and a set ratio gives the
+  canvas's CSS size. With the built-in renderer, setting a ratio never changes the default capture size. A custom
+  `createRenderer` decides for itself. Pass `width`/`height` for a crisper image.
+- **Web Component.** `pixel-ratio` is an attribute and `pixelRatio` a property on `<gcode-preview>` and
+  `<gcode-model-viewer>`. An invalid attribute is ignored and the last valid ratio kept; an invalid property value
+  throws `RangeError`.
+- **2D renderer.** A no-op that records a `renderer-unsupported` disclosure (feature `quality`). Stills
+  (`renderStill`, `renderModelStill`) have no pixel-ratio option; size them with `width`/`height`.
 
 ## Vue
 
