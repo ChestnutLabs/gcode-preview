@@ -90,6 +90,31 @@ export function makeSuiteStubGL(canvas: HTMLCanvasElement): GLRendererLike {
   return { render: () => undefined, setSize: () => undefined, dispose: () => undefined, domElement: canvas };
 }
 
+/**
+ * Exhaustive by construction: a `Record` over every `GcodePreviewState` key, so adding a state field
+ * without listing it here fails the type check (and a stale key fails the excess-property check).
+ */
+const STATE_KEYS: Record<keyof GcodePreviewState, true> = {
+  parsing: true,
+  parseProgress: true,
+  summary: true,
+  metadata: true,
+  activeQuality: true,
+  presentation: true,
+  layerCount: true,
+  segmentCount: true,
+  disclosure: true,
+  totalTimeMs: true,
+  timeEstimateSource: true,
+  availableColorModes: true,
+  hasRetractions: true,
+  hasColorChanges: true,
+  error: true
+};
+
+/** Every `GcodePreviewState` field must surface through the adapter (parity guard). */
+export const REQUIRED_STATE_KEYS: (keyof GcodePreviewState)[] = Object.keys(STATE_KEYS) as (keyof GcodePreviewState)[];
+
 /** What every adapter must expose to the suite — its PUBLIC surface, uniformly shaped. */
 export interface AdapterHarness {
   /** Construct one preview bound to a fresh canvas, wired to a SuiteStubWorker + stub GL. */
@@ -368,6 +393,16 @@ export function runBehavioralSuite(name: string, api: TestApi, harness: AdapterH
         'pickSegment'
       ];
       for (const name of required) expect(typeof a.controls[name] === 'function').toBe(true);
+      await a.dispose();
+    });
+
+    it('exposes the full state contract on every adapter (parity guard)', async () => {
+      const a = await harness.create();
+      await a.parse(new Uint8Array(1_000));
+      await a.settle();
+      // `in`, not a truthiness check: `metadata` is legitimately undefined but the key must be present.
+      const s = a.getState() as unknown as Record<string, unknown>;
+      for (const key of REQUIRED_STATE_KEYS) expect(key in s).toBe(true);
       await a.dispose();
     });
 

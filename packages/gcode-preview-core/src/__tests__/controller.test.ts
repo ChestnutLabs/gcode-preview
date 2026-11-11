@@ -7,7 +7,13 @@
 import { describe, expect, it } from 'vitest';
 import { MoveKind, ToolpathIRBuilder, type MachineGeometry } from '@chestnutlabs/toolpath-core';
 import { createPreviewController, LayerView2DRenderer, type PreviewEvent, type PreviewRendererEvent } from '../index';
-import { SuiteStubWorker, makeSuiteStubGL, runBehavioralSuite, type AdapterInstance } from '../testing';
+import {
+  REQUIRED_STATE_KEYS,
+  SuiteStubWorker,
+  makeSuiteStubGL,
+  runBehavioralSuite,
+  type AdapterInstance
+} from '../testing';
 
 const settle = async (): Promise<void> => {
   for (let i = 0; i < 4; i++) await new Promise((r) => setTimeout(r, 0));
@@ -50,6 +56,19 @@ runBehavioralSuite(
     }
   }
 );
+
+describe('state parity list (REQUIRED_STATE_KEYS)', () => {
+  it('names exactly the keys the controller snapshot carries, before and after a parse', async () => {
+    const controller = makeController();
+    const sorted = (keys: readonly string[]) => [...keys].sort();
+    expect(sorted(REQUIRED_STATE_KEYS)).toEqual(sorted(Object.keys(controller.getState())));
+    await controller.parse(new Uint8Array(1_000));
+    await settle();
+    expect(sorted(REQUIRED_STATE_KEYS)).toEqual(sorted(Object.keys(controller.getState())));
+    expect(REQUIRED_STATE_KEYS.length).toBe(15);
+    await controller.dispose();
+  });
+});
 
 describe('controller state model (bridge guarantees)', () => {
   it('replaces the snapshot identity on every change and notifies subscribers', async () => {
