@@ -1,5 +1,15 @@
 # @chestnutlabs/gcode-preview-core
 
+## 0.21.2
+
+### Patch Changes
+
+- Updated dependencies [[`3075656`](https://github.com/ChestnutLabs/gcode-preview/commit/3075656ec105773869bea720c54a4d792bfd51c7)]:
+  - @chestnutlabs/gcode-renderer-three@0.21.2
+  - @chestnutlabs/gcode-parser@0.21.2
+  - @chestnutlabs/gcode-renderer-2d@0.21.2
+  - @chestnutlabs/toolpath-core@0.21.2
+
 ## 0.21.1
 
 ### Patch Changes
