@@ -41,6 +41,7 @@ import {
   type RendererMode,
   type UseGcodePreviewOptions
 } from './use-gcode-preview.js';
+import { readLiveState } from './live-state.js';
 
 export type GcodePreviewSource = Uint8Array | ArrayBuffer | File | null;
 
@@ -203,7 +204,8 @@ function GcodePreviewImpl(props: GcodePreviewProps, ref: ForwardedRef<GcodePrevi
           break;
         case 'buildComplete':
           p.onBuildComplete?.({ segments: e.segments, quality: e.quality });
-          p.onDisclosure?.(preview.state.disclosure);
+          // #430: the controller's live state, not `preview.state` (a render snapshot one commit behind).
+          p.onDisclosure?.(readLiveState(preview).disclosure);
           break;
         case 'qualityFallback':
           p.onQualityFallback?.({ from: e.from, to: e.to, reason: e.reason });
