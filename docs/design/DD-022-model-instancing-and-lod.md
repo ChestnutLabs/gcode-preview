@@ -183,13 +183,16 @@ instanced plate is measured at ~1.5 M, not ~26 M, and passes. A genuinely huge *
 `createModelViewer(canvas, { limits })`. There is no "headless ⇒ hardware" default baked in (see §8).
 
 > **Revised 2026-11-11 (#432) — as built.** The capability *classifier* ships (`classifyRenderer` /
-> `detectRenderCapability`) and feeds the diagnostics string only. The `capabilityHint?: 'auto' | 'software'
+> `detectRenderCapability`) and is used for `getRenderStats()` and for toolpath scheduling (worker-pool
+> engagement and `progressivePreview: 'auto'`). It changes no budget: nothing in `ModelLimits` or
+> `tubeByteBudget` scales with capability. `detectRenderCapability(gl)` is the public way a consumer (e.g.
+> a headless sidecar on software GL) can detect its class and pick a tighter `limits`. The `capabilityHint?: 'auto' | 'software'
 > | 'hardware'` option this section originally described was **not** delivered on either entry point: no
 > entry point accepts it. `CapabilityHint` and `resolveCapability` are exported from
 > `@chestnutlabs/gcode-renderer-three` as **experimental and diagnostic-only** — they have no effect on
 > rendering or budgets. The capability-aware budget behaviour (a software-WebGL headless sidecar, e.g.
 > ANGLE→SwiftShader, getting the software budget; an explicit hint overriding detection) is **deferred** to
-> [DD-023](DD-023-capability-aware-render-budget.md) §11. Until then a software client is protected only by
+> [DD-023](DD-023-capability-aware-render-budget.md) Phase B (§10 item 5). Until then a software client is protected only by
 > an explicit tighter `limits`. The intent below and in §8 / §14 Phase 3 stands as design, not as shipped
 > behaviour.
 

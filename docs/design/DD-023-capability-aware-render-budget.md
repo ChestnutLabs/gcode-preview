@@ -256,7 +256,7 @@ resolved before the phase that needs them):
   model options (DD-022 §8) to the toolpath renderer options and `renderStill`, default `'auto'`. **Not
   delivered as of 2026-11-11 (#432):** no entry point accepts it. The classifier ships;
   `CapabilityHint` / `resolveCapability` are exported as experimental and diagnostic-only (no effect on
-  rendering or budgets); the behaviour is deferred to §11 below.
+  rendering or budgets); the behaviour is deferred to Phase B (§10 item 5).
 - **Render-time budget options** — e.g. `renderTimeBudget` (or per-path `tubeTimeBudget` / `modelTimeBudget`),
   with hardware/software defaults. Naming for sign-off.
 - **`renderer-too-heavy` signal** — event and/or ready-result field (D4). Name/shape for sign-off.
@@ -356,7 +356,7 @@ option naming and in-library default remain a detail below.
 - Accepted 2026-08-26: Phase A (classifier + `qualityMode`/`capabilityHint` plumbing, no behavior change) is
   cleared; Phases B/C proceed once their §10 shape questions (budget numbers via representative renders,
   signal shape) return to the maintainer.
-- Revised 2026-11-11 (#432): Phase A shipped the classifier only. `capabilityHint` was never plumbed into
-  any entry point; `CapabilityHint` / `resolveCapability` are exported from `gcode-renderer-three` as
+- Revised 2026-11-11 (#432): Phase A shipped the classifier and `qualityMode` (`QualityPolicy`, through
+  core and all adapters). Only `capabilityHint` was never plumbed into any entry point; `CapabilityHint` / `resolveCapability` are exported from `gcode-renderer-three` as
   experimental and diagnostic-only, and capability-aware budget behaviour (D2/D3, Phases B/C) remains
   deferred. §5 and DD-022 §4.3 corrected to say so. Removal at v0.22.0 stays open if this is dropped.
