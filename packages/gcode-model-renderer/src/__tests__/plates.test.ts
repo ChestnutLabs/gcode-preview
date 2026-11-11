@@ -2,6 +2,8 @@
  * DD-025 — multi-plate model structure. Tests the Bambu/Orca `model_settings.config` plate parser and the
  * `ModelScene.plates` / placement-level `plateIds` / `capabilities.plates` exposure. All fixtures are fully
  * synthetic and MIT-clean (clean-room from the observed `<plate>` format, parity with the RR-005 approach).
+ * The linear scanners were proven equivalent to the pre-#468 regexes by a differential oracle + seeded fuzz,
+ * in history at #473 (6bfe00a) and #475 (35b7381); the literal cases below are now the spec.
  */
 import { describe, it, expect } from 'vitest';
 import { parse3mf } from '../three-mf.js';
