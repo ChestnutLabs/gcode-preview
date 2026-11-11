@@ -183,7 +183,10 @@ describe('expression evaluator', () => {
   });
 
   it('popScope never removes the main program scope', () => {
-    const ctx = new Rs274Context(() => undefined, () => ({ x: 0, y: 0, z: 0 }));
+    const ctx = new Rs274Context(
+      () => undefined,
+      () => ({ x: 0, y: 0, z: 0 })
+    );
     ctx.popScope();
     expect(ctx.lexLine('#1 = 4')).toEqual({ kind: 'assign' });
     expect(ctx.lexLine('G1 X#1')).toEqual({ kind: 'cmd', codes: ['g1'], params: { x: 4 } });
@@ -305,7 +308,10 @@ describe('worker handler', () => {
     const lines: string[] = ['M83'];
     for (let i = 0; i < 200; i++) lines.push(i % 2 === 0 ? `G0 X${i} Y0` : `G1 X${i} Y1 E1`);
     const posted = await drive(
-      parseMsg(enc.encode('FAKE container'), { yieldIntervalMs: 0, partialPreview: { minInputBytes: 0, intervalMs: 0 } }),
+      parseMsg(enc.encode('FAKE container'), {
+        yieldIntervalMs: 0,
+        partialPreview: { minInputBytes: 0, intervalMs: 0 }
+      }),
       { containers: [fakeContainer(lines.join('\n'))] }
     );
     expect(posted.some((m) => m.type === 'partial')).toBe(true);

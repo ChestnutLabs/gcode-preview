@@ -50,8 +50,7 @@ export function parseHmsToSeconds(text: string): number | null {
   // polynomially on a long whitespace line.
   const m = /^\s*(?:(\d+)\s*d\s*)?(?:(\d+)\s*h\s*)?(?:(\d+)\s*m\s*)?(?:(\d+)\s*s\s*)?$/.exec(text);
   if (m === null) return null;
-  const total =
-    Number(m[1] ?? 0) * 86400 + Number(m[2] ?? 0) * 3600 + Number(m[3] ?? 0) * 60 + Number(m[4] ?? 0);
+  const total = Number(m[1] ?? 0) * 86400 + Number(m[2] ?? 0) * 3600 + Number(m[3] ?? 0) * 60 + Number(m[4] ?? 0);
   return total > 0 ? total : null;
 }
 
