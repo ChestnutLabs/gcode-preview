@@ -112,8 +112,8 @@ describe('theme (DD-032)', () => {
       bedSurface: plate,
       gridColor: '#ffffff',
       gridOpacity: 0.11,
-      gridMajor: { every: 50, opacity: 0.31 },
-      bedOutline: { color: '#ffffff', opacity: 0.76 },
+      gridMajor: { every: 50, opacity: 0.39 },
+      bedOutline: { color: '#ffffff', opacity: 0.83 },
       contactShadow: { opacity: 0.4 }
     });
     expect(studioTheme('light')).toStrictEqual({
@@ -121,8 +121,8 @@ describe('theme (DD-032)', () => {
       bedSurface: plate,
       gridColor: '#1b2430',
       gridOpacity: 0.16,
-      gridMajor: { every: 50, opacity: 0.47 },
-      bedOutline: { color: '#1b2430', opacity: 0.8 },
+      gridMajor: { every: 50, opacity: 0.55 },
+      bedOutline: { color: '#1b2430', opacity: 0.87 },
       contactShadow: { opacity: 0.3 }
     });
     expect(studioTheme('dark')).not.toBe(studioTheme('dark'));
