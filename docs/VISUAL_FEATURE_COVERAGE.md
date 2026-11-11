@@ -145,7 +145,13 @@ are now closed:
   regenerated because the Feature Lab now starts on Studio dark. The mid-grey capability renders are
   deliberately **not** re-skinned: Studio is an opt-in preset and the SDK default look is unchanged, so those
   images still represent what a consumer gets without a theme. Every page that shows a Studio image says it is opt-in.
-  Known gap: the model viewer has no cage control yet, so its cage lines stay visible under Studio in Prepare.
+  The model viewer's cage toggle (#490) is now in the Feature Lab, so the Prepare shots follow the Cage setting
+  (off under Studio).
+- **Studio recapture and Pixel ratio.** All seven app-UI shots were recaptured after the Studio preset retune (major
+  and outline contrast), and they now show the Feature Lab's Pixel ratio selector. Pixel ratio has no image of its
+  own by design (see its row). Known gap: `capture.mjs` (the mid-grey capability renders) still drives the
+  pre-Feature-Lab demo API (`window.viewer.renderer`, fixture paths); it fails on every toolpath shot and needs a port
+  to the controller API, so the shipped capability images are from the last working run and still match the SDK default look.
 - **Reproducibility / release gate:** `docs:shots` (capability renders) and `docs:shots:app` (app-UI)
   regenerate the media; the RELEASE_REVIEW Visual disposition now explicitly covers app-UI + live-demo
   parity so a future cut can't advertise a stale UI (see the release template).
@@ -213,7 +219,7 @@ are now closed:
 | Perspective vs orthographic | ✅ | ✅ | (in camera trio) | ✅ | gallery | — | covered |
 | Saved/restored camera state | ✅ | ✅ | — | mention | — | recipes | not visually meaningful |
 | Object-aware framing (`frameContent`) | ✅ | ✅ | `frame-all`/`frame-object` | ✅ (prose) | gallery | concept-ir-capabilities | covered — whole-job vs model-aware comparison in the gallery |
-| Build-volume cage toggle | ✅ | ✅ | — | mention | gallery | — | needs screenshot |
+| Build-volume cage toggle (toolpath and model viewer) | ✅ | Feature Lab Cage toggle (both viewers) | `app-control-panel`, `app-prepare` (Studio, cage off) | mention | gallery | guide-looks-lens-plate + adapters + 4 READMEs | covered (the cage-on look is the SDK default, shown in the mid-grey capability renders) |
 | Capture / export → Blob | ✅ | ✅ | — | ✅ | gallery | recipes | covered (demo Capture PNG + README + gallery); in-context screenshot pending |
 | Transparent / independent-background capture | ✅ | ✅ (via capture) | — | ✅ | gallery | recipes | demo + README covered; checkerboard screenshot pending |
 
@@ -242,6 +248,7 @@ are now closed:
 | Bed surface / texture themes | ✅ | ✅ | `app-studio-light`, `app-control-panel` | ✅ | gallery | guide-looks-lens-plate | covered (via the Studio look, which uses the solid bed surface) |
 | Studio look preset (`studioTheme`, opt-in; gradient backdrop, plate, outline, contact shadow) | ✅ | Feature Lab Look selector (starts on Studio dark) + 4 showcases | `app-control-panel` (dark), `app-studio-light` | ✅ (README caption states opt-in) | homepage card + gallery | guide-looks-lens-plate + adapters + 4 READMEs + renderer-three README | covered — every page showing it says it is an opt-in preset and the default look is unchanged |
 | Camera lens (`cameraFov`, 10-120°) | ✅ | Feature Lab Lens slider + 4 showcases | `app-lens-compare` (50° vs 32°) | ✅ | gallery | guide-looks-lens-plate + adapters | covered |
+| Pixel ratio (`pixelRatio`, number in (0, 4] or `'device'`) | ✅ | Feature Lab Pixel ratio selector (both viewers) | — (no shot: HiDPI sharpness depends on the capturing display and does not survive a downscaled PNG; the screenshot harness runs at ratio 1) | ✅ | — | guide-looks-lens-plate ("Sharpness on high-DPI screens") + adapters + 4 READMEs + renderer-three README | covered in prose and demo; no image by design |
 | Model-viewer build plate + honest `placement` (`known`/`inferred`/`approximated`/`null`) | ✅ | Feature Lab Prepare (plate toggle, placement line) + showcases (placement line) | `app-prepare`, `app-prepare-plate` | ✅ | gallery | guide-looks-lens-plate | covered — the multi-plate demo file is synthetic and labelled so; only the `inferred` and `known` paths are shown for it, `approximated` for the STL/3MF fixtures |
 
 ## 8. CNC / laser / plotter

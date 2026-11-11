@@ -110,7 +110,10 @@ function ensureModel() {
     // DD-032: a plate under the part, with the placement decision reported honestly in state.
     buildVolume: els.modelPlate.checked ? TWO_PLATE_BED : null,
     theme: modelThemeFor(),
-    cameraFov: Number(els.lens.value)
+    cameraFov: Number(els.lens.value),
+    showVolumeCage: els.cage.checked,
+    // Follow the selector when the model viewer is created after the ratio was chosen (unset stays unset).
+    ...(els.pixelRatio.value === '' ? {} : { pixelRatio: ratioValue() })
   });
   modelController.bindCanvas(els.modelView);
   modelController.onStateChange(renderPlacement);
@@ -217,11 +220,6 @@ function setMode(next) {
   els.countPill.hidden = true;
   // The bottom scrub strip (layers/segments/time) is toolpath-only — hide it in Prepare.
   els.scrubStrip.hidden = prepare;
-  // The cage belongs to the toolpath viewer: the model viewer has no cage control yet (it can only hide the
-  // plate per capture), so it is disabled here rather than faked.
-  els.cage.disabled = prepare;
-  els.cage.title = prepare ? 'Not available in the model viewer yet' : '';
-  els.cage.closest('label').title = els.cage.title;
   if (prepare) ensureModel();
   loadSelected();
 }
@@ -576,6 +574,7 @@ els.theme.addEventListener('change', () => {
   applyLens();
   els.cage.checked = studioMode() === null;
   preview.controls.setBuildVolumeCage(els.cage.checked);
+  modelController?.controls.setBuildVolumeCage(els.cage.checked);
 });
 els.material.addEventListener('change', () => preview.controls.setTheme(themeFor()));
 
@@ -606,7 +605,11 @@ els.frameSeg.addEventListener('click', (ev) => {
   for (const x of els.frameSeg.children) x.classList.toggle('gp-on', x === b);
   preview.controls.setFrameContent(b.dataset.frame);
 });
-els.cage.addEventListener('change', () => preview.controls.setBuildVolumeCage(els.cage.checked));
+// The cage toggle drives both viewers (the model viewer's cage is only drawn with a plate, see Prepare's plate toggle).
+els.cage.addEventListener('change', () => {
+  preview.controls.setBuildVolumeCage(els.cage.checked);
+  modelController?.controls.setBuildVolumeCage(els.cage.checked);
+});
 // Lens: both viewers take the same [10, 120]° range (outside it `setCameraFov` throws RangeError).
 function applyLens() {
   const deg = Number(els.lens.value);
@@ -619,6 +622,21 @@ function applyLens() {
   }
 }
 els.lens.addEventListener('input', applyLens);
+// Pixel ratio: a number in (0, 4] or 'device'. Unset (the first option) makes no call, so the renderer keeps its own
+// ratio; once a ratio has been set there is no "unset" call, so that option re-applies 1, the renderer's default.
+function ratioValue() {
+  const v = els.pixelRatio.value;
+  return v === 'device' ? 'device' : v === '' ? 1 : Number(v);
+}
+function applyPixelRatio() {
+  try {
+    preview.controls.setPixelRatio(ratioValue());
+    modelController?.controls.setPixelRatio(ratioValue());
+  } catch (err) {
+    els.status.textContent = `Pixel ratio rejected: ${err.message}`;
+  }
+}
+els.pixelRatio.addEventListener('change', applyPixelRatio);
 els.modelPlate.addEventListener('change', () =>
   modelController?.controls.setBuildVolume(els.modelPlate.checked ? TWO_PLATE_BED : null)
 );

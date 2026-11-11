@@ -511,6 +511,19 @@
                   applies when you return to perspective.
                 </p>
               </div>
+              <div class="gp-field">
+                <label for="pixelRatio">Pixel ratio</label>
+                <select id="pixelRatio" class="gp-input">
+                  <option value="">Renderer default (unset)</option>
+                  <option value="1">1</option>
+                  <option value="1.5">1.5</option>
+                  <option value="2">2</option>
+                  <option value="device">Device (min of DPR and 2)</option>
+                </select>
+                <p class="gp-hint" id="pixelRatioNote">
+                  Sharper on high-DPI screens; ratio 2 shades 4× the fragments of 1. Applies to both viewers.
+                </p>
+              </div>
               <div class="gp-row">
                 <button class="gp-btn" id="saveView">Save view</button>
                 <button class="gp-btn" id="restoreView" disabled>Restore</button>
