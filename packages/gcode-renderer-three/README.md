@@ -48,15 +48,16 @@ renderer.setBuildVolumeCage(false); // the preset is measured with the cage off
 
 `ToolpathRenderer` (and `createModelViewer`) take `pixelRatio`: a number in (0, 4], or `'device'` for
 `min(devicePixelRatio, 2)`, followed live. `renderer.setPixelRatio(ratio)` changes it later. Anything else throws
-`RangeError`. Unset, the renderer keeps its own ratio and never calls the GL's `setPixelRatio`. `interactionQuality`
+`RangeError`. Unset, the renderer keeps its own ratio and never calls the GL's `setPixelRatio` at rest. `interactionQuality`
 lowers the ratio while you orbit and settles back on yours. The type is `PixelRatioOption`.
 
 ```ts
 const renderer = new ToolpathRenderer({ canvas, pixelRatio: 'device' });
 ```
 
-An unsized `capture()` is the resting drawing-buffer size when unset and the canvas's CSS size when set, so setting a
-ratio never changes the default capture size; pass `width`/`height` for a crisper image. Ratio 2 shades four times the
+An unsized `capture()` is the resting drawing-buffer size when unset and the canvas's CSS size when set, so with the
+built-in renderer setting a ratio never changes the default capture size (a custom `createRenderer` already at
+another ratio returns its own drawing-buffer size when unset); pass `width`/`height` for a crisper image. Ratio 2 shades four times the
 fragments of ratio 1.
 
 ## Tighter limits on software GL
