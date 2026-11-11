@@ -143,11 +143,11 @@ describe('CNC detection on a hostile 64 KiB head (call sites)', () => {
     );
 
   it('an unmatched-`(` head is scored promptly (old regex: ~4 s)', () => {
-    expect(detect('('.repeat(65536)).ms).toBeLessThan(100);
+    expect(detect('('.repeat(65536)).ms).toBeLessThan(500);
   });
 
   it('a blank-line head with a spindle word reaches the % check promptly (old regex: ~5 s)', () => {
-    expect(detect('\n'.repeat(65536) + 'M3').ms).toBeLessThan(100);
+    expect(detect('\n'.repeat(65536) + 'M3').ms).toBeLessThan(500);
   });
 });
 

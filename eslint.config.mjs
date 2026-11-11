@@ -3,6 +3,7 @@
 import js from '@eslint/js';
 import tseslint from 'typescript-eslint';
 import tsdoc from 'eslint-plugin-tsdoc';
+import regexp from 'eslint-plugin-regexp';
 import globals from 'globals';
 
 // `env: { browser: false }` equivalent: switch the base block's browser globals back off.
@@ -34,6 +35,24 @@ export default [
     files: ['packages/*/src/**/*.ts', 'packages/*/src/**/*.tsx'],
     plugins: { tsdoc },
     rules: { 'tsdoc/syntax': 'warn' }
+  },
+  // Hostile-input guard (#468/#469): shipped package code parses untrusted files, so a regex that
+  // backtracks super-linearly is a denial-of-service. ONLY these two rules are on (not the plugin's
+  // recommended set). A hit is either fixed (linear rewrite + oracle test) or carries an
+  // `eslint-disable-next-line` with the reason it is bounded. The rules are static analysis and are
+  // KNOWN NOT to flag two shapes that were real hangs here (pinned in tools/lint-config.test.mjs):
+  //   1. a lazy scan restarted from repeated starts, e.g. #468's `/<plate\b[\s\S]*?<\/plate>/gi`;
+  //   2. an unanchored token, then `[^…]*`, then a required later token, e.g. #473's
+  //      `/<(?:object|part)\s+id="(\d+)"[^>]*>([\s\S]*?)(?=…)/g`.
+  // So every parser of untrusted input still needs a crafted-input timing test.
+  {
+    files: ['packages/*/src/**/*.ts', 'packages/*/src/**/*.tsx', 'packages/*/src/**/*.mts'],
+    ignores: ['**/__tests__/**'],
+    plugins: { regexp },
+    rules: {
+      'regexp/no-super-linear-backtracking': 'error',
+      'regexp/no-super-linear-move': 'error'
+    }
   },
   // Node-side ESM scripts: release tooling, benchmarks, docs/screenshot/fixture builders, pack and
   // dependency guards, package build helpers (copy-svelte, fuzz), and the root configs. Browser
