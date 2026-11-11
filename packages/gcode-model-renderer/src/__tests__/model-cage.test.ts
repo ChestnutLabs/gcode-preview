@@ -164,7 +164,9 @@ describe('model viewer — setBuildVolumeCage', () => {
 
     it('a new source', async () => {
       const r = await off();
+      const old = plateOf(r.scene());
       await r.viewer.setSource(twoObjects());
+      expect(plateOf(r.scene())).not.toBe(old);
       expect(cageOf(r.scene())!.visible).toBe(false);
     });
   });
