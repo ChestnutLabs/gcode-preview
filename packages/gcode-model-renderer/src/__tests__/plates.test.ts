@@ -4,7 +4,7 @@
  * synthetic and MIT-clean (clean-room from the observed `<plate>` format, parity with the RR-005 approach).
  */
 import { describe, it, expect } from 'vitest';
-import { parse3mf, parsePlateConfig, parseObjectExtruders } from '../three-mf.js';
+import { parse3mf } from '../three-mf.js';
 
 // --- minimal stored (uncompressed) ZIP writer, so fixtures need no zip dependency ---
 const CRC_TABLE = (() => {
@@ -149,245 +149,165 @@ const SINGLE_NO_SETTINGS = `<?xml version="1.0"?>
  </mesh></object>
 </resources><build><item objectid="1"/></build></model>`;
 
-describe('parsePlateConfig (DD-025)', () => {
-  it('maps each model_instance (object_id#instance_id) to its plate, with names and order', () => {
-    const pc = parsePlateConfig(TWO_PLATE_SETTINGS);
-    expect(pc).not.toBeNull();
-    expect(pc!.order).toEqual([1, 2]);
-    expect(pc!.membership.get('10#0')).toBe(1);
-    expect(pc!.membership.get('22#0')).toBe(2);
-    expect(pc!.names.get(1)).toBe('Plate A');
-    expect(pc!.names.has(2)).toBe(false); // empty plater_name is not recorded
-  });
-
-  it('returns null when no <plate> is declared', () => {
-    expect(parsePlateConfig('<config><object id="1"/></config>')).toBeNull();
-    expect(parsePlateConfig('not xml at all')).toBeNull();
-  });
-});
-
-// #468 — `parsePlateConfig` must stay linear on a hostile config. Fixtures below are literal strings.
 const PID = (n: number): string => `<metadata key="plater_id" value="${n}"/>`;
 const MI = (obj: number, ins: number): string =>
   `<model_instance><metadata key="object_id" value="${obj}"/><metadata key="instance_id" value="${ins}"/></model_instance>`;
-const view = (pc: ReturnType<typeof parsePlateConfig>) =>
-  pc === null
-    ? null
-    : {
-        order: pc.order,
-        membership: [...pc.membership.entries()].sort(([a], [b]) => a.localeCompare(b)),
-        names: [...pc.names.entries()].sort(([a], [b]) => a - b)
-      };
 
-/** The pre-#468 regex implementation, kept verbatim as a differential oracle for well-formed/odd configs. */
-function legacyParsePlateConfig(xml: string): ReturnType<typeof parsePlateConfig> {
-  const plateBlocks = xml.match(/<plate\b[\s\S]*?<\/plate>/gi);
-  if (plateBlocks === null || plateBlocks.length === 0) return null;
-  const membership = new Map<string, number>();
-  const names = new Map<number, string>();
-  const order: number[] = [];
-  for (const block of plateBlocks) {
-    const idM = /key="plater_id"\s+value="(\d+)"/i.exec(block);
-    if (idM === null) continue;
-    const plateId = parseInt(idM[1], 10);
-    if (!Number.isFinite(plateId)) continue;
-    order.push(plateId);
-    const nameM = /key="plater_name"\s+value="([^"]*)"/i.exec(block);
-    if (nameM !== null && nameM[1].length > 0) names.set(plateId, nameM[1]);
-    for (const inst of block.match(/<model_instance\b[\s\S]*?<\/model_instance>/gi) ?? []) {
-      const objM = /key="object_id"\s+value="(\d+)"/i.exec(inst);
-      const insM = /key="instance_id"\s+value="(\d+)"/i.exec(inst);
-      if (objM === null || insM === null) continue;
-      membership.set(`${objM[1]}#${insM[1]}`, plateId);
-    }
+// --- plate-config cases are driven through the public `parse3mf` (the module-private parsePlateConfig's only
+// caller). A model of tiny triangle meshes is built, one build item per entry of `itemIds` (object id), so the
+// Nth item of object X is placement `X#N` in the declared `<plate>` config. Observables: `scene.plates.list`
+// (order / names / per-plate instance counts) and each object's per-placement `plateIds` (a placement the config
+// does not list falls back to the FIRST declared plate, so unmapped placements are asserted explicitly).
+const meshObject = (id: number | string): string =>
+  `<object id="${id}" type="model"><mesh><vertices><vertex x="0" y="0" z="0"/><vertex x="10" y="0" z="0"/><vertex x="0" y="10" z="0"/></vertices><triangles><triangle v1="0" v2="1" v3="2"/></triangles></mesh></object>`;
+const modelFor = (itemIds: (number | string)[]): string =>
+  `<?xml version="1.0"?><model unit="millimeter"><resources>${[...new Set(itemIds)].map(meshObject).join('')}</resources><build>${itemIds
+    .map((id, i) => `<item objectid="${id}" transform="1 0 0 0 1 0 0 0 1 ${i * 100} 0 0"/>`)
+    .join('')}</build></model>`;
+const parseWithSettings = (
+  config: string,
+  itemIds: (number | string)[],
+  extra: { name: string; data: Uint8Array }[] = []
+) =>
+  parse3mf(
+    makeZip([
+      { name: '3D/3dmodel.model', data: enc(modelFor(itemIds)) },
+      { name: 'Metadata/model_settings.config', data: enc(config) },
+      ...extra
+    ])
+  );
+
+async function plateView(config: string, itemIds: number[]) {
+  const scene = await parseWithSettings(config, itemIds);
+  if (scene.plates === undefined) {
+    expect(scene.capabilities.plates).toBe('unavailable');
+    return null;
   }
-  return order.length > 0 ? { membership, names, order } : null;
+  expect(scene.capabilities.plates).toBe('known');
+  const list = scene.plates.list;
+  const plateIds: Record<string, number[]> = {};
+  for (const o of scene.objects) plateIds[o.id.split('#').pop()!] = o.plateIds ?? [];
+  return {
+    order: list.map((p) => p.id),
+    names: list.filter((p) => p.name !== undefined).map((p) => [p.id, p.name]),
+    instances: list.map((p) => p.instanceCount),
+    plateIds
+  };
 }
 
-describe('parsePlateConfig linear scan (#468)', () => {
-  const THREE_PLATES = `<?xml version="1.0"?><config>
+describe('plate config via parse3mf (DD-025)', () => {
+  it('maps each model_instance (object_id#instance_id) to its plate, with names and order', async () => {
+    expect(await plateView(TWO_PLATE_SETTINGS, [10, 22])).toEqual({
+      order: [1, 2],
+      names: [[1, 'Plate A']], // empty plater_name is not recorded
+      instances: [1, 1],
+      plateIds: { 10: [1], 22: [2] }
+    });
+  });
+
+  it('is unavailable (no plates) when no <plate> is declared', async () => {
+    expect(await plateView('<config><object id="1"/></config>', [1])).toBeNull();
+    expect(await plateView('not xml at all', [1])).toBeNull();
+    expect(await plateView('', [1])).toBeNull();
+  });
+
+  it('parses a multi-plate config to the exact expected structure (placement ordinal keys the instance)', async () => {
+    const config = `<?xml version="1.0"?><config>
   <plate>${PID(1)}<metadata key="plater_name" value="A"/>${MI(10, 0)}${MI(10, 1)}</plate>
   <plate>${PID(2)}${MI(11, 0)}</plate>
   <plate>${PID(5)}<metadata key="plater_name" value="E"/>${MI(12, 3)}</plate>
 </config>`;
-
-  it('parses a multi-plate config to the exact expected structure', () => {
-    expect(view(parsePlateConfig(THREE_PLATES))).toEqual({
+    // 12#0..12#2 are unlisted � fall back to the first declared plate (1); only the 4th placement (12#3) is plate 5.
+    expect(await plateView(config, [10, 10, 11, 12, 12, 12, 12])).toEqual({
       order: [1, 2, 5],
-      membership: [
-        ['10#0', 1],
-        ['10#1', 1],
-        ['11#0', 2],
-        ['12#3', 5]
-      ],
       names: [
         [1, 'A'],
         [5, 'E']
-      ]
+      ],
+      instances: [5, 1, 1],
+      plateIds: { 10: [1, 1], 11: [2], 12: [1, 1, 1, 5] }
     });
   });
 
-  it('matches the old regex implementation on well-formed and odd configs', () => {
-    const fixtures = [
-      THREE_PLATES,
-      TWO_PLATE_SETTINGS,
-      SHARED_MASTER_SETTINGS,
-      `<plate>${PID(1)}</plate><plate>${PID(2)}</plate>`,
-      `<plate>${PID(1)}<plate>${PID(2)}${MI(3, 0)}</plate>${MI(4, 0)}</plate>`,
-      `<plate>${PID(1)}${MI(10, 0)}</plate><plate>${PID(2)}${MI(11, 0)}`,
-      `<plate>${PID(1)}${MI(10, 0)}<model_instance><metadata key="object_id" value="11"/></plate>`,
-      `<PLATE>${PID(3)}</plate><plate>${PID(4)}</PLATE><Plate>${PID(6)}</Plate>`,
-      '<config><object id="1"/></config>',
-      ''
-    ];
-    for (const xml of fixtures) expect(view(parsePlateConfig(xml))).toEqual(view(legacyParsePlateConfig(xml)));
+  it('a plate with no plater_id is skipped; a model_instance needs BOTH object_id and instance_id', async () => {
+    expect(
+      (
+        await plateView(`<plate><metadata key="plater_name" value="x"/></plate><plate>${PID(2)}${MI(10, 0)}</plate>`, [
+          10
+        ])
+      )?.order
+    ).toEqual([2]);
+    const half = `<model_instance><metadata key="object_id" value="11"/></model_instance>`;
+    // 11 is only half-declared on plate 2 � unmapped � first plate (1), not 2.
+    expect(
+      (await plateView(`<plate>${PID(1)}${MI(10, 0)}</plate><plate>${PID(2)}${half}</plate>`, [10, 11]))?.plateIds
+    ).toEqual({
+      10: [1],
+      11: [1]
+    });
   });
 
-  it('keeps the word boundary: <plates> and <plate_x> are not plates, <plate id="9"> is', () => {
-    expect(parsePlateConfig(`<plates>${PID(7)}</plate>`)).toBeNull();
-    expect(parsePlateConfig(`<plate_x>${PID(7)}</plate>`)).toBeNull();
-    expect(view(parsePlateConfig(`<plate id="9">${PID(7)}</plate>`))?.order).toEqual([7]);
-    expect(view(parsePlateConfig(`<plate>${PID(8)}</plate>`))?.order).toEqual([8]);
+  it('keeps the word boundary: <plates> and <plate_x> are not plates, <plate id="9"> is', async () => {
+    expect(await plateView(`<plates>${PID(7)}</plate>`, [1])).toBeNull();
+    expect(await plateView(`<plate_x>${PID(7)}</plate>`, [1])).toBeNull();
+    expect((await plateView(`<plate id="9">${PID(7)}</plate>`, [1]))?.order).toEqual([7]);
+    expect((await plateView(`<plate>${PID(8)}</plate>`, [1]))?.order).toEqual([8]);
   });
 
-  it('is case-insensitive on the open tag and on the close tag independently', () => {
-    expect(view(parsePlateConfig(`<PLATE>${PID(3)}</plate>`))?.order).toEqual([3]);
-    expect(view(parsePlateConfig(`<plate>${PID(4)}</PLATE>`))?.order).toEqual([4]);
-    expect(view(parsePlateConfig(`<Plate>${PID(6)}</Plate>`))?.order).toEqual([6]);
+  it('is case-insensitive on the open tag and on the close tag independently', async () => {
+    expect((await plateView(`<PLATE>${PID(3)}</plate>`, [1]))?.order).toEqual([3]);
+    expect((await plateView(`<plate>${PID(4)}</PLATE>`, [1]))?.order).toEqual([4]);
+    expect((await plateView(`<Plate>${PID(6)}</Plate>`, [1]))?.order).toEqual([6]);
   });
 
-  it('takes non-overlapping blocks: a plate opened inside another belongs to the outer block', () => {
-    const pc = view(parsePlateConfig(`<plate>${PID(1)}<plate>${PID(2)}${MI(3, 0)}</plate>`));
-    expect(pc).toEqual({ order: [1], membership: [['3#0', 1]], names: [] });
-    expect(view(parsePlateConfig(`<plate>${PID(1)}</plate><plate>${PID(2)}</plate>`))?.order).toEqual([1, 2]);
+  it('takes non-overlapping blocks: a plate opened inside another belongs to the outer block', async () => {
+    expect(await plateView(`<plate>${PID(1)}<plate>${PID(2)}${MI(3, 0)}</plate>`, [3])).toEqual({
+      order: [1],
+      names: [],
+      instances: [1],
+      plateIds: { 3: [1] }
+    });
+    expect((await plateView(`<plate>${PID(1)}</plate><plate>${PID(2)}</plate>`, [1]))?.order).toEqual([1, 2]);
   });
 
-  it('keeps the plates already closed when a later <plate> never closes', () => {
-    const pc = view(parsePlateConfig(`<plate>${PID(1)}${MI(10, 0)}</plate><plate>${PID(2)}${MI(11, 0)}`));
-    expect(pc).toEqual({ order: [1], membership: [['10#0', 1]], names: [] });
+  it('keeps the plates already closed when a later <plate> never closes', async () => {
+    // 11 would be on plate 2 if the unclosed block were read; it is unlisted � plate 1.
+    expect(await plateView(`<plate>${PID(1)}${MI(10, 0)}</plate><plate>${PID(2)}${MI(11, 0)}`, [10, 11])).toEqual({
+      order: [1],
+      names: [],
+      instances: [2],
+      plateIds: { 10: [1], 11: [1] }
+    });
   });
 
-  it('keeps the model_instances already closed when a later one never closes', () => {
+  it('keeps the model_instances already closed when a later one never closes', async () => {
     const open = '<model_instance><metadata key="object_id" value="11"/><metadata key="instance_id" value="0"/>';
-    const pc = view(parsePlateConfig(`<plate>${PID(1)}${MI(10, 0)}${open}</plate>`));
-    expect(pc).toEqual({ order: [1], membership: [['10#0', 1]], names: [] });
+    // 12#0 (closed, plate 2) is kept; 11#0 (never closed, would be plate 2) is unmapped � plate 1.
+    expect(
+      await plateView(`<plate>${PID(1)}${MI(10, 0)}</plate><plate>${PID(2)}${MI(12, 0)}${open}</plate>`, [10, 11, 12])
+    ).toEqual({
+      order: [1, 2],
+      names: [],
+      instances: [2, 1],
+      plateIds: { 10: [1], 11: [1], 12: [2] }
+    });
   });
 
-  it('returns promptly on 1 MiB of unclosed <plate opens', () => {
+  it('returns promptly on 1 MiB of unclosed <plate opens', async () => {
     const xml = '<plate '.repeat(Math.ceil(1_048_576 / 7));
     const t0 = performance.now();
-    const pc = parsePlateConfig(xml);
+    const pv = await plateView(xml, [1]);
     const ms = performance.now() - t0;
-    expect(pc).toBeNull();
+    expect(pv).toBeNull();
     expect(ms).toBeLessThan(2000);
   }, 20_000);
 
-  it('returns promptly on 1 MiB of unclosed <model_instance opens inside a closed plate', () => {
+  it('returns promptly on 1 MiB of unclosed <model_instance opens inside a closed plate', async () => {
     const xml = `<plate>${PID(1)}${'<model_instance '.repeat(65_536)}</plate>`;
     const t0 = performance.now();
-    const pc = view(parsePlateConfig(xml));
+    const pv = await plateView(xml, [1]);
     const ms = performance.now() - t0;
-    expect(pc).toEqual({ order: [1], membership: [], names: [] });
-    expect(ms).toBeLessThan(2000);
-  }, 20_000);
-});
-
-const EX = (n: number): string => `<metadata key="extruder" value="${n}"/>`;
-const extruders = (xml: string): [string, number][] =>
-  [...parseObjectExtruders(xml).entries()].sort(([a], [b]) => a.localeCompare(b));
-
-/** The pre-#468 regex implementation of parseObjectExtruders, kept verbatim as a differential oracle. */
-function legacyParseObjectExtruders(xml: string): [string, number][] {
-  const map = new Map<string, number>();
-  const headerRe = /<(?:object|part)\s+id="(\d+)"[^>]*>([\s\S]*?)(?=<(?:object|part)\s+id="|<\/config>|$)/g;
-  let m: RegExpExecArray | null;
-  while ((m = headerRe.exec(xml)) !== null) {
-    const ext = /key="extruder"\s+value="(\d+)"/i.exec(m[2]);
-    if (ext !== null) {
-      const n = parseInt(ext[1], 10);
-      if (Number.isFinite(n) && n >= 1) map.set(m[1], n);
-    }
-  }
-  return [...map.entries()].sort(([a], [b]) => a.localeCompare(b));
-}
-
-describe('parseObjectExtruders linear scan (#468)', () => {
-  it('maps objects and parts to their own extruder in a multi-object config', () => {
-    const xml = `<config>
- <object id="10">${EX(1)}<part id="1">${EX(1)}</part><part id="9">${EX(2)}</part></object>
- <object id="11">${EX(3)}</object>
-</config>`;
-    expect(extruders(xml)).toEqual([
-      ['1', 1],
-      ['10', 1],
-      ['11', 3],
-      ['9', 2]
-    ]);
-  });
-
-  it('ends a segment at the next part header (object without its own extruder gets none)', () => {
-    expect(extruders(`<object id="5"><part id="6">${EX(2)}</part></object>`)).toEqual([['6', 2]]);
-  });
-
-  it('ends a segment at </config>, and still reads objects declared after it', () => {
-    expect(extruders(`<object id="1"></config>${EX(2)}`)).toEqual([]);
-    expect(extruders(`<object id="1">${EX(1)}</config><object id="2">${EX(2)}`)).toEqual([
-      ['1', 1],
-      ['2', 2]
-    ]);
-  });
-
-  it('runs the last segment to the end of the input', () => {
-    expect(extruders(`<object id="1">${EX(3)}`)).toEqual([['1', 3]]);
-  });
-
-  it('takes a header tag to the first > after the id, even across a later header prefix', () => {
-    expect(extruders(`<object id="1" <object id="2">${EX(4)}`)).toEqual([['1', 4]]);
-    expect(extruders(`<object id="1" name="a>b">${EX(2)}`)).toEqual([['1', 2]]);
-  });
-
-  it('keeps earlier results when a later header has no > at all', () => {
-    expect(extruders(`<object id="1">${EX(2)}<object id="3" `)).toEqual([['1', 2]]);
-  });
-
-  it('ends a segment at a non-numeric-id header prefix without reading it as a header', () => {
-    expect(extruders(`<object id="1"><object id="x">${EX(2)}</object>`)).toEqual([]);
-  });
-
-  it('is case-sensitive on headers, header prefixes and </config>', () => {
-    expect(extruders(`<OBJECT id="1">${EX(2)}`)).toEqual([]);
-    expect(extruders(`<object id="1"><OBJECT id="2">${EX(4)}`)).toEqual([['1', 4]]);
-    expect(extruders(`<object id="1"></CONFIG>${EX(4)}`)).toEqual([['1', 4]]);
-  });
-
-  it('accepts any whitespace between the tag name and id (headers and segment ends)', () => {
-    expect(extruders(`<object\n id="1">\n<part\tid="2">${EX(5)}`)).toEqual([['2', 5]]);
-  });
-
-  it('matches the old regex implementation on well-formed and odd configs', () => {
-    const fixtures = [
-      EXTRUDER_SETTINGS,
-      `<config><object id="10">${EX(1)}<part id="1">${EX(1)}</part><part id="9">${EX(2)}</part></object></config>`,
-      `<object id="5"><part id="6">${EX(2)}</part></object>`,
-      `<object id="1">${EX(1)}</config><object id="2">${EX(2)}`,
-      `<object id="1" <object id="2">${EX(4)}`,
-      `<object id="1">${EX(2)}<object id="3" `,
-      `<object id="1"><object id="x">${EX(2)}</object>`,
-      `<object\n id="1">\n<part\tid="2">${EX(5)}`,
-      `<object id="1"><OBJECT id="2">${EX(4)}`,
-      `<object id="1">${EX(0)}${EX(2)}<object id="2">${EX(3)}${EX(4)}`,
-      '<config><object id="1"/></config>',
-      ''
-    ];
-    for (const xml of fixtures) expect(extruders(xml)).toEqual(legacyParseObjectExtruders(xml));
-  });
-
-  it('returns promptly on 1 MiB of object headers that never close', () => {
-    const xml = '<object id="1" '.repeat(69_906);
-    const t0 = performance.now();
-    const n = parseObjectExtruders(xml).size;
-    const ms = performance.now() - t0;
-    expect(n).toBe(0);
+    expect(pv).toEqual({ order: [1], names: [], instances: [1], plateIds: { 1: [1] } });
     expect(ms).toBeLessThan(2000);
   }, 20_000);
 });
@@ -465,23 +385,123 @@ const EXTRUDER_SETTINGS = `<?xml version="1.0"?><config>
  <object id="2"><metadata key="extruder" value="2"/></object>
 </config>`;
 
-describe('parseObjectExtruders (Bambu colour convention)', () => {
-  it('maps object AND part ids to 1-based extruder, part overriding its parent object', () => {
+// parseObjectExtruders (module-private) is driven through `parse3mf`: with a `filament_colour` palette whose
+// slot N is a pure-channel colour, an object whose config extruder is N comes out with that literal colour.
+const EXT_PALETTE = ['#FF0000', '#00FF00', '#0000FF', '#FFFF00', '#00FFFF', '#FF00FF'];
+const RED: number[] = [1, 0, 0];
+const GREEN: number[] = [0, 1, 0];
+const BLUE: number[] = [0, 0, 1];
+const YELLOW: number[] = [1, 1, 0];
+const CYAN: number[] = [0, 1, 1];
+const EX = (n: number): string => `<metadata key="extruder" value="${n}"/>`;
+
+/** Colour (or `undefined` = neutral) of each object id after resolving `config`'s extruders against EXT_PALETTE. */
+async function extruderColors(config: string, ids: (number | string)[]): Promise<Record<string, number[] | undefined>> {
+  const scene = await parseWithSettings(config, ids, [
+    { name: 'Metadata/project_settings.config', data: enc(JSON.stringify({ filament_colour: EXT_PALETTE })) }
+  ]);
+  const out: Record<string, number[] | undefined> = {};
+  for (const o of scene.objects) {
+    const c = o.material?.color;
+    out[o.id.split('#').pop()!] = c === undefined ? undefined : Array.from(c);
+  }
+  return out;
+}
+
+describe('per-object extruder resolution via parse3mf (Bambu colour convention, #468 linear scan)', () => {
+  it('maps object AND part ids to 1-based extruder, part overriding its parent object', async () => {
     const xml = `<config>
       <object id="10"><metadata key="extruder" value="1"/>
         <part id="1"><metadata key="extruder" value="1"/></part>
         <part id="9"><metadata key="extruder" value="2"/></part>
       </object>
     </config>`;
-    const m = parseObjectExtruders(xml);
-    expect(m.get('10')).toBe(1);
-    expect(m.get('1')).toBe(1);
-    expect(m.get('9')).toBe(2); // the part's own extruder, not the object default
+    expect(await extruderColors(xml, [10, 1, 9])).toEqual({ 10: RED, 1: RED, 9: GREEN });
   });
 
-  it('is empty when no extruder metadata is declared', () => {
-    expect(parseObjectExtruders('<config><object id="1"/></config>').size).toBe(0);
+  it('is neutral when no extruder metadata is declared', async () => {
+    expect(await extruderColors('<config><object id="1"/></config>', [1])).toEqual({ 1: undefined });
+    expect(await extruderColors('', [1])).toEqual({ 1: undefined });
   });
+
+  it('maps objects and parts to their own extruder in a multi-object config', async () => {
+    const xml = `<config>
+ <object id="10">${EX(1)}<part id="1">${EX(1)}</part><part id="9">${EX(2)}</part></object>
+ <object id="11">${EX(3)}</object>
+</config>`;
+    expect(await extruderColors(xml, [1, 9, 10, 11])).toEqual({ 1: RED, 9: GREEN, 10: RED, 11: BLUE });
+  });
+
+  it('ends a segment at the next part header (object without its own extruder gets none)', async () => {
+    expect(await extruderColors(`<object id="5"><part id="6">${EX(2)}</part></object>`, [5, 6])).toEqual({
+      5: undefined,
+      6: GREEN
+    });
+  });
+
+  it('ends a segment at </config>, and still reads objects declared after it', async () => {
+    expect(await extruderColors(`<object id="1"></config>${EX(2)}`, [1])).toEqual({ 1: undefined });
+    expect(await extruderColors(`<object id="1">${EX(1)}</config><object id="2">${EX(2)}`, [1, 2])).toEqual({
+      1: RED,
+      2: GREEN
+    });
+  });
+
+  it('runs the last segment to the end of the input', async () => {
+    expect(await extruderColors(`<object id="1">${EX(3)}`, [1])).toEqual({ 1: BLUE });
+  });
+
+  it('takes a header tag to the first > after the id, even across a later header prefix', async () => {
+    expect(await extruderColors(`<object id="1" <object id="2">${EX(4)}`, [1, 2])).toEqual({
+      1: YELLOW,
+      2: undefined
+    });
+    expect(await extruderColors(`<object id="1" name="a>b">${EX(2)}`, [1])).toEqual({ 1: GREEN });
+  });
+
+  it('keeps earlier results when a later header has no > at all', async () => {
+    expect(await extruderColors(`<object id="1">${EX(2)}<object id="3" `, [1, 3])).toEqual({
+      1: GREEN,
+      3: undefined
+    });
+  });
+
+  it('ends a segment at a non-numeric-id header prefix without reading it as a header', async () => {
+    expect(await extruderColors(`<object id="1"><object id="x">${EX(2)}</object>`, [1, 'x'])).toEqual({
+      1: undefined,
+      x: undefined
+    });
+  });
+
+  it('is case-sensitive on headers, header prefixes and </config>', async () => {
+    expect(await extruderColors(`<OBJECT id="1">${EX(2)}`, [1])).toEqual({ 1: undefined });
+    expect(await extruderColors(`<object id="1"><OBJECT id="2">${EX(4)}`, [1, 2])).toEqual({ 1: YELLOW, 2: undefined });
+    expect(await extruderColors(`<object id="1"></CONFIG>${EX(4)}`, [1])).toEqual({ 1: YELLOW });
+  });
+
+  it('accepts any whitespace between the tag name and id (headers and segment ends)', async () => {
+    expect(await extruderColors(`<object\n id="1">\n<part\tid="2">${EX(5)}`, [1, 2])).toEqual({
+      1: undefined,
+      2: CYAN
+    });
+  });
+
+  it('uses only the FIRST extruder of a segment; extruder 0 and out-of-palette slots stay neutral', async () => {
+    expect(await extruderColors(`<object id="1">${EX(0)}${EX(2)}<object id="2">${EX(3)}${EX(4)}`, [1, 2])).toEqual({
+      1: undefined,
+      2: BLUE
+    });
+    expect(await extruderColors(`<object id="1">${EX(7)}`, [1])).toEqual({ 1: undefined });
+  });
+
+  it('returns promptly on 1 MiB of object headers that never close', async () => {
+    const xml = '<object id="1" '.repeat(69_906);
+    const t0 = performance.now();
+    const colors = await extruderColors(xml, [1]);
+    const ms = performance.now() - t0;
+    expect(colors).toEqual({ 1: undefined });
+    expect(ms).toBeLessThan(2000);
+  }, 20_000);
 });
 
 describe('parse3mf per-object extruder colour (Bambu convention)', () => {

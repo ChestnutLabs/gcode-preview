@@ -12,7 +12,7 @@ import type { DialectMetadata, ToolpathIR } from '@chestnutlabs/toolpath-core';
 export const FILAMENT_FALLBACK: RGB = [0.7, 0.7, 0.7];
 
 /** Parse a `#RRGGBB` (or `#RGB`) hex string to 0..1 RGB, or `null` when not a usable colour. */
-export function hexToRgb(hex: string | undefined): RGB | null {
+function hexToRgb(hex: string | undefined): RGB | null {
   if (hex === undefined) return null;
   let h = hex.trim().replace(/^#/, '');
   if (h.length === 3) h = h[0] + h[0] + h[1] + h[1] + h[2] + h[2];
