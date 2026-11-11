@@ -289,7 +289,8 @@ export function createProgressMapper(ir: ToolpathIR, opts?: ProgressMapperOption
 
   function map(obs: ProgressObservation): MappedProgress {
     if (ir.segments.count === 0) return { ...UNAVAILABLE, notes: [{ code: 'empty-ir' }] };
-    if ((obs as { v?: unknown }).v !== PROGRESS_OBSERVATION_VERSION) {
+    // A non-object observation (e.g. a host forwarding `JSON.parse('null')`) has no version: same path.
+    if (obs === null || typeof obs !== 'object' || (obs as { v?: unknown }).v !== PROGRESS_OBSERVATION_VERSION) {
       return { ...UNAVAILABLE, notes: [{ code: 'version-unsupported' }] };
     }
     const notes: ProgressNote[] = [];
