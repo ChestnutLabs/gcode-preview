@@ -1682,7 +1682,9 @@ export class ToolpathRenderer {
   /** Set (or clear) the scene background from the theme. Null leaves three's default. */
   private applyBackground(): void {
     const bg = this.resolvedTheme.background;
-    this.scene.background = bg === null ? null : new Color(bg as string | number);
+    // A gradient ({ top, bottom }) is not drawn yet (DD-032 Lane B wires the backdrop): treat it as no
+    // background, three's default, rather than feeding an object to Color (which renders white).
+    this.scene.background = bg === null || typeof bg === 'object' ? null : new Color(bg);
   }
 
   /**

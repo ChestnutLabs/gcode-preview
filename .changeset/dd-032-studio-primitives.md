@@ -13,7 +13,8 @@ and the default lens renders exactly as before.
   - With `bedOutline` set, the outline replaces the grid lines on the bed edge and the cage's floor edges.
 - `studioTheme('dark' | 'light')` returns the Studio preset; `STUDIO_CAMERA_FOV` is 32.
 - Lens support: `framingFromCenterRadius(center, radius, fov?)` frames correctly at any lens from 10° to
-  120°, and `InteractiveStage.setFov(fov)` changes the lens while keeping the model's apparent size.
+  120°, and `InteractiveStage.setFov(fov)` changes the lens without a re-fit. Up to 50° it keeps the model's
+  apparent size; above 50° it keeps the frame margin, so the camera never ends up inside the model.
 - `createBackdrop`, `createContactShadow` and `volumeStyle` are exported as pure builders for viewers to
   wire in, and `disposeBuildVolume` frees a plate group including its textures.
 - Fixed: the bed texture is now freed when the build volume is rebuilt (`setTheme`, `setBuildVolume`) and
@@ -24,4 +25,5 @@ and the default lens renders exactly as before.
 `ResolvedTheme` gains optional fields. It is an output type; constructing one by hand is not supported.
 
 Not wired yet: `ToolpathRenderer` does not draw the gradient background or the contact shadow in this
-step, and a gradient `background` reaches the scene only once that wiring lands.
+step. A gradient `background` (`{ top, bottom }`, as in `studioTheme`) is ignored for now and treated as no
+background (three's default), until that wiring lands.

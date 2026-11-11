@@ -8,6 +8,7 @@ import { Group, type Mesh, type MeshBasicMaterial, OrthographicCamera, Perspecti
 import {
   InteractiveStage,
   ToolpathRenderer,
+  studioTheme,
   createContactShadow,
   disposeBuildVolume,
   framingFromCenterRadius,
@@ -187,6 +188,48 @@ describe('InteractiveStage.setFov', () => {
     expect(stage.perspectiveCamera.position.distanceTo(target)).toBeCloseTo(43.756784, 5);
   });
 
+  it('frameTo while orthographic voids a pending dolly (frame@50 → ortho → setFov(32) → frameTo → persp)', () => {
+    const { stage } = makeStage();
+    const center = new Vector3(10, 20, 30);
+    const target = new Vector3(10, 30, -20);
+    stage.frameTo(center, 10);
+    stage.setCameraMode('orthographic');
+    stage.setFov(32);
+    stage.frameTo(center, 10); // already positions for 32°
+    stage.setCameraMode('perspective');
+    expect(stage.perspectiveCamera.position.distanceTo(target)).toBeCloseTo(43.756784, 5); // not 71.16
+  });
+
+  it('fitBox while orthographic voids a pending dolly too', () => {
+    const { stage } = makeStage();
+    stage.frameTo(new Vector3(0, 0, 0), 10);
+    stage.setCameraMode('orthographic');
+    stage.setFov(32);
+    const min = new Vector3(-5, -5, -5);
+    const max = new Vector3(5, 5, 5);
+    stage.fitBox(min, max);
+    const fitted = stage.orthographicCamera.position.clone();
+    stage.setCameraMode('perspective');
+    expect(r3(stage.perspectiveCamera.position)).toEqual(r3(fitted));
+  });
+
+  it.each([
+    [32, 43.756784],
+    [90, 16.081722],
+    [120, 13.130671]
+  ])('frame@50 → setFov(%s) ≡ frame@%s (distance %s for r = 10)', (fov, distance) => {
+    const center = new Vector3(10, 20, 30);
+    const a = makeStage();
+    a.stage.frameTo(center, 10);
+    a.stage.setFov(fov);
+    const b = makeStage();
+    b.stage.setFov(fov);
+    b.stage.frameTo(center, 10);
+    expect(r3(a.stage.perspectiveCamera.position)).toEqual(r3(b.stage.perspectiveCamera.position));
+    expect(a.stage.perspectiveCamera.position.distanceTo(new Vector3(10, 30, -20))).toBeCloseTo(distance, 5);
+    expect(a.controls().maxDistance).toBeCloseTo(b.controls().maxDistance!, 6);
+  });
+
   it('setting the current fov is a no-op', () => {
     const { stage } = makeStage();
     stage.frameTo(new Vector3(0, 0, 0), 10);
@@ -199,6 +242,33 @@ describe('InteractiveStage.setFov', () => {
     const { stage } = makeStage();
     expect(() => stage.setFov(fov)).toThrow(RangeError);
     expect(stage.fov).toBe(50);
+  });
+});
+
+describe('gradient background before it is wired (DD-032 Lane B)', () => {
+  function bareRenderer(theme?: Theme) {
+    const canvas = document.createElement('canvas');
+    const stub: GLRendererLike = {
+      render: () => undefined,
+      setSize: () => undefined,
+      dispose: () => undefined,
+      domElement: canvas
+    };
+    return new ToolpathRenderer({
+      canvas,
+      ...(theme ? { theme } : {}),
+      createRenderer: () => stub,
+      scheduleFrame: () => undefined
+    });
+  }
+  const bg = (r: ToolpathRenderer): unknown => (r as unknown as { scene: Scene }).scene.background;
+
+  it('a { top, bottom } background is treated as none (null), never a white Color', () => {
+    expect(bg(bareRenderer(studioTheme('dark')))).toBeNull();
+    const r = bareRenderer({ background: 0x112233 });
+    expect((bg(r) as { getHex(): number }).getHex()).toBe(0x112233);
+    r.setTheme(studioTheme('light'));
+    expect(bg(r)).toBeNull();
   });
 });
 
