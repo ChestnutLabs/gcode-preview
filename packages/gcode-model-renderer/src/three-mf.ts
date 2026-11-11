@@ -555,6 +555,33 @@ interface PlateConfig {
 }
 
 /**
+ * Split `xml` into the non-overlapping `<tag …>…</tag>` blocks, in order (`tag` is a lowercase constant).
+ * Matching is case-insensitive and the open tag needs a word boundary (`<plates>` is not a `<plate>`).
+ * Linear in `xml.length`: the open and close tags are each searched forward only, and the scan STOPS at the
+ * first open tag with no close after it (no later open can close either). The lazy form
+ * `/<tag\b[\s\S]*?<\/tag>/gi` re-scans to the end of the input from every unclosed open — quadratic on a
+ * hostile config (273 KiB of `<plate ` took 5 s, #468).
+ */
+function scanBlocks(xml: string, tag: string): string[] {
+  const open = new RegExp(`<${tag}\\b`, 'gi');
+  const close = new RegExp(`</${tag}>`, 'gi');
+  const blocks: string[] = [];
+  let pos = 0;
+  for (;;) {
+    open.lastIndex = pos;
+    const o = open.exec(xml);
+    if (o === null) break;
+    close.lastIndex = o.index + o[0].length;
+    const c = close.exec(xml);
+    if (c === null) break;
+    const end = c.index + c[0].length;
+    blocks.push(xml.slice(o.index, end));
+    pos = end;
+  }
+  return blocks;
+}
+
+/**
  * Parse the `<plate>` elements of a Bambu/Orca `Metadata/model_settings.config` (DD-025). Each `<plate>`
  * carries a `plater_id` and a list of `<model_instance>` (`object_id` + `instance_id`) assigning the Nth
  * placement of a build-item object to that plate. Clean-room from the observed format (parity with the
@@ -564,8 +591,8 @@ interface PlateConfig {
  * Returns `null` when no `<plate>` is declared (⇒ implicit single plate, `'unavailable'`).
  */
 export function parsePlateConfig(xml: string): PlateConfig | null {
-  const plateBlocks = xml.match(/<plate\b[\s\S]*?<\/plate>/gi);
-  if (plateBlocks === null || plateBlocks.length === 0) return null;
+  const plateBlocks = scanBlocks(xml, 'plate');
+  if (plateBlocks.length === 0) return null;
   const membership = new Map<string, number>();
   const names = new Map<number, string>();
   const order: number[] = [];
@@ -578,7 +605,7 @@ export function parsePlateConfig(xml: string): PlateConfig | null {
     const nameM = /key="plater_name"\s+value="([^"]*)"/i.exec(block);
     if (nameM !== null && nameM[1].length > 0) names.set(plateId, nameM[1]);
     // Each <model_instance> declares object_id + instance_id (both required to key a placement).
-    for (const inst of block.match(/<model_instance\b[\s\S]*?<\/model_instance>/gi) ?? []) {
+    for (const inst of scanBlocks(block, 'model_instance')) {
       const objM = /key="object_id"\s+value="(\d+)"/i.exec(inst);
       const insM = /key="instance_id"\s+value="(\d+)"/i.exec(inst);
       if (objM === null || insM === null) continue;
@@ -598,11 +625,25 @@ export function parsePlateConfig(xml: string): PlateConfig | null {
  */
 export function parseObjectExtruders(xml: string): Map<string, number> {
   const map = new Map<string, number>();
-  const headerRe = /<(?:object|part)\s+id="(\d+)"[^>]*>([\s\S]*?)(?=<(?:object|part)\s+id="|<\/config>|$)/g;
-  let m: RegExpExecArray | null;
-  while ((m = headerRe.exec(xml)) !== null) {
+  // Linear scan (#468): the lazy single-regex form re-scanned to the end of the input from every header
+  // with no `>`. A header's tag ends at the first `>` after its id (none ⇒ no later header has one either,
+  // so stop); its segment runs to the next object/part header prefix, `</config>`, or the end of the input.
+  const header = /<(?:object|part)\s+id="(\d+)"/g;
+  const segmentEnd = /<(?:object|part)\s+id="|<\/config>/g;
+  let pos = 0;
+  for (;;) {
+    header.lastIndex = pos;
+    const m = header.exec(xml);
+    if (m === null) break;
+    const gt = xml.indexOf('>', header.lastIndex);
+    if (gt === -1) break;
+    const start = gt + 1;
+    segmentEnd.lastIndex = start;
+    const e = segmentEnd.exec(xml);
+    const end = e === null ? xml.length : e.index;
+    pos = end;
     const id = m[1];
-    const ext = /key="extruder"\s+value="(\d+)"/i.exec(m[2]);
+    const ext = /key="extruder"\s+value="(\d+)"/i.exec(xml.slice(start, end));
     if (ext !== null) {
       const n = parseInt(ext[1], 10);
       if (Number.isFinite(n) && n >= 1) map.set(id, n);
