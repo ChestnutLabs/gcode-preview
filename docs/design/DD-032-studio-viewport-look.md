@@ -225,14 +225,22 @@ Rules:
     With it, 120° sits at 1.31 r against a 1.155 r minimum.
   - **The two are equal at 50°**, so the rule is continuous.
 
-  The orthographic `viewHalfHeight` stays 1.25 r, so toggling projection still keeps apparent size. The live
-  lens setter keeps the pure tan dolly, because its job is to keep the user's current apparent size, not to
-  re-fit.
+  The orthographic `viewHalfHeight` stays 1.25 r, so toggling projection keeps apparent size at ≤50°. Above
+  50° the sin term moves the perspective camera back, so the perspective view shows a half-height of
+  1.25 r · cos 25° / cos(fov/2). The part's perspective size relative to orthographic is therefore
+  cos(fov/2) / cos 25°: 0.95 at 60°, 0.88 at 74°, 0.78 at 90°, and **0.55 at 120°**, where the part looks
+  about half the size in perspective. This is accepted for now, because the camera stays outside the bounding
+  sphere. Sizing the orthographic half-height from the perspective pose (d · tan(fov/2)) would make the
+  toggle exact at every lens; that is an open item (§8).
 - **Distance limits scale with the lens.** `frameTo` sets the orbit controls' `minDistance` = max(1, 0.15 r)
-  and `maxDistance` = 30 r, then clamps. Both limits are scaled by the same tan 25° / tan(fov/2) factor (an
+  and `maxDistance` = 30 r, then clamps. Both limits are scaled by the same `framingLensScale(fov)` factor (an
   exact no-op at 50), so a lens-aware frame is never clamped into a crop.
 - **Changing the lens live** dolly-compensates: the target is kept and the camera distance and limits are
-  scaled by tan(old/2) / tan(new/2), so the part keeps its apparent size without a re-fit. This is an
+  scaled by `framingLensScale(new) / framingLensScale(old)`, the factor framing itself uses. A framed view
+  after `setFov(f)` therefore equals a fresh frame at `f`. When both the old and the new lens are ≤50°, this is
+  exactly the tan ratio, so the part
+  keeps its apparent size without a re-fit. Above 50° it keeps the frame margin instead, so a wide lens can't
+  put the camera inside the model (a pure tan dolly from 50° to 120° would sit at 0.72 r). This is an
   `InteractiveStage` primitive (Lane A), so both viewers share it.
   - It emits **no** `camera-changed`, which stays user-only (v0.21.0).
   - While the model viewer is auto-framing, it re-fits through `fitBox` (exact) instead of dollying, and
@@ -427,6 +435,8 @@ Release v0.22.0 per `docs/reference/release-process.md` after D, with the owner'
   another. It touches every persisted state, and AnyBridge restores under the same preset lens.
 - **P2:** a real Bambu/Orca 2-plate project 3MF in the corpus, minimised and with redistribution cleared, to
   back the synthetic `inferred` fixture.
+- **P3:** size the orthographic `viewHalfHeight` from the perspective pose (d · tan(fov/2)) so the
+  perspective↔orthographic toggle keeps apparent size exactly at every lens (today 0.55× at 120°, §4.2).
 - **P3:** resolve the model viewer's lights against its own rig if a consumer wants themed model lighting.
 - **P3:** backfill the `docs/design/README.md` index for DD-023…DD-031 (rows missing).
 - Flip the default to Studio: a separate owner decision in a later minor.
@@ -464,3 +474,9 @@ Release v0.22.0 per `docs/reference/release-process.md` after D, with the owner'
     before Lane C touches `three-mf.ts`.
 - 2026-11-11: Lane A (PR #470) found the pure tan framing rule puts the camera inside the bounding sphere
   above ~74°. The framing scale is now max(tan rule, sin rule), identical at 50° and below. No decision changed.
+- 2026-11-11: Lane A review round 1 (PR #470). The live lens dolly and the distance limits now use the same
+  `framingLensScale` ratio as framing, not the pure tan ratio: a frame at 50° then `setFov(120)` would
+  otherwise put the camera inside the model. Identical when both lenses are ≤50°. Above 50°, the
+  perspective↔orthographic toggle changes apparent size by cos(fov/2) / cos 25° (0.55 at 120°). §4.2 now
+  matches PR #470 as merged (84e664a). An exact toggle (ortho half-height from the perspective pose) is
+  recorded in §8. No decision changed.
