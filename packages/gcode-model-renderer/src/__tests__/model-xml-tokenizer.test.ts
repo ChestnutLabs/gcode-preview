@@ -287,7 +287,7 @@ describe('differential vs the legacy regexes', () => {
     }
     // Guards against an empty corpus / a silently skipped loop. The committed model parts are tiny stubs
     // (8 and 45 bytes: 1 + 3 tags), so the realistic-document case below carries the volume.
-    expect(parts).toBe(5);
+    expect(parts).toBe(6);
     expect(tokens).toBe(4);
   });
 

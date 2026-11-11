@@ -25,7 +25,9 @@ include only the ones you need (see [Workers](concept-workers.md)).
 
 **`@chestnutlabs/gcode-containers`** reads `.gcode.3mf` — a sliced-plate ZIP container — with
 **zero dependencies** and **bounded, hardened** extraction (defended against adversarial archives).
-A container can hold several plates; select one with `parseOptions.plate`.
+A container can hold several plates; select one with `parseOptions.plate`. The selected plate's preview
+images (`plate_N.png`, then `plate_N_small.png`) arrive in `metadata.thumbnails`; `top_` and `pick_`
+images are not included.
 
 ## Containers — `.bgcode` (Prusa binary)
 

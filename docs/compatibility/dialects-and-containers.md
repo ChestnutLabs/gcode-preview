@@ -53,10 +53,10 @@ are proprietary binary formats, not G-code.
 
 ## Containers
 
-| Container | Discovery | Plates | Machine metadata | Integrity checks | Security review | Fixtures | Evidence date |
-|---|---|---|---|---|---|---|---|
-| `.gcode.3mf` (Orca/Bambu) | **full** (magic sniff + CD walk) | **full** (multi-plate lifecycle, `{plate}` select, default-0 + warning) | **full** (`printable_area`/`printable_height`/printer/filaments → `MachineGeometry`, `known`) | **full** (CRC32, header agreement, encryption/zip64 rejection, duplicates, incremental caps) | [**signed off** 2026-07-23](../design/SECURITY-REVIEW-DD-005-containers.md) | `container-mini-project` + 7 adversarial | 2026-07-23 |
-| `.bgcode` (Prusa binary) | **full** (`GCDE` magic sniff) | single plate | **partial** (`bed_shape` INI → `MachineGeometry`, `inferred`) | **full** (per-block CRC32; bounded, capped decode; DEFLATE flavor-lock) | [**signed off** 2026-07-28](../design/SECURITY-REVIEW-DD-011-bgcode.md) | `prim-cube` golden pair + adversarial fuzz corpus | 2026-07-27 |
+| Container | Discovery | Plates | Machine metadata | Thumbnails | Integrity checks | Security review | Fixtures | Evidence date |
+|---|---|---|---|---|---|---|---|---|
+| `.gcode.3mf` (Orca/Bambu) | **full** (magic sniff + CD walk) | **full** (multi-plate lifecycle, `{plate}` select, default-0 + warning) | **full** (`printable_area`/`printable_height`/printer/filaments → `MachineGeometry`, `known`) | **partial** (`Metadata/plate_N.png` + `plate_N_small.png` of the selected plate → `metadata.thumbnails`; `top_N`/`pick_N` skipped; synthetic fixture only — no real Bambu/Orca export validated; #483) | **full** (CRC32, header agreement, encryption/zip64 rejection, duplicates, incremental caps) | [**signed off** 2026-07-23](../design/SECURITY-REVIEW-DD-005-containers.md) | `container-mini-project`, `container-mini-thumbs` + 7 adversarial | 2026-11-11 |
+| `.bgcode` (Prusa binary) | **full** (`GCDE` magic sniff) | single plate | **partial** (`bed_shape` INI → `MachineGeometry`, `inferred`) | **full** (Thumbnail blocks → `metadata.thumbnails`: PNG/JPG/QOI, up to 8; #433) | **full** (per-block CRC32; bounded, capped decode; DEFLATE flavor-lock) | [**signed off** 2026-07-28](../design/SECURITY-REVIEW-DD-011-bgcode.md) | `prim-cube` golden pair + adversarial fuzz corpus | 2026-07-27 |
 
 ## Cross-cutting coverage
 
