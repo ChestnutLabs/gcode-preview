@@ -186,10 +186,10 @@ Rules:
     - It is absent with no `buildVolume`.
     - It is hidden by `capture({ includeBuildVolume: false })`, which hides only the volume group.
     - Transparent cutouts never get a grey blob, and a plate-less model viewer stays byte-identical.
+  - Builders live as pure functions in `gcode-renderer-three`, so the model viewer reuses them.
 - **Seen from below** (`setView('bottom')`, or orbiting under the plate: `maxPolarAngle` defaults to π), the
   painter-ordered slab (walls −2, top −1, no depth write) shows the top face over the near walls. That's
   accepted and documented: the plate is a backdrop, not a solid.
-  - Builders live as pure functions in `gcode-renderer-three`, so the model viewer reuses them.
 - **Disposal.** One shared `disposeBuildVolume(group)` frees geometry, materials **and each material's `.map`**
   (three's `material.dispose()` does not free maps). Both viewers use it at every volume rebuild and dispose.
   Today's walks free geometry and material only, so the bed texture already leaks on every rebuild; this fixes
@@ -335,7 +335,7 @@ Notes:
 | 2 | Adapters | Vue/React/Svelte/WC expose `theme` (already) and a declarative `cameraFov` prop/attribute. `/model` on all four gains `theme`, `buildVolume`, `cameraFov` declaratively and the three setters imperatively. WC: `camera-fov` attribute + `cameraFov` property; `theme` and `buildVolume` are properties only (object-valued, the documented split). |
 | 3 | Lower-level APIs | Toolpath: `createGcodePreview` / `useGcodePreview` / `element`. Model: `createModelViewer` / `useModelViewer` / the `<gcode-model-viewer>` element. All covered via their controllers. |
 | 4 | Events | None new. The model controller's `onStateChange` (the WC's state event) carries `placement` and `placementOffset`. |
-| 5 | Parity suites | `setCameraFov` joins the `GcodePreviewControls` required list (`setTheme`/`setBuildVolume` are already there). `setBuildVolume`/`setTheme`/`setCameraFov` join the `ModelPreviewControls` list, and `placement` joins `REQUIRED_MODEL_STATE_KEYS`. Behavioural cases are in §6. |
+| 5 | Parity suites | `setCameraFov` joins the `GcodePreviewControls` required list (`setTheme`/`setBuildVolume` are already there). `setBuildVolume`/`setTheme`/`setCameraFov` join the `ModelPreviewControls` list, and `placement` + `placementOffset` join `REQUIRED_MODEL_STATE_KEYS`. Behavioural cases are in §6. |
 | 6 | Feature Lab | A look switcher (Today / Studio dark / Studio light) + lens slider on both Preview and Prepare, with Studio as the Feature Lab's starting look. Showcases use Studio. |
 | 7 | Docs | Adapter READMEs, `docs/manual/adapters.md`, a manual theming page, and `VISUAL_FEATURE_COVERAGE.md` row(s). |
 
