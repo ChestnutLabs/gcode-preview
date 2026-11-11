@@ -129,6 +129,9 @@ Rules:
 - **Unset ⇒ byte-identical.** Every new field unset reproduces today's scene exactly. The existing visual
   baselines and `scene.test.ts` expectations must stay green unmodified. This is the regression gate for every
   lane.
+- **Validation.** Every new opacity (`gridOpacity`, `gridMajor.opacity`, `bedOutline.opacity`,
+  `contactShadow.opacity`) must be finite and within [0, 1]. Otherwise `resolveTheme` throws a `TypeError`. Existing
+  fields keep today's (unvalidated) behaviour.
 - **Major grid.**
   - Lines are drawn at multiples of `every` from the bed minimum.
   - A minor line that coincides with a major line is **not** drawn, so alphas never double-blend. The Round-2
@@ -137,24 +140,33 @@ Rules:
     matching the repo's option-validation style.
 - **Outline.**
   - `bedOutline` draws the printable boundary loop for **every** shape, rectangular included.
-  - It is drawn above the grid, so the boundary is the strongest line.
+  - Its `renderOrder` is above the grid lines', so it always blends last and is the strongest line. This
+    does not rely on its small z offset.
   - Rect beds whose size is not a multiple of the pitch get their true edge, not a "250 on a 256 bed" grid
     edge.
   - For non-rect beds, unset `bedOutline` keeps today's loop: grid colour, opacity +0.3.
 - **Slab.**
   - With `thickness > 0` the plate becomes a slab whose **top face keeps today's height (z = −0.05) and stays
     unlit**, so the top renders exactly `BedSurface.color` and the measured contrasts hold.
-  - The side faces use `edgeColor`.
-  - `depthWrite:false` and `renderOrder:-1` are kept, so toolpath at z≈0 is never occluded.
+  - The side faces are a sibling mesh (`bedSurfaceEdge`), unlit, in `edgeColor`. The top face stays the
+    existing `bedSurface` mesh.
+  - Both keep `depthWrite:false`, so toolpath at z≈0 is never occluded. Draw order is explicit: walls at
+    `renderOrder:-2`, top face at `-1`. three sorts opaque objects by `renderOrder` then distance, so
+    insertion order is not relied on.
   - Non-rect beds extrude their shape.
   - A texture applies to the top face only, sRGB per #465.
 - **Gradient.**
-  - Implemented as an sRGB `CanvasTexture` scene background, disposed on theme change. A texture-leak test is
-    mandatory; this was A4 defect #2 in discovery.
+  - Implemented as an sRGB `DataTexture` scene background: a 1×256 vertical ramp computed in JS and
+    interpolated in sRGB, like a CSS gradient. Row 0 is the bottom. It needs no DOM or OffscreenCanvas, so it
+    works in workers and headless and is testable as literal bytes. It is disposed on theme change; a
+    texture-leak test is mandatory (A4 defect #2 in discovery).
   - `capture({ background:'transparent' })` still yields a cutout, unchanged.
 - **Contact shadow.**
-  - A single soft radial blob decal at plate level, sized from the content footprint (`modelBounds` →
-    `objectBounds` → all-extrusion precedence, as DD-026 framing does).
+  - A single soft radial blob decal (an sRGB 64×64 radial-alpha `DataTexture`), sized from the content
+    footprint (`modelBounds` → `objectBounds` → all-extrusion precedence, as DD-026 framing does).
+  - It sits at z = −0.04: above the plate's top face, **below** the grid and the first layer, so it can never
+    darken toolpath. Round 2 had it above the grid (z = +0.05), so §6's re-render re-measures the grid inside
+    the shadow.
   - **Not** shadow maps: deterministic, cheap, identical headless and interactive.
   - Hidden when there is no content.
   - Builders live as pure functions in `gcode-renderer-three`, so the model viewer reuses them.
@@ -290,3 +302,6 @@ Release v0.22.0 per `docs/reference/release-process.md` after D, with the owner'
 ## 9. Revision log
 
 - 2026-11-10: created and Accepted (owner decisions 1–4 above).
+- 2026-11-10: Lane A footprint review. Backdrop and shadow use sRGB `DataTexture`, not `CanvasTexture`.
+  Draw order is explicit (slab walls −2, top −1, outline above the grid). Shadow at z = −0.04, below the
+  grid. New opacities and `gridMajor.every` are validated with `TypeError`. No decision changed.
