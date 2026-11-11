@@ -129,22 +129,30 @@ Rules:
 - **Unset ⇒ byte-identical.** Every new field unset reproduces today's scene exactly. The existing visual
   baselines and `scene.test.ts` expectations must stay green unmodified. This is the regression gate for every
   lane.
-- **Validation.** Every new opacity (`gridOpacity`, `gridMajor.opacity`, `bedOutline.opacity`,
-  `contactShadow.opacity`) must be finite and within [0, 1]. Otherwise `resolveTheme` throws a `TypeError`. Existing
-  fields keep today's (unvalidated) behaviour.
+- **Validation.** `resolveTheme` throws a `RangeError` (the renderer's existing convention, `tubes.ts`) when:
+  - any new opacity (`gridOpacity`, `gridMajor.opacity`, `bedOutline.opacity`, `contactShadow.opacity`) is
+    non-finite or outside [0, 1];
+  - `gridMajor.every` is non-finite or ≤ 0.
+
+  Existing fields keep today's (unvalidated) behaviour. Nothing validates **across** `Theme` and
+  `BuildVolumeDef`, so a valid `setBuildVolume` never throws because of an earlier theme.
 - **Major grid.**
-  - Lines are drawn at multiples of `every` from the bed minimum.
-  - A minor line that coincides with a major line is **not** drawn, so alphas never double-blend. The Round-2
-    numbers assume a single blend per line.
-  - `every` must be a positive multiple of the minor pitch. Otherwise it is rejected with a clear `TypeError`,
-    matching the repo's option-validation style.
+  - At build time the major step is `k = max(1, round(every / pitch))` minor lines. Majors are every k-th minor
+    index counted from the bed minimum. A non-multiple `every` snaps to the nearest multiple of the pitch
+    (documented). Dedupe is by **integer index**, never by float equality, so pitches like 0.1 behave.
+  - A minor line at a major index is **not** drawn, so alphas never double-blend. The Round-2 numbers assume a
+    single blend per line.
 - **Outline.**
   - `bedOutline` draws the printable boundary loop for **every** shape, rectangular included.
-  - Its `renderOrder` is above the grid lines', so it always blends last and is the strongest line. This
-    does not rely on its small z offset.
-  - Rect beds whose size is not a multiple of the pitch get their true edge, not a "250 on a 256 bed" grid
-    edge.
-  - For non-rect beds, unset `bedOutline` keeps today's loop: grid colour, opacity +0.3.
+  - Its material is always `transparent: true`, even at opacity 1. Its `renderOrder` is above the grid lines',
+    so it blends last within the transparent list and is the strongest line. A small z offset alone would not
+    guarantee this.
+  - When `bedOutline` is set, grid lines (minor or major) that coincide with the bed edge are **not** emitted,
+    and the cage omits its **floor** edges (its verticals and top stay). The outline replaces both, so the
+    boundary is a single blend. This also gives rect beds whose size is not a multiple of the pitch their true
+    edge, not a "250 on a 256 bed" grid edge.
+  - Unset `bedOutline` keeps everything as today: rect beds have no loop, and non-rect beds keep today's loop
+    (grid colour at `min(1, gridOpacity + 0.3)`, z = 0.01).
 - **Slab.**
   - With `thickness > 0` the plate becomes a slab whose **top face keeps today's height (z = −0.05) and stays
     unlit**, so the top renders exactly `BedSurface.color` and the measured contrasts hold.
@@ -167,9 +175,19 @@ Rules:
   - It sits at z = −0.04: above the plate's top face, **below** the grid and the first layer, so it can never
     darken toolpath. Round 2 had it above the grid (z = +0.05), so §6's re-render re-measures the grid inside
     the shadow.
+  - Its `renderOrder` is −0.5, between the top face (−1) and the grid (0). Both it and the grid are
+    transparent, and three sorts that list by distance, so without an explicit order the grid would flip
+    between darkened and not as the camera orbits.
   - **Not** shadow maps: deterministic, cheap, identical headless and interactive.
   - Hidden when there is no content.
+  - **It belongs to the plate.** It is drawn only when a plate is drawn: absent with `includeBuildVolume:false`
+    and with no `buildVolume`. Transparent cutouts never get a grey blob, and a plate-less model viewer stays
+    byte-identical.
   - Builders live as pure functions in `gcode-renderer-three`, so the model viewer reuses them.
+- **Disposal.** One shared `disposeBuildVolume(group)` frees geometry, materials **and each material's `.map`**
+  (three's `material.dispose()` does not free maps). Both viewers use it at every volume rebuild and dispose.
+  Today's walks free geometry and material only, so the bed texture already leaks on every rebuild; this fixes
+  it as a by-product of touched code.
 
 ### 4.2 Camera lens
 
@@ -180,14 +198,26 @@ Both viewers get the same lens control:
 
 Rules:
 
-- Perspective only, ignored on orthographic.
-- Range (0, 180).
+- Perspective only. On orthographic it is remembered and applied when the camera returns to perspective.
+- Range (0, 180), exclusive. Out of range throws `RangeError`; it is not clamped.
 - Default 50, unchanged.
-- Framing already reads `camera.fov` (`interactive-stage.ts`), so fit stays correct.
+- **Framing must become lens-aware.** Today's auto-framing does not read the lens:
+  - `framingFromCenterRadius` (`stage.ts`) places the camera at the fixed offset (−1.2, 1.6, 1.8)·r ≈ 2.69 r,
+    with `viewHalfHeight` = 1.25 r = 2.69·tan 25°. That is tuned to 50°.
+  - It drives `Scene.frame()`, core `renderStill` and `renderModelStill`. Only the interactive model viewer's
+    `fitBox` reads `camera.fov`.
+  - At 32° that offset shows a half-height of only 2.69·tan 16° ≈ 0.77 r, so the framed sphere is cropped.
+
+  So `framingFromCenterRadius(center, r, fov = 50)` scales the perspective offset by tan 25° / tan(fov/2), with
+  an **exact short-circuit at 50** so default positions are byte-identical. The orthographic `viewHalfHeight`
+  stays 1.25 r, so toggling projection still keeps apparent size.
+- **Changing the lens live** dolly-compensates: the target is kept and the camera distance is scaled by
+  tan(old/2) / tan(new/2), so the part keeps its apparent size without a re-fit. This is an `InteractiveStage`
+  primitive (Lane A), so both viewers share it.
 - Stills already accept `pose.fov`. `renderStill` / `renderModelStill` also gain a top-level `cameraFov` so a
-  preset applies without a pose.
-- `CameraState` save/restore keeps carrying `fov`. An explicit `setCameraState` wins over `cameraFov` until the
-  next `setCameraFov`.
+  preset applies without a pose, and their framing uses it.
+- **`CameraState` has no lens field** (`{ position, target, zoom, cameraMode }`). A restored pose renders at the
+  current lens. Adding `fov` to `CameraState` is a follow-up (§8).
 
 ### 4.3 Model-viewer plate
 
@@ -202,19 +232,41 @@ Rules:
 - **Reuse.** The model viewer reuses `createBuildVolume` and the §4.1 builders through a shared
   theme→volume-style mapping. Today that mapping is a private `volumeStyle()` in `scene.ts`; Lane A extracts
   it.
-- **Placement, honest.**
-  - When the source carries plate coordinates (3MF build-item transforms on the active/selected plate), the
-    part is drawn where the file puts it. `placement: 'known'`.
-  - Otherwise (STL, or a 3MF with no build placement), the footprint is centred on the bed and dropped to
-    z = 0. `placement: 'approximated'`.
-  - With no plate, `placement: null`.
-  - `ModelPreviewState.placement` exposes this. It joins the model parity guard's required state list.
+- **Placement, honest** (`ModelPreviewState.placement`, the project's honesty vocabulary). Build-item transforms
+  alone do not prove plate coordinates:
+  - Bambu/Orca multi-plate projects author plate N > 1 in one shared workspace, offset by grid cells.
+  - CAD exports (Fusion, Onshape) carry transforms that are not plate coordinates at all, often centred on the
+    origin or below z = 0.
+
+  So the rule fails honest by construction:
+
+  | `placement` | When | What is drawn |
+  |---|---|---|
+  | `'known'` | The source is a **slicer project** (project/model settings present in the 3MF) **and** the selected scope's footprint lies on the bed within a tolerance | Parts where the file puts them |
+  | `'inferred'` | A slicer project whose footprint is off the bed, where subtracting a whole workspace-cell offset per axis lands it on the bed | Parts with the offset subtracted. The cell is the bed size × (1 + 1/5), the slicers' plate gap |
+  | `'approximated'` | Anything else: STL, CAD 3MF, or neither check passes | The footprint centred on the bed and dropped to z = 0 |
+  | `null` | No plate is drawn: no `buildVolume`, or the render scope spans **more than one** declared plate | No plate. One bed under a multi-plate layout would misrepresent it |
+
+  Notes:
+  - Any offset is **presentation-only** (DD-025 D3): `ModelScene` and `getState().bounds` stay authored.
+  - `placement` joins the model parity guard's required state keys.
 - **Framing** is unchanged: the model, not the plate, is framed. The plate is context. A `frameTarget:'plate'`
   option is a follow-up if consumers ask.
-- **`background` / `setBackground`** stay as today (back-compat).
-  - If `theme.background` is set, it governs the scene.
-  - The last write wins, documented.
-  - `capture()` keeps its own `background` override.
+- **Theme subset.** The model viewer honours only the plate and backdrop fields: `background`, `gridColor`,
+  `gridOpacity`, `gridMajor`, `bedOutline`, `bedSurface`, `bedColor` (cage), `contactShadow`.
+  - Lights and `materialPreset` are **intentionally not applicable**. The model rig (hemisphere
+    `#ffffff`/`#9098a5` at 2.0, key 1.6, fill 0.5) differs from the toolpath defaults, and `materialPreset` is
+    tube-only. Applying `Theme`'s replace semantics to it would silently darken every model, unmeasured.
+  - This is a documented DD-031 deliberate difference.
+- **Background precedence**, one rule for all four surfaces (toolpath live, `renderStill`, model live,
+  `renderModelStill`). This is the toolpath's existing rule:
+  - `capture({ background })` beats everything;
+  - then `theme.background`;
+  - then the `background` prop/option;
+  - then the default (`'transparent'` for the model viewer).
+
+  This makes it independent of adapter watch order. The documented cutout recipe is
+  `{ ...studioTheme('dark'), background: null }` (`null` = omit), which falls through to `'transparent'`.
 
 ### 4.4 The preset
 
@@ -238,8 +290,12 @@ Notes:
   documents it.
 - **Thickness/edge** (4 mm, `#585c61`) come from Round-1 C and were **not** in the Round-2 measurement. They
   need the validation re-render in §6 before release.
-- **Tone mapping and output.** Tone mapping is already none and output is already sRGB in both viewers, so no
-  change is needed. Lane B verifies this rather than assuming it.
+- **Tone mapping and output.** Neither viewer sets them, so three's defaults apply (no tone mapping, sRGB
+  output). That is what the look needs. Review confirmed it; Lane B adds a test pinning it.
+- **The cage.** Round 2 was measured with the cage **off**. The cage is a separate control
+  (`setBuildVolumeCage` / `includeBuildVolume`), not a `Theme` field, so the preset cannot set it. The Feature
+  Lab and showcases turn it off with the Studio look. With `bedOutline` set, the cage's floor edges are omitted
+  anyway (§4.1), so a consumer who keeps the cage on doesn't get a triple-blended boundary.
 
 ### 4.5 Framework parity (DD-031 checklist)
 
@@ -247,9 +303,9 @@ Notes:
 |---|---|---|
 | 1 | Core | `Theme` fields pass through `setTheme` (no new control). New: `setCameraFov` + `cameraFov` option. |
 | 2 | Adapters | Vue/React/Svelte/WC expose `theme` (already) and a declarative `cameraFov` prop/attribute. `/model` on all four gains `theme`, `buildVolume`, `cameraFov` declaratively and the three setters imperatively. WC: `camera-fov` attribute + `cameraFov` property; `theme` and `buildVolume` are properties only (object-valued, the documented split). |
-| 3 | Lower-level APIs | `createGcodePreview` / `useGcodePreview` / `element` covered via the controller. |
-| 4 | Events | None new. `state-change` carries `placement`. |
-| 5 | Parity suites | `setCameraFov` joins `GcodePreviewControls` required list. `setBuildVolume`/`setTheme`/`setCameraFov` + `placement` join the `ModelPreviewControls` / state lists. Behavioural cases are in §6. |
+| 3 | Lower-level APIs | Toolpath: `createGcodePreview` / `useGcodePreview` / `element`. Model: `createModelViewer` / `useModelViewer` / the `<gcode-model-viewer>` element. All covered via their controllers. |
+| 4 | Events | None new. The model controller's `onStateChange` (the WC's state event) carries `placement`. |
+| 5 | Parity suites | `setCameraFov` joins the `GcodePreviewControls` required list (`setTheme`/`setBuildVolume` are already there). `setBuildVolume`/`setTheme`/`setCameraFov` join the `ModelPreviewControls` list, and `placement` joins `REQUIRED_MODEL_STATE_KEYS`. Behavioural cases are in §6. |
 | 6 | Feature Lab | A look switcher (Today / Studio dark / Studio light) + lens slider on both Preview and Prepare, with Studio as the Feature Lab's starting look. Showcases use Studio. |
 | 7 | Docs | Adapter READMEs, `docs/manual/adapters.md`, a manual theming page, and `VISUAL_FEATURE_COVERAGE.md` row(s). |
 
@@ -258,23 +314,44 @@ Notes:
 ## 5. Compatibility
 
 - **Additive** minor (v0.22.0). No default changes, no removals, no signature changes.
-- `DEFAULT_THEME` and `resolveTheme({})` stay byte-identical. `ResolvedTheme` gains fields, which is additive
-  for readers. Any consumer constructing a `ResolvedTheme` literal is unsupported (it is an output type);
-  noted in the changeset.
+- "Byte-identical" means the **rendered scene and every existing field's value**. The new `ResolvedTheme`
+  fields are optional and absent by default, so `DEFAULT_THEME` and `resolveTheme({})` stay key-for-key
+  identical too.
+- **One type widening, called out in the changeset:** `Theme.background` / `ResolvedTheme.background` widen
+  to include the gradient object. A TypeScript reader that passes `ResolvedTheme.background` on as
+  `ThemeColor | null` must narrow first. Constructing a `ResolvedTheme` literal (an output type) is
+  unsupported.
 - The model viewer with no `buildVolume` renders exactly as today.
 
 ## 6. Testing and validation
 
-- **Unit tests** per new branch: tier dedupe, multiple-of validation, outline for rect/circular/polygon, slab
-  top-face height + unlit top + edge, gradient texture sRGB + disposal on theme change (leak test), shadow
-  footprint precedence + hidden-when-empty, `cameraFov` range + ortho no-op + `setCameraState`
-  interplay, placement known/approximated/null.
-  - Assert literal expected values, never the module's own constants (house rule).
+- **Unit tests** per new branch, asserting literal expected values, never the module's own constants (house
+  rule):
+  - **Grid:** tier dedupe by index, `every` snapping (incl. pitch 0.1), and the `RangeError` validations.
+  - **Outline:** for rect/circular/polygon; edge grid lines and cage floor edges omitted only when it is set;
+    always transparent; `renderOrder` values.
+  - **Slab:** top-face height, unlit top and edge, walls −2 / top −1.
+  - **Shadow:** −0.5 order, footprint precedence, hidden when empty and absent without a plate.
+  - **Gradient:** texture sRGB, row orientation.
+  - **Lens:** `framingFromCenterRadius` positions identical at 50 and the framed sphere inside the view at 32,
+    for `frame()`, `renderStill` and `renderModelStill`. Also range errors, the ortho remember-and-apply, and
+    dolly compensation keeping apparent size.
+  - **Placement fixtures:** a slicer-project plate-1 part on the bed (`known`); a synthetic plate-2 part offset
+    by one workspace cell (`inferred`); a CAD-style 3MF at the origin (`approximated`); an STL
+    (`approximated`); and a multi-plate scope (`null`).
+  - **Model viewer:** lighting is unchanged under `setTheme(studioTheme(…))`.
+  - **Background precedence:** all four surfaces, plus a studio + transparent cutout with no gradient and no
+    shadow.
+  - **Leak matrix:** textures and geometries freed on `setTheme`, `setBuildVolume`, `dispose` and model-viewer
+    context-loss restore, with a textured slab + shadow + gradient.
 - **RED:** forward-only, one mutant per clause, 5–15 per lane + a GREEN control.
 - **Regression gate:** existing visual baselines + all current renderer/model tests unmodified-green with no
   theme set.
 - **Validation re-render (release gate).** Re-run the Round-2 measurement harness against the shipped `studioTheme('dark'|'light')`. Gates:
-  - **Contrast:** must reproduce Round 2 within ±0.05 contrast ratio per tier.
+  - **Contrast:** must reproduce Round 2 within ±0.05 contrast ratio per tier. The boundary is re-measured as
+    **outline-only** (edge grid lines and cage floor now omitted), so its target is Round 2's loop-only
+    edges: 3.03 dark, 3.07 light. It must stay ≥ 3:1.
+  - **Shadow:** the grid inside the shadow is re-measured, now that the shadow sits below the grid.
   - **Top face:** must still render exactly `#7c8086` with thickness 4.
   - **Grid:** must read in all 8 filament × theme cells.
   - **Black/white separation:** ≥ 2.9:1.
@@ -284,10 +361,10 @@ Notes:
 
 | Lane | Files (no two lanes share a file) | Depends on |
 |---|---|---|
-| **A** renderer primitives | `gcode-renderer-three`: `theme.ts`, `build-volume.ts`, new `backdrop.ts`, new `contact-shadow.ts`, new `volume-style.ts` (extracted `volumeStyle`; the one-line `scene.ts` call-site swap is in this lane), `index.ts` exports, their tests. `studioTheme` + `STUDIO_CAMERA_FOV`. | — |
-| **B** toolpath wiring | `gcode-renderer-three/scene.ts` (gradient + shadow wiring, fov) + `interactive-stage.ts` if needed; `gcode-preview-core` controller/render-still/testing/re-exports; Vue/React/Svelte/WC toolpath adapters + READMEs | A |
-| **C** model-viewer plate | `gcode-model-renderer` viewer/controller/still/model-testing/re-exports; `/model` in all four adapters + READMEs | A (parallel with B; adapter files are disjoint by subpath. If a shared adapter index must change, B owns it and C sends a seam warning) |
-| **D** demo + docs + gate | Feature Lab, showcases, `docs/manual`, `VISUAL_FEATURE_COVERAGE.md`, screenshot regeneration, the §6 validation re-render | B + C |
+| **A** renderer primitives | `gcode-renderer-three`: `theme.ts`, `build-volume.ts`, `stage.ts` (lens-aware `framingFromCenterRadius`), `interactive-stage.ts` (the dolly-compensating fov setter), new `backdrop.ts`, new `contact-shadow.ts`, new `volume-style.ts`, `disposeBuildVolume`, `index.ts` exports, their tests. `studioTheme` + `STUDIO_CAMERA_FOV`. In `scene.ts`: only the `volumeStyle()` delegate and the three volume dispose walks. | — |
+| **B** toolpath wiring | `gcode-renderer-three/scene.ts` (gradient background + its disposal, shadow, `cameraFov`, lens-aware `frame()`); `gcode-preview-core` controller/render-still/testing/re-exports; Vue/React/Svelte/WC toolpath adapter **source** | A |
+| **C** model-viewer plate | `gcode-model-renderer` viewer/controller/still/model-testing/re-exports, placement; `/model` adapter **source** in all four adapters | A (parallel with B; both consume A's stage primitives, so neither waits on the other. If a shared adapter index must change, B owns it and C sends a seam warning) |
+| **D** demo + docs + gate | Feature Lab, showcases, `docs/manual`, **all four adapter `README.md`s** (each documents both toolpath and `/model`, so a single lane owns them), `VISUAL_FEATURE_COVERAGE.md`, screenshot regeneration, the §6 validation re-render | B + C |
 
 Release v0.22.0 per `docs/reference/release-process.md` after D, with the owner's release approval.
 
@@ -296,6 +373,11 @@ Release v0.22.0 per `docs/reference/release-process.md` after D, with the owner'
 - **P2:** per-filament plate auto-contrast (nudge plate tone when filament luminance is within a threshold).
 - **P3:** thick lines (`Line2`/quads) so the boundary can dominate by width, not only alpha.
 - **P3:** `frameTarget:'plate'` on the model viewer.
+- **P3:** an optional `fov` on `CameraState`, so a pose saved under one lens restores identically under
+  another. It touches every persisted state, and AnyBridge restores under the same preset lens.
+- **P2:** a real Bambu/Orca 2-plate project 3MF in the corpus, minimised and with redistribution cleared, to
+  back the synthetic `inferred` fixture.
+- **P3:** resolve the model viewer's lights against its own rig if a consumer wants themed model lighting.
 - **P3:** backfill the `docs/design/README.md` index for DD-023…DD-031 (rows missing).
 - Flip the default to Studio: a separate owner decision in a later minor.
 
@@ -305,3 +387,17 @@ Release v0.22.0 per `docs/reference/release-process.md` after D, with the owner'
 - 2026-11-10: Lane A footprint review. Backdrop and shadow use sRGB `DataTexture`, not `CanvasTexture`.
   Draw order is explicit (slab walls −2, top −1, outline above the grid). Shadow at z = −0.04, below the
   grid. New opacities and `gridMajor.every` are validated with `TypeError`. No decision changed.
+- 2026-11-10: design review (2 P1, 5 P2, 3 P3, every claim checked against dev `be7a9dc`). No decision changed,
+  no field renamed.
+  - **P1 lens.** Framing was not lens-aware, so it would have cropped at 32°. It now is, byte-identical at 50,
+    and a dolly-compensated lens setter moved into Lane A. `CameraState` has no lens field.
+  - **P1 placement.** Placement is now `known`/`inferred`/`approximated`/`null`, gated on slicer project +
+    on-bed checks, with `null` for multi-plate scopes.
+  - **P2 model viewer.** It takes only the plate/backdrop subset of `Theme`.
+  - **P2 outline.** It replaces coincident edge grid lines and cage floor edges, and is always transparent. The
+    shadow is at `renderOrder` −0.5.
+  - **P2 `every`.** It now snaps instead of throwing across objects. All numeric validation is `RangeError`.
+  - **P2 background.** One precedence rule for all four surfaces; the shadow belongs to the plate.
+  - **P2 disposal.** A shared `disposeBuildVolume` frees maps, with a full leak matrix.
+  - **P3.** Parity rows 3/4/5 fixed, adapter READMEs moved to Lane D, and the `ResolvedTheme.background`
+    widening is called out.
