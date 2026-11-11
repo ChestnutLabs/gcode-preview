@@ -22,6 +22,7 @@ import {
   type ContainerLimits,
   type ZipEntry
 } from './zip.js';
+import { readPngSize } from './png.js';
 
 export interface PlateEntry {
   index: number;
@@ -41,11 +42,40 @@ export interface StreamLike {
   getReader(): { read(): Promise<{ done: boolean; value?: Uint8Array }>; releaseLock?(): void };
 }
 
+/** One plate preview image read from the archive (always PNG; `width`/`height` come from its IHDR chunk). */
+export interface PlateThumbnail {
+  format: 'png';
+  width: number;
+  height: number;
+  bytes: Uint8Array;
+}
+
+/** Result of {@link OpenedContainer.thumbnailsFor}: the images that survived, and why any were dropped. */
+export interface PlateThumbnails {
+  thumbnails: PlateThumbnail[];
+  warnings: { code: string; message: string }[];
+}
+
 export interface OpenedContainer {
   id: 'gcode-3mf';
   plates: PlateEntry[];
   metadata: ContainerMetadata;
   openPlate(index: number): StreamLike;
+  /**
+   * The slicer's preview images for one plate (#483): `Metadata/plate_N.png`, then
+   * `Metadata/plate_N_small.png`, where either exists. `top_N.png` and `pick_N.png` are NOT included
+   * (`pick_` is an object-id colour map, `top_` is not the plate preview).
+   *
+   * `plate` is the **index into {@link OpenedContainer.plates}** — the same value as the parse `{plate}`
+   * option and `metadata.plates.parsed` — NOT the number `N` in the file name. A file with plates 1 and 3
+   * has indices 0 and 1, and index 1 reads `plate_3.png`. An index outside `plates` returns no images.
+   *
+   * Call this AFTER the plate's G-code has been streamed: the images then draw on whatever is left of the
+   * archive-wide expanded-bytes budget, so they can never make the G-code read fail. An image that is
+   * too large, over budget, corrupt, or not a PNG is dropped with a warning; this method never throws.
+   * Every call returns freshly allocated bytes (safe to transfer).
+   */
+  thumbnailsFor(plate: number): Promise<PlateThumbnails>;
 }
 
 const ZIP_MAGIC = [0x50, 0x4b, 0x03, 0x04];
@@ -154,6 +184,8 @@ export async function openGcode3mf(bytes: Uint8Array, requested?: ContainerLimit
       parseInt(PLATE_RE.exec(b.name.toLowerCase())?.[1] ?? '0')
   );
   plates.forEach((p, i) => (p.index = i));
+  // The plate NUMBER N from each name (plates are sorted by it; indices are positions in that order).
+  const plateNumbers = plates.map((p) => PLATE_RE.exec(p.name.toLowerCase())?.[1] ?? '0');
   if (plates.length === 0) {
     // Distinguish the common user mistake: a MODEL/PROJECT 3MF (meshes, no
     // sliced G-code) vs a genuinely empty/unrecognized archive. Slicing is a
@@ -213,6 +245,47 @@ export async function openGcode3mf(bytes: Uint8Array, requested?: ContainerLimit
     id: 'gcode-3mf',
     plates: plates.map(({ index, name, estimatedBytes }) => ({ index, name, estimatedBytes })),
     metadata: { machine, filaments, raw, warnings },
+    async thumbnailsFor(index: number): Promise<PlateThumbnails> {
+      const out: PlateThumbnails = { thumbnails: [], warnings: [] };
+      const number = plateNumbers[index];
+      if (number === undefined) return out;
+      for (const name of [`metadata/plate_${number}.png`, `metadata/plate_${number}_small.png`]) {
+        const entry = dir.entries.find((e) => e.name === name);
+        if (entry === undefined) continue;
+        if (entry.uncompressedSize > limits.maxMetadataBytes) {
+          out.warnings.push({
+            code: 'metadata-truncated',
+            message: `${entry.rawName} exceeds maxMetadataBytes; skipped`
+          });
+          continue;
+        }
+        let image: Uint8Array;
+        try {
+          image = await extractEntry(bytes, entry, limits.maxMetadataBytes, budget);
+        } catch (err) {
+          out.warnings.push({
+            // An exhausted archive-wide budget says nothing about the image itself: report it like the
+            // per-image cap (skipped for size), not as a corrupt image.
+            code:
+              err instanceof ContainerError && err.code === 'E_CONTAINER_LIMIT_TOTAL'
+                ? 'metadata-truncated'
+                : 'container-thumbnail-invalid',
+            message: `${entry.rawName} unreadable: ${err instanceof Error ? err.message : err}`
+          });
+          continue;
+        }
+        const size = readPngSize(image);
+        if (size === null) {
+          out.warnings.push({
+            code: 'container-thumbnail-invalid',
+            message: `${entry.rawName} is not a PNG with a valid header; skipped`
+          });
+          continue;
+        }
+        out.thumbnails.push({ format: 'png', width: size.width, height: size.height, bytes: image });
+      }
+      return out;
+    },
     openPlate(index: number): StreamLike {
       const plate = plates[index];
       if (plate === undefined) {

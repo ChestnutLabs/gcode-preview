@@ -65,6 +65,16 @@ export interface OpenedContainerLike {
    * as `application/octet-stream`). Each `bytes` must own its ArrayBuffer — it is transferred.
    */
   thumbnails?: { format: string; width: number; height: number; bytes: Uint8Array }[];
+  /**
+   * Per-plate thumbnails (`.gcode.3mf` `plate_N.png`, #483). When present it replaces `thumbnails`. The
+   * worker calls it only AFTER the selected plate's stream is consumed, so images draw on the leftover
+   * archive budget and cannot starve the G-code. `plate` is the index into `plates` (the parse `{plate}`
+   * option), not the number in a file name. Must not throw; returns fresh (transferable) bytes each call.
+   */
+  thumbnailsFor?(plate: number): Promise<{
+    thumbnails: { format: string; width: number; height: number; bytes: Uint8Array }[];
+    warnings: { code: string; message: string }[];
+  }>;
   openPlate(index: number): ReadableStreamLike<Uint8Array>;
 }
 
@@ -411,8 +421,25 @@ export function createWorkerHandler(
           // Container thumbnails (#433, DD-011 D4) join the same `metadata.thumbnails` sink as
           // `; thumbnail` comment thumbnails, ahead of them: the container's own images take precedence
           // in order, like its machine config does. Comment thumbnails are kept, never replaced.
+          // Per-plate container thumbnails (#483) are read here, after the plate stream was consumed above.
+          let containerThumbs = opened.thumbnails ?? [];
+          if (opened.thumbnailsFor !== undefined) {
+            try {
+              const per = await opened.thumbnailsFor(plate ?? 0);
+              containerThumbs = per.thumbnails;
+              for (const w of per.warnings) containerWarnings.push({ ...w, severity: 'warn', count: 1 });
+            } catch (err) {
+              containerThumbs = [];
+              containerWarnings.push({
+                code: 'container-thumbnail-invalid',
+                message: `thumbnails unreadable: ${err instanceof Error ? err.message : String(err)}`,
+                severity: 'warn',
+                count: 1
+              });
+            }
+          }
           const thumbs: ThumbnailData[] = [];
-          for (const t of opened.thumbnails ?? []) {
+          for (const t of containerThumbs) {
             if (thumbs.length >= MAX_CONTAINER_THUMBNAILS) break;
             if (t.bytes.byteLength === 0) continue; // nothing to show — the comment path drops these too
             const mime = THUMBNAIL_MIME.get(t.format) ?? 'application/octet-stream';

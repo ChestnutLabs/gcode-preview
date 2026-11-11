@@ -387,6 +387,25 @@
       "limitations": "Synthetic minimal project; real Bambu/Orca fixtures arrive with the phase-3 adapters."
     },
     {
+      "id": "container-mini-thumbs",
+      "path": "test-data/fixtures/containers/mini-thumbs.gcode.3mf",
+      "sha256": "ae8638cd4e89d34ec4fcf3e987d372cbcbf28a58df0cd3dfa25164f0b41a2801",
+      "bytes": 2998,
+      "origin": "Chestnut-constructed container fixture (tools/fixtures/make-gcode-3mf.mjs, deterministic)",
+      "contributor": "chestnutlabs",
+      "redistribution": "chestnut-original-mit",
+      "slicer": "synthetic (Bambu/Orca .gcode.3mf structure)",
+      "targetFamily": "FDM (container)",
+      "features": [
+        "container",
+        "multi-plate",
+        "thumbnails"
+      ],
+      "expectedCapabilities": {},
+      "sizeTier": "tiny",
+      "limitations": "Synthetic: plates 1 and 3 with valid generated PNGs (plate_N, plate_N_small, plus top_/pick_ decoys). Built to this repo's reading of the Bambu/Orca layout; NOT validated against a real slicer export."
+    },
+    {
       "id": "container-model-project",
       "path": "test-data/fixtures/containers/model-project.3mf",
       "sha256": "effb7b018d0979d0c6e62060e9e3968b8d6a432fc35166c19c21c375c0201f72",

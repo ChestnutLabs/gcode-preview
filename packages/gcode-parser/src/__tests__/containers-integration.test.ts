@@ -8,7 +8,7 @@ import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { openGcode3mf, sniffGcode3mf } from '@chestnutlabs/gcode-containers';
+import { DEFAULT_CONTAINER_LIMITS, openGcode3mf, readDirectory, sniffGcode3mf } from '@chestnutlabs/gcode-containers';
 import { openBgcodeContainer, sniffBgcode } from '@chestnutlabs/gcode-bgcode';
 import { createDialectRunner, orcaBambu, prusaSlicer } from '@chestnutlabs/gcode-dialects';
 import { FeatureRole } from '@chestnutlabs/toolpath-core';
@@ -343,5 +343,90 @@ describe('.bgcode thumbnails reach metadata.thumbnails (#433)', () => {
     expect(err).toBeInstanceOf(ParseSessionError);
     expect((err as ParseSessionError).code).toBe('E_BGCODE_BOMB');
     expect((err as ParseSessionError).message).toBe('metadata/thumbnail blocks exceed the internal budget (33554433)');
+  });
+});
+
+describe('.gcode.3mf plate thumbnails through the worker (#483)', () => {
+  const dims = (r: { metadata?: { thumbnails?: { width: number; height: number; mime: string }[] } }): string[] =>
+    (r.metadata?.thumbnails ?? []).map((t) => `${t.mime} ${t.width}x${t.height}`);
+  const parse = async (
+    containers: WorkerHandlerOptions['containers'],
+    opts: { plate?: number } = {}
+  ): Promise<Awaited<ReturnType<GcodeParseSession['parse']>>> => {
+    const session = new GcodeParseSession({ worker: loopbackWorker({ containers }) });
+    try {
+      return await session.parse(load('mini-thumbs.gcode.3mf'), { yieldIntervalMs: 5, ...opts });
+    } finally {
+      session.dispose();
+    }
+  };
+
+  it('no plate selected → the first plate images; {plate: 1} → the second plate (plate_3) images', async () => {
+    const first = await parse(CONTAINERS);
+    expect(dims(first)).toEqual(['image/png 4x3', 'image/png 2x1']);
+    expect(first.metadata?.plates?.parsed).toBe(0);
+    const second = await parse(CONTAINERS, { plate: 1 });
+    expect(dims(second)).toEqual(['image/png 8x6', 'image/png 4x3']);
+    expect(second.metadata?.plates?.parsed).toBe(1);
+    expect(second.ir.segments.count).toBe(121); // plate_3.gcode: 120 G1 moves + initial G0
+  });
+
+  it('a budget that cannot hold the images still loads the G-code and drops them with a warning', async () => {
+    const bytes = load('mini-thumbs.gcode.3mf');
+    const sizes = new Map(
+      readDirectory(bytes, DEFAULT_CONTAINER_LIMITS).entries.map((e) => [e.name, e.uncompressedSize])
+    );
+    const need = (n: string): number => sizes.get(n) as number;
+    // settings + plate 1 G-code fit, but not plate_1.png on top of them
+    const total =
+      need('metadata/project_settings.config') + need('metadata/plate_1.gcode') + need('metadata/plate_1.png') - 1;
+    const tight: WorkerHandlerOptions['containers'] = [
+      { id: 'gcode-3mf', sniff: sniffGcode3mf, open: (b) => openGcode3mf(b, { maxExpandedBytesTotal: total }) }
+    ];
+    const r = await parse(tight);
+    expect(r.ir.header.complete).toBe(true);
+    expect(r.ir.segments.count).toBe(201); // plate_1.gcode: 200 G1 moves + initial G0
+    expect(dims(r)).toEqual(['image/png 2x1']); // the small image still fits; the big one does not
+    expect(r.ir.header.warnings.filter((x) => x.code === 'container-thumbnail-invalid')).toEqual([]);
+    const w = r.ir.header.warnings.filter((x) => x.code === 'metadata-truncated');
+    expect(w).toHaveLength(1);
+    expect(w[0].message).toContain('Metadata/plate_1.png unreadable');
+    expect(w[0].severity).toBe('warn');
+  });
+
+  it('a thumbnailsFor that throws costs the images, never the parse', async () => {
+    const throwing: WorkerHandlerOptions['containers'] = [
+      {
+        id: 'gcode-3mf',
+        sniff: sniffGcode3mf,
+        open: async (b) => ({
+          ...(await openGcode3mf(b)),
+          // a plain field that must NOT be used as a fallback once thumbnailsFor has thrown
+          thumbnails: [{ format: 'png', width: 9, height: 9, bytes: new Uint8Array([1]) }],
+          thumbnailsFor: () => Promise.reject(new Error('boom'))
+        })
+      }
+    ];
+    const r = await parse(throwing);
+    expect(r.ir.header.complete).toBe(true);
+    expect(r.metadata?.thumbnails).toBeUndefined();
+    expect(r.ir.header.warnings.find((x) => x.code === 'container-thumbnail-invalid')?.message).toBe(
+      'thumbnails unreadable: boom'
+    );
+  });
+
+  it('a container without thumbnailsFor keeps using its plain thumbnails field', async () => {
+    const plain: WorkerHandlerOptions['containers'] = [
+      {
+        id: 'gcode-3mf',
+        sniff: sniffGcode3mf,
+        open: async (b) => {
+          const { thumbnailsFor: _unused, ...rest } = await openGcode3mf(b);
+          void _unused;
+          return { ...rest, thumbnails: [{ format: 'jpg', width: 3, height: 2, bytes: new Uint8Array([1, 2, 3]) }] };
+        }
+      }
+    ];
+    expect(dims(await parse(plain))).toEqual(['image/jpeg 3x2']);
   });
 });
