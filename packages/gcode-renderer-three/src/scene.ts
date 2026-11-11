@@ -48,6 +48,8 @@ import { buildChunkColors, type ColorMode } from './colors.js';
 import { computeDrawState, computeOverlayDrawStates } from './ranges.js';
 import { createBuildVolume, disposeBuildVolume, type BuildVolumeDef, type BuildVolumeStyle } from './build-volume.js';
 import { volumeStyle } from './volume-style.js';
+import { createBackdrop, type Backdrop } from './backdrop.js';
+import { createContactShadow, type ShadowFootprint } from './contact-shadow.js';
 import {
   buildTubeChunk,
   tubeRadialForBudget,
@@ -56,7 +58,7 @@ import {
   TUBES_AUTO_MAX_SEGMENTS,
   type TubeOptions
 } from './tubes.js';
-import type { RenderTargetCanvas, GLRendererLike } from './stage.js';
+import { checkFov, type RenderTargetCanvas, type GLRendererLike } from './stage.js';
 import type { QualityPolicy } from './capability.js';
 import { probeGpuInfo, type GpuInfo, type RenderStats } from './render-stats.js';
 import { GeometryWorkerPool, resolvePoolSize, type GeometryWorkerLike } from './geometry-pool.js';
@@ -175,6 +177,11 @@ export interface ToolpathRendererOptions {
   progressivePreview?: ProgressivePreview;
   /** Camera projection (#150, DD-009 D3); default 'perspective'. */
   cameraMode?: CameraMode;
+  /**
+   * Perspective lens, vertical field of view in degrees (DD-032 §4.2); default 50. Framing reads it, so
+   * the framed content fits at any lens. Throws `RangeError` outside [10, 120] (never clamped).
+   */
+  cameraFov?: number;
   /** Framing target (#306/#6): 'all' extrusion (default) or the printed 'object' (excludes skirt/prime). */
   frameContent?: 'object' | 'all';
   /** Interaction-aware quality (#306/2, DD-020): 'auto' reduces detail while the camera moves. Default 'off'. */
@@ -326,6 +333,8 @@ export class ToolpathRenderer {
   /** Framing target (#306/#6): 'all' = full extrude bounds (default); 'object' = printed object only. */
   private frameContentMode: 'object' | 'all' = 'all';
   private volumeDef: BuildVolumeDef | null = null;
+  /** The gradient scene background's texture (DD-032), owned here and disposed on theme change/dispose. */
+  private backdrop: Backdrop | null = null;
   // Themeable scene objects (#153): lights + resolved theme, retained so setTheme
   // can restyle them live. Materials for tube geometry are made per-chunk.
   private readonly hemiLight: HemisphereLight;
@@ -432,6 +441,8 @@ export class ToolpathRenderer {
   private buildGeneration = 0;
 
   constructor(opts: ToolpathRendererOptions) {
+    // Validate the lens before any GL/stage resource exists, so a bad value never leaks a context.
+    if (opts.cameraFov !== undefined) checkFov(opts.cameraFov);
     this.chunksPerTick = opts.chunksPerTick;
     this.renderDuringBuild = opts.renderDuringBuild ?? true;
     this.colorMode = opts.colorMode ?? DEFAULT_COLOR;
@@ -505,6 +516,8 @@ export class ToolpathRenderer {
         this.emit({ type: 'restored' });
       }
     });
+    // Lens before the first frame, so the initial framing is already for it (DD-032 §4.2).
+    if (opts.cameraFov !== undefined) this.stage.setFov(opts.cameraFov);
     this.frame(); // sensible initial view (bed-centered until an IR arrives)
   }
 
@@ -555,6 +568,7 @@ export class ToolpathRenderer {
       this.ir = null;
       this.buildResult = null;
       this.clearToolpathGeometry();
+      this.refreshContactShadow();
     }
     const firstPartial = this.previewSegments === 0;
     this.previewSegments += slice.segments.count;
@@ -626,6 +640,7 @@ export class ToolpathRenderer {
     this.updateRetractionMarkers();
     this.startBuild(ir);
     this.positionToolpath(ir);
+    this.refreshContactShadow();
     this.frame();
   }
 
@@ -1502,6 +1517,20 @@ export class ToolpathRenderer {
     return this.presentationMode;
   }
 
+  /** The perspective lens, vertical field of view in degrees (DD-032 §4.2). */
+  get cameraFov(): number {
+    return this.stage.fov;
+  }
+
+  /**
+   * Change the perspective lens live (DD-032 §4.2) — delegates to the shared stage, which dolly-compensates
+   * (no re-fit, no `camera-changed`). While orthographic the value is remembered and applied on the switch
+   * back. Throws `RangeError` outside [10, 120].
+   */
+  setCameraFov(fov: number): void {
+    this.stage.setFov(fov);
+  }
+
   /** Switch the camera projection (#150, DD-009 D3) — delegates to the shared stage. */
   setCameraMode(mode: CameraMode): void {
     this.stage.setCameraMode(mode);
@@ -1679,12 +1708,52 @@ export class ToolpathRenderer {
     this.stage.settleInteraction();
   }
 
-  /** Set (or clear) the scene background from the theme. Null leaves three's default. */
+  /**
+   * Set (or clear) the scene background from the theme. Null leaves three's default; a `{ top, bottom }`
+   * gradient becomes an sRGB ramp texture (DD-032 §4.1), and the previous one is disposed first.
+   */
   private applyBackground(): void {
     const bg = this.resolvedTheme.background;
-    // A gradient ({ top, bottom }) is not drawn yet (DD-032 Lane B wires the backdrop): treat it as no
-    // background, three's default, rather than feeding an object to Color (which renders white).
-    this.scene.background = bg === null || typeof bg === 'object' ? null : new Color(bg);
+    this.backdrop?.dispose();
+    this.backdrop = null;
+    if (bg !== null && typeof bg === 'object') {
+      this.backdrop = createBackdrop(bg);
+      this.scene.background = this.backdrop.texture;
+    } else {
+      this.scene.background = bg === null ? null : new Color(bg);
+    }
+  }
+
+  /**
+   * The contact-shadow footprint (DD-032 §4.1): the classifier's `modelBounds`, then `objectBounds`, then
+   * all extrusion — the DD-026 precedence, independent of `frameContent`. Null with no final IR.
+   */
+  private shadowFootprint(): ShadowFootprint | null {
+    const ir = this.ir;
+    if (ir === null) return null;
+    if (Number.isFinite(ir.modelBounds.min.x)) return ir.modelBounds;
+    if (Number.isFinite(ir.objectBounds.min.x)) return ir.objectBounds;
+    return Number.isFinite(ir.bounds.min.x) ? ir.bounds : null;
+  }
+
+  /**
+   * (Re)build the contact shadow as a child of the build-volume group (DD-032 §4.1): it belongs to the
+   * plate, so it is absent without a volume, hidden with it by `capture({ includeBuildVolume: false })`,
+   * and freed by the volume's dispose walk. Absent when the theme sets no `contactShadow` or there is
+   * no content.
+   */
+  private refreshContactShadow(): void {
+    const group = this.volumeGroup;
+    if (group === null) return;
+    const old = group.getObjectByName('contactShadow');
+    if (old !== undefined) {
+      disposeBuildVolume(old); // frees geometry, material and its alpha map
+      group.remove(old);
+    }
+    const cs = this.resolvedTheme.contactShadow;
+    if (cs === undefined) return;
+    const shadow = createContactShadow(this.shadowFootprint(), cs.opacity);
+    if (shadow !== null) group.add(shadow);
   }
 
   /**
@@ -1711,6 +1780,7 @@ export class ToolpathRenderer {
       this.root.remove(this.volumeGroup);
       this.volumeGroup = createBuildVolume(this.volumeDef, this.volumeStyle());
       this.root.add(this.volumeGroup);
+      this.refreshContactShadow();
     }
     // Swap the tube material preset only when it actually changed (avoids churn/leaks).
     if (t.materialPreset !== prevPreset) {
@@ -1836,6 +1906,7 @@ export class ToolpathRenderer {
     this.volumeDef = next;
     this.volumeGroup = createBuildVolume(next, this.volumeStyle());
     this.root.add(this.volumeGroup);
+    this.refreshContactShadow();
     this.render();
   }
 
@@ -1925,6 +1996,8 @@ export class ToolpathRenderer {
     if (this.volumeGroup) {
       disposeBuildVolume(this.volumeGroup);
     }
+    this.backdrop?.dispose();
+    this.backdrop = null;
     this.ghostMaterial.dispose();
     this.bandMaterial.dispose();
     this.staleBandMaterial.dispose();

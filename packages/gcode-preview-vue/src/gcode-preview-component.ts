@@ -53,6 +53,9 @@ export const GcodePreview = defineComponent({
     progressivePreview: { type: String as PropType<ProgressivePreview>, default: undefined },
     /** #150 (DD-009 D3): camera projection. */
     cameraMode: { type: String as PropType<CameraMode>, default: 'perspective' },
+    /** DD-032: perspective lens in degrees, [10, 120] (default 50; `STUDIO_CAMERA_FOV` = 32). Unset keeps the
+     *  current lens. Out of range throws `RangeError` (never clamped). 3D only. */
+    cameraFov: { type: Number as PropType<number>, default: undefined },
     /** #306/#6: frame the printed 'object' (excl. skirt/prime) or 'all' extrusion. Default 'all'. */
     frameContent: { type: String as PropType<'object' | 'all'>, default: 'all' },
     /** #306/2 (DD-020): 'auto' reduces detail while the camera moves. Default 'off'. */
@@ -99,6 +102,7 @@ export const GcodePreview = defineComponent({
           | 'qualityMode'
           | 'progressivePreview'
           | 'cameraMode'
+          | 'cameraFov'
           | 'frameContent'
           | 'interactionQuality'
           | 'theme'
@@ -141,6 +145,7 @@ export const GcodePreview = defineComponent({
         qualityMode: props.qualityMode,
         progressivePreview: props.progressivePreview,
         cameraMode: props.cameraMode,
+        cameraFov: props.cameraFov,
         frameContent: props.frameContent,
         interactionQuality: props.interactionQuality,
         theme: props.theme,
@@ -220,7 +225,7 @@ export const GcodePreview = defineComponent({
     // and Element's `applyRuntimeState()` all apply the initial value on mount). Controls issued before
     // the renderer resolves are queued and replayed, so firing at mount is safe.
     //
-    // The CONSTRUCTION-covered props (`colorMode`, `quality`, `cameraMode`, `theme`, and a plain
+    // The CONSTRUCTION-covered props (`colorMode`, `quality`, `cameraMode`, `cameraFov`, `theme`, and a plain
     // `buildVolume`) are already applied as renderer options at controller creation above, so their
     // watchers stay change-only — making them immediate would just re-apply the same value redundantly.
     watch(
@@ -293,6 +298,12 @@ export const GcodePreview = defineComponent({
     watch(
       () => props.cameraMode,
       (mode) => preview.controls.setCameraMode(mode)
+    );
+    watch(
+      () => props.cameraFov,
+      (fov) => {
+        if (fov !== undefined) preview.controls.setCameraFov(fov);
+      }
     );
     watch(
       () => props.frameContent,

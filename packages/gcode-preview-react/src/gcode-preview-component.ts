@@ -63,6 +63,9 @@ export interface GcodePreviewProps {
   progressivePreview?: ProgressivePreview;
   /** #150 (DD-009 D3): camera projection. */
   cameraMode?: CameraMode;
+  /** DD-032: perspective lens in degrees, [10, 120] (default 50; `STUDIO_CAMERA_FOV` = 32). Unset keeps the
+   *  current lens. Out of range throws `RangeError` (never clamped). 3D only. */
+  cameraFov?: number;
   /** #306/#6: frame the printed 'object' (excl. skirt/prime) or 'all' extrusion. Default 'all'. */
   frameContent?: 'object' | 'all';
   /** #306/2 (DD-020): 'auto' reduces detail while the camera moves. Default 'off'. */
@@ -103,6 +106,7 @@ export interface GcodePreviewProps {
     | 'qualityMode'
     | 'progressivePreview'
     | 'cameraMode'
+    | 'cameraFov'
     | 'frameContent'
     | 'interactionQuality'
     | 'theme'
@@ -144,6 +148,7 @@ function GcodePreviewImpl(props: GcodePreviewProps, ref: ForwardedRef<GcodePrevi
       qualityMode: props.qualityMode,
       progressivePreview: props.progressivePreview,
       cameraMode: props.cameraMode ?? 'perspective',
+      cameraFov: props.cameraFov,
       frameContent: props.frameContent ?? 'all',
       interactionQuality: props.interactionQuality ?? 'off',
       theme: props.theme,
@@ -230,6 +235,7 @@ function GcodePreviewImpl(props: GcodePreviewProps, ref: ForwardedRef<GcodePrevi
     qualityMode,
     progressivePreview,
     cameraMode,
+    cameraFov,
     frameContent,
     interactionQuality,
     view,
@@ -279,6 +285,9 @@ function GcodePreviewImpl(props: GcodePreviewProps, ref: ForwardedRef<GcodePrevi
   useEffect(() => {
     if (cameraMode !== undefined) preview.controls.setCameraMode(cameraMode);
   }, [cameraMode]);
+  useEffect(() => {
+    if (cameraFov !== undefined) preview.controls.setCameraFov(cameraFov);
+  }, [cameraFov]);
   useEffect(() => {
     if (frameContent !== undefined) preview.controls.setFrameContent(frameContent);
   }, [frameContent]);

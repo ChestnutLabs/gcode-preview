@@ -36,12 +36,13 @@ import {
   type TubeOptions
 } from '@chestnutlabs/gcode-renderer-three';
 import { type MachineGeometry, type ToolpathIR } from '@chestnutlabs/toolpath-core';
+import { checkCameraFov } from './lens.js';
 
 /** Explicit camera pose (scene coordinates), overriding the deterministic frame(). */
 export interface StillCameraPose {
   position: [number, number, number];
   target: [number, number, number];
-  /** Vertical field of view in degrees (default: the renderer's 50°). */
+  /** Vertical field of view in degrees (default: {@link RenderStillOptions.cameraFov}, else 50°). Beats `cameraFov`. */
   fov?: number;
 }
 
@@ -55,6 +56,12 @@ export interface RenderStillOptions {
   quality?: QualityMode | 'auto';
   /** Camera projection (#150, DD-009 D3); default 'perspective'. */
   cameraMode?: CameraMode;
+  /**
+   * Perspective lens, vertical field of view in degrees (DD-032 §4.2); default 50. The deterministic
+   * framing reads it, so the framed content fits at any lens; an explicit `camera.fov` beats it. Must be
+   * in [10, 120]: anything else rejects with `RangeError` before any parse or GL work.
+   */
+  cameraFov?: number;
   /** Framing target (#306/#6): 'all' extrusion (default) or the printed 'object' (excludes skirt/prime). */
   frameContent?: 'object' | 'all';
   colorMode?: ColorMode;
@@ -162,6 +169,7 @@ export async function renderStill(
   source: Uint8Array | ArrayBuffer | ToolpathIR,
   options: RenderStillOptions
 ): Promise<RenderStillResult> {
+  if (options.cameraFov !== undefined) checkCameraFov(options.cameraFov);
   const { canvas } = options;
   const width = options.width ?? canvas.width;
   const height = options.height ?? canvas.height;
@@ -231,6 +239,7 @@ export async function renderStill(
     renderDuringBuild: false,
     ...geometryPoolOpts,
     ...(options.cameraMode ? { cameraMode: options.cameraMode } : {}),
+    ...(options.cameraFov !== undefined ? { cameraFov: options.cameraFov } : {}),
     ...(options.frameContent ? { frameContent: options.frameContent } : {}),
     ...(resolvedTheme ? { theme: resolvedTheme } : {}),
     ...(options.colorMode ? { colorMode: options.colorMode } : {}),

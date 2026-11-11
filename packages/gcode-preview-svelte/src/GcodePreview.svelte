@@ -26,6 +26,9 @@
   export let progressivePreview = undefined;
   /** #150 (DD-009 D3): camera projection ('perspective' | 'orthographic'). */
   export let cameraMode = 'perspective';
+  /** DD-032: perspective lens in degrees, [10, 120] (default 50; STUDIO_CAMERA_FOV = 32). Unset keeps the
+   *  current lens. Out of range throws RangeError (never clamped). 3D only. */
+  export let cameraFov = undefined;
   /** #306/#6: frame the printed 'object' (excl. skirt/prime) or 'all' extrusion. Default 'all'. */
   export let frameContent = 'all';
   /** #306/2 (DD-020): 'auto' reduces detail while the camera moves. Default 'off'. */
@@ -78,6 +81,7 @@
       qualityMode,
       progressivePreview,
       cameraMode,
+      cameraFov,
       frameContent,
       interactionQuality,
       theme,
@@ -161,6 +165,7 @@
   $: if (qualityMode) preview.controls.setQualityMode(qualityMode);
   $: if (progressivePreview) preview.controls.setProgressivePreview(progressivePreview);
   $: preview.controls.setCameraMode(cameraMode);
+  $: if (cameraFov !== undefined) preview.controls.setCameraFov(cameraFov);
   $: preview.controls.setFrameContent(frameContent);
   $: preview.controls.setInteractionQuality(interactionQuality);
   $: if (view !== undefined) preview.controls.setView(view);
