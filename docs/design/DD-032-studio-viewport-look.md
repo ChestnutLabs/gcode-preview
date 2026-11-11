@@ -495,4 +495,4 @@ Release v0.22.0 per `docs/reference/release-process.md` after D, with the owner'
   against Round-2 1.84 / 2.15, and outline-only edges 2.757 / 2.689 against 3.03 / 3.07 (below 3:1): both miss.**
   Black body against plate is 4.02; white is 2.92 (white base against shadow 2.61). The grid stays visible inside
   the contact shadow and is identical across all eight filament × theme cells. Preset values were not changed;
-  the cause is undiagnosed and reported to the lead. Data kept outside the repo.
+  the shipped preset measured below target; cause under investigation. Data kept outside the repo.
