@@ -6,7 +6,7 @@
  * inbound messages to the returned handler. The Web Worker entry (`worker.ts`)
  * is a two-line shim over this.
  */
-import type { DialectMetadata, ToolpathIR, Warning } from '@chestnutlabs/toolpath-core';
+import type { DialectMetadata, ThumbnailData, ToolpathIR, Warning } from '@chestnutlabs/toolpath-core';
 import {
   parseGcodeToIRAsync,
   type AsyncParseHooks,
@@ -59,6 +59,12 @@ export interface OpenedContainerLike {
     raw: Record<string, string>;
     warnings: { code: string; message: string }[];
   };
+  /**
+   * Thumbnails the container stores as binary data rather than as `; thumbnail` G-code comments
+   * (`.bgcode` Thumbnail blocks, #433). `format` is `'png' | 'jpg' | 'qoi'` (anything else is kept
+   * as `application/octet-stream`). Each `bytes` must own its ArrayBuffer — it is transferred.
+   */
+  thumbnails?: { format: string; width: number; height: number; bytes: Uint8Array }[];
   openPlate(index: number): ReadableStreamLike<Uint8Array>;
 }
 
@@ -88,6 +94,13 @@ const STREAM_EVENT_CAP = 500_000;
  * zero total-time cost. An explicit consumer `partialPreview` setting wins.
  */
 const CONTAINER_PARTIAL_MIN_BYTES = 8 * 1024 * 1024;
+/** Container thumbnails kept per parse — the same per-source bound the dialect sink applies. */
+const MAX_CONTAINER_THUMBNAILS = 8;
+const THUMBNAIL_MIME = new Map([
+  ['png', 'image/png'],
+  ['jpg', 'image/jpeg'],
+  ['qoi', 'image/qoi']
+]);
 
 /** Detection windows for sliceable inputs (DD-005 §4.5). Non-seekable streams: head/tail arrive in phase 4. */
 async function detectWindows(input: ParseInputWire): Promise<{ headText: string; tailText: string }> {
@@ -394,6 +407,19 @@ export function createWorkerHandler(
               list: opened.plates.map((p) => ({ index: p.index, name: p.name })),
               parsed: plate ?? 0
             };
+          }
+          // Container thumbnails (#433, DD-011 D4) join the same `metadata.thumbnails` sink as
+          // `; thumbnail` comment thumbnails, ahead of them: the container's own images take precedence
+          // in order, like its machine config does. Comment thumbnails are kept, never replaced.
+          const thumbs: ThumbnailData[] = [];
+          for (const t of opened.thumbnails ?? []) {
+            if (thumbs.length >= MAX_CONTAINER_THUMBNAILS) break;
+            if (t.bytes.byteLength === 0) continue; // nothing to show — the comment path drops these too
+            const mime = THUMBNAIL_MIME.get(t.format) ?? 'application/octet-stream';
+            thumbs.push({ width: t.width, height: t.height, mime, bytes: t.bytes });
+          }
+          if (thumbs.length > 0) {
+            metadata.thumbnails = [...thumbs, ...(metadata.thumbnails ?? [])];
           }
         }
         for (const w of containerWarnings) {

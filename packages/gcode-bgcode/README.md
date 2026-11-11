@@ -44,8 +44,11 @@ if (sniffBgcode(firstBytes, name)) {
 
 It also registers as a **container adapter** in the batteries parser worker, so a `.bgcode` file "just
 works" through `GcodeParseSession` (`containers: 'auto'`) — decoded to G-code, with the machine geometry
-(`bed_shape`) and whitelisted slicer settings surfaced as container metadata. Thumbnails are decoded and
-available on `openBgcodeContainer(bytes).thumbnails`.
+(`bed_shape`) and whitelisted slicer settings surfaced as container metadata. The file's embedded
+thumbnails arrive on the parse result as `metadata.thumbnails` (`{ width, height, mime, bytes }`; `mime`
+is `image/png`, `image/jpeg` or `image/qoi`), the same list `; thumbnail` comments fill for plain
+`.gcode`. Up to 8 are kept, in file order. They are also available directly on
+`openBgcodeContainer(bytes).thumbnails`.
 
 Every failure — bad magic/version, CRC mismatch, truncation, unknown/unsupported codec, or a
 decompression bomb — is a structured, bounded `ContainerError` (never a crash or an unbounded read).

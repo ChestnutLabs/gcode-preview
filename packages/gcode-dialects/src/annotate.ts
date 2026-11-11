@@ -242,9 +242,15 @@ export function decodeBase64(text: string): Uint8Array | null {
   return out.subarray(0, o);
 }
 
+/** Maps a `thumbnail[_JPG|_QOI]` variant suffix (any case, or undefined for plain) to its MIME type. */
+function thumbnailMime(variant: string | undefined): string {
+  const v = variant === undefined ? '' : variant.toUpperCase();
+  return v === '_JPG' ? 'image/jpeg' : v === '_QOI' ? 'image/qoi' : 'image/png';
+}
+
 /** Shared thumbnail-comment accumulator (`thumbnail begin WxH LEN` … base64 … `thumbnail end`). */
 export class ThumbnailCollector {
-  private active: { width: number; height: number; b64: string[]; bytes: number } | null = null;
+  private active: { width: number; height: number; mime: string; b64: string[]; bytes: number } | null = null;
   constructor(private readonly maxBytesPerThumbnail = 512 * 1024) {}
 
   /** True while inside a begin/end block — the adapter must route EVERY comment here. */
@@ -255,20 +261,28 @@ export class ThumbnailCollector {
   /** Feed one comment line; emits to the sink when a bounded thumbnail completes. */
   feed(comment: string, sink: AnnotationSink): void {
     const trimmed = comment.trim();
-    const begin = /^thumbnail(?:_JPG|_QOI)? begin (\d+)[x ](\d+) (\d+)/i.exec(trimmed);
+    const begin = /^thumbnail(_JPG|_QOI)? begin (\d+)[x ](\d+) (\d+)/i.exec(trimmed);
     if (begin !== null) {
-      const declared = parseInt(begin[3]);
+      const declared = parseInt(begin[4]);
       this.active =
         declared <= this.maxBytesPerThumbnail
-          ? { width: parseInt(begin[1]), height: parseInt(begin[2]), b64: [], bytes: 0 }
+          ? {
+              width: parseInt(begin[2]),
+              height: parseInt(begin[3]),
+              mime: thumbnailMime(begin[1]),
+              b64: [],
+              bytes: 0
+            }
           : null;
       return;
     }
-    if (/^thumbnail(?:_JPG|_QOI)? end/i.test(trimmed)) {
-      if (this.active !== null) {
+    const end = /^thumbnail(_JPG|_QOI)? end/i.exec(trimmed);
+    if (end !== null) {
+      // A block whose end variant differs from its begin variant is malformed — drop it (fail closed).
+      if (this.active !== null && thumbnailMime(end[1]) === this.active.mime) {
         const bytes = decodeBase64(this.active.b64.join(''));
         if (bytes !== null && bytes.byteLength > 0) {
-          sink.addThumbnail({ width: this.active.width, height: this.active.height, mime: 'image/png', bytes });
+          sink.addThumbnail({ width: this.active.width, height: this.active.height, mime: this.active.mime, bytes });
         }
       }
       this.active = null;

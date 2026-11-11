@@ -8,9 +8,9 @@
  * CRC32, decompresses, decodes, and concatenates the GCode blocks into a plain-G-code buffer the
  * existing parser consumes unchanged. **Decode-only** — never writes `.bgcode`.
  *
- * Phase 1 (this file) implements the walker + CRC + **None/DEFLATE** compression and **None**
- * encoding. MeatPack (encoding) and heatshrink (compression) are honest, structured "not yet
- * supported" errors until phases 2 and 3.
+ * Supports every v1 codec: **None / DEFLATE / heatshrink 11 & 12** compression (`heatshrink.ts`) and
+ * **None / MeatPack / MeatPack-with-comments** encoding (`meatpack.ts`). Only an id outside the spec
+ * is rejected, with a structured `E_BGCODE_UNSUPPORTED_COMPRESSION` / `_ENCODING` error.
  */
 import { ContainerError, crc32, crc32Final } from '@chestnutlabs/gcode-containers';
 import { meatpackDecode } from './meatpack.js';
@@ -238,7 +238,7 @@ function decode(encoding: number, bytes: Uint8Array, limit: number): Uint8Array 
 /**
  * Decode a `.bgcode` v1 buffer to plain G-code. Walks every block, verifies per-block CRC32 (when the
  * file declares it), decompresses + decodes the GCode blocks, and concatenates them in file order.
- * Non-GCode blocks are walked past (their metadata/thumbnails are surfaced in phase 4). Every failure
+ * Non-GCode blocks are walked past unless `metadata: true` decodes them into `settings`/`thumbnails`. Every failure
  * is a structured, bounded `ContainerError` (from `@chestnutlabs/gcode-containers`) — never a crash or
  * an unbounded read/allocation.
  */
