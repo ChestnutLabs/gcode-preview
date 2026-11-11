@@ -133,7 +133,7 @@ is clamped to `[MIN_FACTOR, 1]` (e.g. 0.4–1.0) so it can never amplify cost.
     and `dispose`, so it costs nothing outside a gesture.
   - An injected `requestFrame` is only cancelled through the injected `cancelFrame` — never the global
     `cancelAnimationFrame`, whose handle space is different (a foreign id could cancel an unrelated rAF).
-    Without `cancelFrame`, a late tick after the gesture ends is ignored (the `interacting` guard).
+    Without `cancelFrame`, a late tick after the gesture ends is ignored (the sampler-generation check).
   - Rendering stays synchronous in the `change` handler; a step takes effect on the next `change`.
   - With no `requestAnimationFrame` (non-browser host) there is no adaptation: the proactive 0.6 factor
     holds for the whole gesture.
