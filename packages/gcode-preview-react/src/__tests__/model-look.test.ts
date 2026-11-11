@@ -45,7 +45,7 @@ describe('react <ModelViewer> — DD-032 look props', () => {
     await settle();
     expect(handle.current!.state.placement).toBe('approximated');
     expect(handle.current!.state.placementOffset).toEqual({ x: 45, y: 40, z: 0 });
-    expect(gl.snapshot()).toEqual({ fov: 32, plate: true, shadow: true, background: 'DataTexture' });
+    expect(gl.snapshot()).toEqual({ fov: 32, plate: true, cage: true, shadow: true, background: 'DataTexture' });
 
     await act(async () => {
       root.render(
@@ -58,7 +58,7 @@ describe('react <ModelViewer> — DD-032 look props', () => {
     });
     await settle();
     expect(handle.current!.state.placementOffset).toEqual({ x: 95, y: 90, z: 0 });
-    expect(gl.snapshot()).toEqual({ fov: 60, plate: true, shadow: true, background: 'null' });
+    expect(gl.snapshot()).toEqual({ fov: 60, plate: true, cage: true, shadow: true, background: 'null' });
 
     await act(async () => {
       root.render(render({ buildVolume: null, theme: { ...studioTheme('light'), background: null }, cameraFov: 60 }));

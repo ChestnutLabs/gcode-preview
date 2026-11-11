@@ -33,6 +33,8 @@
   export let loaders = undefined;
   /** Build plate under the model (DD-032): the full BuildVolumeDef; null/omitted = no plate. */
   export let buildVolume = undefined;
+  /** Show the build-volume wireframe cage over the plate (the plate, grid and shadow stay). Default true. */
+  export let showVolumeCage = true;
   /** Plate/backdrop look, e.g. studioTheme('dark'); lights are deliberately not themed. Beats `background`. */
   export let theme = undefined;
   /** Perspective lens in degrees, [10, 120] (default 50). Out of range throws RangeError. */
@@ -97,6 +99,7 @@
   $: if (renderScope !== undefined) viewer.controls.setRenderScope(renderScope);
   // DD-032: look + lens (the controller remembers them across canvas rebinds)
   $: if (buildVolume !== undefined) viewer.controls.setBuildVolume(buildVolume);
+  $: viewer.controls.setBuildVolumeCage(showVolumeCage);
   $: if (theme !== undefined) viewer.controls.setTheme(theme);
   $: if (cameraFov !== undefined) viewer.controls.setCameraFov(cameraFov);
   $: if (pixelRatio !== undefined) viewer.controls.setPixelRatio(pixelRatio);

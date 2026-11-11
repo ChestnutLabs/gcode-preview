@@ -81,7 +81,9 @@ export class ModelPlate {
   constructor(
     private readonly scene: Scene,
     private def: BuildVolumeDef | null,
-    private theme: Theme | undefined
+    private theme: Theme | undefined,
+    /** Whether the wireframe cage is drawn (the plate, grid and shadow are independent of it). */
+    private cageVisible = true
   ) {
     this.root.name = 'modelPlate';
     this.root.rotation.x = -Math.PI / 2; // printer Z-up → scene Y-up, as the model root
@@ -103,6 +105,16 @@ export class ModelPlate {
 
   setTheme(theme: Theme | undefined): void {
     this.theme = theme;
+  }
+
+  /**
+   * Show/hide the wireframe cage, in place (no rebuild, no re-placement). Remembered, so every later rebuild
+   * (bed, theme, scope, context restore) honours it.
+   */
+  setCageVisible(visible: boolean): void {
+    this.cageVisible = visible;
+    const cage = this.volume?.getObjectByName('volumeCage');
+    if (cage !== undefined) cage.visible = visible;
   }
 
   /**
@@ -133,7 +145,7 @@ export class ModelPlate {
     this.free();
     if (this.disposed || this.def === null || this.result.placement === null) return;
     const resolved = resolveTheme(this.theme);
-    const volume = createBuildVolume(this.def, volumeStyle(resolved, true));
+    const volume = createBuildVolume(this.def, volumeStyle(resolved, this.cageVisible));
     if (resolved.contactShadow !== undefined) {
       const shadow = createContactShadow(this.footprint, resolved.contactShadow.opacity);
       if (shadow !== null) volume.add(shadow);

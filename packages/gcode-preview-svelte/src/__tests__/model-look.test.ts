@@ -37,13 +37,13 @@ describe('svelte createModelViewer — DD-032 look', () => {
     await viewer.setSource(makeStlModelSource());
     expect(state.placement).toBe('approximated');
     expect(state.placementOffset).toEqual({ x: 45, y: 40, z: 0 });
-    expect(gl.snapshot()).toEqual({ fov: 32, plate: true, shadow: true, background: 'DataTexture' });
+    expect(gl.snapshot()).toEqual({ fov: 32, plate: true, cage: true, shadow: true, background: 'DataTexture' });
 
     viewer.controls.setBuildVolume({ x: 200, y: 200, z: 100 });
     viewer.controls.setCameraFov(60);
     viewer.controls.setTheme({ ...studioTheme('light'), background: null });
     expect(state.placementOffset).toEqual({ x: 95, y: 90, z: 0 });
-    expect(gl.snapshot()).toEqual({ fov: 60, plate: true, shadow: true, background: 'null' });
+    expect(gl.snapshot()).toEqual({ fov: 60, plate: true, cage: true, shadow: true, background: 'null' });
     expect(() => viewer.controls.setCameraFov(121)).toThrow(RangeError);
     expect(() => viewer.controls.setTheme({ bedOutline: { opacity: 2 } })).toThrow(RangeError);
     viewer.controls.setBuildVolume(null);
