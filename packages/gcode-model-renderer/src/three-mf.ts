@@ -72,20 +72,147 @@ interface ModelPart {
   items: { objectid: string; transform: number[] | null }[];
 }
 
-const TAG_RE = /<(\/?)([\w:.-]+)((?:[^>"']|"[^"]*"|'[^']*')*?)(\/?)>/g;
-const ATTR_RE = /([\w:.-]+)\s*=\s*(?:"([^"]*)"|'([^']*)')/g;
+// A whole name run is consumed with an OPTIONAL `="value"` tail (#468). The tail-less form
+// `/([\w:.-]+)\s*=\s*(?:"…"|'…')/g` restarts inside every word with no `=` (one 80 KB word took 8.6 s); this one
+// cannot restart mid-run, and skipping a run whose tail fails matches the old result exactly (every start inside
+// the run has the same continuation). A lookbehind would do the same but throws at load on Safari < 16.4.
+const ATTR_RE = /([\w:.-]+)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'))?/g;
 
 function localName(tag: string): string {
   const i = tag.indexOf(':');
   return i === -1 ? tag : tag.slice(i + 1);
 }
 
-function attrs(s: string): Record<string, string> {
+/** Internal (exported for the differential tests; not part of the package API). */
+export function attrs(s: string): Record<string, string> {
   const out: Record<string, string> = {};
-  ATTR_RE.lastIndex = 0;
+  // A global regex is back at lastIndex 0 once its exec loop ends, so no reset is needed here.
   let m: RegExpExecArray | null;
-  while ((m = ATTR_RE.exec(s)) !== null) out[m[1]] = m[2] ?? m[3] ?? '';
+  while ((m = ATTR_RE.exec(s)) !== null) {
+    if (m[2] !== undefined || m[3] !== undefined) out[m[1]] = m[2] ?? m[3];
+  }
   return out;
+}
+
+const isNameCode = (c: number): boolean =>
+  (c >= 48 && c <= 58) /* 0-9 : */ || (c >= 65 && c <= 90) || (c >= 97 && c <= 122) || c === 95 || c === 46 || c === 45;
+
+/**
+ * Tag tokenizer for the model XML, linear in the input (#468). Reproduces EXACTLY the matches of the old
+ * `/<(\/?)([\w:.-]+)((?:[^>"']|"[^"]*"|'[^']*')*?)(\/?)>/g` loop (differentially fuzz-tested), which was
+ * quadratic three ways: it restarted a lazy body scan at every `<` with no terminating `>` (120 KB of `<a `
+ * took 12 s), the greedy name backtracked (one 20k-char name took 1 s), and ATTR_RE (above) restarted in words.
+ *
+ * Old semantics, made explicit: a tag is `<`, optional `/`, a name run, then a body that ends at the FIRST `>`
+ * outside a quoted string (a quote opens a string that must close with the same quote, else the start fails);
+ * a `/` just before that `>` is the self-close marker. On a failed start the scan resumes at the next `<` —
+ * and that resume is what is NOT stopped: a stray quote can fail an early tag while the tags after it still
+ * parse. To stay linear each failing quote-opener is remembered in a bitmap (the outcome of a scan from an
+ * opener depends only on the opener's position), so a later start that walks into a known-failing opener
+ * fails at once. Success needs no memo: the next scan starts past everything it read.
+ *
+ * Memory: the bitmap is allocated lazily on the FIRST failed start (a well-formed file never allocates it) and
+ * is at most one bit per input character, `(xml.length >> 3) + 1` bytes.
+ */
+export class TagScanner {
+  /** Fields of the tag returned by the last `next()` → `true`. */
+  closing = false;
+  name = '';
+  selfClose = false;
+  raw = '';
+  private pos = 0;
+  private failed: Uint8Array | null = null;
+  // Cache of the last `special()` lookup: no special char in [cFrom, cHit) (cHit -1 = none to the end).
+  private cFrom = -1;
+  private cHit = -1;
+
+  constructor(private readonly xml: string) {}
+
+  /** Index of the first `>`, `"` or `'` at/after `c`, or -1. */
+  private special(c: number): number {
+    if (this.cFrom >= 0 && c >= this.cFrom && (this.cHit === -1 || c <= this.cHit)) return this.cHit;
+    const xml = this.xml;
+    const n = xml.length;
+    let i = c;
+    for (; i < n; i++) {
+      const k = xml.charCodeAt(i);
+      if (k === 62 || k === 34 || k === 39) break;
+    }
+    this.cFrom = c;
+    this.cHit = i < n ? i : -1;
+    return this.cHit;
+  }
+
+  private isFailed(x: number): boolean {
+    return this.failed !== null && (this.failed[x >> 3] & (1 << (x & 7))) !== 0;
+  }
+
+  /** Index of the `>` ending a body that starts at `c`, or -1 when the body never terminates. */
+  private walk(c: number): number {
+    const xml = this.xml;
+    for (;;) {
+      const x = this.special(c);
+      if (x < 0) return -1;
+      const k = xml.charCodeAt(x);
+      if (k === 62) return x;
+      if (this.isFailed(x)) return -1;
+      const y = xml.indexOf(k === 34 ? '"' : "'", x + 1);
+      if (y < 0) return -1;
+      c = y + 1;
+    }
+  }
+
+  /** Remember every quote-opener on the failed walk from `c` (stops at one already known). */
+  private markFailed(c: number): void {
+    const xml = this.xml;
+    for (;;) {
+      const x = this.special(c);
+      if (x < 0) return;
+      const k = xml.charCodeAt(x);
+      if (k === 62 || this.isFailed(x)) return;
+      this.failed ??= new Uint8Array((xml.length >> 3) + 1);
+      this.failed[x >> 3] |= 1 << (x & 7);
+      const y = xml.indexOf(k === 34 ? '"' : "'", x + 1);
+      if (y < 0) return;
+      c = y + 1;
+    }
+  }
+
+  /** Advance to the next tag; `false` when there are no more. */
+  next(): boolean {
+    const xml = this.xml;
+    const n = xml.length;
+    for (;;) {
+      const i = xml.indexOf('<', this.pos);
+      if (i < 0) {
+        this.pos = n;
+        return false;
+      }
+      let p = i + 1;
+      const closing = xml.charCodeAt(p) === 47;
+      if (closing) p++;
+      let q = p;
+      while (q < n && isNameCode(xml.charCodeAt(q))) q++;
+      if (q === p) {
+        this.pos = i + 1;
+        continue;
+      }
+      const gt = this.walk(q);
+      if (gt < 0) {
+        this.markFailed(q);
+        this.pos = i + 1;
+        continue;
+      }
+      // A name char precedes the body (q > p), so `gt - 1` is in bounds and is never read from before the `<`.
+      const selfClose = xml.charCodeAt(gt - 1) === 47;
+      this.closing = closing;
+      this.name = xml.slice(p, q);
+      this.selfClose = selfClose;
+      this.raw = xml.slice(q, selfClose ? gt - 1 : gt);
+      this.pos = gt + 1;
+      return true;
+    }
+  }
 }
 
 /** sRGB "#RRGGBB(AA)" → linear RGB in 0..1 (alpha ignored). Returns null on a malformed value. */
@@ -253,13 +380,12 @@ function parseModelPart(xml: string, lim: ResolvedLimits): ModelPart {
   let curPaletteId: string | null = null;
   let inBuild = false;
 
-  TAG_RE.lastIndex = 0;
-  let t: RegExpExecArray | null;
-  while ((t = TAG_RE.exec(xml)) !== null) {
-    const closing = t[1] === '/';
-    const name = localName(t[2]);
-    const selfClose = t[4] === '/';
-    const raw = t[3];
+  const tags = new TagScanner(xml);
+  while (tags.next()) {
+    const closing = tags.closing;
+    const name = localName(tags.name);
+    const selfClose = tags.selfClose;
+    const raw = tags.raw;
 
     if (name === 'model' && !closing) {
       const u = attrs(raw).unit;

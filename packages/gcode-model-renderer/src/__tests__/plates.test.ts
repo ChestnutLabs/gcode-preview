@@ -383,7 +383,7 @@ describe('parseObjectExtruders linear scan (#468)', () => {
   });
 
   it('returns promptly on 1 MiB of object headers that never close', () => {
-    const xml = '<object id="1" '.repeat(65_536);
+    const xml = '<object id="1" '.repeat(69_906);
     const t0 = performance.now();
     const n = parseObjectExtruders(xml).size;
     const ms = performance.now() - t0;
