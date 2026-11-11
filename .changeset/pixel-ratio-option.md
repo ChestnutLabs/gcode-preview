@@ -8,8 +8,9 @@
 '@chestnutlabs/gcode-preview-element': minor
 ---
 
-New opt-in `pixelRatio` for sharper interactive views on HiDPI screens. If you don't set it, rendering
-doesn't change: the canvas stays at one drawing-buffer pixel per CSS pixel.
+New opt-in `pixelRatio` for sharper interactive views on HiDPI screens. If you don't set it, nothing
+changes: the renderer keeps its own ratio (1 for the built-in renderer, whatever a custom
+`createRenderer` was set to).
 
 - **What it takes.** A number in (0, 4], or `'device'`. `'device'` uses the screen's `devicePixelRatio`,
   capped at 2, and follows it live when it changes, for example when the window moves to another monitor
@@ -20,10 +21,12 @@ doesn't change: the canvas stays at one drawing-buffer pixel per CSS pixel.
 - **Orbiting.** `interactionQuality: 'auto'` still lowers detail while the camera moves and settles back
   on your ratio. A change made mid-gesture applies at once, still reduced, and the gesture settles on
   the new ratio.
-- **`capture()`.** The default image size doesn't change. With no `width`/`height`, a capture is the
-  canvas's CSS size whatever the ratio. Pass `width`/`height` for a crisper image. This also fixes an
-  unsized `capture()` taken during an orbit with `interactionQuality: 'auto'`: it used to return the
-  reduced-detail size, and now returns the CSS size.
+- **`capture()`.** With no `width`/`height`: unset, the default image is the resting drawing-buffer size,
+  as before, whatever renderer you use (with the built-in renderer that is the CSS size). With a
+  `pixelRatio` set, it is the canvas's CSS size whatever the ratio. So with the built-in renderer, setting
+  a ratio never changes the default image size. Pass `width`/`height` for a crisper image. This also fixes
+  an unsized `capture()` taken during an orbit with `interactionQuality: 'auto'`: it used to return the
+  reduced-detail size, and now returns the resting size.
 - **Where to set it.**
   - Toolpath viewer: the `renderer.pixelRatio` controller option and `controls.setPixelRatio(ratio)`. It
     is validated synchronously, even before the 3D renderer loads, and kept across canvas rebinds.
@@ -39,7 +42,8 @@ doesn't change: the canvas stays at one drawing-buffer pixel per CSS pixel.
 - **Stills.** `renderStill` and `renderModelStill` have no pixel-ratio option; size a still with
   `width`/`height`.
 - **Lower-level API.** `ToolpathRenderer` and `InteractiveStage` gain a `pixelRatio` option and
-  `setPixelRatio`. `InteractionQualityController` gains `rebase(ratio)` and `currentRatio`. `PreviewRenderer`
+  `setPixelRatio`. `InteractionQualityController` gains `rebase(ratio)`, `currentRatio` and
+  `reduction`. `PreviewRenderer`
   gains an optional `setPixelRatio`, so an existing custom renderer still type-checks. New exports:
   the `PixelRatioOption` type (also from `gcode-preview-core`), `DEVICE_PIXEL_RATIO_CAP`, and the
   `DisplayEnv` / `MediaQueryListLike` types (an injectable display for tests).

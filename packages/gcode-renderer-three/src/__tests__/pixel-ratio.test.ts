@@ -83,8 +83,8 @@ describe('InteractionQualityController.rebase', () => {
 });
 
 /** A stub GL that sizes the canvas like three: width = floor(css × ratio). Capture-capable. */
-function makeGl(canvas: HTMLCanvasElement) {
-  const gl = { ratio: 1, cssW: 0, cssH: 0, ratios: [] as number[], renders: 0, reads: [] as [number, number][] };
+function makeGl(canvas: HTMLCanvasElement, ratio = 1) {
+  const gl = { ratio, cssW: 0, cssH: 0, ratios: [] as number[], renders: 0, reads: [] as [number, number][] };
   const apply = (): void => {
     canvas.width = Math.floor(gl.cssW * gl.ratio);
     canvas.height = Math.floor(gl.cssH * gl.ratio);
@@ -164,9 +164,11 @@ function makeDisplay(dpr: number | undefined, withMatchMedia = true) {
   return { env, queries, live, change };
 }
 
-function makeStage(opts: { pixelRatio?: PixelRatioOption; env?: DisplayEnv; quality?: 'off' | 'auto' } = {}) {
+function makeStage(
+  opts: { pixelRatio?: PixelRatioOption; env?: DisplayEnv; quality?: 'off' | 'auto'; glRatio?: number } = {}
+) {
   const canvas = document.createElement('canvas');
-  const { gl, stub } = makeGl(canvas);
+  const { gl, stub } = makeGl(canvas, opts.glRatio);
   let controls: ReturnType<typeof stubControls> | null = null;
   const stage = new InteractiveStage({
     canvas,
@@ -372,5 +374,35 @@ describe('ToolpathRenderer pixelRatio', () => {
     );
     expect(err).toBe('RangeError');
     expect(made).toBe(0);
+  });
+});
+
+describe('InteractiveStage on a renderer already at ratio 2 (a consumer createRenderer)', () => {
+  const sizeOf = async (h: ReturnType<typeof makeStage>): Promise<[number, number]> => {
+    await h.stage.capture().catch(() => undefined); // the encode step is browser-only
+    return h.gl.reads[h.gl.reads.length - 1]!;
+  };
+
+  it('pixelRatio unset + auto: the default capture is the drawing buffer, before, during and after a gesture', async () => {
+    vi.useFakeTimers();
+    const h = makeStage({ glRatio: 2, quality: 'auto' });
+    expect(h.canvas.width).toBe(600);
+    expect(await sizeOf(h)).toEqual([600, 300]);
+    h.controls.fire('change'); // 2 × 0.6 = 1.2 → buffer 360 × 180
+    expect(h.canvas.width).toBe(360);
+    expect(await sizeOf(h)).toEqual([600, 300]);
+    h.controls.fire('end');
+    vi.advanceTimersByTime(150);
+    expect(h.canvas.width).toBe(600);
+    expect(await sizeOf(h)).toEqual([600, 300]);
+    vi.useRealTimers();
+  });
+
+  it('setPixelRatio(1) is applied (not skipped as already current), and capture follows', async () => {
+    const h = makeStage({ glRatio: 2 });
+    h.stage.setPixelRatio(1);
+    expect(h.gl.ratios).toEqual([1]);
+    expect(h.canvas.width).toBe(300);
+    expect(await sizeOf(h)).toEqual([300, 150]);
   });
 });

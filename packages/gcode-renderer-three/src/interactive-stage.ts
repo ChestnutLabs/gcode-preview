@@ -637,8 +637,9 @@ export class InteractiveStage {
    * nor requires `preserveDrawingBuffer`), reads it back, and encodes it. Rejects with an
    * `E_CAPTURE_UNSUPPORTED` error when the renderer cannot render-to-target (a stub GL / no WebGL) or the
    * stage is disposed / context-lost. The caller owns the returned `Blob` — the library never downloads.
-   * With no `width`/`height` the image is the canvas's CSS size, whatever the pixel ratio (and also
-   * mid-gesture); pass `width`/`height` for a crisper image.
+   * With no `width`/`height` and no `pixelRatio` set, the image is the resting drawing-buffer size, as
+   * before (also mid-gesture). With a `pixelRatio` set it is the canvas's CSS size, so setting one never
+   * changes it; pass `width`/`height` for a crisper image.
    */
   async capture(opts: CaptureOptions = {}): Promise<Blob> {
     if (this.disposedFlag || this.contextLost || !supportsCapture(this.gl)) {
@@ -650,10 +651,12 @@ export class InteractiveStage {
       throw new CaptureUnsupportedError(`capture unavailable: ${why}`);
     }
     const gl = this.gl;
-    // The default size is the CSS size: the drawing buffer divided by the ratio applied right now (the
-    // reduced one mid-gesture), so a pixelRatio never changes what an unsized capture() returns.
-    const applied = this.interactionQuality.currentRatio;
-    const { w, h } = resolveCaptureSize(opts, this.canvas.width / applied, this.canvas.height / applied);
+    // The default size. With a pixelRatio set it is the CSS size: the drawing buffer divided by the ratio
+    // applied right now (the reduced one mid-gesture). Unset, the renderer's own ratio is the consumer's
+    // business, so it is the resting drawing buffer, exactly as before: only a gesture's reduction is undone.
+    const q = this.interactionQuality;
+    const divisor = this.hostRatio === null ? q.reduction : q.currentRatio;
+    const { w, h } = resolveCaptureSize(opts, this.canvas.width / divisor, this.canvas.height / divisor);
     // The render target's texture MUST declare sRGB so three applies the same linear→sRGB output
     // encoding it gives the canvas. A default (NoColorSpace/linear) target makes readRenderTargetPixels
     // return LINEAR bytes — the whole capture (background AND geometry colours) comes back too dark
