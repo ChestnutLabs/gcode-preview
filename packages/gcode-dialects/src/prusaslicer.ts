@@ -41,13 +41,17 @@ const TYPE_MAP: Record<string, number> = {
   custom: FeatureRole.Custom
 };
 
-/** Parse PrusaSlicer/Orca `<h>h <m>m <s>s` (any part optional) → seconds; null when zero/unparsed. */
+/**
+ * Parse PrusaSlicer/Orca `<d>d <h>h <m>m <s>s` (any part optional) → seconds; null when zero/unparsed.
+ * The slicers add the day field for prints of 24 h or more (`1d 2h 3m 4s`).
+ */
 export function parseHmsToSeconds(text: string): number | null {
   // Whitespace is consumed once, after each token: adjacent optional `\s*` runs backtrack
   // polynomially on a long whitespace line.
-  const m = /^\s*(?:(\d+)\s*h\s*)?(?:(\d+)\s*m\s*)?(?:(\d+)\s*s\s*)?$/.exec(text);
+  const m = /^\s*(?:(\d+)\s*d\s*)?(?:(\d+)\s*h\s*)?(?:(\d+)\s*m\s*)?(?:(\d+)\s*s\s*)?$/.exec(text);
   if (m === null) return null;
-  const total = Number(m[1] ?? 0) * 3600 + Number(m[2] ?? 0) * 60 + Number(m[3] ?? 0);
+  const total =
+    Number(m[1] ?? 0) * 86400 + Number(m[2] ?? 0) * 3600 + Number(m[3] ?? 0) * 60 + Number(m[4] ?? 0);
   return total > 0 ? total : null;
 }
 

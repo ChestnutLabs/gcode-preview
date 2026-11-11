@@ -53,6 +53,26 @@ const FEATURE_MAP: Record<string, number> = {
   custom: FeatureRole.Custom
 };
 
+/**
+ * Read the Orca/Bambu print-time comment: one `total estimated time:` / `model printing time:` field, or
+ * both on one line separated by `;`. Prefers the total (what the slicer reports for the job), else the
+ * model time. Returns null when the comment is not a print-time line; `seconds` is null when it is one
+ * but no field parses.
+ */
+function matchPrintTime(trimmed: string): { seconds: number | null; evidence: string } | null {
+  let total: { seconds: number | null; evidence: string } | null = null;
+  let model: { seconds: number | null; evidence: string } | null = null;
+  for (const part of trimmed.split(';')) {
+    const field = part.trim();
+    const m = /^(total estimated time|model printing time)\s*:\s*(\S.*)$/i.exec(field);
+    if (m === null) continue;
+    const found = { seconds: parseHmsToSeconds(m[2]), evidence: field };
+    if (m[1].toLowerCase() === 'total estimated time') total ??= found;
+    else model ??= found;
+  }
+  return [total, model].find((t) => t !== null && t.seconds !== null) ?? total ?? model;
+}
+
 interface OrcaState {
   features: RangeMarker[];
   wipes: WipeMark[];
@@ -147,14 +167,14 @@ export function orcaBambu(): DialectAdapter {
         s.thumbs.feed(comment, sink);
         return;
       }
-      // Orca/Bambu print-time comments are colon-separated (`; total estimated time: 1h 2m 3s`).
-      const timeMatch = /^(?:total estimated time|model printing time)\s*:\s*(\S.*)$/i.exec(trimmed);
-      if (timeMatch !== null) {
-        const sec = parseHmsToSeconds(timeMatch[1]);
-        if (sec !== null) {
+      // Orca/Bambu print-time comments are colon-separated, and Bambu Studio / OrcaSlicer put both on
+      // ONE header line: `; model printing time: 1h 53m 22s; total estimated time: 2h 0m 34s`.
+      const time = matchPrintTime(trimmed);
+      if (time !== null) {
+        if (time.seconds !== null) {
           sink.setPrintEstimate({
-            seconds: sec,
-            source: { adapterId: 'orca-bambu', evidence: `; ${trimmed}`, srcByte }
+            seconds: time.seconds,
+            source: { adapterId: 'orca-bambu', evidence: `; ${time.evidence}`, srcByte }
           });
         }
         return;

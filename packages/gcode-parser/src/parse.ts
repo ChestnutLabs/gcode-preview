@@ -297,7 +297,12 @@ export interface Engine {
 
 /** Internal: build an engine over decoded text (streaming passes '' and feeds lines itself). */
 export function createEngine(input: string | Uint8Array, opts: ParseOptions): Engine {
-  const limits: ParseLimits = { ...DEFAULT_LIMITS, ...opts.limits };
+  // A key passed as `undefined` (an optional setting forwarded as-is) keeps its default. A plain spread
+  // would copy the `undefined`, and every `x > undefined` check is false, so the bound would be OFF.
+  const limits: ParseLimits = { ...DEFAULT_LIMITS };
+  for (const [key, value] of Object.entries(opts.limits ?? {}) as [keyof ParseLimits, number | undefined][]) {
+    if (value !== undefined) limits[key] = value;
+  }
   const tolerance = opts.minLayerThreshold ?? LAYER_TOLERANCE;
   const text = typeof input === 'string' ? input : new TextDecoder().decode(input);
   let byteLength = typeof input === 'string' ? text.length : input.byteLength;
@@ -687,7 +692,9 @@ export function createEngine(input: string | Uint8Array, opts: ParseOptions): En
       const deltaA = ta - sa;
       const deltaB = tb - sb;
       const minR = Math.sqrt(Math.pow(deltaA / 2, 2) + Math.pow(deltaB / 2, 2));
-      r = Math.max(r, minR);
+      // A negative R selects the arc longer than 180°: clamp the magnitude only, so the sign survives
+      // to the long-way test below (clamping the signed value turned every negative R into +minR).
+      r = r < 0 ? -Math.max(-r, minR) : Math.max(r, minR);
       const dSquared = Math.pow(deltaA, 2) + Math.pow(deltaB, 2);
       const hSquared = Math.pow(r, 2) - dSquared / 4;
       let hDivD = Math.sqrt(hSquared / dSquared);
@@ -716,9 +723,10 @@ export function createEngine(input: string | Uint8Array, opts: ParseOptions): En
     let arcAngleIncrement = totalArc / totalSegments;
     arcAngleIncrement *= cw ? -1 : 1;
 
-    // Through-axis linear ramp — preserves the inherited step (byte-identical for planar XY arcs,
-    // where the through axis is unchanged so the ramp is flat).
-    const cStep = (sc - tc) / totalSegments;
+    // Through-axis linear ramp from the start toward the target (a helix). The inherited step had the
+    // sign reversed, so a helix ramped away from its target and jumped back on the last segment. Planar
+    // arcs (through axis unchanged) have a zero step either way, so they stay byte-identical.
+    const cStep = (tc - sc) / totalSegments;
 
     const kind = kindForPath(pathType) | MoveKind.ArcSegment;
     const eachE = e !== undefined ? eDelta / Math.max(1, Math.ceil(totalSegments)) : 0;

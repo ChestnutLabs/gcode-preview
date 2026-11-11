@@ -442,6 +442,9 @@ class Evaluator {
 
   /** Read a word's value: a `#`param-ref, a `[expr]`, or a numeric literal. */
   readWordValue(): number {
+    // Each word value is a fresh top-level expression. A malformed earlier word on the same line threw
+    // out of its brackets without unwinding `depth`, so 64 of them made every later word "too deep".
+    this.depth = 0;
     this.skipWs();
     const c = this.s[this.i];
     if (c === '#') return this.readParamRef();
@@ -634,8 +637,9 @@ class Evaluator {
 
   /** Peek an operator belonging to `ops`; return its lexeme or null. Word ops must be word-bounded. */
   private peekOperator(ops: readonly string[]): string | null {
+    // `**` never reaches here: LEVELS has no `**`, and parsePower consumes a `**` at the cursor before
+    // any peek at the same position, so a `*` seen here is always a single `*`.
     for (const op of ops) {
-      if (op === '**') continue; // power handled in parsePower
       const isWord = /^[a-z]+$/.test(op);
       if (isWord) {
         const seg = this.s.slice(this.i, this.i + op.length).toLowerCase();
@@ -644,7 +648,6 @@ class Evaluator {
           if (after === undefined || !isLetter(after)) return op;
         }
       } else if (this.s.startsWith(op, this.i)) {
-        if (op === '*' && this.s[this.i + 1] === '*') continue; // don't eat `**` as `*`
         return op;
       }
     }

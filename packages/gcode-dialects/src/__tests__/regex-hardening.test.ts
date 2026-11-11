@@ -31,7 +31,7 @@ describe('parseHmsToSeconds (was cubic on whitespace)', () => {
     ['45s  ', 45],
     ['', null],
     ['     ', null],
-    ['1d 2h', null],
+    // `1d 2h` left out: the old regex had no day field (a defect, fixed later; see mutation-sweep.test.ts).
     ['garbage', null],
     ['0h 0m 0s', null],
     ['1h 2m 3s extra', null],
