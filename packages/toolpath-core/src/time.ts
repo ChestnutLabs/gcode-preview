@@ -17,8 +17,9 @@ export interface ToolpathTime {
   /** Total kinematic duration (ms). */
   totalMs: number;
   /**
-   * True if any moving segment had an unknown feedrate (contributed 0). The estimate is then a lower
-   * bound / approximate — a consumer should disclose it (and prefer the slicer estimate when present).
+   * True if any moving segment had an unknown feedrate or a non-finite length (contributed 0). The
+   * estimate is then a lower bound / approximate — a consumer should disclose it (and prefer the slicer
+   * estimate when present).
    */
   hasUnknownFeedrate: boolean;
 }
@@ -36,9 +37,12 @@ export function computeToolpathTime(ir: ToolpathIR): ToolpathTime {
     const dz = seg.z1[i] - seg.z0[i];
     const dist = Math.hypot(dx, dy, dz);
     const f = seg.feedrate[i]; // mm/min
-    if (Number.isFinite(f) && f > 0) {
-      t += dist / (f / 60000); // mm ÷ (mm/ms) = ms
-    } else if (dist > 0) {
+    const dt = Number.isFinite(f) && f > 0 ? dist / (f / 60000) : NaN; // mm ÷ (mm/ms) = ms
+    if (Number.isFinite(dt)) {
+      t += dt;
+    } else if (dist !== 0) {
+      // Unknown feedrate on a real move, or a non-finite length (a coordinate beyond the IR's Float32
+      // range): contributes 0 and flags the estimate — never NaN/Infinity poisoning the rest of the axis.
       hasUnknownFeedrate = true;
     }
     cumulativeMs[i] = t;

@@ -52,22 +52,27 @@ export type ColorMode =
 /** Neutral color used when a mode has no palette / the channel value is unknown. */
 export const DEFAULT_FALLBACK: RGB = [0.7, 0.7, 0.7];
 
-/** Min/max of the IR's defined (non-NaN) feedrates — the auto-range for color-by-speed (#177). */
+/**
+ * Min/max of the IR's finite feedrates — the auto-range for color-by-speed (#177). NaN (no `F` yet) and
+ * ±Infinity (an `F` word too large for the IR's Float32 channel) are skipped, so one hostile value
+ * cannot collapse the whole scale.
+ */
 export function feedrateRange(ir: ToolpathIR): [number, number] {
   const f = ir.segments.feedrate;
   let min = Infinity;
   let max = -Infinity;
   for (let i = 0; i < f.length; i++) {
     const v = f[i];
-    if (Number.isNaN(v)) continue;
+    if (!Number.isFinite(v)) continue;
     if (v < min) min = v;
     if (v > max) max = v;
   }
   return min <= max ? [min, max] : [0, 0];
 }
 
-/** Min/max of the IR's captured (non-NaN) tool-power values — the auto-range for color-by-power
- *  (#189). Returns `[0, 0]` when the `toolPower` modal channel was not captured. */
+/** Min/max of the IR's captured finite tool-power values — the auto-range for color-by-power
+ *  (#189). Non-finite values are skipped (as in {@link feedrateRange}). Returns `[0, 0]` when the
+ *  `toolPower` modal channel was not captured. */
 export function toolPowerRange(ir: ToolpathIR): [number, number] {
   const p = ir.segments.modal?.toolPower;
   if (p === undefined) return [0, 0];
@@ -75,7 +80,7 @@ export function toolPowerRange(ir: ToolpathIR): [number, number] {
   let max = -Infinity;
   for (let i = 0; i < p.length; i++) {
     const v = p[i];
-    if (Number.isNaN(v)) continue;
+    if (!Number.isFinite(v)) continue;
     if (v < min) min = v;
     if (v > max) max = v;
   }
@@ -96,23 +101,24 @@ export function layerHeights(ir: ToolpathIR): Float32Array {
   return h;
 }
 
-/** Min/max per-layer height — the auto-range for color-by-layer-height (#179). */
+/** Min/max finite per-layer height — the auto-range for color-by-layer-height (#179). */
 export function layerHeightRange(ir: ToolpathIR): [number, number] {
   const h = layerHeights(ir);
   let min = Infinity;
   let max = -Infinity;
   for (let i = 0; i < h.length; i++) {
+    if (!Number.isFinite(h[i])) continue;
     if (h[i] < min) min = h[i];
     if (h[i] > max) max = h[i];
   }
   return min <= max ? [min, max] : [0, 0];
 }
 
-/** Sample a color ramp at t∈[0,1] with linear interpolation between stops. */
+/** Sample a color ramp at t∈[0,1] with linear interpolation between stops. `t` is clamped; NaN → the start. */
 export function rampColor(ramp: RGB[], t: number): RGB {
   if (ramp.length === 0) return DEFAULT_FALLBACK;
   if (ramp.length === 1) return ramp[0];
-  const clamped = t < 0 ? 0 : t > 1 ? 1 : t;
+  const clamped = t > 0 ? (t < 1 ? t : 1) : 0;
   const p = clamped * (ramp.length - 1);
   const lo = Math.floor(p);
   const hi = Math.min(lo + 1, ramp.length - 1);
@@ -136,6 +142,16 @@ function swapSlotAt(colorChanges: readonly { segIndex: number }[], segIndex: num
     else hi = mid;
   }
   return lo;
+}
+
+/**
+ * Ramp color of `v` on `[lo, lo + span]` (a zero/negative span → the ramp start), or `fallback` when the
+ * value has no position: NaN `v`, or a NaN `t` from an infinite value on an infinite range.
+ */
+function rampOrFallback(ramp: RGB[], v: number, lo: number, span: number, fallback: RGB): RGB {
+  if (Number.isNaN(v)) return fallback;
+  const t = span > 0 ? (v - lo) / span : 0;
+  return Number.isNaN(t) ? fallback : rampColor(ramp, t);
 }
 
 /** Per-segment RGB accessor — the loop-friendly form both renderers use. */
@@ -185,10 +201,7 @@ export function createSegmentColorer(ir: ToolpathIR, mode: ColorMode): SegmentCo
     const [lo, hi] = mode.range ?? feedrateRange(ir);
     const span = hi - lo;
     // NaN feedrate (before the first F) → fallback, never a fabricated speed color (#177).
-    return (i) => {
-      const v = seg.feedrate[i];
-      return Number.isNaN(v) ? mode.fallback : rampColor(mode.ramp, span > 0 ? (v - lo) / span : 0);
-    };
+    return (i) => rampOrFallback(mode.ramp, seg.feedrate[i], lo, span, mode.fallback);
   }
   if (mode.mode === 'layerHeight') {
     // Precompute per-layer heights once → O(1) per segment (#179). An out-of-range layer index
@@ -199,7 +212,7 @@ export function createSegmentColorer(ir: ToolpathIR, mode: ColorMode): SegmentCo
     return (i) => {
       const li = seg.layer[i];
       if (li < 0 || li >= heights.length) return mode.fallback;
-      return rampColor(mode.ramp, span > 0 ? (heights[li] - lo) / span : 0);
+      return rampOrFallback(mode.ramp, heights[li], lo, span, mode.fallback);
     };
   }
   if (mode.mode === 'power') {
@@ -212,10 +225,7 @@ export function createSegmentColorer(ir: ToolpathIR, mode: ColorMode): SegmentCo
     const [lo, hi] = mode.range ?? toolPowerRange(ir);
     const span = hi - lo;
     // NaN (tool off / never engaged) → fallback, never a fabricated power color.
-    return (i) => {
-      const v = power[i];
-      return Number.isNaN(v) ? mode.fallback : rampColor(mode.ramp, span > 0 ? (v - lo) / span : 0);
-    };
+    return (i) => rampOrFallback(mode.ramp, power[i], lo, span, mode.fallback);
   }
   if (mode.mode === 'moveKind') {
     return (i) => {
