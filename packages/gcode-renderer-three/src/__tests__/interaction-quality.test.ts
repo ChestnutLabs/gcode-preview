@@ -337,6 +337,28 @@ describe('InteractionQualityController', () => {
     }
   });
 
+  it("without cancelFrame, a gesture restarted before the old loop's tick fires still runs exactly one loop", () => {
+    vi.useFakeTimers();
+    try {
+      const h = makeController('auto', { base: 1, noCancel: true });
+      h.c.onFrame(); // gesture A: loop 1 scheduled
+      h.c.settle();
+      vi.advanceTimersByTime(150); // A restored; loop 1's callback cannot be cancelled
+      h.c.onFrame(); // gesture B starts before loop 1's tick fires: loop 2 scheduled
+      expect(h.pending()).toBe(2);
+      h.tick(1000); // both callbacks fire: the stale one exits, the live one re-arms
+      expect(h.pending()).toBe(1);
+      for (let i = 1; i <= 4; i++) {
+        h.c.onFrame();
+        h.tick(1000 + i * 16);
+        expect(h.pending()).toBe(1); // never two loops
+      }
+      expect(h.calls.requested).toBe(7); // A:1 + B:1 + B re-arms on 5 ticks
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('without a frame scheduler there is no adaptation — the 0.6 factor holds for the gesture', () => {
     const saved = globalThis.requestAnimationFrame;
     // @ts-expect-error — simulate a host without requestAnimationFrame

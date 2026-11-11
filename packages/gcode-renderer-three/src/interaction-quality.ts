@@ -37,7 +37,7 @@ export const INTERACTION_FACTOR_STEP = 0.15;
  * `requestAnimationFrame`/`cancelAnimationFrame`. With no frame scheduler available the factor stays
  * at its proactive value for the whole gesture (no adaptation). A supplied `requestFrame` is only ever
  * cancelled through `cancelFrame` (never the global one — its handles are foreign); without
- * `cancelFrame`, a late tick after the gesture ends is ignored.
+ * `cancelFrame`, a late tick from a stopped sampler is ignored (it carries a stale generation).
  */
 export interface InteractionQualityDeps {
   setPixelRatio(ratio: number): void;
@@ -67,6 +67,8 @@ export class InteractionQualityController {
   private lastTick: number | null = null;
   private renderedSinceTick = false;
   private emptyFrames = 0;
+  /** Bumped on every sampler start/stop; a tick carrying an older value is from a dead loop. */
+  private samplerGen = 0;
   private slowStreak = 0;
   private fastStreak = 0;
 
@@ -151,10 +153,15 @@ export class InteractionQualityController {
   private startSampling(): void {
     if (this.frameHandle !== null) return;
     this.lastTick = null;
-    this.frameHandle = this.requestFrame(this.tick);
+    this.schedule(++this.samplerGen);
+  }
+
+  private schedule(gen: number): void {
+    this.frameHandle = this.requestFrame((t) => this.tick(t, gen));
   }
 
   private stopSampling(): void {
+    this.samplerGen++;
     if (this.frameHandle !== null) {
       if (this.deps.requestFrame) this.deps.cancelFrame?.(this.frameHandle);
       else if (typeof globalThis.cancelAnimationFrame === 'function') globalThis.cancelAnimationFrame(this.frameHandle);
@@ -163,9 +170,11 @@ export class InteractionQualityController {
     this.lastTick = null;
   }
 
-  private readonly tick = (t: number): void => {
+  private tick(t: number, gen: number): void {
+    // A stale tick (its loop was stopped but could not be cancelled — an injected `requestFrame` with no
+    // `cancelFrame`) must neither measure nor re-arm, or a restarted gesture would run two loops.
+    if (gen !== this.samplerGen) return;
     this.frameHandle = null;
-    if (!this.interacting) return;
     // A frame with no interaction render (input slower than the display, e.g. 60 Hz input on a 120 Hz
     // screen) is not a measurement: re-baseline, so every sampled interval spans exactly one frame that
     // rendered, and keep the streaks. Only a run of empty frames is a real pause: stop and reset; the
@@ -178,15 +187,15 @@ export class InteractionQualityController {
         return;
       }
       this.lastTick = t;
-      this.frameHandle = this.requestFrame(this.tick);
+      this.schedule(gen);
       return;
     }
     this.emptyFrames = 0;
     this.renderedSinceTick = false;
     if (this.lastTick !== null) this.sample(t - this.lastTick);
     this.lastTick = t;
-    this.frameHandle = this.requestFrame(this.tick);
-  };
+    this.schedule(gen);
+  }
 
   /** Bounded hysteresis: a streak of slow intervals → coarser; of fast ones → finer. Clamped to [MIN, 1]. */
   private sample(dt: number): void {
