@@ -54,6 +54,7 @@ import {
   type Warning
 } from '@chestnutlabs/toolpath-core';
 import { resolveColorMode } from './color-resolve.js';
+import { checkCameraFov } from './lens.js';
 
 /** Session/renderer events, re-emitted, plus the controller's own lifecycle events. */
 export type PreviewEvent =
@@ -113,6 +114,12 @@ export interface PreviewControllerOptions {
     progressivePreview?: ProgressivePreview;
     /** Camera projection (#150, DD-009 D3); default 'perspective'. 3D only. */
     cameraMode?: CameraMode;
+    /**
+     * Perspective lens: vertical field of view in degrees (DD-032 §4.2), default 50. Framing reads it,
+     * so the framed content fits at any lens. Must be in [10, 120]: anything else throws `RangeError`
+     * from {@link createPreviewController} (never clamped). Kept across canvas rebinds. 3D only.
+     */
+    cameraFov?: number;
     /** Framing target (#306/#6): 'all' extrusion (default) or the printed 'object'. 3D only. */
     frameContent?: 'object' | 'all';
     /** Interaction-aware quality (#306/2, DD-020): 'auto' reduces detail while moving. 3D only. */
@@ -226,6 +233,14 @@ export interface GcodePreviewControls {
   setProgressivePreview(mode: ProgressivePreview): void;
   /** Switch camera projection (#150, DD-009 D3). */
   setCameraMode(mode: CameraMode): void;
+  /**
+   * Change the perspective lens (DD-032 §4.2), degrees. The camera dollies to keep the framing, without
+   * a re-fit and without a `camera-changed` event; while orthographic the lens is remembered and
+   * applied on the switch back. Throws `RangeError` synchronously outside [10, 120] (never clamped),
+   * even before the 3D renderer has loaded. Kept across canvas rebinds. The 2D renderer discloses
+   * this via `renderer-unsupported`.
+   */
+  setCameraFov(fov: number): void;
   /** Snap to a preset orientation — top/front/iso/… (#268). Instant; preserves the projection.
    *  The 2D renderer discloses this via `renderer-unsupported` rather than moving. */
   setView(view: CameraView): void;
@@ -349,6 +364,10 @@ export function createPreviewController(options: PreviewControllerOptions = {}):
   let requestedColorMode: ColorMode | undefined = options.renderer?.colorMode;
   let lastMetadata: DialectMetadata | undefined;
   let consumerVolumeSet = options.renderer?.buildVolume !== undefined;
+  // The lens (DD-032): validated up front, and passed to every 3D renderer this controller binds, so a
+  // canvas rebind or renderer reload keeps the last lens the consumer set.
+  if (options.renderer?.cameraFov !== undefined) checkCameraFov(options.renderer.cameraFov);
+  let cameraFov: number | undefined = options.renderer?.cameraFov;
   let activeParse: Promise<unknown> | null = null;
   let resizeObserver: { disconnect(): void } | null = null;
   let windowResize: (() => void) | null = null;
@@ -468,6 +487,7 @@ export function createPreviewController(options: PreviewControllerOptions = {}):
           qualityMode: r.qualityMode,
           progressivePreview: r.progressivePreview,
           cameraMode: r.cameraMode,
+          cameraFov,
           frameContent: r.frameContent,
           interactionQuality: r.interactionQuality,
           colorMode: resolveColorMode(requestedColorMode, lastMetadata, lastIR),
@@ -641,6 +661,12 @@ export function createPreviewController(options: PreviewControllerOptions = {}):
     setQualityMode: (m) => withRenderer((r) => r.setQualityMode(m)),
     setProgressivePreview: (m) => withRenderer((r) => r.setProgressivePreview(m)),
     setCameraMode: (m) => withRenderer((r) => r.setCameraMode(m)),
+    setCameraFov: (fov) => {
+      // Synchronous, so a call made before the on-demand 3D load throws here, not later in the replay.
+      checkCameraFov(fov);
+      cameraFov = fov;
+      withRenderer((r) => r.setCameraFov?.(fov));
+    },
     setView: (v) => withRenderer((r) => r.setView(v)),
     // Returns a value, so it can't queue: before the renderer is ready (or on 2D) there is no pose → null.
     getCameraState: () => (renderer !== null ? renderer.getCameraState() : null),

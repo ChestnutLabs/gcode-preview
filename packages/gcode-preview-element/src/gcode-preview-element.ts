@@ -47,6 +47,7 @@ export type ElementRendererOptions = Omit<
   | 'qualityMode'
   | 'progressivePreview'
   | 'cameraMode'
+  | 'cameraFov'
   | 'frameContent'
   | 'interactionQuality'
   | 'theme'
@@ -61,6 +62,7 @@ const OBSERVED = [
   'quality-mode',
   'progressive-preview',
   'camera-mode',
+  'camera-fov',
   'frame-content',
   'interaction-quality',
   'view',
@@ -92,6 +94,8 @@ export class GcodePreviewElement extends HTMLElement {
   private _colorMode: ColorMode | undefined;
   private _tube: TubeOptions | undefined;
   private _theme: Theme | undefined;
+  /** The last valid `camera-fov` (DD-032), kept across a bad attribute value and a reconnect. */
+  private lastFov: number | undefined;
   private _progress: ProgressObservation | null = null;
   private _createWorker: (() => WorkerLike) | undefined;
   private _rendererOptions: ElementRendererOptions | undefined;
@@ -204,6 +208,22 @@ export class GcodePreviewElement extends HTMLElement {
   }
   set cameraMode(v: string | null) {
     this.reflect('camera-mode', v);
+  }
+  /**
+   * DD-032: perspective lens in degrees, [10, 120] (default 50; `STUDIO_CAMERA_FOV` = 32). Reflects the
+   * `camera-fov` attribute; `null` removes it and keeps the current lens. Setting the property out of
+   * range throws `RangeError` (never clamped) and leaves the attribute unchanged. A markup/`setAttribute`
+   * value that is not a number in range is ignored: the element keeps the last valid lens. Reads return the
+   * effective lens: a valid attribute, else the last valid lens, else `null` (none set yet).
+   */
+  get cameraFov(): number | null {
+    return parseFov(this.getAttribute('camera-fov')) ?? this.lastFov ?? null;
+  }
+  set cameraFov(v: number | null) {
+    if (v !== null && !(v >= 10 && v <= 120)) {
+      throw new RangeError(`fov must be in [10, 120] degrees (got ${String(v)})`);
+    }
+    this.reflect('camera-fov', v);
   }
   /** #306/#6: frame the printed 'object' (excl. skirt/prime) or 'all' extrusion. */
   get frameContent(): string | null {
@@ -350,6 +370,7 @@ export class GcodePreviewElement extends HTMLElement {
         qualityMode: (this.getAttribute('quality-mode') as 'full' | 'adaptive' | 'fast' | null) ?? undefined,
         progressivePreview: (this.getAttribute('progressive-preview') as 'lines' | 'hold' | 'off' | null) ?? undefined,
         cameraMode: (this.getAttribute('camera-mode') as CameraMode | null) ?? undefined,
+        cameraFov: this.acceptFov(this.getAttribute('camera-fov')),
         frameContent: (this.getAttribute('frame-content') as 'object' | 'all' | null) ?? undefined,
         interactionQuality: (this.getAttribute('interaction-quality') as 'off' | 'auto' | null) ?? undefined,
         colorMode: this._colorMode,
@@ -394,6 +415,11 @@ export class GcodePreviewElement extends HTMLElement {
       case 'camera-mode':
         if (value !== null) c.setCameraMode(value as CameraMode);
         break;
+      case 'camera-fov': {
+        const fov = this.acceptFov(value);
+        if (fov !== undefined) c.setCameraFov(fov);
+        break;
+      }
       case 'frame-content':
         if (value !== null) c.setFrameContent(value as 'object' | 'all');
         break;
@@ -476,6 +502,17 @@ export class GcodePreviewElement extends HTMLElement {
     if (this.controller === null) return;
     if (this._progress === null) this.controller.clearProgress();
     else this.controller.observeProgress(this._progress);
+  }
+
+  /**
+   * The `camera-fov` attribute as a lens (DD-032): a number in [10, 120] is accepted and remembered;
+   * anything else (removed, empty, not a number, out of range) yields the last accepted lens, so a bad
+   * markup value never throws from the attribute callback and never resets the view.
+   */
+  private acceptFov(value: string | null): number | undefined {
+    const n = parseFov(value);
+    if (n !== undefined) this.lastFov = n;
+    return this.lastFov;
   }
 
   private reflect(attr: string, v: string | number | null): void {
@@ -571,4 +608,11 @@ function parseRoleList(value: string | null): number[] {
 export function defineGcodePreview(tag: string = DEFAULT_TAG): void {
   if (typeof customElements === 'undefined') return;
   if (customElements.get(tag) === undefined) customElements.define(tag, GcodePreviewElement);
+}
+
+/** A `camera-fov` attribute value as a lens in [10, 120], else `undefined` (DD-032). */
+function parseFov(value: string | null): number | undefined {
+  // Number(null), Number('') and Number(' ') are all 0, and NaN fails both bounds: the range alone decides.
+  const n = Number(value);
+  return n >= 10 && n <= 120 ? n : undefined;
 }

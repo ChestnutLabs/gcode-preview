@@ -196,6 +196,10 @@ export class LayerView2DRenderer implements PreviewRenderer {
     this.disclose('camera', 'Camera projection applies only to the 3D renderer; the 2D view is flat top-down.');
   }
 
+  setCameraFov(_fov: number): void {
+    this.disclose('camera', 'The camera lens applies only to the 3D renderer; the 2D view is flat top-down.');
+  }
+
   setView(_view: CameraView): void {
     this.disclose('camera', 'Preset views apply only to the 3D renderer; the 2D view is fixed top-down.');
   }

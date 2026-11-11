@@ -8,7 +8,6 @@ import { Group, type Mesh, type MeshBasicMaterial, OrthographicCamera, Perspecti
 import {
   InteractiveStage,
   ToolpathRenderer,
-  studioTheme,
   createContactShadow,
   disposeBuildVolume,
   framingFromCenterRadius,
@@ -217,7 +216,7 @@ describe('InteractiveStage.setFov', () => {
     [32, 43.756784],
     [90, 16.081722],
     [120, 13.130671]
-  ])('frame@50 → setFov(%s) ≡ frame@%s (distance %s for r = 10)', (fov, distance) => {
+  ])('frame@50 → setFov(%s) ≡ a fresh frame at that lens (distance %s for r = 10)', (fov, distance) => {
     const center = new Vector3(10, 20, 30);
     const a = makeStage();
     a.stage.frameTo(center, 10);
@@ -245,32 +244,7 @@ describe('InteractiveStage.setFov', () => {
   });
 });
 
-describe('gradient background before it is wired (DD-032 Lane B)', () => {
-  function bareRenderer(theme?: Theme) {
-    const canvas = document.createElement('canvas');
-    const stub: GLRendererLike = {
-      render: () => undefined,
-      setSize: () => undefined,
-      dispose: () => undefined,
-      domElement: canvas
-    };
-    return new ToolpathRenderer({
-      canvas,
-      ...(theme ? { theme } : {}),
-      createRenderer: () => stub,
-      scheduleFrame: () => undefined
-    });
-  }
-  const bg = (r: ToolpathRenderer): unknown => (r as unknown as { scene: Scene }).scene.background;
-
-  it('a { top, bottom } background is treated as none (null), never a white Color', () => {
-    expect(bg(bareRenderer(studioTheme('dark')))).toBeNull();
-    const r = bareRenderer({ background: 0x112233 });
-    expect((bg(r) as { getHex(): number }).getHex()).toBe(0x112233);
-    r.setTheme(studioTheme('light'));
-    expect(bg(r)).toBeNull();
-  });
-});
+// The gradient backdrop is wired in Lane B: see studio-wiring.test.ts.
 
 describe('disposeBuildVolume', () => {
   it('frees geometry, material and the material map (shadow decal included)', () => {

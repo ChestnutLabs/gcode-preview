@@ -90,6 +90,12 @@ export interface PreviewRenderer {
    */
   setProgressivePreview(mode: ProgressivePreview): void;
   setCameraMode(mode: CameraMode): void;
+  /**
+   * Perspective lens in degrees (DD-032 §4.2). Optional, so an existing custom renderer still satisfies
+   * the interface (the controller skips it when absent); the bundled 2D renderer discloses via
+   * `renderer-unsupported`.
+   */
+  setCameraFov?(fov: number): void;
   /** Snap to a preset orientation (#268). 2D renderers disclose via `renderer-unsupported`. */
   setView(view: CameraView): void;
   /** Read the current camera as a serializable snapshot (#268). Null when the renderer has no 3D pose (2D). */
