@@ -180,9 +180,15 @@ Rules:
     between darkened and not as the camera orbits.
   - **Not** shadow maps: deterministic, cheap, identical headless and interactive.
   - Hidden when there is no content.
-  - **It belongs to the plate.** It is drawn only when a plate is drawn: absent with `includeBuildVolume:false`
-    and with no `buildVolume`. Transparent cutouts never get a grey blob, and a plate-less model viewer stays
-    byte-identical.
+  - It has `depthWrite: false`, like the plate.
+  - **It belongs to the plate.** It is a child of the build-volume group, resized when content changes, so it
+    shows and hides with the plate.
+    - It is absent with no `buildVolume`.
+    - It is hidden by `capture({ includeBuildVolume: false })`, which hides only the volume group.
+    - Transparent cutouts never get a grey blob, and a plate-less model viewer stays byte-identical.
+- **Seen from below** (`setView('bottom')`, or orbiting under the plate: `maxPolarAngle` defaults to π), the
+  painter-ordered slab (walls −2, top −1, no depth write) shows the top face over the near walls. That's
+  accepted and documented: the plate is a backdrop, not a solid.
   - Builders live as pure functions in `gcode-renderer-three`, so the model viewer reuses them.
 - **Disposal.** One shared `disposeBuildVolume(group)` frees geometry, materials **and each material's `.map`**
   (three's `material.dispose()` does not free maps). Both viewers use it at every volume rebuild and dispose.
@@ -198,8 +204,10 @@ Both viewers get the same lens control:
 
 Rules:
 
-- Perspective only. On orthographic it is remembered and applied when the camera returns to perspective.
-- Range (0, 180), exclusive. Out of range throws `RangeError`; it is not clamped.
+- Perspective only. A value set while orthographic is remembered; on return to perspective it is applied,
+  with its dolly.
+- Range [10, 120] degrees, inclusive. Out of range throws `RangeError`; it is not clamped. Lenses outside that
+  range put the camera at impractical distances (1° would need ~143 r).
 - Default 50, unchanged.
 - **Framing must become lens-aware.** Today's auto-framing does not read the lens:
   - `framingFromCenterRadius` (`stage.ts`) places the camera at the fixed offset (−1.2, 1.6, 1.8)·r ≈ 2.69 r,
@@ -211,11 +219,17 @@ Rules:
   So `framingFromCenterRadius(center, r, fov = 50)` scales the perspective offset by tan 25° / tan(fov/2), with
   an **exact short-circuit at 50** so default positions are byte-identical. The orthographic `viewHalfHeight`
   stays 1.25 r, so toggling projection still keeps apparent size.
-- **Changing the lens live** dolly-compensates: the target is kept and the camera distance is scaled by
-  tan(old/2) / tan(new/2), so the part keeps its apparent size without a re-fit. This is an `InteractiveStage`
-  primitive (Lane A), so both viewers share it.
+- **Distance limits scale with the lens.** `frameTo` sets the orbit controls' `minDistance` = max(1, 0.15 r)
+  and `maxDistance` = 30 r, then clamps. Both limits are scaled by the same tan 25° / tan(fov/2) factor (an
+  exact no-op at 50), so a lens-aware frame is never clamped into a crop.
+- **Changing the lens live** dolly-compensates: the target is kept and the camera distance and limits are
+  scaled by tan(old/2) / tan(new/2), so the part keeps its apparent size without a re-fit. This is an
+  `InteractiveStage` primitive (Lane A), so both viewers share it.
+  - It emits **no** `camera-changed`, which stays user-only (v0.21.0).
+  - While the model viewer is auto-framing, it re-fits through `fitBox` (exact) instead of dollying, and
+    auto-framing stays on.
 - Stills already accept `pose.fov`. `renderStill` / `renderModelStill` also gain a top-level `cameraFov` so a
-  preset applies without a pose, and their framing uses it.
+  preset applies without a pose, and their framing uses it. An explicit `pose.fov` beats `cameraFov`.
 - **`CameraState` has no lens field** (`{ position, target, zoom, cameraMode }`). A restored pose renders at the
   current lens. Adding `fov` to `CameraState` is a follow-up (§8).
 
@@ -242,16 +256,28 @@ Rules:
 
   | `placement` | When | What is drawn |
   |---|---|---|
-  | `'known'` | The source is a **slicer project** (project/model settings present in the 3MF) **and** the selected scope's footprint lies on the bed within a tolerance | Parts where the file puts them |
-  | `'inferred'` | A slicer project whose footprint is off the bed, where subtracting a whole workspace-cell offset per axis lands it on the bed | Parts with the offset subtracted. The cell is the bed size × (1 + 1/5), the slicers' plate gap |
-  | `'approximated'` | Anything else: STL, CAD 3MF, or neither check passes | The footprint centred on the bed and dropped to z = 0 |
+  | `'known'` | The source is a **Bambu/Orca slicer project** (`Metadata/project_settings.config` or `Metadata/model_settings.config`, which `parse3mf` already reads) **and** the selected scope's footprint lies on the bed within **1 mm** | Parts where the file puts them |
+  | `'inferred'` | A Bambu/Orca project whose footprint is off the bed, where subtracting a whole workspace-cell offset per axis (positive or negative multiples) lands it on the bed within 1 mm | Parts with the offset subtracted |
+  | `'approximated'` | Anything else: STL, CAD 3MF, PrusaSlicer 3MF (its `Slic3r_PE*.config` isn't read, so it falls here honestly), or neither check passes | The footprint centred on the bed and dropped to z = 0 |
   | `null` | No plate is drawn: no `buildVolume`, or the render scope spans **more than one** declared plate | No plate. One bed under a multi-plate layout would misrepresent it |
 
   Notes:
-  - Any offset is **presentation-only** (DD-025 D3): `ModelScene` and `getState().bounds` stay authored.
-  - `placement` joins the model parity guard's required state keys.
-- **Framing** is unchanged: the model, not the plate, is framed. The plate is context. A `frameTarget:'plate'`
-  option is a follow-up if consumers ask.
+  - **"The bed"** for these checks is the file's `printable_area` when the project carries one, otherwise the
+    consumer's `buildVolume`.
+  - **Workspace cell.** The cell is the bed size × (1 + 1/5), with rows stepping −Y. This is **observed
+    behaviour, pending the §8 two-plate fixture**: clean-room, from exported files, never from slicer source.
+    If the fixture contradicts it, the inferred path changes; `approximated` remains the honest fallback.
+  - **Offset is presentation-only** (DD-025 D3): `ModelScene` and `getState().bounds` stay authored.
+    `ModelPreviewState.placementOffset` (`{ x, y, z }` in mm, or `null`) exposes the offset applied, so a
+    consumer can map authored ↔ drawn coordinates.
+  - `placement` and `placementOffset` join the model parity guard's required state keys.
+- **Framing uses the presented bounds** (authored bounds + `placementOffset`). This applies to the live
+  `fitBox`, `renderModelStill`, auto-frame-on-resize and the contact-shadow footprint. Otherwise an
+  `approximated` part authored at the origin would be drawn at bed centre while the camera framed the origin.
+  The model is framed, not the plate; a `frameTarget:'plate'` option is a follow-up if consumers ask.
+- **Capture.** The model viewer now honours `capture({ includeBuildVolume: false })`: plate and shadow are
+  hidden for the capture. Today `capture.ts` documents it as a no-op for the model viewer; Lane C updates that
+  doc.
 - **Theme subset.** The model viewer honours only the plate and backdrop fields: `background`, `gridColor`,
   `gridOpacity`, `gridMajor`, `bedOutline`, `bedSurface`, `bedColor` (cage), `contactShadow`.
   - Lights and `materialPreset` are **intentionally not applicable**. The model rig (hemisphere
@@ -259,14 +285,18 @@ Rules:
     tube-only. Applying `Theme`'s replace semantics to it would silently darken every model, unmeasured.
   - This is a documented DD-031 deliberate difference.
 - **Background precedence**, one rule for all four surfaces (toolpath live, `renderStill`, model live,
-  `renderModelStill`). This is the toolpath's existing rule:
+  `renderModelStill`). It extends `renderStill`'s existing rule (`theme.background ?? option`):
   - `capture({ background })` beats everything;
   - then `theme.background`;
-  - then the `background` prop/option;
+  - then the `background` prop/option/`setBackground`, where one exists (toolpath live has none);
   - then the default (`'transparent'` for the model viewer).
 
-  This makes it independent of adapter watch order. The documented cutout recipe is
-  `{ ...studioTheme('dark'), background: null }` (`null` = omit), which falls through to `'transparent'`.
+  This makes it independent of adapter watch order.
+  - **Documented consequence:** the model viewer's existing `setBackground` / `background` prop is the
+    **fallback** tier. After `setTheme` with a theme that sets `background`, it has no visible effect until the
+    theme's `background` is cleared. A test pins this.
+  - The documented cutout recipe is `{ ...studioTheme('dark'), background: null }` (`null` = omit), which falls
+    through to `'transparent'`.
 
 ### 4.4 The preset
 
@@ -304,7 +334,7 @@ Notes:
 | 1 | Core | `Theme` fields pass through `setTheme` (no new control). New: `setCameraFov` + `cameraFov` option. |
 | 2 | Adapters | Vue/React/Svelte/WC expose `theme` (already) and a declarative `cameraFov` prop/attribute. `/model` on all four gains `theme`, `buildVolume`, `cameraFov` declaratively and the three setters imperatively. WC: `camera-fov` attribute + `cameraFov` property; `theme` and `buildVolume` are properties only (object-valued, the documented split). |
 | 3 | Lower-level APIs | Toolpath: `createGcodePreview` / `useGcodePreview` / `element`. Model: `createModelViewer` / `useModelViewer` / the `<gcode-model-viewer>` element. All covered via their controllers. |
-| 4 | Events | None new. The model controller's `onStateChange` (the WC's state event) carries `placement`. |
+| 4 | Events | None new. The model controller's `onStateChange` (the WC's state event) carries `placement` and `placementOffset`. |
 | 5 | Parity suites | `setCameraFov` joins the `GcodePreviewControls` required list (`setTheme`/`setBuildVolume` are already there). `setBuildVolume`/`setTheme`/`setCameraFov` join the `ModelPreviewControls` list, and `placement` joins `REQUIRED_MODEL_STATE_KEYS`. Behavioural cases are in §6. |
 | 6 | Feature Lab | A look switcher (Today / Studio dark / Studio light) + lens slider on both Preview and Prepare, with Studio as the Feature Lab's starting look. Showcases use Studio. |
 | 7 | Docs | Adapter READMEs, `docs/manual/adapters.md`, a manual theming page, and `VISUAL_FEATURE_COVERAGE.md` row(s). |
@@ -333,12 +363,20 @@ Notes:
   - **Slab:** top-face height, unlit top and edge, walls −2 / top −1.
   - **Shadow:** −0.5 order, footprint precedence, hidden when empty and absent without a plate.
   - **Gradient:** texture sRGB, row orientation.
-  - **Lens:** `framingFromCenterRadius` positions identical at 50 and the framed sphere inside the view at 32,
-    for `frame()`, `renderStill` and `renderModelStill`. Also range errors, the ortho remember-and-apply, and
-    dolly compensation keeping apparent size.
+  - **Lens:** `framingFromCenterRadius` positions identical at 50, and the framed sphere inside the view at 10,
+    32 and 120, for `frame()`, `renderStill` and `renderModelStill`. Also:
+    - range errors;
+    - distance limits scaled, so there's no clamp-crop;
+    - the ortho remember-and-apply;
+    - dolly compensation keeping apparent size, with no `camera-changed`;
+    - the model viewer re-fitting while auto-framing;
+    - `pose.fov` beating `cameraFov`.
   - **Placement fixtures:** a slicer-project plate-1 part on the bed (`known`); a synthetic plate-2 part offset
-    by one workspace cell (`inferred`); a CAD-style 3MF at the origin (`approximated`); an STL
-    (`approximated`); and a multi-plate scope (`null`).
+    by one workspace cell (`inferred`, with a negative-multiple case); a CAD-style 3MF at the origin
+    (`approximated`); an STL (`approximated`); and a multi-plate scope (`null`). For each, `placementOffset`
+    is checked, and the **framed view contains the drawn part**.
+  - **Capture cutouts:** `includeBuildVolume:false` hides plate + shadow on both viewers (unit: visibility
+    during the capture render). Lane D's browser validation decodes the captured pixels for both cutouts.
   - **Model viewer:** lighting is unchanged under `setTheme(studioTheme(…))`.
   - **Background precedence:** all four surfaces, plus a studio + transparent cutout with no gradient and no
     shadow.
@@ -359,11 +397,14 @@ Notes:
 
 ## 7. Delivery plan
 
-| Lane | Files (no two lanes share a file) | Depends on |
+No two lanes edit the same file **concurrently**. `scene.ts` is touched by A and then B, which is sequential
+through the dependency.
+
+| Lane | Files | Depends on |
 |---|---|---|
 | **A** renderer primitives | `gcode-renderer-three`: `theme.ts`, `build-volume.ts`, `stage.ts` (lens-aware `framingFromCenterRadius`), `interactive-stage.ts` (the dolly-compensating fov setter), new `backdrop.ts`, new `contact-shadow.ts`, new `volume-style.ts`, `disposeBuildVolume`, `index.ts` exports, their tests. `studioTheme` + `STUDIO_CAMERA_FOV`. In `scene.ts`: only the `volumeStyle()` delegate and the three volume dispose walks. | — |
-| **B** toolpath wiring | `gcode-renderer-three/scene.ts` (gradient background + its disposal, shadow, `cameraFov`, lens-aware `frame()`); `gcode-preview-core` controller/render-still/testing/re-exports; Vue/React/Svelte/WC toolpath adapter **source** | A |
-| **C** model-viewer plate | `gcode-model-renderer` viewer/controller/still/model-testing/re-exports, placement; `/model` adapter **source** in all four adapters | A (parallel with B; both consume A's stage primitives, so neither waits on the other. If a shared adapter index must change, B owns it and C sends a seam warning) |
+| **B** toolpath wiring | `gcode-renderer-three/scene.ts` (gradient background + its disposal, the shadow as a child of the volume group resized per content, `cameraFov`, lens-aware `frame()`); `gcode-preview-core` controller/render-still/testing/re-exports; Vue/React/Svelte/WC toolpath adapter **source** | A |
+| **C** model-viewer plate | `gcode-model-renderer` viewer/controller/still/model-testing/re-exports, placement and `placementOffset` (incl. `three-mf.ts` reads, **after** #468 merges), capture honouring `includeBuildVolume` + the `capture.ts` doc; `/model` adapter **source** in all four adapters | A (parallel with B; both consume A's stage primitives, so neither waits on the other. If a shared adapter index must change, B owns it and C sends a seam warning) |
 | **D** demo + docs + gate | Feature Lab, showcases, `docs/manual`, **all four adapter `README.md`s** (each documents both toolpath and `/model`, so a single lane owns them), `VISUAL_FEATURE_COVERAGE.md`, screenshot regeneration, the §6 validation re-render | B + C |
 
 Release v0.22.0 per `docs/reference/release-process.md` after D, with the owner's release approval.
@@ -401,3 +442,14 @@ Release v0.22.0 per `docs/reference/release-process.md` after D, with the owner'
   - **P2 disposal.** A shared `disposeBuildVolume` frees maps, with a full leak matrix.
   - **P3.** Parity rows 3/4/5 fixed, adapter READMEs moved to Lane D, and the `ResolvedTheme.background`
     widening is called out.
+- 2026-11-10: second design review (1 P1, 3 P2, 4 P3). No decision changed, no field renamed.
+  - **P1 framing.** It now uses the presented bounds (authored + offset). New `placementOffset` state field.
+  - **P2 lens.** Range narrowed to [10, 120] and the orbit distance limits scale with the lens.
+  - **P2 shadow.** It is a child of the volume group, so capture cutouts drop it. The model viewer now honours
+    `includeBuildVolume` in capture.
+  - **P2 `setBackground`.** The model viewer's `setBackground` is documented and tested as the fallback tier.
+  - **P3s:** the below-plate view is accepted and documented; the lens-setter details (no `camera-changed`,
+    auto-frame refit, ortho remember, `pose.fov` wins); placement evidence (Bambu/Orca only, a 1 mm tolerance,
+    the bed source, negative multiples, the cell observed pending the fixture); the §7 header reworded.
+  - **Found in passing:** a quadratic `<plate>` regex, filed as #468 (P1, hostile-file hang). It must merge
+    before Lane C touches `three-mf.ts`.
