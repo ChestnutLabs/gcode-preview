@@ -88,6 +88,10 @@ describe('whitespace-anchored id selection', () => {
     expect(b?.id).toBe('8');
   });
 
+  it('`printing objects` is not a marker', () => {
+    expect(matchPrintingObjectStart('printing objects id:5')).toBeNull();
+  });
+
   it('keeps Bambu `, unique label id: 89` and Prusa ` id:0 copy 0` ids', () => {
     expect(matchPrintingObjectStart('start printing object, unique label id: 89')?.id).toBe('89');
     expect(matchPrintingObjectStart('printing object widget.stl id:0 copy 0')?.id).toBe('0');
@@ -97,7 +101,7 @@ describe('whitespace-anchored id selection', () => {
 describe('`name:` suffix (#469 review)', () => {
   /** The pre-fix suffix regex, verbatim, as the differential oracle. */
   const oldSuffix = (line: string): string | undefined => /\bname:\s*(.+?)\s*$/i.exec(line)?.[1].trim();
-  const cases = ['name: Cube', 'name:', 'name:  a  b', 'name:a name:b', 'name:x name:'];
+  const cases = ['name: Cube', 'name:', 'name:  a  b', 'name:a name:b', 'name:x name:', 'name: Cube  '];
 
   it.each(cases)('prefixed %s matches the previous regex', (suffix) => {
     const line = 'printing object id:1 ' + suffix;
