@@ -39,8 +39,12 @@ export default [
   // Hostile-input guard (#468/#469): shipped package code parses untrusted files, so a regex that
   // backtracks super-linearly is a denial-of-service. ONLY these two rules are on (not the plugin's
   // recommended set). A hit is either fixed (linear rewrite + oracle test) or carries an
-  // `eslint-disable-next-line` with the reason it is bounded. The rules are static analysis: they miss
-  // some ambiguity (e.g. lazy scans across repeated starts), so keep a crafted-input test for parsers.
+  // `eslint-disable-next-line` with the reason it is bounded. The rules are static analysis and are
+  // KNOWN NOT to flag two shapes that were real hangs here (pinned in tools/lint-config.test.mjs):
+  //   1. a lazy scan restarted from repeated starts, e.g. #468's `/<plate\b[\s\S]*?<\/plate>/gi`;
+  //   2. an unanchored token, then `[^…]*`, then a required later token, e.g. #473's
+  //      `/<(?:object|part)\s+id="(\d+)"[^>]*>([\s\S]*?)(?=…)/g`.
+  // So every parser of untrusted input still needs a crafted-input timing test.
   {
     files: ['packages/*/src/**/*.ts', 'packages/*/src/**/*.tsx', 'packages/*/src/**/*.mts'],
     ignores: ['**/__tests__/**'],

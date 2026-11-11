@@ -90,11 +90,12 @@ describe('flat ESLint config keeps the ESLint 8 rule set', () => {
 describe('super-linear regex guard scope', () => {
   const ruleOf = async (file, rule) => (await eslint.calculateConfigForFile(file)).rules?.[rule];
 
-  it('is an error on package source of every kind (.ts, .tsx)', async () => {
+  it('is an error on package source of every kind (.ts, .tsx, .mts)', async () => {
     for (const file of [
       'packages/gcode-dialects/src/cnc.ts',
       'packages/gcode-parser/src/index.ts',
-      'packages/gcode-preview-react/src/index.tsx'
+      'packages/gcode-preview-react/src/index.tsx',
+      'packages/gcode-preview-vue/src/index.mts'
     ]) {
       expect([file, await ruleOf(file, 'regexp/no-super-linear-backtracking')]).toEqual([file, [2]]);
       expect([file, await ruleOf(file, 'regexp/no-super-linear-move')]).toEqual([file, [2]]);
@@ -106,6 +107,41 @@ describe('super-linear regex guard scope', () => {
       expect([file, await ruleOf(file, 'regexp/no-super-linear-backtracking')]).toEqual([file, undefined]);
     }
     expect(await ruleOf('packages/gcode-dialects/src/cnc.ts', 'regexp/no-dupe-disjunctions')).toBeUndefined();
+  });
+
+  // Distinct [rule, severity] pairs (a rule may report one regex more than once).
+  const hits = async (code, filePath) => {
+    const [result] = await eslint.lintText(code, { filePath });
+    const pairs = result.messages
+      .filter((m) => m.ruleId?.startsWith('regexp/'))
+      .map((m) => `${m.ruleId}\u0000${m.severity}`);
+    return [...new Set(pairs)].sort().map((p) => {
+      const [ruleId, severity] = p.split('\u0000');
+      return [ruleId, Number(severity)];
+    });
+  };
+
+  it('actually fires on a super-linear regex in package source, and not in tests', async () => {
+    const code = 'export const r = /(a+)+$/;\n';
+    expect(await hits(code, 'packages/gcode-dialects/src/zz.ts')).toEqual([
+      ['regexp/no-super-linear-backtracking', 2],
+      ['regexp/no-super-linear-move', 2]
+    ]);
+    expect(await hits(code, 'packages/gcode-dialects/src/__tests__/zz.test.ts')).toEqual([]);
+  });
+
+  // The documented blind spots (eslint.config.mjs). If a plugin upgrade starts catching one, this
+  // fails: update the config comment and drop the case.
+  it('does NOT flag the two known-missed shapes (#468, #473) — crafted-input tests carry them', async () => {
+    expect(
+      await hits('export const r = /<plate\\b[\\s\\S]*?<\\/plate>/gi;\n', 'packages/gcode-dialects/src/zz.ts')
+    ).toEqual([]);
+    expect(
+      await hits(
+        'export const r = /<(?:object|part)\\s+id="(\\d+)"[^>]*>([\\s\\S]*?)(?=<(?:object|part)\\b|$)/g;\n',
+        'packages/gcode-dialects/src/zz.ts'
+      )
+    ).toEqual([]);
   });
 });
 
