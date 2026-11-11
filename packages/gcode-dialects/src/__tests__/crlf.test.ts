@@ -114,6 +114,40 @@ describe('CRLF files keep their slicer settings', () => {
     expect(Array.from(ir.segments.object).filter((v) => v === 1).length).toBe(5);
   });
 
+  it('Klipper EXCLUDE_OBJECT_* stays fail-closed on an interior line terminator (CR-only endings)', () => {
+    const { ir } = annotatedParse(
+      [
+        'EXCLUDE_OBJECT_DEFINE NAME=good',
+        'EXCLUDE_OBJECT_START NAME=good',
+        'G1 X0 Y0 Z0.2 F1200',
+        'G1 X10 Y0 E1',
+        'EXCLUDE_OBJECT_END',
+        'EXCLUDE_OBJECT_START NAME=cube\rG1 X5 Y5',
+        'G1 X20 Y0 E2',
+        'G1 X30 Y0 E3',
+        ''
+      ].join('\n')
+    );
+    expect(ir.objects.map((o) => o.name)).toEqual(['good']);
+  });
+
+  it('Klipper NAME= must be a whole word: FOONAME= does not name an object', () => {
+    const { ir } = annotatedParse(
+      [
+        'EXCLUDE_OBJECT_DEFINE NAME=cube',
+        'EXCLUDE_OBJECT_START NAME=cube',
+        'G1 X0 Y0 Z0.2 F1200',
+        'G1 X10 Y0 E1',
+        'EXCLUDE_OBJECT_END',
+        'EXCLUDE_OBJECT_START FOONAME=ghost',
+        'G1 X20 Y0 E2',
+        'EXCLUDE_OBJECT_END',
+        ''
+      ].join('\n')
+    );
+    expect(ir.objects.map((o) => o.name)).toEqual(['cube']);
+  });
+
   it('Klipper-targeted PrusaSlicer file keeps bed + printer', () => {
     const m = annotatedParse(loadCrlf('klipper-prusa-sample.gcode')).metadata?.machine;
     expect(m?.bed).toEqual({ kind: 'rect', min: { x: 0, y: 0 }, max: { x: 300, y: 300 } });

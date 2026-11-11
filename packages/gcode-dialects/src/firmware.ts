@@ -61,11 +61,12 @@ export function klipper(): DialectAdapter {
     },
     onCommand(event, sink) {
       // Extended commands don't survive the inherited lexer — match the raw line.
-      // No `$` anchor: a CRLF file's rawLine ends in `\r`, which `.` cannot match.
-      const m = /^\s*EXCLUDE_OBJECT_(DEFINE|START|END)\b([^\r\n]*)/i.exec(event.rawLine);
+      // trimEnd first: a CRLF file's rawLine ends in `\r`, which `.` / `$` cannot cross.
+      // Keeping `$` stays fail-closed on an interior line terminator (CR-only files).
+      const m = /^\s*EXCLUDE_OBJECT_(DEFINE|START|END)\b(.*)$/i.exec(event.rawLine.trimEnd());
       if (m === null) return;
       const s = objStateFor(sink);
-      const name = /NAME=([^\s]+)/i.exec(m[2])?.[1];
+      const name = /\bNAME=([^\s]+)/i.exec(m[2])?.[1];
       const verb = m[1].toUpperCase();
       if (verb === 'DEFINE') {
         if (name !== undefined) objectValueFor(s, name); // registers identity/order

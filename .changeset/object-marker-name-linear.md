@@ -22,3 +22,4 @@ the object id, which could merge distinct objects. The object id is now the firs
 CRLF files: a Klipper `EXCLUDE_OBJECT_*` command and a PrusaSlicer `; estimated printing time (normal mode)`
 comment were silently ignored when the file used `\r\n` line endings (the parser splits on `\n`, leaving a
 trailing `\r`). Both are now read correctly, and a regression test runs the slicer fixtures with CRLF endings.
+A Klipper `NAME=` argument must now be a whole word, so `FOONAME=x` no longer names an object.
