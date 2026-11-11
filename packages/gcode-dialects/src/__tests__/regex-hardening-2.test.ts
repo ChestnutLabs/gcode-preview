@@ -5,7 +5,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import { parseGcodeToIR } from '../../../gcode-parser/src/parse';
-import { grblLaser, grblMill, hasOWord, linuxCnc } from '../cnc';
+import { grblLaser, grblMill, hasExtrusionMove, hasOWord, linuxCnc } from '../cnc';
 import { orcaBambu } from '../orca-bambu';
 import { prusaSlicer } from '../prusaslicer';
 import { createDialectRunner } from '../registry';
@@ -104,6 +104,59 @@ describe('hasOWord (was 22 s on 64 KiB of `O`)', () => {
       createDialectRunner([grblLaser(), grblMill(), linuxCnc()]).createRun({
         selection: 'auto',
         headText: 'O'.repeat(65536),
+        tailText: ''
+      })
+    );
+    expect(ms).toBeLessThan(100);
+  });
+});
+
+describe('hasExtrusionMove (was 7 s on a 64 KiB head of `G1`)', () => {
+  // Verbatim copy of the old `scoreEvidence` extrusion regex. Its input is `;`-stripped per line.
+  const OLD = /G0*[0-3](?!\d)[^\n;]*E-?[.\d]/i;
+
+  it('literal results', () => {
+    expect(hasExtrusionMove('G1 X1 E2')).toBe(true);
+    expect(hasExtrusionMove('G01E.5')).toBe(true);
+    expect(hasExtrusionMove('g2 x1 e-.3')).toBe(true);
+    expect(hasExtrusionMove('G0003 E1')).toBe(true);
+    expect(hasExtrusionMove('G13 E1\nG1 X1\nE2')).toBe(false);
+    expect(hasExtrusionMove('G4 E1')).toBe(false);
+    expect(hasExtrusionMove('G1 E-')).toBe(false);
+    expect(hasExtrusionMove('M67 E0 Q50')).toBe(false);
+    // `[^\n;]` in the old regex crosses CR and U+2028, so these still count as one line.
+    expect(hasExtrusionMove('G1 X1\rE2')).toBe(true);
+    expect(hasExtrusionMove('G1 X1' + LS + 'E2')).toBe(true);
+  });
+
+  it('agrees with the old regex on 20,000 seeded random `;`-free strings', () => {
+    let seed = 0x2545f491;
+    const rand = (n: number): number => {
+      seed = (seed + 0x6d2b79f5) | 0;
+      let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+      return ((t ^ (t >>> 14)) >>> 0) % n | 0;
+    };
+    const tokens = ['G', 'g', '0', '1', '2', '3', '4', '13', 'E', 'e', '-', '.', '5', ' ', '\n', '\r', 'X1', 'M3'];
+    tokens.push('G1', 'G0', 'g2', 'G01', 'G13', ' E1', 'E.5', 'E-', 'e-.3', 'E-1');
+    let trues = 0;
+    for (let n = 0; n < 20000; n++) {
+      let s = '';
+      for (let k = rand(12); k > 0; k--) s += tokens[rand(tokens.length)];
+      const expected = OLD.test(s);
+      if (expected) trues++;
+      if (hasExtrusionMove(s) !== expected) throw new Error('mismatch on ' + JSON.stringify(s));
+    }
+    // the generator must exercise both outcomes, or the equality above proves nothing
+    expect(trues).toBeGreaterThan(1000);
+    expect(trues).toBeLessThan(19000);
+  });
+
+  it('detection on a 64 KiB `G1` head is prompt (old regex: ~7 s)', () => {
+    const { ms } = timed(() =>
+      createDialectRunner([grblLaser(), grblMill(), linuxCnc()]).createRun({
+        selection: 'auto',
+        headText: 'G1'.repeat(32768),
         tailText: ''
       })
     );

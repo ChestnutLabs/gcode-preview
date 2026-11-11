@@ -106,6 +106,21 @@ export function hasPercentEnvelope(text: string): boolean {
   return false;
 }
 
+/**
+ * True when some line of `code` has a G0–G3 motion word followed later on that line by an `E` value.
+ * Equivalent to `/G0*[0-3](?!\d)[^\n;]*E-?[.\d]/i.test(code)` for `;`-stripped `code`, whose unanchored
+ * `G` start rescans `[^\n;]*` to end of line from every `G` (7 s on a 64 KiB head of `G1`). Per line,
+ * only the FIRST motion word matters: `(?!\d)` makes each `G` take its whole digit run, so a later `G`
+ * starts after the earlier match ends and its suffix is contained in the earlier one's.
+ */
+export function hasExtrusionMove(code: string): boolean {
+  for (const line of code.split('\n')) {
+    const g = /G0*[0-3](?!\d)/i.exec(line);
+    if (g !== null && /E-?[.\d]/i.test(line.slice(g.index + g[0].length))) return true;
+  }
+  return false;
+}
+
 function scoreEvidence(head: string): Evidence {
   // Strip line comments (';…' and LinuxCNC/RS274 '(…)') so words inside them never score as markers.
   const code = head
@@ -119,7 +134,7 @@ function scoreEvidence(head: string): Evidence {
   return {
     // Extrusion = an `E` value on a G0–G3 MOTION line — NOT bare `E` (LinuxCNC laser uses `M67 E0 Q…`
     // for analog power, which must not be mistaken for FDM extrusion).
-    extrusion: has(/G0*[0-3](?!\d)[^\n;]*E-?[.\d]/i) || has(/M8[23](?!\d)/i),
+    extrusion: hasExtrusionMove(code) || has(/M8[23](?!\d)/i),
     m3: has(/M0*3(?!\d)/i),
     m4: has(/M0*4(?!\d)/i),
     power: has(/S\d/i),
