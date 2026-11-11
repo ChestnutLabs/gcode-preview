@@ -88,6 +88,10 @@ describe('whitespace-anchored id selection', () => {
     expect(b?.id).toBe('8');
   });
 
+  it('an empty `name:` suffix falls back to the name before the id', () => {
+    expect(matchPrintingObjectStart('printing object Cube id:3 name:')).toEqual({ id: '3', name: 'Cube' });
+  });
+
   it('`printing objects` is not a marker', () => {
     expect(matchPrintingObjectStart('printing objects id:5')).toBeNull();
   });

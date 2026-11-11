@@ -169,10 +169,11 @@ export function applySegmentMarkers(
 
 /** Parse `key = value` / `key: value` slicer comment lines (Prusa tail, Orca header/config blocks). */
 export function parseKeyValue(comment: string): { key: string; value: string } | null {
-  // `(\S.*)` + trimEnd, not `(.*\S)\s*$`: the latter rescans a long whitespace tail (quadratic). A
-  // comment is a single line, so `.` never needs to cross a line break.
-  const m = /^\s*([A-Za-z_][A-Za-z0-9_]*)\s*[:=]\s*(\S.*)$/.exec(comment);
-  return m === null ? null : { key: m[1].toLowerCase(), value: m[2].trimEnd() };
+  // `trimEnd` first, then `(\S.*)$`, not `(.*\S)\s*$`: the latter rescans a long whitespace tail
+  // (quadratic). The trim also drops the `\r` of a CRLF file (comments arrive split on `\n` only),
+  // which `.` cannot match.
+  const m = /^\s*([A-Za-z_][A-Za-z0-9_]*)\s*[:=]\s*(\S.*)$/.exec(comment.trimEnd());
+  return m === null ? null : { key: m[1].toLowerCase(), value: m[2] };
 }
 
 /** Parse "0x0,250x0,250x210,0x210" bed/printable-area point lists. */

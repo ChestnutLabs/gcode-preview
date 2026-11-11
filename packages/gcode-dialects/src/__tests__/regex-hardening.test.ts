@@ -172,7 +172,17 @@ describe('parseKeyValue (was quadratic on an all-whitespace value)', () => {
     ' =',
     'a==b',
     'a=\tx\t',
-    'Total_Layers : 120'
+    'Total_Layers : 120',
+    // trailing line terminators (a CRLF file's comments end in `\r`)
+    'bed_shape = 0x0,250x0\r',
+    'bed_shape = 0x0,250x0\r\n',
+    'MINX:0.5\r',
+    'a=1' + String.fromCharCode(0x2028),
+    'a=1' + String.fromCharCode(0x2029) + ' ',
+    'a=1\n',
+    // an interior terminator fails in both
+    'a=1\r2',
+    'a=x\ny'
   ];
 
   it.each(cases)('%j matches the old regex', (text) => {
@@ -182,6 +192,10 @@ describe('parseKeyValue (was quadratic on an all-whitespace value)', () => {
   it('literal results', () => {
     expect(parseKeyValue('  Key = a  b  ')).toEqual({ key: 'key', value: 'a  b' });
     expect(parseKeyValue('a=   ')).toBeNull();
+    expect(parseKeyValue('bed_shape = 0x0,250x0\r')).toEqual({ key: 'bed_shape', value: '0x0,250x0' });
+    expect(parseKeyValue('MINX:0.5\r\n')).toEqual({ key: 'minx', value: '0.5' });
+    expect(parseKeyValue('a=1' + String.fromCharCode(0x2028))).toEqual({ key: 'a', value: '1' });
+    expect(parseKeyValue('a=1\r2')).toBeNull();
   });
 
   it('`a=` + 64 KiB of spaces returns promptly (old regex: ~5 s)', () => {

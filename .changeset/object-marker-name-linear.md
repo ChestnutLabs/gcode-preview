@@ -18,3 +18,7 @@ Object-marker accuracy: (a) a name containing a word that starts with "id" (`End
 `Box Identity`) was truncated at that word; (b) an `id<digits>` inside the name (`bracket(id2) id:7`) took
 the object id, which could merge distinct objects. The object id is now the first whitespace-delimited
 `id:<n>` token.
+
+CRLF files: a Klipper `EXCLUDE_OBJECT_*` command and a PrusaSlicer `; estimated printing time (normal mode)`
+comment were silently ignored when the file used `\r\n` line endings (the parser splits on `\n`, leaving a
+trailing `\r`). Both are now read correctly, and a regression test runs the slicer fixtures with CRLF endings.

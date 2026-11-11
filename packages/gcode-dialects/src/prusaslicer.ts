@@ -146,7 +146,7 @@ export function prusaSlicer(): DialectAdapter {
       }
       // Filament totals + print time — multi-word keys `parseKeyValue` can't tokenize (#183).
       if (parseFilamentTotals(comment, srcByte, 'prusaslicer', sink)) return;
-      const time = /^\s*estimated printing time \(normal mode\)\s*=\s*(.+)$/i.exec(comment);
+      const time = /^\s*estimated printing time \(normal mode\)\s*=\s*(.+)$/i.exec(comment.trimEnd());
       if (time !== null) {
         const sec = parseHmsToSeconds(time[1].trim());
         if (sec !== null) {

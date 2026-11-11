@@ -61,7 +61,8 @@ export function klipper(): DialectAdapter {
     },
     onCommand(event, sink) {
       // Extended commands don't survive the inherited lexer — match the raw line.
-      const m = /^\s*EXCLUDE_OBJECT_(DEFINE|START|END)\b(.*)$/i.exec(event.rawLine);
+      // No `$` anchor: a CRLF file's rawLine ends in `\r`, which `.` cannot match.
+      const m = /^\s*EXCLUDE_OBJECT_(DEFINE|START|END)\b([^\r\n]*)/i.exec(event.rawLine);
       if (m === null) return;
       const s = objStateFor(sink);
       const name = /NAME=([^\s]+)/i.exec(m[2])?.[1];
