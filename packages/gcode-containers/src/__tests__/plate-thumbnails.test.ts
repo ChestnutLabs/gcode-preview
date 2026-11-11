@@ -247,7 +247,7 @@ describe('readPngSize (IHDR probe)', () => {
   });
 
   it('rejects an IHDR chunk whose length field is not 13', () => {
-    for (const len of [0, 12, 14, 0x0d000000]) {
+    for (const len of [0, 12, 14, 0x0d000000, 0x0100000d, 0xffffff0d]) {
       const b = png(4, 3);
       new DataView(b.buffer).setUint32(8, len);
       expect(readPngSize(b)).toBeNull();
