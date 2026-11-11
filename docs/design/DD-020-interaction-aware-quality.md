@@ -122,13 +122,29 @@ is clamped to `[MIN_FACTOR, 1]` (e.g. 0.4–1.0) so it can never amplify cost.
     is fast; 18–22 ms is neutral. The 12 ms "fast" budget of v1 is unreachable under vsync (60 Hz ≥ 16.7 ms).
   - A **streak of 3** consecutive slow (fast) samples steps `factor` down (up) one 0.15 notch, clamped to
     `[0.4, 1]`; a neutral sample breaks both streaks. One hitch (GC, a worker message) never flips detail.
-  - A tick with **no interaction render** since the previous one (the pointer paused mid-drag) is idle
-    time, not a measurement: the sampler stops and the streaks reset; the next `change` restarts it with
-    a fresh baseline. The sampler is also stopped on restore (settle / `'off'`) and `dispose`, so it costs
-    nothing outside a gesture.
+  - A tick with **no interaction render** since the previous one is not a measurement — input is often
+    slower than the display (60 Hz input on a 120 Hz screen leaves every other frame empty). It
+    **re-baselines** (the next sample starts at this tick) and leaves the streaks intact, so every sampled
+    interval spans exactly one frame that rendered. (The first #435 build treated one empty frame as
+    a pause and reset the streaks; that pinned 120 Hz / 60 Hz-input hardware at the proactive factor for
+    the whole gesture — #486 review.)
+  - A **pause** is **6 consecutive** empty frames: the sampler stops and the streaks reset; the next
+    `change` restarts it with a fresh baseline. The sampler is also stopped on restore (settle / `'off'`)
+    and `dispose`, so it costs nothing outside a gesture.
+  - An injected `requestFrame` is only cancelled through the injected `cancelFrame` — never the global
+    `cancelAnimationFrame`, whose handle space is different (a foreign id could cancel an unrelated rAF).
+    Without `cancelFrame`, a late tick after the gesture ends is ignored (the `interacting` guard).
   - Rendering stays synchronous in the `change` handler; a step takes effect on the next `change`.
   - With no `requestAnimationFrame` (non-browser host) there is no adaptation: the proactive 0.6 factor
     holds for the whole gesture.
+- **Known limits** (absolute thresholds; both restore full detail on settle):
+  - A **50 Hz** display (20 ms frames) sits in the 18–22 ms dead band: no step either way, so it stays at
+    the proactive 0.6 factor for the whole gesture, however fast the GPU.
+  - A rAF **throttled to 30 Hz** (battery saver, background throttling) reads every frame as slow and
+    steps down to 0.4 even on a fast GPU.
+  - Thresholds relative to the gesture's fastest observed interval were considered and rejected: a GPU
+    that is steadily slow (e.g. a constant 30 fps) has no fast reference, so a relative rule never steps
+    down for exactly the hardware the feature exists for (#486 review).
 - Rejected alternatives for the measurement: `EXT_disjoint_timer_query_webgl2` (true GPU time, but async
   results, disjoint handling, absent on Safari/Firefox → a fallback is needed anyway, and it needs the raw
   GL context); `gl.finish()` + `performance.now()` (forces a CPU/GPU sync every interaction frame — adds
@@ -144,7 +160,9 @@ is clamped to `[MIN_FACTOR, 1]` (e.g. 0.4–1.0) so it can never amplify cost.
   tests drive the sampler with a manual frame queue and literal timestamps (no GPU, no real rAF). Pinned:
   base read from `getPixelRatio` per gesture and restored exactly; `setPixelRatio` only on change;
   `'off'` before a gesture touches nothing; first tick discarded; 22/23 ms and 18 ms boundaries; streak of
-  3; neutral and paused-pointer streak breaks; 0.4/1 clamps; no-rAF host → fixed factor; sampler cancelled
+  3; neutral streak breaks; empty frames re-baseline without breaking a streak (60 Hz input on a
+  120 Hz display climbs to 1); 6 (not 5) consecutive empty frames pause and reset, counted consecutively;
+  an injected `requestFrame` is never cancelled through the global; 0.4/1 clamps; no-rAF host → fixed factor; sampler cancelled
   on settle/`'off'`/dispose. A stage-level test pins the `getPixelRatio` wiring (ratio 2 → 1.2 → 2).
 - The default (`'off'`) leaves all existing renderer tests byte-identical.
 

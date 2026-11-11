@@ -6,7 +6,10 @@ import { InteractionQualityController, type InteractionQualityDeps } from '../in
  * timestamps), and `getPixelRatio` reports a configurable resting ratio. All expected values are
  * literals (DD-020 + #435), never the module's own constants.
  */
-function makeController(mode: 'off' | 'auto' = 'off', opts: { base?: number; noScheduler?: boolean } = {}) {
+function makeController(
+  mode: 'off' | 'auto' = 'off',
+  opts: { base?: number; noScheduler?: boolean; noCancel?: boolean } = {}
+) {
   const calls = { render: 0, ratios: [] as number[], cancelled: [] as number[], requested: 0 };
   let base = opts.base;
   let nextHandle = 1;
@@ -24,10 +27,14 @@ function makeController(mode: 'off' | 'auto' = 'off', opts: { base?: number; noS
             calls.requested++;
             return h;
           },
-          cancelFrame: (h: number) => {
-            calls.cancelled.push(h);
-            queue.delete(h);
-          }
+          ...(opts.noCancel
+            ? {}
+            : {
+                cancelFrame: (h: number) => {
+                  calls.cancelled.push(h);
+                  queue.delete(h);
+                }
+              })
         })
   };
   const c = new InteractionQualityController(deps, mode);
@@ -248,15 +255,86 @@ describe('InteractionQualityController', () => {
     expect(Math.max(...h.calls.ratios)).toBe(2);
   });
 
-  it('a tick with no interaction render (pointer paused) stops sampling; the next frame re-baselines', () => {
+  it('input at half the display rate (60 Hz input, 120 Hz screen) on a fast GPU still climbs to full detail', () => {
+    const h = makeController('auto', { base: 1 });
+    // Ticks every 8.33 ms; a render lands before every other tick. Each empty tick re-baselines, so
+    // every sample is one 8.33 ms rendered frame (fast) and the streaks survive the empty frames.
+    for (let i = 0; i < 20; i++) {
+      h.c.onFrame();
+      h.tick(1000 + 2 * i * 8.33);
+      h.tick(1000 + (2 * i + 1) * 8.33); // empty frame
+    }
+    h.c.onFrame();
+    expect(h.calls.ratios.at(-1)).toBe(1);
+    expect(h.calls.ratios.length).toBeGreaterThan(1);
+  });
+
+  it('an empty frame re-baselines: the sample is the one rendered frame (10 ms), not the pair (20 ms)', () => {
+    const h = makeController('auto', { base: 1 });
+    for (let i = 0; i < 4; i++) {
+      h.c.onFrame();
+      h.tick(1000 + 2 * i * 10);
+      h.tick(1000 + (2 * i + 1) * 10); // empty frame
+    }
+    // baseline + 3 samples of 10 ms (fast) → one step up; 20 ms pairs would be neutral (no step).
+    h.c.onFrame();
+    expect(h.calls.ratios.at(-1)).toBeCloseTo(0.75, 10);
+  });
+
+  it('5 consecutive empty frames keep sampling and the streak; the next slow frame completes it', () => {
     const h = makeController('auto', { base: 1 });
     h.frames([1000, 1030, 1060]); // baseline + 2 slow
-    h.tick(1076); // idle frame: no onFrame since the last tick
+    for (let i = 1; i <= 5; i++) h.tick(1060 + i * 8); // empty frames, last re-baselines at 1100
+    expect(h.pending()).toBe(1);
+    h.frames([1130]); // slow (30 ms) → the 3rd in the streak
+    h.c.onFrame();
+    expect(h.calls.ratios.at(-1)).toBeCloseTo(0.45, 10);
+  });
+
+  it('6 consecutive empty frames are a pause: sampling stops and the streak resets', () => {
+    const h = makeController('auto', { base: 1 });
+    h.frames([1000, 1030, 1060]); // baseline + 2 slow
+    for (let i = 1; i <= 6; i++) h.tick(1060 + i * 8);
     expect(h.pending()).toBe(0);
     // Resume much later: the gap must not count, and the earlier streak is not continued by one slow.
     h.frames([5000, 5030]);
     h.c.onFrame();
     expect(h.calls.ratios).toEqual([0.6]);
+  });
+
+  it('the pause count is consecutive: a rendered frame resets it', () => {
+    const h = makeController('auto', { base: 1 });
+    h.frames([1000]); // baseline
+    let t = 1000;
+    for (let k = 0; k < 3; k++) {
+      for (let i = 0; i < 3; i++) h.tick((t += 8)); // 3 empty frames (9 in total across the loop)
+      h.frames([(t += 30)]); // one slow rendered frame
+    }
+    h.c.onFrame();
+    expect(h.calls.ratios.at(-1)).toBeCloseTo(0.45, 10);
+  });
+
+  it('an injected requestFrame without cancelFrame never cancels through the global; a late tick is ignored', () => {
+    vi.useFakeTimers();
+    const saved = globalThis.cancelAnimationFrame;
+    const globalCancels: number[] = [];
+    globalThis.cancelAnimationFrame = ((id: number) => globalCancels.push(id)) as never;
+    try {
+      const h = makeController('auto', { base: 2, noCancel: true });
+      h.c.onFrame();
+      expect(h.pending()).toBe(1);
+      h.c.settle();
+      vi.advanceTimersByTime(150);
+      expect(globalCancels).toEqual([]);
+      const requested = h.calls.requested;
+      h.tick(2000); // the uncancelled callback fires after the gesture ended
+      expect(h.calls.requested).toBe(requested); // no re-arm
+      expect(h.calls.ratios).toEqual([1.2, 2]);
+    } finally {
+      if (saved === undefined) delete (globalThis as { cancelAnimationFrame?: unknown }).cancelAnimationFrame;
+      else globalThis.cancelAnimationFrame = saved;
+      vi.useRealTimers();
+    }
   });
 
   it('without a frame scheduler there is no adaptation — the 0.6 factor holds for the gesture', () => {

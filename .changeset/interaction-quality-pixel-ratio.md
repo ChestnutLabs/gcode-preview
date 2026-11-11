@@ -9,9 +9,10 @@ Fix `interactionQuality: 'auto'` (reduced detail while orbiting), which is on by
   It now returns to the resolution it had before you moved the camera.
 - A custom pixel ratio you set on your renderer (for example through `createRenderer`) is preserved
   through orbits and through `setInteractionQuality('off')`. Switching to `'off'` no longer resets it.
-- Adaptation now follows the real frame rate. A slow GPU gets coarser detail while you orbit, and a fast
-  one returns to full detail. Before, almost every frame measured as fast, so detail was back to full
-  within a few mouse moves on any machine. A single slow frame does not change the detail level.
+- Detail while orbiting now adapts to the measured frame interval. When frames take longer it steps
+  coarser, and when they come quickly it can step back toward full detail. Before, almost every frame
+  measured as fast, so detail was back to full within a few mouse moves on any machine. A single slow
+  frame does not change the detail level.
 - The pixel ratio is no longer reset on every mouse move during a drag, only when the detail level
   actually changes.
 

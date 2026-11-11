@@ -26,6 +26,8 @@ export const INTERACTION_FRAME_BUDGET_HI = 22;
 export const INTERACTION_FRAME_BUDGET_LO = 18;
 /** Consecutive slow (or fast) samples required before one step — one hitch never flips detail. */
 export const INTERACTION_STREAK = 3;
+/** Consecutive frames with no interaction render that count as a pause: sampling stops, streaks reset. */
+export const INTERACTION_PAUSE_FRAMES = 6;
 /** Per-step adjustment to the detail factor. */
 export const INTERACTION_FACTOR_STEP = 0.15;
 
@@ -33,7 +35,9 @@ export const INTERACTION_FACTOR_STEP = 0.15;
  * What the controller needs from its owner: set a pixel ratio and request a render. The optional
  * members default sensibly: `getPixelRatio` → 1, `requestFrame`/`cancelFrame` → the global
  * `requestAnimationFrame`/`cancelAnimationFrame`. With no frame scheduler available the factor stays
- * at its proactive value for the whole gesture (no adaptation).
+ * at its proactive value for the whole gesture (no adaptation). A supplied `requestFrame` is only ever
+ * cancelled through `cancelFrame` (never the global one — its handles are foreign); without
+ * `cancelFrame`, a late tick after the gesture ends is ignored.
  */
 export interface InteractionQualityDeps {
   setPixelRatio(ratio: number): void;
@@ -62,6 +66,7 @@ export class InteractionQualityController {
   private frameHandle: number | null = null;
   private lastTick: number | null = null;
   private renderedSinceTick = false;
+  private emptyFrames = 0;
   private slowStreak = 0;
   private fastStreak = 0;
 
@@ -151,7 +156,7 @@ export class InteractionQualityController {
 
   private stopSampling(): void {
     if (this.frameHandle !== null) {
-      if (this.deps.cancelFrame) this.deps.cancelFrame(this.frameHandle);
+      if (this.deps.requestFrame) this.deps.cancelFrame?.(this.frameHandle);
       else if (typeof globalThis.cancelAnimationFrame === 'function') globalThis.cancelAnimationFrame(this.frameHandle);
       this.frameHandle = null;
     }
@@ -161,14 +166,22 @@ export class InteractionQualityController {
   private readonly tick = (t: number): void => {
     this.frameHandle = null;
     if (!this.interacting) return;
-    // A frame with no interaction render is idle time (the pointer paused) — not a measurement. Stop;
-    // the next `onFrame` restarts the sampler with a fresh baseline, and a pause breaks any streak.
+    // A frame with no interaction render (input slower than the display, e.g. 60 Hz input on a 120 Hz
+    // screen) is not a measurement: re-baseline, so every sampled interval spans exactly one frame that
+    // rendered, and keep the streaks. Only a run of empty frames is a real pause: stop and reset; the
+    // next `onFrame` restarts the sampler with a fresh baseline.
     if (!this.renderedSinceTick) {
-      this.lastTick = null;
-      this.slowStreak = 0;
-      this.fastStreak = 0;
+      if (++this.emptyFrames >= INTERACTION_PAUSE_FRAMES) {
+        this.lastTick = null;
+        this.slowStreak = 0;
+        this.fastStreak = 0;
+        return;
+      }
+      this.lastTick = t;
+      this.frameHandle = this.requestFrame(this.tick);
       return;
     }
+    this.emptyFrames = 0;
     this.renderedSinceTick = false;
     if (this.lastTick !== null) this.sample(t - this.lastTick);
     this.lastTick = t;
