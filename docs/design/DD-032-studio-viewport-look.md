@@ -507,3 +507,9 @@ Release v0.22.0 per `docs/reference/release-process.md` after D, with the owner'
   Black body against plate is 4.02; white is 2.92 (white base against shadow 2.61). The grid stays visible inside
   the contact shadow and is identical across all eight filament × theme cells. Preset values were not changed;
   the shipped preset measured below target; cause under investigation. Data kept outside the repo.
+- 2026-11-11: Studio contrast cause found and the preset retuned (PR #493). Neither tone mapping nor the lens is
+  the cause. Round 2 solved the major alpha on a stacked minor-under-major blend, while the renderer draws one
+  blend per line as decided. The outline targets came from an ideal full-coverage model, not a measurement: the
+  1 px loop straddles the plate edge and the backdrop. Major is now 0.39 dark / 0.55 light and the outline
+  0.83 / 0.87; measured major 1.864 / 2.144, outline ≥3:1 on both edges (§6). The outline gate now reads "≥3:1
+  at each bed edge, measured on the plate side as rendered". Preset values only; no decision changed.
