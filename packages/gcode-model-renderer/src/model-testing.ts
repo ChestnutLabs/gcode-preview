@@ -153,6 +153,7 @@ export const REQUIRED_MODEL_CONTROLS: (keyof ModelPreviewControls)[] = [
   'setBuildVolume',
   'setTheme',
   'setCameraFov',
+  'setPixelRatio',
   'setInteractionQuality',
   'setRenderScope',
   'frame',
@@ -261,6 +262,27 @@ export function runModelBehavioralSuite(name: string, api: TestApi, harness: Mod
       }
       expect(themeError).toBe('RangeError');
       a.controls.setCameraFov(32); // a valid lens is accepted
+      await a.dispose();
+    });
+
+    it('setPixelRatio accepts (0, 4] or exactly "device" and rejects the rest synchronously', async () => {
+      const a = await harness.create();
+      const errorName = (v: unknown): string => {
+        try {
+          a.controls.setPixelRatio(v as number);
+          return 'none';
+        } catch (e) {
+          return (e as Error).name;
+        }
+      };
+      expect(errorName(0)).toBe('RangeError');
+      expect(errorName(4.0001)).toBe('RangeError');
+      expect(errorName('Device')).toBe('RangeError');
+      expect(errorName(4)).toBe('none');
+      expect(errorName('device')).toBe('none');
+      await a.settle();
+      expect(errorName(-1)).toBe('RangeError');
+      expect(errorName(1.5)).toBe('none');
       await a.dispose();
     });
 

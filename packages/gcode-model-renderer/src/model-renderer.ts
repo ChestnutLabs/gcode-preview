@@ -31,6 +31,17 @@ export function checkModelFov(fov: number): void {
   if (!(fov >= 10 && fov <= 120)) throw new RangeError(`cameraFov must be in [10, 120] degrees (got ${String(fov)})`);
 }
 
+/**
+ * An interactive pixel ratio must be `'device'` (exactly) or a number in (0, 4]. Checked locally for the
+ * same reason as the lens; the same rule as the toolpath setters.
+ */
+export function checkModelPixelRatio(ratio: number | 'device'): void {
+  if (ratio === 'device') return;
+  if (!(typeof ratio === 'number' && ratio > 0 && ratio <= 4)) {
+    throw new RangeError(`pixelRatio must be 'device' or a number in (0, 4] (got ${String(ratio)})`);
+  }
+}
+
 /** Background: `'transparent'` (composite on a card) or a solid CSS color / 0xRRGGBB. */
 export type ModelBackground = 'transparent' | string | number;
 

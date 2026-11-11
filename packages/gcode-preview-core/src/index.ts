@@ -21,6 +21,8 @@ export type { Theme, MaterialPreset, ThemeColor } from '@chestnutlabs/gcode-rend
 export { studioTheme, STUDIO_CAMERA_FOV } from '@chestnutlabs/gcode-renderer-three';
 // Camera contracts (three-free type re-exports): projection + preset views + serializable state (#268).
 export type { CameraMode, CameraView, CameraState } from '@chestnutlabs/gcode-renderer-three';
+// The interactive canvas's resting pixel ratio: a number in (0, 4] or 'device'.
+export type { PixelRatioOption } from '@chestnutlabs/gcode-renderer-three';
 // Interactive view capture (DD-030 D1): the options type + the typed unsupported error for consumers.
 export type { CaptureOptions } from '@chestnutlabs/gcode-renderer-three';
 export { CaptureUnsupportedError } from '@chestnutlabs/gcode-renderer-three';

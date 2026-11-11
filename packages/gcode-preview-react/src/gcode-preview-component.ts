@@ -24,6 +24,7 @@ import type {
   CameraState,
   CameraView,
   ColorMode,
+  PixelRatioOption,
   ProgressivePreview,
   PreparationStage,
   QualityMode,
@@ -66,6 +67,10 @@ export interface GcodePreviewProps {
   /** DD-032: perspective lens in degrees, [10, 120] (default 50; `STUDIO_CAMERA_FOV` = 32). Unset keeps the
    *  current lens. Out of range throws `RangeError` (never clamped). 3D only. */
   cameraFov?: number;
+  /** Resting pixel ratio of the canvas: a number in (0, 4], or 'device' (the display's
+   *  devicePixelRatio capped at 2, followed live). Unset keeps the renderer's ratio (1). A ratio of 2 shades
+   *  4x the fragments of 1. Out of range throws RangeError (never clamped). 3D only. */
+  pixelRatio?: PixelRatioOption;
   /** #306/#6: frame the printed 'object' (excl. skirt/prime) or 'all' extrusion. Default 'all'. */
   frameContent?: 'object' | 'all';
   /** #306/2 (DD-020): 'auto' reduces detail while the camera moves. Default 'off'. */
@@ -107,6 +112,7 @@ export interface GcodePreviewProps {
     | 'progressivePreview'
     | 'cameraMode'
     | 'cameraFov'
+    | 'pixelRatio'
     | 'frameContent'
     | 'interactionQuality'
     | 'theme'
@@ -236,6 +242,7 @@ function GcodePreviewImpl(props: GcodePreviewProps, ref: ForwardedRef<GcodePrevi
     progressivePreview,
     cameraMode,
     cameraFov,
+    pixelRatio,
     frameContent,
     interactionQuality,
     view,
@@ -288,6 +295,11 @@ function GcodePreviewImpl(props: GcodePreviewProps, ref: ForwardedRef<GcodePrevi
   useEffect(() => {
     if (cameraFov !== undefined) preview.controls.setCameraFov(cameraFov);
   }, [cameraFov]);
+  // Also the mount value: the call queues before the async 3D load and replays before the first frame,
+  // so (unlike the lens) the ratio needs no construction option.
+  useEffect(() => {
+    if (pixelRatio !== undefined) preview.controls.setPixelRatio(pixelRatio);
+  }, [pixelRatio]);
   useEffect(() => {
     if (frameContent !== undefined) preview.controls.setFrameContent(frameContent);
   }, [frameContent]);

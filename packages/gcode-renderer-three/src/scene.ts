@@ -58,7 +58,7 @@ import {
   TUBES_AUTO_MAX_SEGMENTS,
   type TubeOptions
 } from './tubes.js';
-import { checkFov, type RenderTargetCanvas, type GLRendererLike } from './stage.js';
+import { checkFov, type PixelRatioOption, type RenderTargetCanvas, type GLRendererLike } from './stage.js';
 import type { QualityPolicy } from './capability.js';
 import { probeGpuInfo, type GpuInfo, type RenderStats } from './render-stats.js';
 import { GeometryWorkerPool, resolvePoolSize, type GeometryWorkerLike } from './geometry-pool.js';
@@ -182,6 +182,12 @@ export interface ToolpathRendererOptions {
    * the framed content fits at any lens. Throws `RangeError` outside [10, 120] (never clamped).
    */
   cameraFov?: number;
+  /**
+   * Resting pixel ratio of the interactive canvas: a number in (0, 4], or `'device'` (the display's
+   * `devicePixelRatio` capped at 2, followed live). Unset keeps the renderer's ratio (1). A ratio of 2 fills
+   * 4× the fragments of 1. Throws `RangeError` otherwise (never clamped).
+   */
+  pixelRatio?: PixelRatioOption;
   /** Framing target (#306/#6): 'all' extrusion (default) or the printed 'object' (excludes skirt/prime). */
   frameContent?: 'object' | 'all';
   /** Interaction-aware quality (#306/2, DD-020): 'auto' reduces detail while the camera moves. Default 'off'. */
@@ -506,6 +512,7 @@ export class ToolpathRenderer {
       scene: this.scene,
       cameraMode: opts.cameraMode,
       interactionQuality: opts.interactionQuality,
+      ...(opts.pixelRatio !== undefined ? { pixelRatio: opts.pixelRatio } : {}),
       preserveDrawingBuffer: opts.preserveDrawingBuffer,
       createRenderer: opts.createRenderer,
       onCameraChanged: (state) => this.emit({ type: 'camera-changed', state }),
@@ -1529,6 +1536,15 @@ export class ToolpathRenderer {
    */
   setCameraFov(fov: number): void {
     this.stage.setFov(fov);
+  }
+
+  /**
+   * Set the resting pixel ratio live: a number in (0, 4], or `'device'` (DPR capped at 2, followed live).
+   * A gesture in progress keeps its interaction-quality reduction and settles on the new ratio. Throws
+   * `RangeError` otherwise. The default `capture()` size does not change.
+   */
+  setPixelRatio(ratio: PixelRatioOption): void {
+    this.stage.setPixelRatio(ratio);
   }
 
   /** Switch the camera projection (#150, DD-009 D3) — delegates to the shared stage. */

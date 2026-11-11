@@ -122,6 +122,22 @@ export class InteractionQualityController {
     }, INTERACTION_SETTLE_MS);
   }
 
+  /**
+   * Move the resting ratio to `ratio` (the owner's pixel-ratio option changed, or the display's DPR did).
+   * At rest the renderer goes straight to it. Mid-gesture the current reduction factor is kept and applied
+   * to the new base, the next adaptation step scales from it, and the settle restores exactly it. Works in
+   * either mode.
+   */
+  rebase(ratio: number): void {
+    this.basePixelRatio = ratio;
+    this.applyRatio(this.interacting ? ratio * this.factor : ratio);
+  }
+
+  /** The ratio currently applied to the renderer (reduced while a gesture is in progress). */
+  get currentRatio(): number {
+    return this.appliedRatio;
+  }
+
   /** Release the pending settle timer and stop frame sampling. */
   dispose(): void {
     this.clearTimer();

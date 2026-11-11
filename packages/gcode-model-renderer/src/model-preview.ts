@@ -31,6 +31,7 @@ import type {
   GLRendererLike,
   InteractiveStageOptions,
   LoadProgress,
+  PixelRatioOption,
   RenderTargetCanvas
 } from '@chestnutlabs/gcode-renderer-three';
 import type { Confidence } from '@chestnutlabs/toolpath-core';
@@ -42,7 +43,7 @@ import {
   type ModelReadyInfo
 } from './model-viewer.js';
 import type { ModelSourceInput, ModelLoader } from './loaders.js';
-import { checkModelFov, type ModelBackground, type PresentationView } from './model-renderer.js';
+import { checkModelFov, checkModelPixelRatio, type ModelBackground, type PresentationView } from './model-renderer.js';
 import type { ModelPlacement, PlacementOffset } from './placement.js';
 import type { ModelBounds, ModelPlateSummary, RenderScope } from './scene-model.js';
 import type { ModelLimits } from './limits.js';
@@ -81,6 +82,13 @@ export interface ModelPreviewControllerOptions {
   theme?: Theme;
   /** Perspective lens in degrees, [10, 120] (default 50). Throws `RangeError` synchronously outside it. */
   cameraFov?: number;
+  /**
+   * Resting pixel ratio of the canvas: a number in (0, 4], or `'device'` (the display's `devicePixelRatio`
+   * capped at 2, followed live as it changes). Unset keeps the renderer's ratio (1). Sharper on HiDPI
+   * screens, at a fill cost: a ratio of 2 shades 4× the fragments of 1. Throws `RangeError` synchronously
+   * otherwise. The default `capture()` size does not change. Remembered across canvas rebinds.
+   */
+  pixelRatio?: PixelRatioOption;
 }
 
 /** Reactive snapshot of the model viewer, derived from engine events. Immutable — every change replaces it. */
@@ -137,6 +145,12 @@ export interface ModelPreviewControls {
   setTheme(theme: Theme): void;
   /** Change the perspective lens, [10, 120]°. Throws `RangeError` synchronously outside it, even before a canvas binds. Remembered across canvas rebinds. */
   setCameraFov(deg: number): void;
+  /**
+   * Change the resting pixel ratio: (0, 4] or `'device'` (DPR capped at 2, followed live). Throws
+   * `RangeError` synchronously otherwise, even before a canvas binds. Remembered across canvas rebinds. A
+   * gesture in progress settles on the new ratio; the default `capture()` size does not change.
+   */
+  setPixelRatio(ratio: PixelRatioOption): void;
   setInteractionQuality(mode: 'off' | 'auto'): void;
   /** Render only a subset of the source (`{ plateId }` / `{ objectIds }` / `{ instanceFilter }`); null = whole source. */
   setRenderScope(scope: RenderScope | null): void;
@@ -208,6 +222,8 @@ export function createModelPreviewController(options: ModelPreviewControllerOpti
   let currentBuildVolume: BuildVolumeDef | null = options.buildVolume ?? null;
   let currentTheme: Theme | undefined = options.theme;
   let currentFov: number | undefined = options.cameraFov;
+  if (options.pixelRatio !== undefined) checkModelPixelRatio(options.pixelRatio);
+  let currentPixelRatio: PixelRatioOption | undefined = options.pixelRatio;
 
   const engineOptions = (): ModelViewerOptions => ({
     ...(options.loaders ? { loaders: options.loaders } : {}),
@@ -223,6 +239,7 @@ export function createModelPreviewController(options: ModelPreviewControllerOpti
     ...(currentBuildVolume !== null ? { buildVolume: currentBuildVolume } : {}),
     ...(currentTheme !== undefined ? { theme: currentTheme } : {}),
     ...(currentFov !== undefined ? { cameraFov: currentFov } : {}),
+    ...(currentPixelRatio !== undefined ? { pixelRatio: currentPixelRatio } : {}),
     // Fold progress into state, then hand it to the consumer's callback.
     onProgress: (p: LoadProgress): void => {
       mutate({ progress: p, loading: p.stage !== 'ready' });
@@ -389,6 +406,11 @@ export function createModelPreviewController(options: ModelPreviewControllerOpti
       checkModelFov(deg);
       currentFov = deg;
       if (engine !== null) engine.setCameraFov(deg);
+    },
+    setPixelRatio(ratio) {
+      checkModelPixelRatio(ratio);
+      currentPixelRatio = ratio;
+      if (engine !== null) engine.setPixelRatio(ratio);
     },
     setInteractionQuality(mode) {
       if (engine !== null) engine.setInteractionQuality(mode);

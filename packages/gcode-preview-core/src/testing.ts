@@ -235,6 +235,30 @@ export function runBehavioralSuite(name: string, api: TestApi, harness: AdapterH
       await a.dispose();
     });
 
+    it('the pixel ratio: (0, 4] or exactly "device", RangeError otherwise, before and after a load', async () => {
+      const a = await harness.create();
+      const errorName = (v: unknown): string => {
+        try {
+          a.controls.setPixelRatio(v as number);
+          return 'none';
+        } catch (e) {
+          return (e as Error).name;
+        }
+      };
+      // Before the renderer is ready: validated synchronously, never clamped.
+      expect(errorName(0)).toBe('RangeError');
+      expect(errorName(4.0001)).toBe('RangeError');
+      expect(errorName('Device')).toBe('RangeError');
+      expect(errorName(4)).toBe('none');
+      await a.parse(new Uint8Array(1_000));
+      await a.settle();
+      expect(errorName(-1)).toBe('RangeError');
+      expect(errorName(' device')).toBe('RangeError');
+      expect(errorName('device')).toBe('none');
+      expect(errorName(1.5)).toBe('none');
+      await a.dispose();
+    });
+
     it('drives the DD-006 progress chain honestly (exact → cleared)', async () => {
       const a = await harness.create();
       await a.parse(new Uint8Array(1_000));
@@ -329,6 +353,7 @@ export function runBehavioralSuite(name: string, api: TestApi, harness: AdapterH
         'setProgressivePreview',
         'setCameraMode',
         'setCameraFov',
+        'setPixelRatio',
         'setView',
         'getCameraState',
         'setCameraState',
