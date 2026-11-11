@@ -3,6 +3,7 @@
 import js from '@eslint/js';
 import tseslint from 'typescript-eslint';
 import tsdoc from 'eslint-plugin-tsdoc';
+import regexp from 'eslint-plugin-regexp';
 import globals from 'globals';
 
 // `env: { browser: false }` equivalent: switch the base block's browser globals back off.
@@ -34,6 +35,20 @@ export default [
     files: ['packages/*/src/**/*.ts', 'packages/*/src/**/*.tsx'],
     plugins: { tsdoc },
     rules: { 'tsdoc/syntax': 'warn' }
+  },
+  // Hostile-input guard (#468/#469): shipped package code parses untrusted files, so a regex that
+  // backtracks super-linearly is a denial-of-service. ONLY these two rules are on (not the plugin's
+  // recommended set). A hit is either fixed (linear rewrite + oracle test) or carries an
+  // `eslint-disable-next-line` with the reason it is bounded. The rules are static analysis: they miss
+  // some ambiguity (e.g. lazy scans across repeated starts), so keep a crafted-input test for parsers.
+  {
+    files: ['packages/*/src/**/*.ts', 'packages/*/src/**/*.tsx', 'packages/*/src/**/*.mts'],
+    ignores: ['**/__tests__/**'],
+    plugins: { regexp },
+    rules: {
+      'regexp/no-super-linear-backtracking': 'error',
+      'regexp/no-super-linear-move': 'error'
+    }
   },
   // Node-side ESM scripts: release tooling, benchmarks, docs/screenshot/fixture builders, pack and
   // dependency guards, package build helpers (copy-svelte, fuzz), and the root configs. Browser
