@@ -1,87 +1,317 @@
 import { describe, expect, it, vi } from 'vitest';
-import {
-  InteractionQualityController,
-  DEFAULT_INTERACTION_FACTOR,
-  MIN_INTERACTION_FACTOR
-} from '../interaction-quality.js';
+import { InteractionQualityController, type InteractionQualityDeps } from '../interaction-quality.js';
 
-// Node env (no `window`) → basePixelRatio resolves to 1, so ratios are deterministic.
-function makeController(mode: 'off' | 'auto' = 'off') {
-  const calls = { render: 0, ratios: [] as number[] };
-  const c = new InteractionQualityController(
-    { setPixelRatio: (r) => calls.ratios.push(r), render: () => calls.render++ },
-    mode
-  );
-  return { c, calls };
+/**
+ * A deterministic harness: a manual frame queue stands in for requestAnimationFrame (fed literal
+ * timestamps), and `getPixelRatio` reports a configurable resting ratio. All expected values are
+ * literals (DD-020 + #435), never the module's own constants.
+ */
+function makeController(mode: 'off' | 'auto' = 'off', opts: { base?: number; noScheduler?: boolean } = {}) {
+  const calls = { render: 0, ratios: [] as number[], cancelled: [] as number[], requested: 0 };
+  let base = opts.base;
+  let nextHandle = 1;
+  const queue = new Map<number, (t: number) => void>();
+  const deps: InteractionQualityDeps = {
+    setPixelRatio: (r) => calls.ratios.push(r),
+    render: () => calls.render++,
+    ...(base !== undefined ? { getPixelRatio: () => base! } : {}),
+    ...(opts.noScheduler
+      ? {}
+      : {
+          requestFrame: (cb: (t: number) => void) => {
+            const h = nextHandle++;
+            queue.set(h, cb);
+            calls.requested++;
+            return h;
+          },
+          cancelFrame: (h: number) => {
+            calls.cancelled.push(h);
+            queue.delete(h);
+          }
+        })
+  };
+  const c = new InteractionQualityController(deps, mode);
+  /** Run the pending frame callback (if any) at timestamp `t`. */
+  const tick = (t: number) => {
+    const entries = [...queue.entries()];
+    queue.clear();
+    for (const [, cb] of entries) cb(t);
+  };
+  /** One interaction frame per vsync: a `change` (onFrame) followed by the rAF tick at time `t`. */
+  const frames = (times: number[]) => {
+    for (const t of times) {
+      c.onFrame();
+      tick(t);
+    }
+  };
+  return {
+    c,
+    calls,
+    tick,
+    frames,
+    pending: () => queue.size,
+    setBase: (b: number) => (base = b)
+  };
 }
 
+/** Timestamps spaced `dt` ms apart, `n` of them, starting at 1000. */
+const spaced = (n: number, dt: number) => Array.from({ length: n }, (_, i) => 1000 + i * dt);
+
 describe('InteractionQualityController', () => {
-  it("default 'off': onFrame renders but never touches the pixel ratio", () => {
-    const { c, calls } = makeController('off');
-    c.onFrame();
-    c.onFrame();
-    expect(calls.render).toBe(2);
-    expect(calls.ratios).toHaveLength(0);
+  it("default 'off': onFrame renders but never touches the pixel ratio nor schedules frames", () => {
+    const h = makeController('off', { base: 2 });
+    h.c.onFrame();
+    h.c.onFrame();
+    expect(h.calls.render).toBe(2);
+    expect(h.calls.ratios).toHaveLength(0);
+    expect(h.calls.requested).toBe(0);
   });
 
-  it("'auto': a gesture frame proactively reduces the pixel ratio below the base", () => {
-    const { c, calls } = makeController('auto');
-    c.onFrame();
-    expect(calls.render).toBe(1);
-    // base (1) × DEFAULT_INTERACTION_FACTOR
-    expect(calls.ratios.at(-1)).toBeCloseTo(DEFAULT_INTERACTION_FACTOR);
-    expect(calls.ratios.at(-1)!).toBeGreaterThanOrEqual(MIN_INTERACTION_FACTOR);
-    expect(calls.ratios.at(-1)!).toBeLessThan(1);
+  it("'auto': a gesture frame proactively reduces to 0.6 × the renderer's own ratio", () => {
+    const h = makeController('auto', { base: 2 });
+    h.c.onFrame();
+    expect(h.calls.render).toBe(1);
+    expect(h.calls.ratios).toEqual([1.2]);
   });
 
-  it('settle restores the full base ratio after the debounce', () => {
+  it('without getPixelRatio the resting ratio defaults to 1', () => {
+    const h = makeController('auto');
+    h.c.onFrame();
+    expect(h.calls.ratios).toEqual([0.6]);
+  });
+
+  it('settle restores exactly the custom resting ratio (not devicePixelRatio) after the debounce', () => {
     vi.useFakeTimers();
     try {
-      const { c, calls } = makeController('auto');
-      c.onFrame();
-      const reduced = calls.ratios.at(-1)!;
-      c.settle();
-      vi.advanceTimersByTime(200);
-      const restored = calls.ratios.at(-1)!;
-      expect(reduced).toBeLessThan(restored);
-      expect(restored).toBeCloseTo(1);
+      const h = makeController('auto', { base: 1.5 });
+      h.c.onFrame();
+      h.c.settle();
+      vi.advanceTimersByTime(149);
+      expect(h.calls.ratios).toHaveLength(1);
+      expect(h.calls.ratios[0]).toBeCloseTo(0.9, 10);
+      vi.advanceTimersByTime(1);
+      expect(h.calls.ratios.at(-1)).toBe(1.5);
+      expect(h.calls.render).toBe(2); // gesture frame + the settle repaint
     } finally {
       vi.useRealTimers();
     }
   });
 
-  it("setMode('off') restores full detail immediately and stops adapting", () => {
-    const { c, calls } = makeController('auto');
-    c.onFrame();
-    const reduced = calls.ratios.at(-1)!;
-    c.setMode('off');
-    expect(calls.ratios.at(-1)).toBeCloseTo(1);
-    calls.ratios.length = 0;
-    c.onFrame(); // off → renders, no ratio change
-    expect(calls.ratios).toHaveLength(0);
-    expect(reduced).toBeLessThan(1);
-  });
-
-  it('adapts finer on fast frames — ratio climbs back toward the base, clamped at 1', () => {
-    const { c, calls } = makeController('auto');
-    for (let i = 0; i < 6; i++) c.onFrame(); // stub render is instant → dt < LO → factor increases
-    // Monotonic non-decreasing, ending at the clamp.
-    for (let i = 1; i < calls.ratios.length; i++) {
-      expect(calls.ratios[i]).toBeGreaterThanOrEqual(calls.ratios[i - 1]);
-    }
-    expect(calls.ratios.at(-1)).toBeCloseTo(1);
-  });
-
-  it('dispose clears a pending settle so no restore fires afterwards', () => {
+  it('re-reads the resting ratio at every gesture start', () => {
     vi.useFakeTimers();
     try {
-      const { c, calls } = makeController('auto');
-      c.onFrame();
-      c.settle();
-      c.dispose();
-      const renders = calls.render;
+      const h = makeController('auto', { base: 1 });
+      h.c.onFrame();
+      h.c.settle();
+      vi.advanceTimersByTime(150);
+      h.setBase(2); // the consumer changed the renderer's ratio between gestures
+      h.c.onFrame();
+      expect(h.calls.ratios.at(-1)).toBe(1.2);
+      h.c.settle();
+      vi.advanceTimersByTime(150);
+      expect(h.calls.ratios.at(-1)).toBe(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('setPixelRatio is called only when the ratio changes, not on every pointer move', () => {
+    const h = makeController('auto', { base: 2 });
+    h.c.onFrame();
+    h.c.onFrame();
+    h.c.onFrame();
+    expect(h.calls.ratios).toEqual([1.2]);
+    expect(h.calls.render).toBe(3);
+  });
+
+  it("a gesture's first reduction is applied even if it equals the previous gesture's resting ratio", () => {
+    vi.useFakeTimers();
+    try {
+      const h = makeController('auto', { base: 1.2 });
+      h.c.onFrame();
+      h.c.settle();
+      vi.advanceTimersByTime(150); // last applied: 1.2
+      h.setBase(2); // consumer raised the renderer's ratio; 2 × 0.6 = 1.2 again
+      h.c.onFrame();
+      expect(h.calls.ratios).toHaveLength(3);
+      expect(h.calls.ratios.slice(1)).toEqual([1.2, 1.2]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("setMode('off') before any gesture leaves a custom ratio untouched", () => {
+    const h = makeController('auto', { base: 1.5 });
+    h.c.setMode('off');
+    expect(h.calls.ratios).toHaveLength(0);
+    expect(h.calls.render).toBe(0);
+  });
+
+  it("setMode('off') mid-gesture restores the resting ratio immediately and stops adapting", () => {
+    const h = makeController('auto', { base: 2 });
+    h.c.onFrame();
+    expect(h.pending()).toBe(1);
+    h.c.setMode('off');
+    expect(h.calls.ratios).toEqual([1.2, 2]);
+    expect(h.pending()).toBe(0); // sampler cancelled
+    h.calls.ratios.length = 0;
+    h.c.onFrame(); // off → renders, no ratio change
+    expect(h.calls.ratios).toHaveLength(0);
+  });
+
+  it("setMode('off') with a settle pending restores at once and the timer never fires", () => {
+    vi.useFakeTimers();
+    try {
+      const h = makeController('auto', { base: 2 });
+      h.c.onFrame();
+      h.c.settle();
+      h.c.setMode('off');
+      expect(h.calls.ratios).toEqual([1.2, 2]);
+      const renders = h.calls.render;
       vi.advanceTimersByTime(500);
-      expect(calls.render).toBe(renders); // the settle callback never ran
+      expect(h.calls.render).toBe(renders);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('three consecutive slow frame intervals (>22 ms) step one notch coarser', () => {
+    const h = makeController('auto', { base: 1 });
+    // First tick is the baseline (discarded); then 3 intervals of 30 ms.
+    h.frames(spaced(4, 30));
+    expect(h.calls.ratios).toEqual([0.6]); // the step applies on the next frame
+    h.c.onFrame();
+    expect(h.calls.ratios.at(-1)).toBeCloseTo(0.45, 10);
+  });
+
+  it('two slow intervals are not enough — one hitch never flips detail', () => {
+    const h = makeController('auto', { base: 1 });
+    h.frames(spaced(3, 30)); // baseline + 2 slow intervals
+    h.c.onFrame();
+    expect(h.calls.ratios).toEqual([0.6]);
+  });
+
+  it('the first tick is only a baseline: a long gap before it is not counted', () => {
+    const h = makeController('auto', { base: 1 });
+    // Baseline at 1000, then intervals 30, 30 (slow) and 16 (fast) — if the first tick counted
+    // (interval from 0 → 1000) there would be 3 slow samples.
+    h.frames([1000, 1030, 1060, 1076]);
+    h.c.onFrame();
+    expect(h.calls.ratios).toEqual([0.6]);
+  });
+
+  it('exactly 22 ms is not slow; 23 ms is', () => {
+    const at22 = makeController('auto', { base: 1 });
+    at22.frames(spaced(4, 22));
+    at22.c.onFrame();
+    expect(at22.calls.ratios).toEqual([0.6]);
+
+    const at23 = makeController('auto', { base: 1 });
+    at23.frames(spaced(4, 23));
+    at23.c.onFrame();
+    expect(at23.calls.ratios.at(-1)).toBeCloseTo(0.45, 10);
+  });
+
+  it('three fast intervals (<18 ms) step finer; exactly 18 ms is neutral', () => {
+    const fast = makeController('auto', { base: 1 });
+    fast.frames(spaced(4, 16.7));
+    fast.c.onFrame();
+    expect(fast.calls.ratios.at(-1)).toBeCloseTo(0.75, 10);
+
+    const at18 = makeController('auto', { base: 1 });
+    at18.frames(spaced(4, 18));
+    at18.c.onFrame();
+    expect(at18.calls.ratios).toEqual([0.6]);
+  });
+
+  it('a neutral interval breaks a slow streak', () => {
+    const h = makeController('auto', { base: 1 });
+    // baseline, slow, slow, neutral (20), slow, slow → never 3 consecutive slow.
+    h.frames([1000, 1030, 1060, 1080, 1110, 1140]);
+    h.c.onFrame();
+    expect(h.calls.ratios).toEqual([0.6]);
+  });
+
+  it('a slow GPU drives the factor down to the 0.4 floor and holds it', () => {
+    const h = makeController('auto', { base: 2 });
+    h.frames(spaced(1 + 3 * 6, 40)); // six slow streaks
+    h.c.onFrame();
+    expect(h.calls.ratios.at(-1)).toBeCloseTo(0.8, 10); // 2 × 0.4
+    expect(Math.min(...h.calls.ratios)).toBeCloseTo(0.8, 10);
+  });
+
+  it('a fast GPU climbs back to full detail and is clamped at 1 × base', () => {
+    const h = makeController('auto', { base: 2 });
+    h.frames(spaced(1 + 3 * 6, 8)); // six fast streaks
+    h.c.onFrame();
+    expect(h.calls.ratios.at(-1)).toBe(2);
+    expect(Math.max(...h.calls.ratios)).toBe(2);
+  });
+
+  it('a tick with no interaction render (pointer paused) stops sampling; the next frame re-baselines', () => {
+    const h = makeController('auto', { base: 1 });
+    h.frames([1000, 1030, 1060]); // baseline + 2 slow
+    h.tick(1076); // idle frame: no onFrame since the last tick
+    expect(h.pending()).toBe(0);
+    // Resume much later: the gap must not count, and the earlier streak is not continued by one slow.
+    h.frames([5000, 5030]);
+    h.c.onFrame();
+    expect(h.calls.ratios).toEqual([0.6]);
+  });
+
+  it('without a frame scheduler there is no adaptation — the 0.6 factor holds for the gesture', () => {
+    const saved = globalThis.requestAnimationFrame;
+    // @ts-expect-error — simulate a host without requestAnimationFrame
+    delete globalThis.requestAnimationFrame;
+    try {
+      const h = makeController('auto', { base: 1, noScheduler: true });
+      for (let i = 0; i < 10; i++) h.c.onFrame();
+      expect(h.calls.ratios).toEqual([0.6]);
+      expect(h.calls.render).toBe(10);
+    } finally {
+      if (saved !== undefined) globalThis.requestAnimationFrame = saved;
+    }
+  });
+
+  it('falls back to the global requestAnimationFrame when no scheduler is injected', () => {
+    const saved = globalThis.requestAnimationFrame;
+    const cbs: Array<(t: number) => void> = [];
+    globalThis.requestAnimationFrame = ((cb: (t: number) => void) => (cbs.push(cb), cbs.length)) as never;
+    try {
+      const h = makeController('auto', { base: 1, noScheduler: true });
+      h.c.onFrame();
+      expect(cbs).toHaveLength(1);
+    } finally {
+      globalThis.requestAnimationFrame = saved;
+    }
+  });
+
+  it('settle cancels the sampler when the restore runs', () => {
+    vi.useFakeTimers();
+    try {
+      const h = makeController('auto', { base: 1 });
+      h.c.onFrame();
+      expect(h.pending()).toBe(1);
+      h.c.settle();
+      vi.advanceTimersByTime(150);
+      expect(h.pending()).toBe(0);
+      expect(h.calls.cancelled).toEqual([1]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('dispose clears a pending settle and the sampler so nothing fires afterwards', () => {
+    vi.useFakeTimers();
+    try {
+      const h = makeController('auto', { base: 1 });
+      h.c.onFrame();
+      h.c.settle();
+      h.c.dispose();
+      expect(h.pending()).toBe(0);
+      const renders = h.calls.render;
+      vi.advanceTimersByTime(500);
+      expect(h.calls.render).toBe(renders); // the settle callback never ran
     } finally {
       vi.useRealTimers();
     }

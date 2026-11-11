@@ -1,44 +1,69 @@
 /**
  * Interaction-aware render quality (DD-020, #306/2) — a small, renderer-agnostic controller that
- * reduces render detail (device pixel ratio) while the camera is moving and restores it once the
- * gesture settles. Extracted from the toolpath renderer (DD-021 Phase 0) so the interactive model
- * viewer shares one implementation instead of a parallel copy.
+ * reduces render detail (pixel ratio) while the camera is moving and restores it once the gesture
+ * settles. Extracted from the toolpath renderer (DD-021 Phase 0) so the interactive model viewer
+ * shares one implementation instead of a parallel copy.
  *
- * It knows nothing about scenes, cameras, or IR — only how to (a) set a pixel ratio and (b) request
- * a render. The owner wires an OrbitControls `'change'` → {@link InteractionQualityController.onFrame}
- * and `'end'` → {@link InteractionQualityController.settle}.
+ * It knows nothing about scenes, cameras, or IR — only how to (a) read and set a pixel ratio, (b)
+ * request a render, and (c) schedule an animation frame. The owner wires an OrbitControls `'change'`
+ * → {@link InteractionQualityController.onFrame} and `'end'` → {@link InteractionQualityController.settle}.
+ *
+ * The resting ratio ("base") is the renderer's own ratio, read at the start of each gesture — the
+ * controller only ever scales it down transiently and restores exactly it (#435). Adaptation samples
+ * the browser's real frame interval (rAF → rAF) while the gesture is rendering, not the CPU time of
+ * the synchronous `render()` call, which excludes GPU work and so almost never looked slow (#435).
  */
 
 /** Factor is clamped to `[MIN_INTERACTION_FACTOR, 1]`. */
 export const MIN_INTERACTION_FACTOR = 0.4;
-/** Proactive reduction applied when a gesture starts (then adapted by measured frame time). */
+/** Proactive reduction applied when a gesture starts (then adapted by measured frame interval). */
 export const DEFAULT_INTERACTION_FACTOR = 0.6;
 /** Debounce before restoring full detail after the camera settles. */
 export const INTERACTION_SETTLE_MS = 150;
-/** Frame slower than this (ms) → step coarser. */
+/** Frame interval slower than this (ms; a missed 60 Hz vsync) → step coarser. */
 export const INTERACTION_FRAME_BUDGET_HI = 22;
-/** Frame comfortably faster than this (ms) → step finer. */
-export const INTERACTION_FRAME_BUDGET_LO = 12;
-/** Per-frame adjustment to the detail factor. */
+/** Frame interval faster than this (ms; keeping up with 60 Hz or better) → step finer. */
+export const INTERACTION_FRAME_BUDGET_LO = 18;
+/** Consecutive slow (or fast) samples required before one step — one hitch never flips detail. */
+export const INTERACTION_STREAK = 3;
+/** Per-step adjustment to the detail factor. */
 export const INTERACTION_FACTOR_STEP = 0.15;
 
-/** What the controller needs from its owner: set a pixel ratio, and request a render. */
+/**
+ * What the controller needs from its owner: set a pixel ratio and request a render. The optional
+ * members default sensibly: `getPixelRatio` → 1, `requestFrame`/`cancelFrame` → the global
+ * `requestAnimationFrame`/`cancelAnimationFrame`. With no frame scheduler available the factor stays
+ * at its proactive value for the whole gesture (no adaptation).
+ */
 export interface InteractionQualityDeps {
   setPixelRatio(ratio: number): void;
   render(): void;
+  /** The renderer's current (resting) pixel ratio — read at each gesture start. */
+  getPixelRatio?(): number;
+  /** Schedule `cb` for the next animation frame with a millisecond timestamp; returns a handle. */
+  requestFrame?(cb: (timestampMs: number) => void): number;
+  /** Cancel a handle returned by `requestFrame`. */
+  cancelFrame?(handle: number): void;
 }
 
 /**
  * Reduces render detail during camera interaction and restores it on settle. Off by default — no
  * behavior change until switched to `'auto'`. The detail `factor` is clamped to
- * `[MIN_INTERACTION_FACTOR, 1]` and adapted by a bounded frame-time hysteresis.
+ * `[MIN_INTERACTION_FACTOR, 1]` and adapted by a bounded frame-interval hysteresis.
  */
 export class InteractionQualityController {
   private mode: 'off' | 'auto';
   private basePixelRatio = 1;
+  /** The ratio last handed to `setPixelRatio` (or read at gesture start) — skips redundant resizes. */
+  private appliedRatio = 1;
   private factor = 1;
   private interacting = false;
   private settleTimer: ReturnType<typeof setTimeout> | null = null;
+  private frameHandle: number | null = null;
+  private lastTick: number | null = null;
+  private renderedSinceTick = false;
+  private slowStreak = 0;
+  private fastStreak = 0;
 
   constructor(
     private readonly deps: InteractionQualityDeps,
@@ -47,18 +72,19 @@ export class InteractionQualityController {
     this.mode = mode;
   }
 
-  /** Toggle the mode. `'off'` clears any pending settle and restores full detail immediately. */
+  /**
+   * Toggle the mode. `'off'` clears any pending settle and, if a gesture had reduced detail, restores
+   * the resting ratio immediately; otherwise it leaves the renderer's pixel ratio untouched.
+   */
   setMode(mode: 'off' | 'auto'): void {
     this.mode = mode;
     if (mode === 'off') {
       this.clearTimer();
-      this.interacting = false;
-      this.factor = 1;
-      this.deps.setPixelRatio(this.basePixelRatio);
+      if (this.interacting) this.restore();
     }
   }
 
-  /** OrbitControls `'change'`: render, and (when `'auto'`) reduce detail + adapt to frame time. */
+  /** OrbitControls `'change'`: render, and (when `'auto'`) reduce detail + adapt to frame interval. */
   onFrame(): void {
     if (this.mode !== 'auto') {
       this.deps.render();
@@ -66,20 +92,17 @@ export class InteractionQualityController {
     }
     if (!this.interacting) {
       this.interacting = true;
-      this.basePixelRatio = typeof window !== 'undefined' ? window.devicePixelRatio || 1 : 1;
-      this.factor = DEFAULT_INTERACTION_FACTOR; // proactive reduction, then adapt below
+      this.basePixelRatio = this.deps.getPixelRatio?.() ?? 1;
+      this.appliedRatio = this.basePixelRatio;
+      this.factor = DEFAULT_INTERACTION_FACTOR; // proactive reduction, then adapt by frame interval
+      this.slowStreak = 0;
+      this.fastStreak = 0;
     }
     this.clearTimer();
-    this.deps.setPixelRatio(this.basePixelRatio * this.factor);
-    const t0 = Date.now();
+    this.applyRatio(this.basePixelRatio * this.factor);
     this.deps.render();
-    const dt = Date.now() - t0;
-    // Bounded hysteresis: too slow → coarser; comfortably fast → finer. Clamped to [MIN, 1].
-    if (dt > INTERACTION_FRAME_BUDGET_HI) {
-      this.factor = Math.max(MIN_INTERACTION_FACTOR, this.factor - INTERACTION_FACTOR_STEP);
-    } else if (dt < INTERACTION_FRAME_BUDGET_LO) {
-      this.factor = Math.min(1, this.factor + INTERACTION_FACTOR_STEP);
-    }
+    this.renderedSinceTick = true;
+    this.startSampling();
   }
 
   /** OrbitControls `'end'`: restore full detail a short debounce after the camera settles. */
@@ -88,16 +111,88 @@ export class InteractionQualityController {
     this.clearTimer();
     this.settleTimer = setTimeout(() => {
       this.settleTimer = null;
-      this.interacting = false;
-      this.factor = 1;
-      this.deps.setPixelRatio(this.basePixelRatio);
-      this.deps.render();
+      this.restore();
     }, INTERACTION_SETTLE_MS);
   }
 
-  /** Release the pending settle timer. */
+  /** Release the pending settle timer and stop frame sampling. */
   dispose(): void {
     this.clearTimer();
+    this.stopSampling();
+  }
+
+  /** End the gesture: back to the resting ratio, full detail, one repaint. */
+  private restore(): void {
+    this.stopSampling();
+    this.interacting = false;
+    this.factor = 1;
+    this.applyRatio(this.basePixelRatio);
+    this.deps.render();
+  }
+
+  private applyRatio(ratio: number): void {
+    if (ratio === this.appliedRatio) return;
+    this.appliedRatio = ratio;
+    this.deps.setPixelRatio(ratio);
+  }
+
+  private requestFrame(cb: (t: number) => void): number | null {
+    if (this.deps.requestFrame) return this.deps.requestFrame(cb);
+    if (typeof globalThis.requestAnimationFrame === 'function') return globalThis.requestAnimationFrame(cb);
+    return null; // no scheduler → no adaptation; the proactive factor holds for the gesture
+  }
+
+  /** Start the rAF sampler if it is not already running. Its first tick only sets the baseline. */
+  private startSampling(): void {
+    if (this.frameHandle !== null) return;
+    this.lastTick = null;
+    this.frameHandle = this.requestFrame(this.tick);
+  }
+
+  private stopSampling(): void {
+    if (this.frameHandle !== null) {
+      if (this.deps.cancelFrame) this.deps.cancelFrame(this.frameHandle);
+      else if (typeof globalThis.cancelAnimationFrame === 'function') globalThis.cancelAnimationFrame(this.frameHandle);
+      this.frameHandle = null;
+    }
+    this.lastTick = null;
+  }
+
+  private readonly tick = (t: number): void => {
+    this.frameHandle = null;
+    if (!this.interacting) return;
+    // A frame with no interaction render is idle time (the pointer paused) — not a measurement. Stop;
+    // the next `onFrame` restarts the sampler with a fresh baseline, and a pause breaks any streak.
+    if (!this.renderedSinceTick) {
+      this.lastTick = null;
+      this.slowStreak = 0;
+      this.fastStreak = 0;
+      return;
+    }
+    this.renderedSinceTick = false;
+    if (this.lastTick !== null) this.sample(t - this.lastTick);
+    this.lastTick = t;
+    this.frameHandle = this.requestFrame(this.tick);
+  };
+
+  /** Bounded hysteresis: a streak of slow intervals → coarser; of fast ones → finer. Clamped to [MIN, 1]. */
+  private sample(dt: number): void {
+    if (dt > INTERACTION_FRAME_BUDGET_HI) {
+      this.fastStreak = 0;
+      if (++this.slowStreak >= INTERACTION_STREAK) {
+        this.slowStreak = 0;
+        this.factor = Math.max(MIN_INTERACTION_FACTOR, this.factor - INTERACTION_FACTOR_STEP);
+      }
+    } else if (dt < INTERACTION_FRAME_BUDGET_LO) {
+      this.slowStreak = 0;
+      if (++this.fastStreak >= INTERACTION_STREAK) {
+        this.fastStreak = 0;
+        this.factor = Math.min(1, this.factor + INTERACTION_FACTOR_STEP);
+      }
+    } else {
+      this.slowStreak = 0;
+      this.fastStreak = 0;
+    }
   }
 
   private clearTimer(): void {
