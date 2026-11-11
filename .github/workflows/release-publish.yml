@@ -1,8 +1,9 @@
 # DD-008 D3 (#130): the ONLY path that publishes @chestnutlabs/* — a GitHub Release
 # (tag vX.Y.Z) cut from `main`. Fresh install, every repository gate, then a
 # dependency-ordered `npm publish` ×14 with npm provenance. Trusted publishing (OIDC)
-# is the intended auth; a granular NPM_TOKEN secret is the recorded fallback
-# (DD-008 §4.3 — the @chestnutlabs scope is user-owned; org conversion deferred).
+# is the primary auth from v0.22.0 (#460); the granular NPM_TOKEN secret stays as the
+# fallback until one clean trusted publish has landed (DD-008 §4.3 — the @chestnutlabs
+# scope is user-owned; org conversion deferred).
 # No workstation publishing, ever.
 name: Release / publish
 
@@ -36,17 +37,41 @@ jobs:
           node-version: '22.x'
           cache: 'npm'
           registry-url: 'https://registry.npmjs.org'
-      # Fail fast on a dead/misconfigured npm credential (#460): a bad NPM_TOKEN otherwise dies
-      # as a cryptic E404/E403 on package 1 only AFTER the whole gate below. Interim until
-      # trusted publishing (OIDC) replaces the token. Needs no install, so it runs in seconds.
-      - name: Probe npm publish auth (fail fast on a bad NPM_TOKEN)
+      # Trusted publishing (OIDC, #460) needs npm CLI >= 11.5.1 and Node >= 22.14.0; Node 22.x
+      # bundles npm 10, so install an exact npm 11 pin (bump deliberately) and assert both floors.
+      - name: Install npm for trusted publishing (>= 11.5.1)
+        run: |
+          npm install -g npm@11.21.2
+          node_v="$(node --version)"; node_v="${node_v#v}"; npm_v="$(npm --version)"
+          echo "node ${node_v}, npm ${npm_v}"
+          at_least() { [ "$(printf '%s\n' "$2" "$1" | sort -V | head -n 1)" = "$2" ]; }
+          at_least "$node_v" 22.14.0 || { echo "::error::Node ${node_v} < 22.14.0 (trusted publishing floor)"; exit 1; }
+          at_least "$npm_v" 11.5.1 || { echo "::error::npm ${npm_v} < 11.5.1 (trusted publishing floor)"; exit 1; }
+      # Fail fast only when NO publish credential can work (#460). npm tries OIDC trusted
+      # publishing first and falls back to NODE_AUTH_TOKEN (docs.npmjs.com/trusted-publishers), so:
+      #   1. NPM_TOKEN set and `npm whoami` accepts it      -> ok (token fallback is live).
+      #   2. token missing/rejected, OIDC request env present -> ::warning::, continue: the publish
+      #      relies on trusted publishing. The runner only exposes ACTIONS_ID_TOKEN_REQUEST_URL/_TOKEN
+      #      when the job has `id-token: write`; this cannot prove a trusted publisher is configured
+      #      on npmjs.com — that surfaces as ENEEDAUTH/E404 at the publish step.
+      #   3. token missing/rejected AND no OIDC request env -> ::error::, exit 1 before the gate.
+      # A whoami failure on a present token is still a warning in case 2: under OIDC the fallback
+      # token may legitimately be expired. Needs no install, so it runs in seconds.
+      - name: Probe npm publish auth (fail fast when neither OIDC nor NPM_TOKEN can work)
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
-          npm whoami || {
-            echo "::error title=npm publish auth probe failed::npm whoami rejected the credential (NPM_TOKEN missing, expired or revoked) — replace the NPM_TOKEN secret; see docs/reference/release-process.md#auth-dd-008-d3-as-amended"
-            exit 1
-          }
+          if [ -n "$NODE_AUTH_TOKEN" ] && npm whoami; then
+            echo "npm publish auth: NPM_TOKEN accepted (fallback available); OIDC is still tried first"
+            exit 0
+          fi
+          if [ -n "$NODE_AUTH_TOKEN" ]; then token_state="rejected by npm whoami (expired or revoked)"; else token_state="not set"; fi
+          if [ -n "$ACTIONS_ID_TOKEN_REQUEST_URL" ] && [ -n "$ACTIONS_ID_TOKEN_REQUEST_TOKEN" ]; then
+            echo "::warning title=npm token fallback unavailable::NPM_TOKEN is ${token_state} — publishing will rely on trusted publishing (OIDC); each package needs a trusted publisher for release-publish.yml on npmjs.com"
+            exit 0
+          fi
+          echo "::error title=npm publish auth probe failed::NPM_TOKEN is ${token_state} and no OIDC id-token is available (id-token: write missing?) — neither trusted publishing nor the token can publish; see docs/reference/release-process.md#auth-dd-008-d3-as-amended"
+          exit 1
       - run: npm ci
       # Owner ruling 6a (AnyBridge#2765): no tarball goes out without LICENSE + NOTICE.md.
       - run: npm run pack:license-check

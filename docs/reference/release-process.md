@@ -66,13 +66,25 @@ from the protected `Release / publish` workflow on a tag from `main` — never f
 
 ## Auth (DD-008 D3 as amended)
 
-- **Preferred direction:** npm **trusted publishing** (OIDC) — no long-lived token, no expiry, no
-  staging. Configured on npmjs (an owner step) against the **user-owned `@chestnutlabs` scope for
-  this repository + the `release-publish.yml` workflow (org conversion is deferred). The workflow
-  already grants `id-token: write` and provenance already runs on OIDC. Direct publish with a
-  granular token is itself being retired by npm in January 2027, so OIDC is required before then.
-- **Current mechanism (until OIDC is configured):** a **granular access token** stored as the
-  `NPM_TOKEN` repo secret (the workflow wires it as `NODE_AUTH_TOKEN`). npm removed classic
+- **Primary mechanism (from `v0.22.0`, owner decision 2026-11-11, #460):** npm **trusted
+  publishing** (OIDC) — no long-lived token, no expiry. Configured on npmjs (an owner step, see the
+  checklist below) per package against the **user-owned `@chestnutlabs` scope, this repository and
+  the `release-publish.yml` workflow (org conversion is deferred). It needs npm CLI **≥ 11.5.1** and
+  Node **≥ 22.14.0**; Node 22.x bundles npm 10, so the workflow's `Install npm for trusted
+  publishing` step installs an exact npm 11 pin and fails if either floor is not met. The job
+  already grants `id-token: write`. Provenance is generated automatically under trusted publishing;
+  `tools/release/publish.mjs` keeps passing `--provenance`, which is redundant there but harmless
+  (and still required on the token path). Direct publish with a granular token is itself being
+  retired by npm in January 2027, so OIDC is required before then.
+- **Auth order:** the npm CLI detects the GitHub Actions OIDC environment and tries trusted
+  publishing **first**, falling back to the token in `NODE_AUTH_TOKEN` when OIDC is unavailable or the
+  token exchange fails (e.g. no trusted publisher configured for that package) — per
+  [docs.npmjs.com/trusted-publishers](https://docs.npmjs.com/trusted-publishers) ("automatically
+  detects OIDC environments and uses them for authentication before falling back to traditional
+  tokens"). A failed exchange is logged at `verbose` level only, so a run that silently fell back
+  to the token looks like a normal publish.
+- **Fallback (`v0.22.0` only, until one clean trusted publish):** a **granular access token** stored
+  as the `NPM_TOKEN` repo secret (the workflow wires it as `NODE_AUTH_TOKEN`). npm removed classic
   tokens (including the old "Automation" type) in Nov–Dec 2025; granular tokens are the only kind.
   The token must have **all** of:
   - **Read and write** permission on the `@chestnutlabs` packages/scope;
@@ -82,13 +94,48 @@ from the protected `Release / publish` workflow on a tag from `main` — never f
     `E403 "Two-factor authentication or granular access token with bypass 2fa enabled is required"`).
   Granular tokens expire (npm caps the lifetime); an expired token surfaces as a misleading
   `E404 '<pkg>@<version>' is not in this registry`. Note the expiry date when rotating.
-- **Pre-publish probe:** the `Probe npm publish auth` step in `release-publish.yml` runs `npm whoami`
-  before the gate, so a **missing, expired or revoked** token fails in seconds with a clearly named
-  step instead of an E404 on the first package. It **cannot** verify read/write vs read-only,
-  stage-only, or Bypass 2FA: there is no non-publishing registry call that proves write access
-  (`npm publish --dry-run` does not authenticate, and `npm access list packages` reports the owner
-  account's rights, not the token's). Those three are token-creation properties — verify them when the
-  token is made. The probe becomes redundant once OIDC replaces the token.
+- **Pre-publish probe:** the `Probe npm publish auth` step in `release-publish.yml` runs before the
+  gate and fails only when **neither** path can work:
+
+  | `NPM_TOKEN` | OIDC request env (`ACTIONS_ID_TOKEN_REQUEST_URL` + `_TOKEN`) | Result |
+  |---|---|---|
+  | set, `npm whoami` accepts it | any | pass (token fallback live) |
+  | missing, or rejected by `npm whoami` | present | `::warning::`, pass — publish relies on OIDC |
+  | missing, or rejected by `npm whoami` | absent | `::error::`, fail in seconds |
+
+  The runner only exposes the OIDC request env when the job has `id-token: write`, so the check
+  proves an id-token *can* be minted, **not** that a trusted publisher is configured on npmjs.com — a
+  missing or mistyped trusted publisher with no working token still surfaces at the publish step
+  (`ENEEDAUTH` / `E404`). On the token path the probe also **cannot** verify read/write vs
+  read-only, stage-only, or Bypass 2FA: there is no non-publishing registry call that proves write
+  access (`npm publish --dry-run` does not authenticate, and `npm access list packages` reports the
+  owner account's rights, not the token's). Those three are token-creation properties — verify them
+  when the token is made.
+- **Owner checklist — trusted publishers (before the `v0.22.0` tag).** On npmjs.com, for **each**
+  of the 14 packages: *package → Settings → Trusted Publisher → GitHub Actions*, then
+  - **Organization or user:** `ChestnutLabs`
+  - **Repository:** `gcode-preview`
+  - **Workflow filename:** `release-publish.yml` (filename only, not the path)
+  - **Environment name:** leave empty (the job uses no GitHub environment)
+  - **Allowed actions:** tick **direct `npm publish`**. Configurations created after 2026-09-03
+    default to `npm stage publish` only, which this workflow does not use.
+
+  **Timing:** create the configurations within the **2 days before the tag**. npm expires a new
+  trusted-publisher configuration that has not completed its first successful publish within 2 days,
+  and an expired one can no longer be used or edited (delete and recreate it).
+
+  Packages (from `packages/*/package.json`):
+  `@chestnutlabs/toolpath-core`, `@chestnutlabs/gcode-colors`, `@chestnutlabs/gcode-dialects`,
+  `@chestnutlabs/gcode-containers`, `@chestnutlabs/gcode-bgcode`, `@chestnutlabs/gcode-parser`,
+  `@chestnutlabs/gcode-renderer-three`, `@chestnutlabs/gcode-model-renderer`,
+  `@chestnutlabs/gcode-renderer-2d`, `@chestnutlabs/gcode-preview-core`,
+  `@chestnutlabs/gcode-preview-vue`, `@chestnutlabs/gcode-preview-react`,
+  `@chestnutlabs/gcode-preview-svelte`, `@chestnutlabs/gcode-preview-element`.
+- **Follow-up after one clean trusted publish:** per package, *Settings → Publishing access →*
+  **Require two-factor authentication and disallow tokens**, then delete the `NPM_TOKEN` repo
+  secret. Caution: at the default log level a silent fallback to the token looks identical to an
+  OIDC publish (provenance is attached on both paths), so "clean trusted publish" must be confirmed
+  deliberately — not inferred from a green run — before the fallback is removed.
 - 2FA-on-publish set on the owning account. These are **maintainer prerequisites** for phase 7,
   confirmed during the phase-6 rehearsal.
 - **GitHub Actions PR creation** (discovered at the first #130 run): the org-level setting
