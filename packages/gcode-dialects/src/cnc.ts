@@ -43,6 +43,34 @@ interface Evidence {
   oWord: boolean; // RS274NGC O-word subroutine/flow (LinuxCNC family)
 }
 
+// `endsub` must stay: it ends in `sub`, but `o x\nendsub` only matches with `endsub` as the keyword
+// (the `end` prefix cannot be part of the `\w*` before the whitespace).
+const O_WORD_KEYWORD = /(?:sub|call|if|while|do|repeat|return|endsub)\b/gi;
+const isO = (c: string): boolean => c === 'o' || c === 'O';
+
+/**
+ * True when `text` contains an RS274NGC O-word: an `o`/`O`, then `[\s<]*\w*\s*`, then a flow keyword
+ * ending at a word boundary. Equivalent to
+ * `/[oO][\s<]*\w*\s*(?:sub|call|if|while|do|repeat|return|endsub)\b/.test(text)`, whose unanchored
+ * start rescans a long run of `o` from every position (22 s on 64 KiB of `O`). This walks each
+ * keyword occurrence BACKWARD instead: skip whitespace, then the word run before it must contain an
+ * `o`, or be preceded by `[\s<]*` and an `o`. The backward work is local to the token, so the whole
+ * scan is linear.
+ */
+export function hasOWord(text: string): boolean {
+  for (const m of text.matchAll(O_WORD_KEYWORD)) {
+    let j = m.index;
+    while (j > 0 && /\s/.test(text[j - 1])) j--;
+    let w = j;
+    while (w > 0 && /\w/.test(text[w - 1])) w--;
+    for (let i = w; i < j; i++) if (isO(text[i])) return true;
+    let a = w;
+    while (a > 0 && (text[a - 1] === '<' || /\s/.test(text[a - 1]))) a--;
+    if (isO(text[a - 1])) return true; // `text[-1]` is undefined → false at the start
+  }
+  return false;
+}
+
 /**
  * Remove every `(…)` span (the shortest `(` … `)` runs, left to right). Equivalent to
  * `text.replace(/\([^)]*\)/g, '')`, which rescans to end of line from each unmatched `(` and is
@@ -78,6 +106,21 @@ export function hasPercentEnvelope(text: string): boolean {
   return false;
 }
 
+/**
+ * True when some line of `code` has a G0–G3 motion word followed later on that line by an `E` value.
+ * Equivalent to `/G0*[0-3](?!\d)[^\n;]*E-?[.\d]/i.test(code)` for `;`-stripped `code`, whose unanchored
+ * `G` start rescans `[^\n;]*` to end of line from every `G` (7 s on a 64 KiB head of `G1`). Per line,
+ * only the FIRST motion word matters: `(?!\d)` makes each `G` take its whole digit run, so a later `G`
+ * starts after the earlier match ends and its suffix is contained in the earlier one's.
+ */
+export function hasExtrusionMove(code: string): boolean {
+  for (const line of code.split('\n')) {
+    const g = /G0*[0-3](?!\d)/i.exec(line);
+    if (g !== null && /E-?[.\d]/i.test(line.slice(g.index + g[0].length))) return true;
+  }
+  return false;
+}
+
 function scoreEvidence(head: string): Evidence {
   // Strip line comments (';…' and LinuxCNC/RS274 '(…)') so words inside them never score as markers.
   const code = head
@@ -91,7 +134,7 @@ function scoreEvidence(head: string): Evidence {
   return {
     // Extrusion = an `E` value on a G0–G3 MOTION line — NOT bare `E` (LinuxCNC laser uses `M67 E0 Q…`
     // for analog power, which must not be mistaken for FDM extrusion).
-    extrusion: has(/G0*[0-3](?!\d)[^\n;]*E-?[.\d]/i) || has(/M8[23](?!\d)/i),
+    extrusion: hasExtrusionMove(code) || has(/M8[23](?!\d)/i),
     m3: has(/M0*3(?!\d)/i),
     m4: has(/M0*4(?!\d)/i),
     power: has(/S\d/i),
@@ -100,7 +143,7 @@ function scoreEvidence(head: string): Evidence {
     laserMode: /\$32\s*=\s*1/.test(code),
     linuxCnc: /\b(?:LinuxCNC|EMC2?)\b/i.test(head),
     grblBanner: /\bGrbl\s*[0-9]/i.test(head),
-    oWord: has(/[oO][\s<]*\w*\s*(?:sub|call|if|while|do|repeat|return|endsub)\b/im)
+    oWord: hasOWord(code)
   };
 }
 

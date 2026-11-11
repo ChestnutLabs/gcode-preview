@@ -148,7 +148,7 @@ export function orcaBambu(): DialectAdapter {
         return;
       }
       // Orca/Bambu print-time comments are colon-separated (`; total estimated time: 1h 2m 3s`).
-      const timeMatch = /^(?:total estimated time|model printing time)\s*:\s*(.+)$/i.exec(trimmed);
+      const timeMatch = /^(?:total estimated time|model printing time)\s*:\s*(\S.*)$/i.exec(trimmed);
       if (timeMatch !== null) {
         const sec = parseHmsToSeconds(timeMatch[1]);
         if (sec !== null) {
