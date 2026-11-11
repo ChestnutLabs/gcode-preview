@@ -166,6 +166,232 @@ describe('parsePlateConfig (DD-025)', () => {
   });
 });
 
+// #468 — `parsePlateConfig` must stay linear on a hostile config. Fixtures below are literal strings.
+const PID = (n: number): string => `<metadata key="plater_id" value="${n}"/>`;
+const MI = (obj: number, ins: number): string =>
+  `<model_instance><metadata key="object_id" value="${obj}"/><metadata key="instance_id" value="${ins}"/></model_instance>`;
+const view = (pc: ReturnType<typeof parsePlateConfig>) =>
+  pc === null
+    ? null
+    : {
+        order: pc.order,
+        membership: [...pc.membership.entries()].sort(([a], [b]) => a.localeCompare(b)),
+        names: [...pc.names.entries()].sort(([a], [b]) => a - b)
+      };
+
+/** The pre-#468 regex implementation, kept verbatim as a differential oracle for well-formed/odd configs. */
+function legacyParsePlateConfig(xml: string): ReturnType<typeof parsePlateConfig> {
+  const plateBlocks = xml.match(/<plate\b[\s\S]*?<\/plate>/gi);
+  if (plateBlocks === null || plateBlocks.length === 0) return null;
+  const membership = new Map<string, number>();
+  const names = new Map<number, string>();
+  const order: number[] = [];
+  for (const block of plateBlocks) {
+    const idM = /key="plater_id"\s+value="(\d+)"/i.exec(block);
+    if (idM === null) continue;
+    const plateId = parseInt(idM[1], 10);
+    if (!Number.isFinite(plateId)) continue;
+    order.push(plateId);
+    const nameM = /key="plater_name"\s+value="([^"]*)"/i.exec(block);
+    if (nameM !== null && nameM[1].length > 0) names.set(plateId, nameM[1]);
+    for (const inst of block.match(/<model_instance\b[\s\S]*?<\/model_instance>/gi) ?? []) {
+      const objM = /key="object_id"\s+value="(\d+)"/i.exec(inst);
+      const insM = /key="instance_id"\s+value="(\d+)"/i.exec(inst);
+      if (objM === null || insM === null) continue;
+      membership.set(`${objM[1]}#${insM[1]}`, plateId);
+    }
+  }
+  return order.length > 0 ? { membership, names, order } : null;
+}
+
+describe('parsePlateConfig linear scan (#468)', () => {
+  const THREE_PLATES = `<?xml version="1.0"?><config>
+  <plate>${PID(1)}<metadata key="plater_name" value="A"/>${MI(10, 0)}${MI(10, 1)}</plate>
+  <plate>${PID(2)}${MI(11, 0)}</plate>
+  <plate>${PID(5)}<metadata key="plater_name" value="E"/>${MI(12, 3)}</plate>
+</config>`;
+
+  it('parses a multi-plate config to the exact expected structure', () => {
+    expect(view(parsePlateConfig(THREE_PLATES))).toEqual({
+      order: [1, 2, 5],
+      membership: [
+        ['10#0', 1],
+        ['10#1', 1],
+        ['11#0', 2],
+        ['12#3', 5]
+      ],
+      names: [
+        [1, 'A'],
+        [5, 'E']
+      ]
+    });
+  });
+
+  it('matches the old regex implementation on well-formed and odd configs', () => {
+    const fixtures = [
+      THREE_PLATES,
+      TWO_PLATE_SETTINGS,
+      SHARED_MASTER_SETTINGS,
+      `<plate>${PID(1)}</plate><plate>${PID(2)}</plate>`,
+      `<plate>${PID(1)}<plate>${PID(2)}${MI(3, 0)}</plate>${MI(4, 0)}</plate>`,
+      `<plate>${PID(1)}${MI(10, 0)}</plate><plate>${PID(2)}${MI(11, 0)}`,
+      `<plate>${PID(1)}${MI(10, 0)}<model_instance><metadata key="object_id" value="11"/></plate>`,
+      `<PLATE>${PID(3)}</plate><plate>${PID(4)}</PLATE><Plate>${PID(6)}</Plate>`,
+      '<config><object id="1"/></config>',
+      ''
+    ];
+    for (const xml of fixtures) expect(view(parsePlateConfig(xml))).toEqual(view(legacyParsePlateConfig(xml)));
+  });
+
+  it('keeps the word boundary: <plates> and <plate_x> are not plates, <plate id="9"> is', () => {
+    expect(parsePlateConfig(`<plates>${PID(7)}</plate>`)).toBeNull();
+    expect(parsePlateConfig(`<plate_x>${PID(7)}</plate>`)).toBeNull();
+    expect(view(parsePlateConfig(`<plate id="9">${PID(7)}</plate>`))?.order).toEqual([7]);
+    expect(view(parsePlateConfig(`<plate>${PID(8)}</plate>`))?.order).toEqual([8]);
+  });
+
+  it('is case-insensitive on the open tag and on the close tag independently', () => {
+    expect(view(parsePlateConfig(`<PLATE>${PID(3)}</plate>`))?.order).toEqual([3]);
+    expect(view(parsePlateConfig(`<plate>${PID(4)}</PLATE>`))?.order).toEqual([4]);
+    expect(view(parsePlateConfig(`<Plate>${PID(6)}</Plate>`))?.order).toEqual([6]);
+  });
+
+  it('takes non-overlapping blocks: a plate opened inside another belongs to the outer block', () => {
+    const pc = view(parsePlateConfig(`<plate>${PID(1)}<plate>${PID(2)}${MI(3, 0)}</plate>`));
+    expect(pc).toEqual({ order: [1], membership: [['3#0', 1]], names: [] });
+    expect(view(parsePlateConfig(`<plate>${PID(1)}</plate><plate>${PID(2)}</plate>`))?.order).toEqual([1, 2]);
+  });
+
+  it('keeps the plates already closed when a later <plate> never closes', () => {
+    const pc = view(parsePlateConfig(`<plate>${PID(1)}${MI(10, 0)}</plate><plate>${PID(2)}${MI(11, 0)}`));
+    expect(pc).toEqual({ order: [1], membership: [['10#0', 1]], names: [] });
+  });
+
+  it('keeps the model_instances already closed when a later one never closes', () => {
+    const open = '<model_instance><metadata key="object_id" value="11"/><metadata key="instance_id" value="0"/>';
+    const pc = view(parsePlateConfig(`<plate>${PID(1)}${MI(10, 0)}${open}</plate>`));
+    expect(pc).toEqual({ order: [1], membership: [['10#0', 1]], names: [] });
+  });
+
+  it('returns promptly on 1 MiB of unclosed <plate opens', () => {
+    const xml = '<plate '.repeat(Math.ceil(1_048_576 / 7));
+    const t0 = performance.now();
+    const pc = parsePlateConfig(xml);
+    const ms = performance.now() - t0;
+    expect(pc).toBeNull();
+    expect(ms).toBeLessThan(2000);
+  }, 20_000);
+
+  it('returns promptly on 1 MiB of unclosed <model_instance opens inside a closed plate', () => {
+    const xml = `<plate>${PID(1)}${'<model_instance '.repeat(65_536)}</plate>`;
+    const t0 = performance.now();
+    const pc = view(parsePlateConfig(xml));
+    const ms = performance.now() - t0;
+    expect(pc).toEqual({ order: [1], membership: [], names: [] });
+    expect(ms).toBeLessThan(2000);
+  }, 20_000);
+});
+
+const EX = (n: number): string => `<metadata key="extruder" value="${n}"/>`;
+const extruders = (xml: string): [string, number][] =>
+  [...parseObjectExtruders(xml).entries()].sort(([a], [b]) => a.localeCompare(b));
+
+/** The pre-#468 regex implementation of parseObjectExtruders, kept verbatim as a differential oracle. */
+function legacyParseObjectExtruders(xml: string): [string, number][] {
+  const map = new Map<string, number>();
+  const headerRe = /<(?:object|part)\s+id="(\d+)"[^>]*>([\s\S]*?)(?=<(?:object|part)\s+id="|<\/config>|$)/g;
+  let m: RegExpExecArray | null;
+  while ((m = headerRe.exec(xml)) !== null) {
+    const ext = /key="extruder"\s+value="(\d+)"/i.exec(m[2]);
+    if (ext !== null) {
+      const n = parseInt(ext[1], 10);
+      if (Number.isFinite(n) && n >= 1) map.set(m[1], n);
+    }
+  }
+  return [...map.entries()].sort(([a], [b]) => a.localeCompare(b));
+}
+
+describe('parseObjectExtruders linear scan (#468)', () => {
+  it('maps objects and parts to their own extruder in a multi-object config', () => {
+    const xml = `<config>
+ <object id="10">${EX(1)}<part id="1">${EX(1)}</part><part id="9">${EX(2)}</part></object>
+ <object id="11">${EX(3)}</object>
+</config>`;
+    expect(extruders(xml)).toEqual([
+      ['1', 1],
+      ['10', 1],
+      ['11', 3],
+      ['9', 2]
+    ]);
+  });
+
+  it('ends a segment at the next part header (object without its own extruder gets none)', () => {
+    expect(extruders(`<object id="5"><part id="6">${EX(2)}</part></object>`)).toEqual([['6', 2]]);
+  });
+
+  it('ends a segment at </config>, and still reads objects declared after it', () => {
+    expect(extruders(`<object id="1"></config>${EX(2)}`)).toEqual([]);
+    expect(extruders(`<object id="1">${EX(1)}</config><object id="2">${EX(2)}`)).toEqual([
+      ['1', 1],
+      ['2', 2]
+    ]);
+  });
+
+  it('runs the last segment to the end of the input', () => {
+    expect(extruders(`<object id="1">${EX(3)}`)).toEqual([['1', 3]]);
+  });
+
+  it('takes a header tag to the first > after the id, even across a later header prefix', () => {
+    expect(extruders(`<object id="1" <object id="2">${EX(4)}`)).toEqual([['1', 4]]);
+    expect(extruders(`<object id="1" name="a>b">${EX(2)}`)).toEqual([['1', 2]]);
+  });
+
+  it('keeps earlier results when a later header has no > at all', () => {
+    expect(extruders(`<object id="1">${EX(2)}<object id="3" `)).toEqual([['1', 2]]);
+  });
+
+  it('ends a segment at a non-numeric-id header prefix without reading it as a header', () => {
+    expect(extruders(`<object id="1"><object id="x">${EX(2)}</object>`)).toEqual([]);
+  });
+
+  it('is case-sensitive on headers, header prefixes and </config>', () => {
+    expect(extruders(`<OBJECT id="1">${EX(2)}`)).toEqual([]);
+    expect(extruders(`<object id="1"><OBJECT id="2">${EX(4)}`)).toEqual([['1', 4]]);
+    expect(extruders(`<object id="1"></CONFIG>${EX(4)}`)).toEqual([['1', 4]]);
+  });
+
+  it('accepts any whitespace between the tag name and id (headers and segment ends)', () => {
+    expect(extruders(`<object\n id="1">\n<part\tid="2">${EX(5)}`)).toEqual([['2', 5]]);
+  });
+
+  it('matches the old regex implementation on well-formed and odd configs', () => {
+    const fixtures = [
+      EXTRUDER_SETTINGS,
+      `<config><object id="10">${EX(1)}<part id="1">${EX(1)}</part><part id="9">${EX(2)}</part></object></config>`,
+      `<object id="5"><part id="6">${EX(2)}</part></object>`,
+      `<object id="1">${EX(1)}</config><object id="2">${EX(2)}`,
+      `<object id="1" <object id="2">${EX(4)}`,
+      `<object id="1">${EX(2)}<object id="3" `,
+      `<object id="1"><object id="x">${EX(2)}</object>`,
+      `<object\n id="1">\n<part\tid="2">${EX(5)}`,
+      `<object id="1"><OBJECT id="2">${EX(4)}`,
+      `<object id="1">${EX(0)}${EX(2)}<object id="2">${EX(3)}${EX(4)}`,
+      '<config><object id="1"/></config>',
+      ''
+    ];
+    for (const xml of fixtures) expect(extruders(xml)).toEqual(legacyParseObjectExtruders(xml));
+  });
+
+  it('returns promptly on 1 MiB of object headers that never close', () => {
+    const xml = '<object id="1" '.repeat(69_906);
+    const t0 = performance.now();
+    const n = parseObjectExtruders(xml).size;
+    const ms = performance.now() - t0;
+    expect(n).toBe(0);
+    expect(ms).toBeLessThan(2000);
+  }, 20_000);
+});
+
 describe('parse3mf plate exposure (DD-025)', () => {
   it('exposes ModelScene.plates + placement plateIds + capabilities.plates for a declared multi-plate file', async () => {
     const scene = await parse3mf(

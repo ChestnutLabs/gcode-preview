@@ -15,25 +15,44 @@ import type { AnnotationSink } from './contracts.js';
 import { applyMarkerRanges, type RangeMarker } from './annotate.js';
 
 /**
+ * The name between the prefix (ending at `start`) and the whitespace before the `id` token at
+ * `idIndex`, found with index arithmetic only. (A lazy `(.+?)\s+id` scan re-fails at every
+ * `printing object` repeat and is quadratic on a hostile line.) A trailing `unique` /
+ * `unique label` filler and one enclosing quote pair are stripped.
+ */
+function nameBeforeId(trimmed: string, start: number, idIndex: number): string {
+  let name = trimmed.slice(start, idIndex).trim();
+  name = name.replace(/(?:^|\s)unique(?:\s+label)?$/i, '').trim();
+  if (name.length >= 2 && name.startsWith('"') && name.endsWith('"') && !name.slice(1, -1).includes('"')) {
+    name = name.slice(1, -1).trim();
+  }
+  return name;
+}
+
+/**
  * Match an object-start comment (the leading `; ` is already stripped) across all lineage formats,
  * returning the raw object id (stable per object) + optional name, or null.
  */
 export function matchPrintingObjectStart(trimmed: string): { id: string; name?: string } | null {
-  if (!/^(?:start\s+)?printing object\b/i.test(trimmed)) return null;
-  const idm = /\bid:?\s*(\d+)/i.exec(trimmed);
-  if (idm === null) return null;
+  const prefix = /^(?:start\s+)?printing object\b[,:]?\s*/i.exec(trimmed);
+  if (prefix === null) return null;
+  // The id is the first whitespace-delimited `id:?<digits>` token, so `bracket(id2) id:7` takes 7 and
+  // a name word like `idler` / `Identity` is not mistaken for it. Only when no such token exists
+  // (e.g. `printing object,id:3`) fall back to a bare `\bid` match, which carries no name.
+  const idm = /\sid:?\s*(\d+)/i.exec(trimmed);
+  const bare = idm === null ? /\bid:?\s*(\d+)/i.exec(trimmed) : null;
+  const found = idm ?? bare;
+  if (found === null) return null;
   // Name: prefer an explicit `name:<…>` suffix (Bambu), else a quoted or bare name BEFORE the id
   // (OrcaSlicer / Anycubic), rejecting `unique` / `unique label` filler.
-  let name: string;
-  const suffix = /\bname:\s*(.+?)\s*$/i.exec(trimmed);
+  let name = '';
+  const suffix = /\bname:\s*(\S.*)$/i.exec(trimmed);
   if (suffix !== null) {
-    name = suffix[1].trim();
-  } else {
-    const pre = /printing object[,:]?\s*(?:"([^"]*)"|(.+?))\s+(?:unique\s+(?:label\s+)?)?id:?/i.exec(trimmed);
-    name = (pre?.[1] ?? pre?.[2] ?? '').trim();
-    if (/^unique(\s+label)?$/i.test(name)) name = '';
+    name = suffix[1].trimEnd();
+  } else if (idm !== null) {
+    name = nameBeforeId(trimmed, prefix[0].length, idm.index);
   }
-  return { id: idm[1], name: name.length > 0 ? name : undefined };
+  return { id: found[1], name: name.length > 0 ? name : undefined };
 }
 
 /**

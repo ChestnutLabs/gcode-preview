@@ -12,10 +12,10 @@
   parses them literally. Delete rows only for packages that did not change.
 -->
 
-# Release review — v0.21.1
+# Release review — v0.21.2
 
-**Review version:** v0.21.1
-**Changed-capability inventory diffed against:** `v0.21.0`
+**Review version:** v0.21.2
+**Changed-capability inventory diffed against:** `v0.21.1`
 
 This artifact records the per-release **Public Product + Documentation + Visual** reconciliation:
 before the `dev` -> `main` promotion, compare the changed capabilities below against the README,
@@ -28,23 +28,19 @@ each disposition. Guidance: CLAUDE.md "Public-docs completion check" and
 
 | Package | Changed src files | Changelog summary | Disposition |
 |---|--:|---|---|
-| `@chestnutlabs/gcode-bgcode` | 7 | A hostile `.bgcode` whose DEFLATE block inflates past the output cap (or past its own declared size) now | Status: reviewed |
-| `@chestnutlabs/gcode-containers` | 10 | Fix a hostile `.gcode.3mf` / 3MF file freezing the load instead of failing with an error. When a compressed entry's headers claimed a small  | Status: reviewed |
-| `@chestnutlabs/gcode-dialects` | 2 | _(version bump only — no src changelog summary)_ | Status: no-change-needed |
-| `@chestnutlabs/gcode-model-renderer` | 2 | The archive-wide expanded-size cap (`maxExpandedBytesTotal`, default 1 GiB) is now enforced. It was | Status: reviewed |
-| `@chestnutlabs/gcode-parser` | 2 | Fix the preview getting stuck after re-parsing the same bytes. Parsing a `Uint8Array` hands its buffer to the worker, which leaves it empty. | Status: reviewed |
-| `@chestnutlabs/gcode-preview-core` | 1 | _(version bump only — no src changelog summary)_ | Status: no-change-needed |
-| `@chestnutlabs/gcode-preview-vue` | 2 | _(version bump only — no src changelog summary)_ | Status: no-change-needed |
-| `@chestnutlabs/gcode-renderer-three` | 1 | _(version bump only — no src changelog summary)_ | Status: no-change-needed |
-| `@chestnutlabs/toolpath-core` | 1 | _(version bump only — no src changelog summary)_ | Status: no-change-needed |
+| `@chestnutlabs/gcode-dialects` | 10 | Hostile-input hardening, second pass. Four more dialect regexes could stall a parse for seconds: | Status: reviewed — no API change. No user doc claims a CRLF limitation or documents object-marker name/id extraction rules; `docs/compatibility/dialects-and-containers.md` OrcaSlicer/Klipper object rows stay accurate (now also on CRLF files). CNC/LinuxCNC detection results are unchanged (O-word + extrusion checks verified equal to the old regexes). Changelog carries the accuracy fixes. |
+| `@chestnutlabs/gcode-model-renderer` | 4 | A model 3MF with a single part over the per-entry size cap (`maxExpandedBytesPerEntry`, 512 MiB) is now | Status: reviewed — no API change; tokenizer + config scans byte-identical for well-formed files. The `E_MODEL_PARSE` → `E_MODEL_TOO_LARGE` remap for an oversize single part is not contradicted by any manual/README page (error codes are documented in the typed API); changelog states it. |
+| `@chestnutlabs/gcode-renderer-three` | 2 | A consumer image draped on the build plate (`bedSurface.texture`) now renders in its true colours. It | Status: reviewed — `bedSurface.texture` now sRGB. All documentation media use `bedSurface` `none`/`solid` (`tools/screenshots/lib/presentation.mjs`), never a texture, and untextured plates were already correct, so no existing screenshot misrepresents the build. Coverage row "Bed surface / texture themes" unchanged (still "needs screenshot"; DD-032 Lane D adds Studio plate media). |
 
 Set each **Disposition** to one of `Status: reviewed` / `Status: no-change-needed` /
 `Status: not-applicable` (never `Status: pending`).
 
 ## Global dispositions
 
-- **Product review:** resolved — all four changed capabilities are hostile-input hardening fixes (inflate-past-cap no longer freezes the load; `.bgcode` metadata/thumbnail budget; archive-wide expanded-size cap enforced + limit validation; clean `E_POST_FAILED` on re-parsing transferred bytes). No new or changed user-facing *capability*, so the README, Pages homepage, and feature gallery still describe the product accurately. The `docs/README` "Current state" lead is updated to lead with v0.21.1.
-- **Docs review:** resolved — one gap found and closed: the parser re-parse fix (#455/#453) changes re-parse semantics, and the manual's `.gcode.3mf` multi-plate recipe only showed initial plate selection, so [`docs/manual/recipes.md`](docs/manual/recipes.md) now documents how to *switch* plates at runtime (start a fresh parse; `Uint8Array` buffers are transferred, so pass `bytes.slice()`). `docs/manual/adapters.md` makes no false re-parse claim on `dev`; its fuller caveat lands in the in-flight parser worker/session PR (adapters.md is that lane's file). Package READMEs and the quick-start are unaffected — no public API was added or changed. The new error codes (`E_CONTAINER_LIMIT_EXPANDED`, `E_CONTAINER_OPTION`, `E_POST_FAILED`) and the `ContainerLimits`/`cap` validation (NaN/Infinity now throw, so `Infinity`-as-uncapped no longer works) are captured in the package CHANGELOGs; no user-facing doc claimed the old behaviour.
-- **Visual review:** resolved — the four fixes are error-path / security hardening with no visual surface: no new UI, controls, adapter props, or rendered output. The app-UI screenshots, capability renders, live demos, and the Visual Feature Coverage Matrix need no change (failure-on-hostile-input is not a visually documented capability). README leads with no stale screenshot — the layout is unchanged since v0.21.0.
+- **Product review:** resolved — patch release, no new capability; README / Pages homepage / feature gallery need no change.
+- **Docs review:** resolved — manual, package READMEs, examples and quick-start unchanged and still match the shipped API; `docs/README.md` Current state + history updated for v0.21.2.
+- **Visual review:** resolved — no visible change for any documented render (doc media are untextured); no app/controls/adapters change, so app-UI screenshots and live demos stay current.
 
-_All markers reconciled for v0.21.1 (hostile-file hardening patch)._
+_Resolve each marker above by replacing `pending` with `resolved` once reconciled._
+
+**Framework parity (DD-031):** not applicable — no public capability added or changed on core, any adapter, or the model viewer; behavioural suites unchanged.
