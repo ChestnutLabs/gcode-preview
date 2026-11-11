@@ -109,6 +109,14 @@ describe('<gcode-preview> camera-fov (DD-032)', () => {
     el.remove();
   });
 
+  it('the getter reports a valid attribute set before connect', () => {
+    const el = makeEl();
+    el.setAttribute('camera-fov', '32');
+    expect(el.cameraFov).toBe(32);
+    el.cameraFov = 40;
+    expect(el.cameraFov).toBe(40);
+  });
+
   it('a reconnect keeps the last valid lens even when the attribute later went bad', async () => {
     const el = makeEl();
     el.setAttribute('camera-fov', '24');
