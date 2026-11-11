@@ -13,8 +13,10 @@ import { Color, OrthographicCamera, PerspectiveCamera, Scene, SRGBColorSpace, Ve
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import type { Vec3 } from '@chestnutlabs/toolpath-core';
 import {
+  checkFov,
   createDefaultGLRenderer,
   framingFromCenterRadius,
+  framingLensScale,
   supportsCapture,
   type GLRendererLike,
   type RenderTargetCanvas
@@ -133,6 +135,8 @@ export class InteractiveStage {
   private disposedFlag = false;
   /** True while the stage itself drives `controls.update()`, so its `change` is not read as a user move. */
   private programmaticMove = false;
+  /** Lens dolly owed to the perspective camera for a `setFov` made while orthographic (DD-032). */
+  private pendingLensScale = 1;
 
   private readonly onContextLost = (ev: Event): void => {
     ev.preventDefault();
@@ -243,6 +247,12 @@ export class InteractiveStage {
       this.controls.object = next;
       this.updateControls();
     }
+    // A lens set while orthographic takes its dolly now, on the way back to perspective.
+    if (mode === 'perspective' && this.pendingLensScale !== 1) {
+      const scale = this.pendingLensScale;
+      this.pendingLensScale = 1;
+      this.applyLensDolly(scale);
+    }
     this.render();
   }
 
@@ -297,6 +307,47 @@ export class InteractiveStage {
     };
   }
 
+  /** The perspective camera's vertical field of view, degrees (default 50). */
+  get fov(): number {
+    return this.perspectiveCamera.fov;
+  }
+
+  /**
+   * Change the perspective lens (DD-032) without a re-fit: the target stays and the camera distance is
+   * scaled by framingLensScale(new)/framingLensScale(old), the same factor framing uses, so a framed view
+   * after setFov(f) equals a fresh frame at f. It keeps the apparent size at ≤50°; above 50° it keeps the
+   * frame margin instead (a pure tan dolly would put the camera inside the model). The zoom-distance limits
+   * scale by the same factor, so the dolly is never clamped. In orthographic mode the view is untouched;
+   * the value is kept and its dolly is applied on the next switch back to perspective. Programmatic: never
+   * emits camera-changed. Throws `RangeError` for a `fov` outside [10, 120] — it never clamps.
+   */
+  setFov(fov: number): void {
+    checkFov(fov);
+    if (this.disposedFlag || fov === this.perspectiveCamera.fov) return;
+    const scale = framingLensScale(fov) / framingLensScale(this.perspectiveCamera.fov);
+    this.perspectiveCamera.fov = fov;
+    this.perspectiveCamera.updateProjectionMatrix();
+    if (this.cameraModeState !== 'perspective') {
+      this.pendingLensScale *= scale;
+      return;
+    }
+    this.applyLensDolly(scale);
+    this.render();
+  }
+
+  /** Dolly the perspective camera along its view line by `scale` (target fixed) and scale the limits. */
+  private applyLensDolly(scale: number): void {
+    const target = this.currentTarget();
+    const offset = this.perspectiveCamera.position.clone().sub(target);
+    this.perspectiveCamera.position.copy(target).add(offset.multiplyScalar(scale));
+    this.perspectiveCamera.lookAt(target);
+    if (this.controls) {
+      if (this.controls.minDistance !== undefined) this.controls.minDistance *= scale;
+      if (this.controls.maxDistance !== undefined) this.controls.maxDistance *= scale;
+      this.updateControls();
+    }
+  }
+
   /** Restore a {@link CameraState} verbatim (#268) — no re-fit to the current model's bounds. */
   setCameraState(state: CameraState): void {
     if (this.disposedFlag) return;
@@ -324,7 +375,9 @@ export class InteractiveStage {
    */
   frameTo(center: Vector3, radius: number): void {
     if (this.disposedFlag) return;
-    const { target, position, viewHalfHeight } = framingFromCenterRadius(center, radius);
+    const { target, position, viewHalfHeight } = framingFromCenterRadius(center, radius, this.perspectiveCamera.fov);
+    // This pose is already for the current lens: a dolly owed from an earlier ortho setFov is void.
+    this.pendingLensScale = 1;
     this.viewHalfHeight = viewHalfHeight;
     this.framedTarget.copy(target);
     this.activeCameraRef.position.copy(position);
@@ -332,8 +385,10 @@ export class InteractiveStage {
     this.updateCameraProjection();
     if (this.controls) {
       this.controls.target.copy(target);
-      this.controls.minDistance = Math.max(1, radius * 0.15);
-      this.controls.maxDistance = radius * 30;
+      // The limits follow the lens (the framed distance does), so controls.update() never crops the frame.
+      const k = framingLensScale(this.perspectiveCamera.fov);
+      this.controls.minDistance = Math.max(1, radius * 0.15) * k;
+      this.controls.maxDistance = radius * 30 * k;
       this.updateControls();
     }
     this.render();
@@ -410,6 +465,7 @@ export class InteractiveStage {
     this.perspectiveCamera.far = far;
     this.orthographicCamera.far = far;
     this.viewHalfHeight = Math.max(1e-3, Math.max(halfH, halfW / Math.max(1e-6, this.aspect)) * margin);
+    this.pendingLensScale = 1; // solved for the current lens: any dolly owed from an ortho setFov is void
     this.framedTarget.copy(target);
     const cam = this.activeCameraRef;
     cam.up.copy(up);
