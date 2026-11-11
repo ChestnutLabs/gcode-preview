@@ -1,5 +1,17 @@
 # @chestnutlabs/gcode-renderer-three
 
+## 0.21.2
+
+### Patch Changes
+
+- [#465](https://github.com/ChestnutLabs/gcode-preview/pull/465) [`3075656`](https://github.com/ChestnutLabs/gcode-preview/commit/3075656ec105773869bea720c54a4d792bfd51c7) Thanks [@sobechestnut-dev](https://github.com/sobechestnut-dev)! - A consumer image draped on the build plate (`bedSurface.texture`) now renders in its true colours. It
+  was sampled as linear instead of sRGB, so every textured plate looked lighter and flatter than
+  authored (a `#404040` image rendered as `#898989`). This applies to rectangular and non-rectangular
+  (circular/polygon) beds; untextured plates were already correct.
+- Updated dependencies []:
+  - @chestnutlabs/gcode-colors@0.21.2
+  - @chestnutlabs/toolpath-core@0.21.2
+
 ## 0.21.1
 
 ### Patch Changes
