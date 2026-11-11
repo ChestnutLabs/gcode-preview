@@ -28,17 +28,19 @@ each disposition. Guidance: CLAUDE.md "Public-docs completion check" and
 
 | Package | Changed src files | Changelog summary | Disposition |
 |---|--:|---|---|
-| `@chestnutlabs/gcode-dialects` | 10 | Hostile-input hardening, second pass. Four more dialect regexes could stall a parse for seconds: | Status: pending |
-| `@chestnutlabs/gcode-model-renderer` | 4 | A model 3MF with a single part over the per-entry size cap (`maxExpandedBytesPerEntry`, 512 MiB) is now | Status: pending |
-| `@chestnutlabs/gcode-renderer-three` | 2 | A consumer image draped on the build plate (`bedSurface.texture`) now renders in its true colours. It | Status: pending |
+| `@chestnutlabs/gcode-dialects` | 10 | Hostile-input hardening, second pass. Four more dialect regexes could stall a parse for seconds: | Status: reviewed — no API change. No user doc claims a CRLF limitation or documents object-marker name/id extraction rules; `docs/compatibility/dialects-and-containers.md` OrcaSlicer/Klipper object rows stay accurate (now also on CRLF files). CNC/LinuxCNC detection results are unchanged (O-word + extrusion checks verified equal to the old regexes). Changelog carries the accuracy fixes. |
+| `@chestnutlabs/gcode-model-renderer` | 4 | A model 3MF with a single part over the per-entry size cap (`maxExpandedBytesPerEntry`, 512 MiB) is now | Status: reviewed — no API change; tokenizer + config scans byte-identical for well-formed files. The `E_MODEL_PARSE` → `E_MODEL_TOO_LARGE` remap for an oversize single part is not contradicted by any manual/README page (error codes are documented in the typed API); changelog states it. |
+| `@chestnutlabs/gcode-renderer-three` | 2 | A consumer image draped on the build plate (`bedSurface.texture`) now renders in its true colours. It | Status: reviewed — `bedSurface.texture` now sRGB. All documentation media use `bedSurface` `none`/`solid` (`tools/screenshots/lib/presentation.mjs`), never a texture, and untextured plates were already correct, so no existing screenshot misrepresents the build. Coverage row "Bed surface / texture themes" unchanged (still "needs screenshot"; DD-032 Lane D adds Studio plate media). |
 
 Set each **Disposition** to one of `Status: reviewed` / `Status: no-change-needed` /
 `Status: not-applicable` (never `Status: pending`).
 
 ## Global dispositions
 
-- **Product review:** pending — README / Pages homepage / feature gallery still describe the product accurately for this release.
-- **Docs review:** pending — manual, package READMEs, examples, and quick-start match the shipped API.
-- **Visual review:** pending — every changed user-facing capability is visually documented, or the coverage matrix records why not. **UI parity:** if the app/controls/adapters changed, the app-UI screenshots (`docs/media/app-*.png`, regenerate with `npm run docs:shots:app`) and the capability renders (`npm run docs:shots`) show the CURRENT UI — the README must not lead with a screenshot from an older layout — and the live demos (`npm run docs:demos` → Pages `/demos/`) build and run on the published SDK.
+- **Product review:** resolved — patch release, no new capability; README / Pages homepage / feature gallery need no change.
+- **Docs review:** resolved — manual, package READMEs, examples and quick-start unchanged and still match the shipped API; `docs/README.md` Current state + history updated for v0.21.2.
+- **Visual review:** resolved — no visible change for any documented render (doc media are untextured); no app/controls/adapters change, so app-UI screenshots and live demos stay current.
 
 _Resolve each marker above by replacing `pending` with `resolved` once reconciled._
+
+**Framework parity (DD-031):** not applicable — no public capability added or changed on core, any adapter, or the model viewer; behavioural suites unchanged.
