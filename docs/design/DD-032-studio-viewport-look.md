@@ -411,8 +411,10 @@ Notes:
     boundary is re-measured as **outline-only** (edge grid lines and cage floor now omitted) and must be
     **≥ 3:1 at each bed edge, measured on the plate side as rendered**. It has no fixed ±0.05 target: the 1 px
     loop straddles the plate edge and the backdrop under MSAA, and the backdrop changes with position along the
-    edge, so one number cannot hold on every edge. (The earlier 3.03 / 3.07 came from an ideal full-coverage
-    model and were never measured.)
+    edge, so one number cannot hold on every edge. The plate side is the worst case in both themes: the
+    straddling pixel is pulled toward the backdrop, which is darker than the plate in dark (dimming the white
+    line) and lighter in light (washing out the navy line), so measuring there is conservative. (The earlier
+    3.03 / 3.07 came from an ideal full-coverage model and were never measured.)
   - **Shadow:** the grid inside the shadow is re-measured, now that the shadow sits below the grid.
   - **Top face:** must still render exactly `#7c8086` with thickness 4.
   - **Grid:** must read in all 8 filament × theme cells.
@@ -423,7 +425,9 @@ Notes:
     renderer draws one blend per line (§4.1), and the outline targets were never measured. `gridMajor.opacity`
     0.31 → 0.39 dark, 0.47 → 0.55 light; `bedOutline.opacity` 0.76 → 0.83 dark, 0.80 → 0.87 light. Re-measured
     (software GL, three r178, orthographic 4 px/mm): minor 1.205 / 1.238, major 1.864 / 2.144, outline plate
-    side 3.090 (x = 256) / 3.067 (y = 256) dark and 3.116 / 3.037 light. All gates pass. The perspective
+    side, all four edges: dark 3.090 (x = 0, y = 0, x = 256) / 3.067 (y = 256), light 3.116 / 3.037. The
+    per-edge minimum is light y = 256 at 3.037, about 0.007 alpha above 3:1. That is software GL, so a hardware
+    human pass re-checks the outline at all four edges. All gates pass. The perspective
     in-shot major is the same in all eight filament × theme cells. No decision changed.
 
 ## 7. Delivery plan
