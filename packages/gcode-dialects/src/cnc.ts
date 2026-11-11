@@ -43,11 +43,89 @@ interface Evidence {
   oWord: boolean; // RS274NGC O-word subroutine/flow (LinuxCNC family)
 }
 
+// `endsub` must stay: it ends in `sub`, but `o x\nendsub` only matches with `endsub` as the keyword
+// (the `end` prefix cannot be part of the `\w*` before the whitespace).
+const O_WORD_KEYWORD = /(?:sub|call|if|while|do|repeat|return|endsub)\b/gi;
+const isO = (c: string): boolean => c === 'o' || c === 'O';
+
+/**
+ * True when `text` contains an RS274NGC O-word: an `o`/`O`, then `[\s<]*\w*\s*`, then a flow keyword
+ * ending at a word boundary. Equivalent to
+ * `/[oO][\s<]*\w*\s*(?:sub|call|if|while|do|repeat|return|endsub)\b/.test(text)`, whose unanchored
+ * start rescans a long run of `o` from every position (22 s on 64 KiB of `O`). This walks each
+ * keyword occurrence BACKWARD instead: skip whitespace, then the word run before it must contain an
+ * `o`, or be preceded by `[\s<]*` and an `o`. The backward work is local to the token, so the whole
+ * scan is linear.
+ */
+export function hasOWord(text: string): boolean {
+  for (const m of text.matchAll(O_WORD_KEYWORD)) {
+    let j = m.index;
+    while (j > 0 && /\s/.test(text[j - 1])) j--;
+    let w = j;
+    while (w > 0 && /\w/.test(text[w - 1])) w--;
+    for (let i = w; i < j; i++) if (isO(text[i])) return true;
+    let a = w;
+    while (a > 0 && (text[a - 1] === '<' || /\s/.test(text[a - 1]))) a--;
+    if (isO(text[a - 1])) return true; // `text[-1]` is undefined → false at the start
+  }
+  return false;
+}
+
+/**
+ * Remove every `(…)` span (the shortest `(` … `)` runs, left to right). Equivalent to
+ * `text.replace(/\([^)]*\)/g, '')`, which rescans to end of line from each unmatched `(` and is
+ * quadratic on a hostile line.
+ */
+export function stripParenComments(text: string): string {
+  let out = '';
+  let from = 0;
+  for (;;) {
+    const open = text.indexOf('(', from);
+    if (open === -1) return out + text.slice(from);
+    const close = text.indexOf(')', open + 1);
+    // No `)` anywhere after this `(` means no later `(` can match either: keep the rest verbatim.
+    if (close === -1) return out + text.slice(from);
+    out += text.slice(from, open);
+    from = close + 1;
+  }
+}
+
+/**
+ * True when some `%` is the first non-whitespace character of a line. Equivalent to
+ * `/^\s*%/m.test(text)` (whose `\s*` may span blank lines, and whose `^` follows `\n`, `\r`,
+ * `\u2028` or `\u2029`) in a single pass; the regex rescans each blank-line run and is quadratic.
+ */
+export function hasPercentEnvelope(text: string): boolean {
+  let lineStart = true;
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (c === '%' && lineStart) return true;
+    if (c === '\n' || c === '\r' || c === '\u2028' || c === '\u2029') lineStart = true;
+    else if (!/\s/.test(c)) lineStart = false;
+  }
+  return false;
+}
+
+/**
+ * True when some line of `code` has a G0–G3 motion word followed later on that line by an `E` value.
+ * Equivalent to `/G0*[0-3](?!\d)[^\n;]*E-?[.\d]/i.test(code)` for `;`-stripped `code`, whose unanchored
+ * `G` start rescans `[^\n;]*` to end of line from every `G` (7 s on a 64 KiB head of `G1`). Per line,
+ * only the FIRST motion word matters: `(?!\d)` makes each `G` take its whole digit run, so a later `G`
+ * starts after the earlier match ends and its suffix is contained in the earlier one's.
+ */
+export function hasExtrusionMove(code: string): boolean {
+  for (const line of code.split('\n')) {
+    const g = /G0*[0-3](?!\d)/i.exec(line);
+    if (g !== null && /E-?[.\d]/i.test(line.slice(g.index + g[0].length))) return true;
+  }
+  return false;
+}
+
 function scoreEvidence(head: string): Evidence {
   // Strip line comments (';…' and LinuxCNC/RS274 '(…)') so words inside them never score as markers.
   const code = head
     .split('\n')
-    .map((l) => l.split(';')[0].replace(/\([^)]*\)/g, ''))
+    .map((l) => stripParenComments(l.split(';')[0]))
     .join('\n');
   const has = (re: RegExp): boolean => re.test(code);
   // G-code words run together without spaces (`G1M3`, `g1z-.1`), so a LEADING word-boundary fails.
@@ -56,7 +134,7 @@ function scoreEvidence(head: string): Evidence {
   return {
     // Extrusion = an `E` value on a G0–G3 MOTION line — NOT bare `E` (LinuxCNC laser uses `M67 E0 Q…`
     // for analog power, which must not be mistaken for FDM extrusion).
-    extrusion: has(/G0*[0-3](?!\d)[^\n;]*E-?[.\d]/i) || has(/M8[23](?!\d)/i),
+    extrusion: hasExtrusionMove(code) || has(/M8[23](?!\d)/i),
     m3: has(/M0*3(?!\d)/i),
     m4: has(/M0*4(?!\d)/i),
     power: has(/S\d/i),
@@ -65,7 +143,7 @@ function scoreEvidence(head: string): Evidence {
     laserMode: /\$32\s*=\s*1/.test(code),
     linuxCnc: /\b(?:LinuxCNC|EMC2?)\b/i.test(head),
     grblBanner: /\bGrbl\s*[0-9]/i.test(head),
-    oWord: has(/[oO][\s<]*\w*\s*(?:sub|call|if|while|do|repeat|return|endsub)\b/im)
+    oWord: hasOWord(code)
   };
 }
 
@@ -186,7 +264,7 @@ export function linuxCnc(): DialectAdapter {
       if (e.oWord) return { evidence: 'RS274NGC O-word subroutine/flow', confidence: 'inferred' };
       // A `%` program envelope with a spindle and no extrusion (also common in Fanuc-style output;
       // reported family-level, not as a specific controller).
-      if (/^\s*%/m.test(input.headText) && e.m3) {
+      if (hasPercentEnvelope(input.headText) && e.m3) {
         return { evidence: '%-program envelope + M3 spindle, no extrusion', confidence: 'inferred' };
       }
       return null;

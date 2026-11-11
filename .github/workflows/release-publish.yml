@@ -36,6 +36,17 @@ jobs:
           node-version: '22.x'
           cache: 'npm'
           registry-url: 'https://registry.npmjs.org'
+      # Fail fast on a dead/misconfigured npm credential (#460): a bad NPM_TOKEN otherwise dies
+      # as a cryptic E404/E403 on package 1 only AFTER the whole gate below. Interim until
+      # trusted publishing (OIDC) replaces the token. Needs no install, so it runs in seconds.
+      - name: Probe npm publish auth (fail fast on a bad NPM_TOKEN)
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          npm whoami || {
+            echo "::error title=npm publish auth probe failed::npm whoami rejected the credential (NPM_TOKEN missing, expired or revoked) — replace the NPM_TOKEN secret; see docs/reference/release-process.md#auth-dd-008-d3-as-amended"
+            exit 1
+          }
       - run: npm ci
       # Owner ruling 6a (AnyBridge#2765): no tarball goes out without LICENSE + NOTICE.md.
       - run: npm run pack:license-check

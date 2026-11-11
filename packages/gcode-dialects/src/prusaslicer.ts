@@ -43,7 +43,9 @@ const TYPE_MAP: Record<string, number> = {
 
 /** Parse PrusaSlicer/Orca `<h>h <m>m <s>s` (any part optional) → seconds; null when zero/unparsed. */
 export function parseHmsToSeconds(text: string): number | null {
-  const m = /^\s*(?:(\d+)\s*h)?\s*(?:(\d+)\s*m)?\s*(?:(\d+)\s*s)?\s*$/.exec(text);
+  // Whitespace is consumed once, after each token: adjacent optional `\s*` runs backtrack
+  // polynomially on a long whitespace line.
+  const m = /^\s*(?:(\d+)\s*h\s*)?(?:(\d+)\s*m\s*)?(?:(\d+)\s*s\s*)?$/.exec(text);
   if (m === null) return null;
   const total = Number(m[1] ?? 0) * 3600 + Number(m[2] ?? 0) * 60 + Number(m[3] ?? 0);
   return total > 0 ? total : null;
@@ -144,7 +146,7 @@ export function prusaSlicer(): DialectAdapter {
       }
       // Filament totals + print time — multi-word keys `parseKeyValue` can't tokenize (#183).
       if (parseFilamentTotals(comment, srcByte, 'prusaslicer', sink)) return;
-      const time = /^\s*estimated printing time \(normal mode\)\s*=\s*(.+)$/i.exec(comment);
+      const time = /^\s*estimated printing time \(normal mode\)\s*=\s*(\S.*)$/i.exec(comment.trimEnd());
       if (time !== null) {
         const sec = parseHmsToSeconds(time[1].trim());
         if (sec !== null) {
