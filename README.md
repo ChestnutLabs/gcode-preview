@@ -13,6 +13,8 @@ a Web Worker, so a 250 MB file never freezes your UI.
 
 ![The G-code Preview Feature Lab — a 3DBenchy colored by feature role in the viewport, with the inspector rail (move-visibility toggles, feature-role hide, segment inspection), a color-mode legend, camera controls, a layers/segments/time scrub strip, and honest capability badges](docs/media/app-control-panel.png)
 
+*The Feature Lab on the optional **Studio** look: `theme: studioTheme('dark')` plus a 32° lens. Studio is an opt-in preset; with no `theme` the SDK keeps its default look. See [Studio look and build plate](docs/manual/guide-looks-lens-plate.md).*
+
 **▶ [Try the live demo](https://chestnutlabs.github.io/gcode-preview/demos/)** — open the interactive **Feature Lab**, or the **React / Vue / Svelte / Web Component** examples, right in your browser. Nothing is uploaded; parsing runs in a Web Worker.
 
 ---

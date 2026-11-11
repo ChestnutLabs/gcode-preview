@@ -135,6 +135,7 @@
       <select id="fixture" class="gp-input" style="width: 220px"></select>
       <button id="load" class="gp-btn gp-primary">Load</button>
       <div class="sc-spacer"></div>
+      <div class="gp-segment" role="group" aria-label="Viewport look" id="lookSeg"></div>
       <div class="gp-segment" role="group" aria-label="Chrome theme">
         <button id="chromeDark" class="gp-on">Dark</button>
         <button id="chromeLight">Light</button>
@@ -163,6 +164,15 @@
 
       <aside class="sc-rail">
         <div class="gp-scroll">
+          <!-- DD-032: the lens is the `camera-fov` ATTRIBUTE (a primitive); `theme` / `buildVolume` are properties. -->
+          <section class="gp-panel">
+            <h3>Lens</h3>
+            <div class="gp-field">
+              <label for="lens">Field of view <span class="gp-value" id="lensValue">32°</span></label>
+              <input class="gp-range" id="lens" type="range" min="10" max="120" value="32" />
+              <span class="gp-reason" id="lensNote"></span>
+            </div>
+          </section>
           <!-- Preview-only panels: appearance / filter / diagnostics of the sliced toolpath. -->
           <div id="previewPanels">
           <section class="gp-panel">

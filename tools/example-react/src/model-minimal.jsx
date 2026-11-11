@@ -5,10 +5,14 @@
  * `source` ({ kind, bytes } — an STL or 3MF) and it parses + renders. The counterpart to minimal.jsx,
  * which does the same for sliced G-code with <GcodePreview>. No design system, no demo-kit engine
  * handles — just the published adapter. (The fixtures here are synthetic MIT-clean sample models.)
+ *
+ * Opt-in extras (DD-032), one line each: `buildVolume` draws a build plate under the part, and
+ * `theme={studioTheme('dark')}` selects the Studio look. Drop both and the viewer renders as it always has.
  */
 import { StrictMode, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { ModelViewer } from '@chestnutlabs/gcode-preview-react/model';
+import { studioTheme } from '@chestnutlabs/gcode-renderer-three';
 import { MODEL_FIXTURES, MODEL_FIXTURE_BY_ID } from '../../demo-kit/index.js';
 
 function App() {
@@ -41,7 +45,12 @@ function App() {
         )}
       </header>
       <main>
-        <ModelViewer source={source} background="#6d7176" onReady={(i) => setInfo(i)} />
+        <ModelViewer
+          source={source}
+          buildVolume={{ x: 256, y: 256, z: 256 }}
+          theme={studioTheme('dark')}
+          onReady={(i) => setInfo(i)}
+        />
       </main>
     </>
   );

@@ -17,6 +17,7 @@
 import { computed, ref, watchEffect } from 'vue';
 import { GcodePreview } from '@chestnutlabs/gcode-preview-vue';
 import { ModelViewer } from '@chestnutlabs/gcode-preview-vue/model';
+import { studioTheme, STUDIO_CAMERA_FOV } from '@chestnutlabs/gcode-renderer-three';
 import { FeatureRole } from '@chestnutlabs/toolpath-core';
 import {
   FIXTURE_GROUPS,
@@ -31,8 +32,18 @@ import {
   count as formatCount,
   duration as formatDuration,
   DOC_VIEWPORT_THEME,
-  DOC_VIEWPORT_BG
+  DOC_VIEWPORT_BG,
+  LOOKS,
+  LOOK_BY_ID,
+  LENS_MIN,
+  LENS_MAX,
+  DEFAULT_LENS,
+  TWO_PLATE_BED,
+  placementLine
 } from '../../demo-kit/index.js';
+
+// The multi-plate fixture needs a plate selector (see the Feature Lab); the showcase lists single-plate models.
+const SHOWCASE_MODELS = MODEL_FIXTURES.filter((m) => !m.plates);
 
 const ADHESION_ROLES = [FeatureRole.Skirt, FeatureRole.Brim];
 const CAM_VIEWS = [
@@ -47,6 +58,18 @@ const modelViewer = ref(null); // model handle (exposes { viewer })
 const chrome = ref('dark');
 const mode = ref('preview'); // 'preview' (toolpath) | 'prepare' (model)
 const view = ref('iso');
+
+// DD-032: Studio is an OPT-IN preset (`:theme="studioTheme('dark')"` + `:camera-fov`); the SDK default look is
+// unchanged. This showcase starts on it and keeps the previous grey one click away.
+const lookId = ref('studio-dark');
+const lens = ref(STUDIO_CAMERA_FOV);
+const lookMode = computed(() => LOOK_BY_ID[lookId.value].mode);
+const theme = computed(() => (lookMode.value ? studioTheme(lookMode.value) : DOC_VIEWPORT_THEME));
+const modelTheme = computed(() => (lookMode.value ? studioTheme(lookMode.value) : undefined));
+function chooseLook(id) {
+  lookId.value = id;
+  lens.value = LOOK_BY_ID[id].mode ? STUDIO_CAMERA_FOV : DEFAULT_LENS;
+}
 
 // Preview (toolpath) state
 const fixtureId = ref('skirt-brim');
@@ -179,10 +202,15 @@ function modeDisabled(id) {
       :value="modelFixtureId"
       @change="loadModel($event.target.value)"
     >
-      <option v-for="m in MODEL_FIXTURES" :key="m.id" :value="m.id">{{ m.label }}</option>
+      <option v-for="m in SHOWCASE_MODELS" :key="m.id" :value="m.id">{{ m.label }}</option>
     </select>
     <button class="gp-btn gp-primary" @click="prepare ? loadModel() : load()">Load</button>
     <div class="sc-spacer" />
+    <div class="gp-segment" role="group" aria-label="Viewport look">
+      <button v-for="l in LOOKS" :key="l.id" :class="lookId === l.id ? 'gp-on' : ''" @click="chooseLook(l.id)">
+        {{ l.label }}
+      </button>
+    </div>
     <div class="gp-segment" role="group" aria-label="Chrome theme">
       <button :class="chrome === 'dark' ? 'gp-on' : ''" @click="chrome = 'dark'">Dark</button>
       <button :class="chrome === 'light' ? 'gp-on' : ''" @click="chrome = 'light'">Light</button>
@@ -201,7 +229,9 @@ function modeDisabled(id) {
         :show-travel="showTravel"
         :show-retractions="showRetractions"
         :view="view"
-        :theme="DOC_VIEWPORT_THEME"
+        :theme="theme"
+        :camera-fov="lens"
+        :show-volume-cage="lookMode === null"
         frame-content="object"
         quality="auto"
         @ready="onReady"
@@ -215,6 +245,9 @@ function modeDisabled(id) {
         :source="modelSource"
         :view="view"
         :background="DOC_VIEWPORT_BG"
+        :build-volume="TWO_PLATE_BED"
+        :theme="modelTheme"
+        :camera-fov="lens"
         @ready="onModelReady"
         @error="disclosure = `Model error: ${$event.code} — ${$event.message}`"
       />
@@ -254,6 +287,18 @@ function modeDisabled(id) {
 
     <aside class="sc-rail">
       <div class="gp-scroll">
+        <section class="gp-panel">
+          <h3>Lens</h3>
+          <div class="gp-field">
+            <label for="lens">
+              Field of view <span class="gp-value">{{ lens }}°</span>
+            </label>
+            <input id="lens" v-model.number="lens" class="gp-range" type="range" :min="LENS_MIN" :max="LENS_MAX" />
+            <span class="gp-reason">
+              The SDK default is {{ DEFAULT_LENS }}°; the Studio preset uses {{ STUDIO_CAMERA_FOV }}°.
+            </span>
+          </div>
+        </section>
         <template v-if="!prepare">
           <section class="gp-panel">
             <h3>Appearance</h3>
@@ -328,6 +373,7 @@ function modeDisabled(id) {
               </span>
             </div>
             <div v-if="modelInfo.plates">plates: {{ modelInfo.plates.list.length }}</div>
+            <div>{{ placementLine(modelInfo.placement, modelInfo.placementOffset) }}</div>
           </div>
           <p v-else class="gp-reason">Press Load to view a source model.</p>
         </section>

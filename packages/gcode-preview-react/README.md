@@ -89,6 +89,26 @@ none (a neutral default was drawn, never faked). The declarative props, callback
 [`docs/manual/adapters.md`](../../docs/manual/adapters.md) "Two viewers: Preview and Prepare" for the
 cross-adapter tour, and `tools/example-react/model.html` for a runnable minimal page.
 
+## Look, lens and plate (opt-in)
+
+`<GcodePreview>` and `<ModelViewer>` both take `theme` and `cameraFov`; `<ModelViewer>` also takes
+`buildVolume`. The Studio look is an opt-in preset: set nothing and the viewers render as before.
+
+```tsx
+import { GcodePreview } from '@chestnutlabs/gcode-preview-react';
+import { ModelViewer } from '@chestnutlabs/gcode-preview-react/model';
+import { studioTheme, STUDIO_CAMERA_FOV } from '@chestnutlabs/gcode-renderer-three';
+
+const theme = studioTheme('dark'); // module scope (or useMemo): a new object each render re-applies it
+
+<GcodePreview source={file} theme={theme} cameraFov={STUDIO_CAMERA_FOV} showVolumeCage={false} />;
+<ModelViewer source={model} buildVolume={{ x: 256, y: 256, z: 256 }} theme={theme} />;
+```
+
+`cameraFov` takes 10-120 degrees (the default is 50) and throws `RangeError` outside it. The model viewer reports
+`placement` (`known` / `inferred` / `approximated`, or `null` with no plate) and `placementOffset` in `onReady` and its state.
+The 2D renderer ignores `theme` and `cameraFov`. See the [Studio look and build plate guide](https://github.com/ChestnutLabs/gcode-preview/blob/dev/docs/manual/guide-looks-lens-plate.md).
+
 ## Examples
 
 `tools/example-react` in the repository is a Vite app with two tiers, both driving this published

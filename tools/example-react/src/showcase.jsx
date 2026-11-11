@@ -10,10 +10,11 @@
  * reason; the model side surfaces the material-colour capability tier and object/instance counts.
  * Diagnostics/picking come through the ref handle. Styling is the shared workspace-internal demo-kit.
  */
-import { StrictMode, useRef, useState } from 'react';
+import { StrictMode, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { GcodePreview } from '@chestnutlabs/gcode-preview-react';
 import { ModelViewer } from '@chestnutlabs/gcode-preview-react/model';
+import { studioTheme, STUDIO_CAMERA_FOV } from '@chestnutlabs/gcode-renderer-three';
 import { FeatureRole } from '@chestnutlabs/toolpath-core';
 import {
   FIXTURE_GROUPS,
@@ -28,10 +29,19 @@ import {
   count as formatCount,
   duration as formatDuration,
   DOC_VIEWPORT_THEME,
-  DOC_VIEWPORT_BG
+  DOC_VIEWPORT_BG,
+  LOOKS,
+  LOOK_BY_ID,
+  LENS_MIN,
+  LENS_MAX,
+  DEFAULT_LENS,
+  TWO_PLATE_BED,
+  placementLine
 } from '../../demo-kit/index.js';
 import '../../demo-kit/tokens.css';
 
+// The multi-plate fixture needs a plate selector (see the Feature Lab); the showcase lists single-plate models.
+const SHOWCASE_MODELS = MODEL_FIXTURES.filter((m) => !m.plates);
 const ADHESION_ROLES = [FeatureRole.Skirt, FeatureRole.Brim];
 const CAM_VIEWS = [
   ['iso', 'Iso'],
@@ -45,6 +55,19 @@ function App() {
   const [chrome, setChrome] = useState('dark');
   const [mode, setMode] = useState('preview'); // 'preview' (toolpath) | 'prepare' (model)
   const [view, setView] = useState('iso');
+
+  // DD-032: Studio is an OPT-IN preset (`theme={studioTheme('dark')}` + `cameraFov={STUDIO_CAMERA_FOV}`); the
+  // SDK default look is unchanged. This showcase starts on it and keeps the previous grey one click away.
+  const [lookId, setLookId] = useState('studio-dark');
+  const [lens, setLens] = useState(STUDIO_CAMERA_FOV);
+  const lookMode = LOOK_BY_ID[lookId].mode;
+  // Memoised: the adapters re-apply `theme` whenever its identity changes.
+  const theme = useMemo(() => (lookMode ? studioTheme(lookMode) : DOC_VIEWPORT_THEME), [lookMode]);
+  const modelTheme = useMemo(() => (lookMode ? studioTheme(lookMode) : undefined), [lookMode]);
+  function chooseLook(id) {
+    setLookId(id);
+    setLens(LOOK_BY_ID[id].mode ? STUDIO_CAMERA_FOV : DEFAULT_LENS);
+  }
 
   // Preview (toolpath) state
   const [fixtureId, setFixtureId] = useState('skirt-brim');
@@ -163,7 +186,7 @@ function App() {
             value={modelFixtureId}
             onChange={(e) => loadModel(e.target.value)}
           >
-            {MODEL_FIXTURES.map((m) => (
+            {SHOWCASE_MODELS.map((m) => (
               <option key={m.id} value={m.id}>
                 {m.label}
               </option>
@@ -174,6 +197,13 @@ function App() {
           Load
         </button>
         <div className="sc-spacer" />
+        <div className="gp-segment" role="group" aria-label="Viewport look">
+          {LOOKS.map((l) => (
+            <button key={l.id} className={lookId === l.id ? 'gp-on' : ''} onClick={() => chooseLook(l.id)}>
+              {l.label}
+            </button>
+          ))}
+        </div>
         <div className="gp-segment" role="group" aria-label="Chrome theme">
           {['dark', 'light'].map((c) => (
             <button key={c} className={chrome === c ? 'gp-on' : ''} onClick={() => setChrome(c)}>
@@ -195,7 +225,9 @@ function App() {
               showTravel={showTravel}
               showRetractions={showRetractions}
               view={view}
-              theme={DOC_VIEWPORT_THEME}
+              theme={theme}
+              cameraFov={lens}
+              showVolumeCage={lookMode === null}
               frameContent="object"
               quality="auto"
               onReady={onReady}
@@ -209,6 +241,9 @@ function App() {
               source={modelSource}
               view={view}
               background={DOC_VIEWPORT_BG}
+              buildVolume={TWO_PLATE_BED}
+              theme={modelTheme}
+              cameraFov={lens}
               onReady={(info) => setModelInfo(info)}
               onError={(e) => setDisclosure(`Model error: ${e.code} — ${e.message}`)}
             />
@@ -256,6 +291,26 @@ function App() {
 
         <aside className="sc-rail">
           <div className="gp-scroll">
+            <section className="gp-panel">
+              <h3>Lens</h3>
+              <div className="gp-field">
+                <label htmlFor="lens">
+                  Field of view <span className="gp-value">{lens}°</span>
+                </label>
+                <input
+                  id="lens"
+                  className="gp-range"
+                  type="range"
+                  min={LENS_MIN}
+                  max={LENS_MAX}
+                  value={lens}
+                  onChange={(e) => setLens(Number(e.target.value))}
+                />
+                <span className="gp-reason">
+                  The SDK default is {DEFAULT_LENS}°; the Studio preset uses {STUDIO_CAMERA_FOV}°.
+                </span>
+              </div>
+            </section>
             {!prepare ? (
               <>
                 <section className="gp-panel">
@@ -377,6 +432,7 @@ function App() {
                       </span>
                     </div>
                     {modelInfo.plates && <div>plates: {modelInfo.plates.list.length}</div>}
+                    <div>{placementLine(modelInfo.placement, modelInfo.placementOffset)}</div>
                   </div>
                 )}
                 {!modelInfo && <p className="gp-reason">Press Load to view a source model.</p>}
