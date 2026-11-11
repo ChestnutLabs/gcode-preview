@@ -174,6 +174,16 @@ describe('computeToolpathTime edges', () => {
     expect(t.totalMs).toBe(2000);
     expect(t.hasUnknownFeedrate).toBe(true);
   });
+
+  it('a NaN-length segment with a valid feedrate contributes 0 and flags the estimate', () => {
+    // Fixed origin, so X stays Infinity → Infinity: dx = NaN, and Math.hypot(NaN, 5, 0) = NaN.
+    const b = new ToolpathIRBuilder({ originOffset: { x: 0, y: 0, z: 0 } });
+    b.addSegment(seg({ x0: HUGE, x1: HUGE, y0: 0, y1: 5, feedrate: 600 }));
+    const t = computeToolpathTime(b.finalize());
+    expect(Array.from(t.cumulativeMs)).toEqual([0]);
+    expect(t.totalMs).toBe(0);
+    expect(t.hasUnknownFeedrate).toBe(true);
+  });
 });
 
 /** 3 layers × 4 segments; srcByte = i * 100 + 10 (the progress.test.ts fixture). */
@@ -275,6 +285,15 @@ describe('progress mapper boundaries', () => {
   it('cancelled with no facts and no prior position keeps its own notes', () => {
     const m = createProgressMapper(progressIR()).observe({ v: 1, timestampMs: 1_000, state: 'cancelled' });
     expect(m.notes.map((n) => n.code)).toEqual(['no-position-facts', 'job-cancelled']);
+  });
+
+  it('a demoted byte whose fraction overflows to Infinity still maps to a real segment', () => {
+    // Size mismatch (1e-300 vs 1000) demotes; 1e10 / 1e-300 = Infinity → clamped to 1 → seg round(1 × 0) = 0.
+    const b = new ToolpathIRBuilder({ source: { byteLength: 1_000 } });
+    b.addSegment(seg({ x0: 0, x1: 1, srcByte: 10 }));
+    const m = createProgressMapper(b.finalize()).observe(obs({ byte: 1e10 }, { file: { sizeBytes: 1e-300 } }));
+    expect(m.segIndex).toBe(0);
+    expect(m.band).toEqual([0, 0]);
   });
 
   it('repeated cancelled observations keep notes capped at 8', () => {
