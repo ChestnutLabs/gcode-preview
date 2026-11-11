@@ -38,7 +38,8 @@ build-volume cage **off**, so turn it off with it (`showVolumeCage={false}`); th
 
 `cameraFov` (degrees, perspective only) takes `10`–`120`. The SDK default is `50`; `STUDIO_CAMERA_FOV` is `32`.
 A value outside the range throws a `RangeError` rather than being clamped. Framing is lens-aware, so the model
-stays in view at every lens, and changing the lens on a live viewer keeps the apparent size. A lens set while the
+stays in view at every lens, and changing the lens on a live viewer keeps the apparent size for lenses up to 50° (a wider lens pulls back
+slightly so the model still fits). A lens set while the
 camera is orthographic is remembered and applied when you return to perspective.
 
 ![The same model at the SDK default 50° lens and the Studio 32° lens](https://chestnutlabs.github.io/gcode-preview/media/app-lens-compare.png)
@@ -69,9 +70,9 @@ the project's usual honesty tiers. `ready` (`info.placement`, `info.placementOff
 
 | `placement` | When | What is drawn |
 | --- | --- | --- |
-| `known` | A Bambu/Orca slicer project whose parts lie on the bed (within 1 mm) | The parts where the file puts them |
-| `inferred` | A Bambu/Orca project whose parts are off the bed by whole workspace cells (a later plate of a multi-plate project) | The parts with that offset subtracted |
-| `approximated` | Anything else: STL, CAD 3MF, PrusaSlicer 3MF | The parts centred on the plate, dropped to z = 0 |
+| `known` | A Bambu/Orca slicer project made for your bed (its printable area matches `buildVolume` within 1 mm on every edge) whose parts lie on the bed (within 1 mm) | The parts where the file puts them |
+| `inferred` | A Bambu/Orca project made for your bed whose parts are off the bed by whole workspace cells (a later plate of a multi-plate project) | The parts with that offset subtracted |
+| `approximated` | Anything else: STL, CAD 3MF, PrusaSlicer 3MF, or a slicer project made for a different bed | The parts centred on the plate, dropped to z = 0 |
 | `null` | No `buildVolume`, or the render scope spans more than one declared plate | No plate |
 
 `placementOffset` is the `{ x, y, z }` shift in millimetres that was applied, so you can map file coordinates to

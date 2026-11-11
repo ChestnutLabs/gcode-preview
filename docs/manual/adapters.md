@@ -131,7 +131,7 @@ Deliberate differences, not drift:
 - **Model viewer themes.** Only `background`, the grid and outline fields, `bedSurface` and `contactShadow` apply.
   `theme.background` beats the `background` prop, which is the fallback tier.
 - **2D renderer** (`renderer="2d"`). A flat top-down view: `theme`, `cameraFov` and the cage do not apply and are
-  no-ops (the lens call records a disclosure). The 2D renderer has no 3D look to preset.
+  ignored (no-ops). The 2D renderer has no 3D look to preset.
 
 ## Vue
 

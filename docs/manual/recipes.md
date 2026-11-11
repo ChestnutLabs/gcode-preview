@@ -86,6 +86,7 @@ A Bambu/Orca project 3MF can declare several plates. The model viewer reports th
 Offer a selector only when the source declares plates:
 
 ```tsx
+import { useState } from 'react';
 import { ModelViewer } from '@chestnutlabs/gcode-preview-react/model';
 
 function PlateViewer({ source }) {
@@ -117,7 +118,7 @@ The same scope is `controls.setRenderScope({ plateId })` on any adapter, and `re
 Other scopes are `{ objectIds }` and `{ instanceFilter }`. Three things to know:
 
 - A source with no declared plates (an STL, a CAD 3MF) has no `info.plates`; `{ plateId }` on such a source matches nothing and renders an empty scene, so gate the selector on `info.plates`.
-- The camera re-fits to the selected plate. With a `buildVolume`, each selection also reports its own `placement` (`known` for plate 1, `inferred` for a later plate whose parts sit one workspace cell over); with every plate in scope there is no single bed, so `placement` is `null` and no plate is drawn. See [Studio look and build plate](guide-looks-lens-plate.md).
+- The camera re-fits to the selected plate. With a `buildVolume`, each selection also reports its own `placement` (for a project made for your bed, i.e. its printable area matches `buildVolume`: `known` for plate 1, `inferred` for a later plate whose parts sit one workspace cell over; otherwise `approximated`, centred on your plate); with every plate in scope there is no single bed, so `placement` is `null` and no plate is drawn. See [Studio look and build plate](guide-looks-lens-plate.md).
 - Reloading a different source: clear or reset the scope first, because a plate id from the previous file selects nothing in the next one.
 
 The Feature Lab's Prepare mode has this selector, on a synthetic two-plate project.
