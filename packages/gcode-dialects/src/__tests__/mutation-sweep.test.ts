@@ -20,6 +20,7 @@ import { PrintingObjectTracker } from '../object-markers';
 import { parseHmsToSeconds, prusaSlicer } from '../prusaslicer';
 import { orcaBambu } from '../orca-bambu';
 import { cura } from '../cura';
+import { ideaMaker } from '../ideamaker';
 import { grblLaser, grblMill, linuxCnc } from '../cnc';
 import type { AnnotationSink, DialectAdapter } from '../contracts';
 
@@ -380,5 +381,22 @@ describe('CNC dialect detection and honesty tier', () => {
   it('a `%` program envelope alone (no spindle) is not LinuxCNC evidence', () => {
     expect(linuxCnc().detect({ headText: '%\nG1 X1 Z-1\n%', tailText: '' })).toBeNull();
     expect(linuxCnc().detect({ headText: '%\nM3 S1000\nG1 X1 Z-1\n%', tailText: '' })?.confidence).toBe('inferred');
+  });
+});
+
+describe('ideaMaker object names', () => {
+  it('a `;PRINTING:` name is used by the next `;PRINTING_ID:` only, not by later ids', () => {
+    const g = [
+      ';Sliced by ideaMaker 4.4.0',
+      'M83',
+      ';PRINTING: cube',
+      ';PRINTING_ID: 0',
+      'G1 X10 Y10 E1',
+      ';PRINTING_ID: 1',
+      'G1 X20 Y10 E1'
+    ];
+    const { ir } = annotate([ideaMaker()], g.join('\n'));
+    expect(Array.from(ir.segments.object)).toEqual([1, 2]);
+    expect(ir.objects).toEqual([{ id: '1', name: 'cube' }]); // id 1 (value 2) had no name line
   });
 });

@@ -42,7 +42,7 @@ import {
   type Warning
 } from '@chestnutlabs/toolpath-core';
 import { BudgetExceededError, SegmentWriter } from './growable.js';
-import { Rs274Context, lineUsesParametric } from './rs274.js';
+import { FLOAT32_MAX, NUMBER_OUT_OF_RANGE_WARN, Rs274Context, lineUsesParametric } from './rs274.js';
 import { RS274_FLOW_WARN, interpretOWordProgram, programUsesOWords, type FlowLine } from './rs274-flow.js';
 
 export interface ParseLimits {
@@ -204,7 +204,7 @@ const SPLIT_LETTERS = /([a-zA-Z])/g;
  * `N`-words (line numbers) are dropped, and non-command letters become params. FDM lines have a single
  * command word, so `codes = [thatCommand]` and behavior is byte-identical to the inherited lexer.
  */
-function lexLine(line: string): Cmd {
+function lexLine(line: string, onOutOfRange?: (key: string) => void): Cmd {
   const body = line.trim().split(';')[0];
   const parts = body
     .split(SPLIT_LETTERS)
@@ -239,7 +239,11 @@ function lexLine(line: string): Cmd {
       // Line number — not a command, not a motion word. Ignored (fixes Fanuc/Mach/TinyG files).
     } else {
       const p = parseFloat(value);
-      if (Number.isFinite(p)) params[key] = p;
+      // A word that is not a number is dropped silently (as always). One that IS a number but too big
+      // for the IR's float32 channels (it would be stored as ±Infinity) is dropped too, and reported.
+      if (Number.isNaN(p)) continue;
+      if (Math.abs(p) <= FLOAT32_MAX) params[key] = p;
+      else onOutOfRange?.(key);
     }
   }
   return { codes, params };
@@ -788,6 +792,12 @@ export function createEngine(input: string | Uint8Array, opts: ParseOptions): En
 
   const onComment = opts.onComment;
   const onCommand = opts.onCommand;
+  const warnOutOfRange = (key: string): void =>
+    warn(
+      NUMBER_OUT_OF_RANGE_WARN,
+      `word '${key.toUpperCase()}' is beyond the float32 range the toolpath stores; dropped`,
+      currentSrcByte
+    );
 
   const processLine = (rawLine: string, offset: number): void => {
     stats.lines++;
@@ -812,9 +822,9 @@ export function createEngine(input: string | Uint8Array, opts: ParseOptions): En
     if (lineUsesParametric(rawLine)) {
       const r = rs274.lexLine(rawLine, offset);
       if (r.kind === 'assign' || r.kind === 'empty') return; // assignment applied / nothing to do
-      cmd = r.kind === 'cmd' ? { codes: r.codes, params: r.params } : lexLine(rawLine); // 'plain' → normal
+      cmd = r.kind === 'cmd' ? { codes: r.codes, params: r.params } : lexLine(rawLine, warnOutOfRange); // 'plain' → normal
     } else {
-      cmd = lexLine(rawLine);
+      cmd = lexLine(rawLine, warnOutOfRange);
     }
     // Skip only genuinely empty lines. A line with no lexable words but real content (a dialect
     // extended command like `EXCLUDE_OBJECT_START NAME=cube`, a macro) must NOT be dropped — the

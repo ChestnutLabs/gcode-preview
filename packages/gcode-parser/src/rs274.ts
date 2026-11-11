@@ -27,6 +27,15 @@ export const RS274_WARN = {
   paramLimit: 'rs274-param-limit'
 } as const;
 
+/**
+ * Largest finite float32. The IR's coordinate / E / F / S channels are `Float32Array`s, so a word value
+ * of larger magnitude (finite as text, e.g. 40 nines) would be stored as ±Infinity and poison the
+ * bounds. Both lexers drop such a word, like a malformed number, and disclose it.
+ */
+export const FLOAT32_MAX = 3.4028234663852886e38;
+/** Warning code for a word dropped because its value is beyond {@link FLOAT32_MAX}. */
+export const NUMBER_OUT_OF_RANGE_WARN = 'number-out-of-range';
+
 const MAX_EXPR_DEPTH = 64; // recursive-descent nesting guard for adversarial `[[[[…]]]]`
 const MAX_NAMED_PARAMS = 5000; // bound the named-parameter store
 const NUMBERED_LEN = 5400; // `#1`..`#5399` (index 0 unused); `#5400`+ are system params
@@ -297,6 +306,15 @@ export class Rs274Context {
         this.warn(
           RS274_WARN.nonFiniteValue,
           `word '${key.toUpperCase()}' evaluated to a non-finite value; dropped`,
+          srcByte
+        );
+        ev.skipWs();
+        continue;
+      }
+      if (Math.abs(value) > FLOAT32_MAX) {
+        this.warn(
+          NUMBER_OUT_OF_RANGE_WARN,
+          `word '${key.toUpperCase()}' is beyond the float32 range the toolpath stores; dropped`,
           srcByte
         );
         ev.skipWs();

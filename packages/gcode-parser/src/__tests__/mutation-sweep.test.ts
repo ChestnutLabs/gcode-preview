@@ -364,3 +364,48 @@ describe('engine details', () => {
     expect(pts[pts.length - 1].x).toBe(4);
   });
 });
+
+describe('numbers beyond float32 are dropped and disclosed (defect: stored as Infinity)', () => {
+  const nines = '9'.repeat(40); // 1e40: finite as a double, Infinity as a float32
+
+  it('an X word of 40 nines is dropped; no Infinity reaches the segments or bounds', () => {
+    const { ir, codes } = ends(`G1 X10 E1 F1200\nG1 X${nines} E1\n`);
+    expect(ir.segments.count).toBe(1); // the second line keeps only E → an E-only move, no segment
+    expect(ir.segments.x1[0] + ir.header.originOffset.x).toBe(10);
+    expect(ir.bounds.max.x).toBe(10);
+    expect(ir.boundsWithTravel.max.x).toBe(10);
+    expect(codes).toContain('number-out-of-range');
+    const w = ir.header.warnings.find((x) => x.code === 'number-out-of-range');
+    expect(w?.message).toBe("word 'X' is beyond the float32 range the toolpath stores; dropped");
+    expect(w?.srcByte).toBe(16);
+  });
+
+  it('F, E and a negative coordinate are guarded the same way', () => {
+    const { ir, pts, codes } = ends(`G1 X1 F1200\nG1 X2 F${nines}\nG1 X3 E-${nines}\nG1 Y-${nines} X4\n`);
+    expect(Array.from(ir.segments.feedrate)).toEqual([1200, 1200, 1200, 1200]);
+    expect(pts.map((p) => [p.x, p.y, p.e])).toEqual([
+      [1, 0, 0],
+      [2, 0, 0],
+      [3, 0, 0],
+      [4, 0, 0]
+    ]);
+    expect(ir.header.warnings.find((x) => x.code === 'number-out-of-range')?.count).toBe(3);
+    expect(codes.filter((c) => c === 'number-out-of-range').length).toBe(1);
+  });
+
+  it('a value at the float32 limit is kept; a non-number word stays a silent drop', () => {
+    // G-code has no exponent form (`e` is a word letter), so the limit is written out in full.
+    const { ir, codes } = ends('G1 X340282346638528859811704183484516925440\nG1 X1 Z\n');
+    expect(ir.segments.x1[0] + ir.header.originOffset.x).toBe(3.4028234663852886e38);
+    expect(codes).not.toContain('number-out-of-range');
+  });
+
+  it('a bracket expression that overflows float32 is dropped and disclosed', () => {
+    const { ir, codes } = ends('G1 X5\nG1 X[10 ** 39] Y2\n');
+    expect(ir.segments.count).toBe(2);
+    expect(ir.segments.x1[1] + ir.header.originOffset.x).toBe(5);
+    expect(ir.segments.y1[1] + ir.header.originOffset.y).toBe(2);
+    expect(codes).toContain('number-out-of-range');
+    expect(codes).not.toContain('rs274-non-finite-value');
+  });
+});
