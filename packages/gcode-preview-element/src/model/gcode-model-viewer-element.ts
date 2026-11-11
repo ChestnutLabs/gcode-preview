@@ -103,6 +103,7 @@ export class GcodeModelViewerElement extends HTMLElement {
     this._cameraState = v;
     if (v !== null) this.controller?.controls.setCameraState(v);
   }
+  /** Backdrop colour or `'transparent'`. Mirrors the `background` attribute (last value given; not reflected). */
   get background(): ModelBackground | undefined {
     return this._background;
   }
@@ -139,6 +140,7 @@ export class GcodeModelViewerElement extends HTMLElement {
    * Perspective lens in degrees, [10, 120] (DD-032). Mirrors the `camera-fov` attribute. Setting an
    * out-of-range value through the property throws `RangeError`, like `controls.setCameraFov`; an invalid
    * *attribute* is ignored and the last valid lens kept (attribute callbacks must not throw). Not reflected.
+   * Reads return the last valid lens from either, including one given in markup; `undefined` if none.
    */
   get cameraFov(): number | undefined {
     return this._cameraFov;
@@ -153,7 +155,8 @@ export class GcodeModelViewerElement extends HTMLElement {
    * Resting pixel ratio: a number in (0, 4], or `'device'` (the display's DPR capped at 2, followed live;
    * the exact lowercase string). Mirrors the `pixel-ratio` attribute. Setting anything else through the
    * property throws `RangeError`, like `controls.setPixelRatio`; an invalid *attribute* is ignored and the
-   * last valid ratio kept (attribute callbacks must not throw). Not reflected. A ratio of 2 shades 4x the
+   * last valid ratio kept (attribute callbacks must not throw). Not reflected. Reads return the last valid
+   * ratio from either, including one given in markup; `undefined` if none. A ratio of 2 shades 4x the
    * fragments of 1; the default `capture()` size does not change.
    */
   get pixelRatio(): PixelRatioOption | undefined {
@@ -264,10 +267,12 @@ export class GcodeModelViewerElement extends HTMLElement {
     root.append(style, canvas);
     this.canvasEl = canvas;
 
-    const bg = this._background ?? (this.getAttribute('background') as ModelBackground | null) ?? undefined;
-    // An invalid `camera-fov` attribute is ignored (default lens), never thrown from a lifecycle callback.
-    const fov = this._cameraFov ?? parseFovAttribute(this.getAttribute('camera-fov'));
-    const pixelRatio = this._pixelRatio ?? parsePixelRatioAttribute(this.getAttribute('pixel-ratio'));
+    // The last valid `background` / `camera-fov` / `pixel-ratio`, from the property or the attribute callback.
+    // Fall back to the attribute itself (recorded, so the getter reports it) for DOMs that skip the attribute
+    // callbacks when upgrading parsed markup (happy-dom). An invalid attribute is ignored, never thrown.
+    const bg = (this._background ??= this.getAttribute('background') ?? undefined);
+    const fov = (this._cameraFov ??= parseFovAttribute(this.getAttribute('camera-fov')));
+    const pixelRatio = (this._pixelRatio ??= parsePixelRatioAttribute(this.getAttribute('pixel-ratio')));
     this.controller = createModelPreviewController({
       ...(this._buildVolume !== null ? { buildVolume: this._buildVolume } : {}),
       ...(this._theme !== undefined ? { theme: this._theme } : {}),
@@ -304,6 +309,14 @@ export class GcodeModelViewerElement extends HTMLElement {
   }
 
   attributeChangedCallback(name: string, _old: string | null, value: string | null): void {
+    // `background`, `camera-fov` and `pixel-ratio` are not reflected, so record each valid value even while
+    // disconnected (markup, or a change before a reconnect): the getter reports it and connect applies it.
+    // Invalid (or removed) ⇒ ignored and the last valid value kept; attribute callbacks must not throw.
+    const fov = name === 'camera-fov' ? parseFovAttribute(value) : undefined;
+    const ratio = name === 'pixel-ratio' ? parsePixelRatioAttribute(value) : undefined;
+    if (name === 'background' && value !== null) this._background = value;
+    if (fov !== undefined) this._cameraFov = fov;
+    if (ratio !== undefined) this._pixelRatio = ratio;
     if (this.controller === null) return;
     const c = this.controller.controls;
     switch (name) {
@@ -311,7 +324,7 @@ export class GcodeModelViewerElement extends HTMLElement {
         if (value !== null) c.setView(value as PresentationView | CameraView);
         break;
       case 'background':
-        if (value !== null) c.setBackground(value as ModelBackground);
+        if (value !== null) c.setBackground(value);
         break;
       case 'interaction-quality':
         if (value !== null) c.setInteractionQuality(value as 'off' | 'auto');
@@ -322,24 +335,12 @@ export class GcodeModelViewerElement extends HTMLElement {
       case 'show-volume-cage':
         c.setBuildVolumeCage(value !== 'false');
         break;
-      case 'camera-fov': {
-        // Invalid (or removed) ⇒ ignore and keep the last valid lens; callbacks must not throw.
-        const fov = parseFovAttribute(value);
-        if (fov !== undefined) {
-          c.setCameraFov(fov);
-          this._cameraFov = fov;
-        }
+      case 'camera-fov':
+        if (fov !== undefined) c.setCameraFov(fov);
         break;
-      }
-      case 'pixel-ratio': {
-        // Invalid (or removed) ⇒ ignore and keep the last valid ratio; callbacks must not throw.
-        const ratio = parsePixelRatioAttribute(value);
-        if (ratio !== undefined) {
-          c.setPixelRatio(ratio);
-          this._pixelRatio = ratio;
-        }
+      case 'pixel-ratio':
+        if (ratio !== undefined) c.setPixelRatio(ratio);
         break;
-      }
       default:
         break;
     }
