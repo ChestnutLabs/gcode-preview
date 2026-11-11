@@ -39,7 +39,7 @@ export const ON_BED_TOLERANCE_MM = 1;
 
 /**
  * Multi-plate workspace cell = bed size × this. OBSERVED behaviour of exported Bambu/Orca projects
- * (plate N > 1 sits one cell over from plate 1, rows stepping −Y), recorded clean-room from exported files:
+ * (every plate after plate 1 sits one cell over from plate 1, rows stepping −Y), recorded clean-room from exported files:
  * "observed, pending the two-plate fixture" (DD-032 §8). If the fixture contradicts it the `inferred` path
  * changes; `approximated` stays the honest fallback.
  */
@@ -93,10 +93,10 @@ function onBed(b: ModelBounds, dx: number, dy: number, bed: PlacementBed): boole
 
 /**
  * Decide placement for the shown scene.
- * @param full   the whole source (its `source` and declared `plates` describe the file)
- * @param shown  the scene actually drawn (`full` narrowed by `scope`)
- * @param scope  the active render scope, or `null`
- * @param consumerBed the consumer's `buildVolume` rectangle, or `null` (no plate)
+ * @param full - the whole source (its `source` and declared `plates` describe the file)
+ * @param shown - the scene actually drawn (`full` narrowed by `scope`)
+ * @param scope - the active render scope, or `null`
+ * @param consumerBed - the consumer's `buildVolume` rectangle, or `null` (no plate)
  */
 export function computePlacement(
   full: ModelScene,
