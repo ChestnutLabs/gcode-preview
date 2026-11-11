@@ -46,7 +46,8 @@ import type { FeatureRoleValue, MachineGeometry, MappedProgress, ToolpathIR } fr
 import { autoDecimation, buildChunks, type ChunkBuildResult, type GeometryChunk } from './chunks.js';
 import { buildChunkColors, type ColorMode } from './colors.js';
 import { computeDrawState, computeOverlayDrawStates } from './ranges.js';
-import { createBuildVolume, type BuildVolumeDef, type BuildVolumeStyle } from './build-volume.js';
+import { createBuildVolume, disposeBuildVolume, type BuildVolumeDef, type BuildVolumeStyle } from './build-volume.js';
+import { volumeStyle } from './volume-style.js';
 import {
   buildTubeChunk,
   tubeRadialForBudget,
@@ -1622,15 +1623,7 @@ export class ToolpathRenderer {
 
   /** Grid/box styling for the build volume from the current theme (#153). */
   private volumeStyle(): BuildVolumeStyle {
-    const t = this.resolvedTheme;
-    return {
-      gridColor: t.gridColor,
-      gridOpacity: t.gridOpacity,
-      boxColor: t.bedColor,
-      boxOpacity: t.bedOpacity,
-      bedSurface: t.bedSurface,
-      showCage: this.cageVisible
-    };
+    return volumeStyle(this.resolvedTheme, this.cageVisible);
   }
 
   /**
@@ -1712,11 +1705,7 @@ export class ToolpathRenderer {
     this.applyBackground();
     // Rebuild the build volume with the new grid/box styling (reuses the dispose walk).
     if (this.volumeDef !== null && this.volumeGroup !== null) {
-      this.volumeGroup.traverse((obj) => {
-        const mesh = obj as LineSegments;
-        (mesh.geometry as BufferGeometry | undefined)?.dispose?.();
-        (mesh.material as LineBasicMaterial | undefined)?.dispose?.();
-      });
+      disposeBuildVolume(this.volumeGroup);
       this.root.remove(this.volumeGroup);
       this.volumeGroup = createBuildVolume(this.volumeDef, this.volumeStyle());
       this.root.add(this.volumeGroup);
@@ -1839,11 +1828,7 @@ export class ToolpathRenderer {
       }
     }
     if (this.volumeGroup !== null) {
-      this.volumeGroup.traverse((obj) => {
-        const mesh = obj as LineSegments;
-        (mesh.geometry as BufferGeometry | undefined)?.dispose?.();
-        (mesh.material as LineBasicMaterial | undefined)?.dispose?.();
-      });
+      disposeBuildVolume(this.volumeGroup);
       this.root.remove(this.volumeGroup);
     }
     this.volumeDef = next;
@@ -1936,11 +1921,7 @@ export class ToolpathRenderer {
     this.geometryPool = null;
     this.clearToolpathGeometry();
     if (this.volumeGroup) {
-      this.volumeGroup.traverse((obj) => {
-        const mesh = obj as LineSegments;
-        (mesh.geometry as BufferGeometry | undefined)?.dispose?.();
-        (mesh.material as LineBasicMaterial | undefined)?.dispose?.();
-      });
+      disposeBuildVolume(this.volumeGroup);
     }
     this.ghostMaterial.dispose();
     this.bandMaterial.dispose();
