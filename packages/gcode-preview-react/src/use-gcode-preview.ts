@@ -23,6 +23,7 @@ import {
   type PreviewEvent,
   type PreviewRenderer
 } from '@chestnutlabs/gcode-preview-core';
+import { registerLiveState } from './live-state.js';
 
 // Shared contracts pass through unchanged (D1 amendment: re-export, never redeclare).
 export type {
@@ -100,8 +101,8 @@ export function useGcodePreview(options: UseGcodePreviewOptions = {}): GcodePrev
   // renderer per snapshot — an infinite loop. `state` reads through a per-render ref.
   const stateRef = useRef(state);
   stateRef.current = state;
-  return useMemo<GcodePreviewHandle>(
-    () => ({
+  return useMemo<GcodePreviewHandle>(() => {
+    const handle: GcodePreviewHandle = {
       canvasRef: (el) => {
         slot.current.canvas = el;
         if (el === null) slot.current.controller?.bindCanvas(null);
@@ -127,7 +128,9 @@ export function useGcodePreview(options: UseGcodePreviewOptions = {}): GcodePrev
         slot.current.controller?.dispose();
         slot.current.disposed = true;
       }
-    }),
-    [ensure]
-  );
+    };
+    // #430: event handlers need the controller's state as of the event, not the lagging render snapshot.
+    registerLiveState(handle, () => ensure().getState());
+    return handle;
+  }, [ensure]);
 }
