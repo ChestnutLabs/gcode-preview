@@ -35,6 +35,10 @@ const TIGHTENED = {
   'src/babel.config.js': { 'no-unused-vars': [2] }
 };
 
+// Hostile-input guard (#469): the two super-linear-regex rules, on shipped package source only.
+const REGEXP_GUARD = { 'regexp/no-super-linear-backtracking': [2], 'regexp/no-super-linear-move': [2] };
+const isGuarded = (file) => /^packages\/[^/]+\/src\//.test(file) && !file.includes('__tests__');
+
 const defaults = {};
 for (const [name, rule] of builtinRules) defaults[name] = rule.meta?.defaultOptions;
 for (const [name, rule] of Object.entries(tseslint.plugin.rules)) {
@@ -64,6 +68,7 @@ function expectedFor(sample) {
   for (const name of REMOVED_UPSTREAM) delete rules[name];
   for (const name of ADDED_UPSTREAM) rules[name] = [2];
   Object.assign(rules, TIGHTENED[sample]);
+  if (isGuarded(sample)) Object.assign(rules, REGEXP_GUARD);
   return Object.fromEntries(Object.entries(rules).sort(([a], [b]) => (a < b ? -1 : 1)));
 }
 
@@ -80,6 +85,28 @@ describe('flat ESLint config keeps the ESLint 8 rule set', () => {
       expect(sorted(normalize(config.rules))).toEqual(expectedFor(sample));
     });
   }
+});
+
+describe('super-linear regex guard scope', () => {
+  const ruleOf = async (file, rule) => (await eslint.calculateConfigForFile(file)).rules?.[rule];
+
+  it('is an error on package source of every kind (.ts, .tsx)', async () => {
+    for (const file of [
+      'packages/gcode-dialects/src/cnc.ts',
+      'packages/gcode-parser/src/index.ts',
+      'packages/gcode-preview-react/src/index.tsx'
+    ]) {
+      expect([file, await ruleOf(file, 'regexp/no-super-linear-backtracking')]).toEqual([file, [2]]);
+      expect([file, await ruleOf(file, 'regexp/no-super-linear-move')]).toEqual([file, [2]]);
+    }
+  });
+
+  it('is off in tests, tools and the plugin recommended set is not enabled', async () => {
+    for (const file of ['packages/gcode-dialects/src/__tests__/cnc.test.ts', 'tools/release/publish.mjs']) {
+      expect([file, await ruleOf(file, 'regexp/no-super-linear-backtracking')]).toEqual([file, undefined]);
+    }
+    expect(await ruleOf('packages/gcode-dialects/src/cnc.ts', 'regexp/no-dupe-disjunctions')).toBeUndefined();
+  });
 });
 
 describe('flat ESLint config globals and ignores', () => {
