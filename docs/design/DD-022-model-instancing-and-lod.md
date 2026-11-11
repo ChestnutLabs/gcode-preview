@@ -2,7 +2,7 @@
 
 **Status:** Accepted <!-- Draft | Proposed | Accepted | Superseded | Rejected -->
 **Authors/Owners:** Nathaniel Chestnut (with Claude)
-**Date:** 2026-08-25 · **Last revised:** 2026-08-25
+**Date:** 2026-08-25 · **Last revised:** 2026-11-11
 **Owning Epic:** ModelRenderer (the DD-018 line) · **Milestone:** M3
 **Supersedes / Superseded by:** none
 **Related:** [DD-018](DD-018-model-renderer.md) (ModelRenderer / `ModelScene`), [DD-021](DD-021-interactive-model-viewer.md) (`createModelViewer`), [RR-006](../research/RR-006-tube-mesh-memory-and-large-file-budget.md) (the toolpath-side tube budget — the memory-degradation precedent this mirrors for meshes). Consumer/proof case: AnyBridge "View in 3D" — the `Baby_Opossum` full-sheet source `.3mf`.
@@ -179,13 +179,19 @@ instanced plate is measured at ~1.5 M, not ~26 M, and passes. A genuinely huge *
 `lodTriangleBudget` is decimated to fit and disclosed; only if a single unique mesh still exceeds
 `maxTriangles` after LOD does it hard-reject.
 
-**Both entry points accept these budgets per call**, and both accept a capability hint — there is no
-"headless ⇒ hardware" default baked in (see §8). `renderModelStill(source, { limits, capabilityHint })`
-and `createModelViewer(canvas, { limits, capabilityHint })` take the same `ModelLimits` knobs plus
-`capabilityHint?: 'auto' | 'software' | 'hardware'` (default `'auto'`). A software-WebGL headless sidecar
-(e.g. ANGLE→SwiftShader) is classified as software by `'auto'` and gets the software budget — or passes
-`capabilityHint: 'software'` / a tighter `limits` explicitly. The knobs express **both** paths; neither is
-assumed to be on a hardware GPU.
+**Both entry points accept the `ModelLimits` budgets per call**: `renderModelStill(source, { limits })` and
+`createModelViewer(canvas, { limits })`. There is no "headless ⇒ hardware" default baked in (see §8).
+
+> **Revised 2026-11-11 (#432) — as built.** The capability *classifier* ships (`classifyRenderer` /
+> `detectRenderCapability`) and feeds the diagnostics string only. The `capabilityHint?: 'auto' | 'software'
+> | 'hardware'` option this section originally described was **not** delivered on either entry point: no
+> entry point accepts it. `CapabilityHint` and `resolveCapability` are exported from
+> `@chestnutlabs/gcode-renderer-three` as **experimental and diagnostic-only** — they have no effect on
+> rendering or budgets. The capability-aware budget behaviour (a software-WebGL headless sidecar, e.g.
+> ANGLE→SwiftShader, getting the software budget; an explicit hint overriding detection) is **deferred** to
+> [DD-023](DD-023-capability-aware-render-budget.md) §11. Until then a software client is protected only by
+> an explicit tighter `limits`. The intent below and in §8 / §14 Phase 3 stands as design, not as shipped
+> behaviour.
 
 ## 5. Lifecycle
 
