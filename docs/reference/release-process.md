@@ -82,7 +82,8 @@ from the protected `Release / publish` workflow on a tag from `main` — never f
   [docs.npmjs.com/trusted-publishers](https://docs.npmjs.com/trusted-publishers) ("automatically
   detects OIDC environments and uses them for authentication before falling back to traditional
   tokens"). A failed exchange is logged at `verbose` level only, so a run that silently fell back
-  to the token looks like a normal publish.
+  to the token looks like a normal publish — the post-publish auth report (below) is what tells
+  them apart.
 - **Fallback (`v0.22.0` only, until one clean trusted publish):** a **granular access token** stored
   as the `NPM_TOKEN` repo secret (the workflow wires it as `NODE_AUTH_TOKEN`). npm removed classic
   tokens (including the old "Automation" type) in Nov–Dec 2025; granular tokens are the only kind.
@@ -118,7 +119,9 @@ from the protected `Release / publish` workflow on a tag from `main` — never f
   - **Workflow filename:** `release-publish.yml` (filename only, not the path)
   - **Environment name:** leave empty (the job uses no GitHub environment)
   - **Allowed actions:** tick **direct `npm publish`**. Configurations created after 2026-09-03
-    default to `npm stage publish` only, which this workflow does not use.
+    default to `npm stage publish` only, which this workflow does not use. A trusted publisher that
+    exchanges but disallows direct publish is not guaranteed to fall back to the token — tick
+    direct npm publish on all 14.
 
   **Timing:** create the configurations within the **2 days before the tag**. npm expires a new
   trusted-publisher configuration that has not completed its first successful publish within 2 days,
@@ -131,11 +134,26 @@ from the protected `Release / publish` workflow on a tag from `main` — never f
   `@chestnutlabs/gcode-renderer-2d`, `@chestnutlabs/gcode-preview-core`,
   `@chestnutlabs/gcode-preview-vue`, `@chestnutlabs/gcode-preview-react`,
   `@chestnutlabs/gcode-preview-svelte`, `@chestnutlabs/gcode-preview-element`.
-- **Follow-up after one clean trusted publish:** per package, *Settings → Publishing access →*
-  **Require two-factor authentication and disallow tokens**, then delete the `NPM_TOKEN` repo
-  secret. Caution: at the default log level a silent fallback to the token looks identical to an
-  OIDC publish (provenance is attached on both paths), so "clean trusted publish" must be confirmed
-  deliberately — not inferred from a green run — before the fallback is removed.
+- **Post-publish auth report:** the `Report publish auth path per package` step (right after
+  `Publish with provenance`) reads each published version's `_npmUser.trustedPublisher.id` with
+  `npm view` — `github` for a trusted publish, absent for a token publish — and annotates every
+  package as `::notice::` *trusted publishing (OIDC)*, `::warning::` *token fallback*, or
+  `::warning::` *publisher unreadable* (after a short shared retry for propagation lag), plus a
+  14-row table in the job summary. It is annotate-only (`continue-on-error`) and never fails the
+  job. A silent fallback is otherwise invisible: at the default log level it looks identical to an
+  OIDC publish, and provenance is attached on both paths. The version comes from
+  `packages/toolpath-core/package.json` (lockstep), not the tag ref, so it is also correct on a
+  `workflow_dispatch` recovery run; `Registry-mode consumer verification` uses the same source.
+- **Follow-up after one clean trusted publish** — confirmed when the report step shows **14/14
+  trusted publishing (OIDC)**, not inferred from a green run:
+  1. Add a **per-package OIDC exchange probe** before the gate (mint the GitHub id-token, exchange
+     it for each package against the registry), so a missing or mistyped trusted publisher fails in
+     seconds instead of at the publish step. It is required once the token fallback is gone; the
+     short-lived token the exchange mints must be masked (`::add-mask::`) and discarded, never used
+     or persisted.
+  2. Per package, *Settings → Publishing access →* **Require two-factor authentication and disallow
+     tokens**.
+  3. Delete the `NPM_TOKEN` repo secret.
 - 2FA-on-publish set on the owning account. These are **maintainer prerequisites** for phase 7,
   confirmed during the phase-6 rehearsal.
 - **GitHub Actions PR creation** (discovered at the first #130 run): the org-level setting
