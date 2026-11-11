@@ -14,6 +14,8 @@ import {
 } from '@chestnutlabs/gcode-renderer-three';
 import { MoveKind, ToolpathIRBuilder, type ToolpathIR } from '@chestnutlabs/toolpath-core';
 import { renderStill } from '../render-still.js';
+// The public export (not the module) — consumers branch on `instanceof` the package-index class.
+import { RenderStillError } from '../index.js';
 import { makeTestIR, SuiteStubWorker } from '../testing.js';
 
 /** An IR with an extrusion segment plus a travel segment and a wipe segment (distinct geometry chunks). */
@@ -129,7 +131,75 @@ function makeCountingGL(): {
   };
 }
 
+/**
+ * An otherwise-valid IR whose geometry build throws: the renderer's chunker iterates `ir.layers`, so a
+ * throwing iterator drives the real `E_GEOMETRY_BUILD` path (an `error` event, never `buildComplete`).
+ */
+function makeBrokenBuildIR(): ToolpathIR {
+  const ir = makeTestIR();
+  const layers = [...ir.layers];
+  Object.defineProperty(layers, Symbol.iterator, {
+    value: () => {
+      throw new Error('geometry boom');
+    }
+  });
+  return { ...ir, layers };
+}
+
+/** GL stub that counts `dispose()` calls (the renderer disposes its GL backend on teardown). */
+function makeDisposeProbeGL(): { gl: (c: RenderTargetCanvas) => GLRendererLike; disposes: () => number } {
+  let disposes = 0;
+  return {
+    gl: (canvas: RenderTargetCanvas) => ({
+      render: () => undefined,
+      setSize: () => undefined,
+      dispose: () => {
+        disposes++;
+      },
+      domElement: canvas
+    }),
+    disposes: () => disposes
+  };
+}
+
+/** Settle `p` or report a hang after `ms` — keeps a regression from stalling the suite on the 5 s default. */
+function settleWithin<T>(
+  p: Promise<T>,
+  ms = 2000
+): Promise<{ ok: true; value: T } | { ok: false; error: unknown } | 'hang'> {
+  return Promise.race([
+    p.then(
+      (value) => ({ ok: true as const, value }),
+      (error: unknown) => ({ ok: false as const, error })
+    ),
+    new Promise<'hang'>((resolve) => setTimeout(() => resolve('hang'), ms))
+  ]);
+}
+
 describe('renderStill (#132)', () => {
+  it('rejects with the build error (and disposes) instead of hanging when the geometry build fails (#435)', async () => {
+    const probe = makeDisposeProbeGL();
+    const outcome = await settleWithin(
+      renderStill(makeBrokenBuildIR(), { canvas: makeStubCanvas(), createRenderer: probe.gl })
+    );
+    expect(outcome).not.toBe('hang');
+    if (outcome === 'hang' || outcome.ok) throw new Error(`expected a rejection, got ${JSON.stringify(outcome)}`);
+    const err = outcome.error as { name: string; code: string; message: string };
+    expect(err).toBeInstanceOf(Error);
+    expect(err).toBeInstanceOf(RenderStillError);
+    expect(err.name).toBe('RenderStillError');
+    expect(err.code).toBe('E_GEOMETRY_BUILD');
+    expect(err.message).toBe('geometry boom');
+    expect(probe.disposes()).toBe(1);
+  }, 10_000);
+
+  it('disposes exactly once on a successful still (#435 control)', async () => {
+    const probe = makeDisposeProbeGL();
+    const result = await renderStill(makeTestIR(), { canvas: makeStubCanvas(), createRenderer: probe.gl });
+    expect(result.segmentCount).toBe(12);
+    expect(probe.disposes()).toBe(1);
+  });
+
   it('renders a pre-parsed IR to completion with a single settled frame', async () => {
     const counting = makeCountingGL();
     const canvas = makeStubCanvas(400, 300);

@@ -145,6 +145,28 @@ export interface RenderStillResult {
   parsed: boolean;
 }
 
+/**
+ * The error {@link renderStill} rejects with when the toolpath geometry build fails (instead of never
+ * settling). Same shape as the parser's `ParseSessionError`, so a still job handles a parse failure and a
+ * build failure the same way: branch on `code`, show `message`.
+ *
+ * - `code` — the renderer's error code, e.g. `'E_GEOMETRY_BUILD'`.
+ * - `message` — the renderer's description of what failed.
+ *
+ * The internal renderer is already disposed when this rejection arrives.
+ */
+export class RenderStillError extends Error {
+  constructor(
+    /** The renderer's error code, e.g. `'E_GEOMETRY_BUILD'`. */
+    public readonly code: string,
+    /** The renderer's description of what failed. */
+    message: string
+  ) {
+    super(message);
+    this.name = 'RenderStillError';
+  }
+}
+
 function isToolpathIR(v: unknown): v is ToolpathIR {
   return (
     typeof v === 'object' &&
@@ -163,7 +185,8 @@ function toVolume(def: BuildVolumeDef | MachineGeometry): BuildVolumeDef {
 
 /**
  * Render one still image. Resolves after the geometry is fully built and a single
- * frame has been drawn to `options.canvas`.
+ * frame has been drawn to `options.canvas`. Rejects (with an `Error` whose `code` is `E_GEOMETRY_BUILD`)
+ * when the geometry build fails; the internal renderer is disposed on every outcome.
  */
 export async function renderStill(
   source: Uint8Array | ArrayBuffer | ToolpathIR,
@@ -255,18 +278,27 @@ export async function renderStill(
     renderer.resize(width, height);
 
     let decimationApplied = 1;
-    await new Promise<void>((resolve) => {
+    await new Promise<void>((resolve, reject) => {
       let settled = false;
-      const finish = (): void => {
+      const finish = (err?: Error): void => {
         if (settled) return;
         settled = true;
         off();
-        resolve();
+        if (err === undefined) resolve();
+        else reject(err);
       };
       const off = renderer.onEvent((e) => {
         if (e.type === 'buildComplete') {
           decimationApplied = e.decimationApplied;
           finish();
+        } else if (e.type === 'error') {
+          // A failed geometry build emits `error` (E_GEOMETRY_BUILD) and never `buildComplete` — without
+          // this branch the await never settles and the renderer is never disposed (#435). Every `error`
+          // the renderer can emit inside this window (setIR → buildComplete) is that build failure; the
+          // non-fatal disclosures come from setColorMode/setFrameContent/setBuildVolume, which renderStill
+          // only calls after the build settles. Rejecting on any code also keeps a future fatal code from
+          // re-introducing the hang.
+          finish(new RenderStillError(e.code, e.message));
         }
       });
       renderer.setIR(ir);
