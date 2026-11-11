@@ -17,6 +17,7 @@
   import GcodePreview from '@chestnutlabs/gcode-preview-svelte/GcodePreview.svelte';
   import ModelViewer from '@chestnutlabs/gcode-preview-svelte/model/ModelViewer.svelte';
   import { FeatureRole } from '@chestnutlabs/toolpath-core';
+  import { studioTheme, STUDIO_CAMERA_FOV } from '@chestnutlabs/gcode-renderer-three';
   import {
     FIXTURE_GROUPS,
     FIXTURE_BY_ID,
@@ -30,8 +31,18 @@
     count as formatCount,
     duration as formatDuration,
     DOC_VIEWPORT_THEME,
-    DOC_VIEWPORT_BG
+    DOC_VIEWPORT_BG,
+    LOOKS,
+    LOOK_BY_ID,
+    LENS_MIN,
+    LENS_MAX,
+    DEFAULT_LENS,
+    TWO_PLATE_BED,
+    placementLine
   } from '../../demo-kit/index.js';
+
+  // The multi-plate fixture needs a plate selector (see the Feature Lab); the showcase lists single-plate models.
+  const SHOWCASE_MODELS = MODEL_FIXTURES.filter((m) => !m.plates);
 
   const ADHESION_ROLES = [FeatureRole.Skirt, FeatureRole.Brim];
   const CAM_VIEWS = [
@@ -65,6 +76,18 @@
   let showTravel = false;
   let showRetractions = false;
   let view = 'iso';
+
+  // DD-032: Studio is an OPT-IN preset (`theme={studioTheme('dark')}` + `cameraFov`); the SDK default look is
+  // unchanged. This showcase starts on it and keeps the previous grey one click away.
+  let lookId = 'studio-dark';
+  let lens = STUDIO_CAMERA_FOV;
+  $: lookMode = LOOK_BY_ID[lookId].mode;
+  $: theme = lookMode ? studioTheme(lookMode) : DOC_VIEWPORT_THEME;
+  $: modelTheme = lookMode ? studioTheme(lookMode) : undefined;
+  function chooseLook(id) {
+    lookId = id;
+    lens = LOOK_BY_ID[id].mode ? STUDIO_CAMERA_FOV : DEFAULT_LENS;
+  }
 
   // Prepare (source model) state.
   let modelFixtureId = 'colored-3mf';
@@ -185,13 +208,18 @@
     </select>
   {:else}
     <select class="gp-input" style="width: 220px" bind:value={modelFixtureId} on:change={() => loadModel()}>
-      {#each MODEL_FIXTURES as m}
+      {#each SHOWCASE_MODELS as m}
         <option value={m.id}>{m.label}</option>
       {/each}
     </select>
   {/if}
   <button class="gp-btn gp-primary" on:click={() => (prepare ? loadModel() : load())}>Load</button>
   <div class="sc-spacer" />
+  <div class="gp-segment" role="group" aria-label="Viewport look">
+    {#each LOOKS as l}
+      <button class={lookId === l.id ? 'gp-on' : ''} on:click={() => chooseLook(l.id)}>{l.label}</button>
+    {/each}
+  </div>
   <div class="gp-segment" role="group" aria-label="Chrome theme">
     <button class={chrome === 'dark' ? 'gp-on' : ''} on:click={() => (chrome = 'dark')}>Dark</button>
     <button class={chrome === 'light' ? 'gp-on' : ''} on:click={() => (chrome = 'light')}>Light</button>
@@ -211,7 +239,9 @@
         {showTravel}
         {showRetractions}
         {view}
-        theme={DOC_VIEWPORT_THEME}
+        {theme}
+        cameraFov={lens}
+        showVolumeCage={lookMode === null}
         frameContent="object"
         quality="auto"
         on:ready={onReady}
@@ -225,6 +255,9 @@
         source={modelSource}
         {view}
         background={DOC_VIEWPORT_BG}
+        buildVolume={TWO_PLATE_BED}
+        theme={modelTheme}
+        cameraFov={lens}
         on:ready={onModelReady}
         on:error={(e) => (disclosure = `Model error: ${e.detail.code} — ${e.detail.message}`)}
       />
@@ -259,6 +292,14 @@
 
   <aside class="sc-rail">
     <div class="gp-scroll">
+      <section class="gp-panel">
+        <h3>Lens</h3>
+        <div class="gp-field">
+          <label for="lens">Field of view <span class="gp-value">{lens}°</span></label>
+          <input id="lens" class="gp-range" type="range" min={LENS_MIN} max={LENS_MAX} bind:value={lens} />
+          <span class="gp-reason">The SDK default is {DEFAULT_LENS}°; the Studio preset uses {STUDIO_CAMERA_FOV}°.</span>
+        </div>
+      </section>
       {#if !prepare}
       <section class="gp-panel">
         <h3>Appearance</h3>
@@ -331,6 +372,7 @@
             <div>placements: {formatCount(modelInfo.instancedCount)}</div>
             <div>materials: <span class="gp-badge {materialsTier.cls}">{materialsTier.label}</span></div>
             {#if modelInfo.plates}<div>plates: {modelInfo.plates.list.length}</div>{/if}
+            <div>{placementLine(modelInfo.placement, modelInfo.placementOffset)}</div>
           </div>
         {:else}
           <p class="gp-reason">Press Load to view a source model.</p>

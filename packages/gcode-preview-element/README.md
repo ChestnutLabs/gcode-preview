@@ -112,6 +112,30 @@ rich options (`.source`, `.cameraState`, `.renderScope`, …) are properties; pr
 [`docs/manual/adapters.md`](../../docs/manual/adapters.md) "Two viewers: Preview and Prepare" for the
 cross-adapter tour, and `tools/example-webcomponent/model.html` for a runnable minimal page.
 
+## Look, lens and plate (opt-in)
+
+`<gcode-preview>` and `<gcode-model-viewer>` both take the lens as an **attribute**, `camera-fov`, with a matching
+`cameraFov` property. `theme` is a **property** on both, and `buildVolume` a property on `<gcode-model-viewer>`
+(objects can't be attributes). The Studio look is an opt-in preset: set nothing and the viewers render as before.
+
+```html
+<gcode-preview camera-fov="32" show-volume-cage="false"></gcode-preview>
+<gcode-model-viewer camera-fov="32"></gcode-model-viewer>
+<script type="module">
+  import { studioTheme } from '@chestnutlabs/gcode-renderer-three';
+  document.querySelector('gcode-preview').theme = studioTheme('dark');
+  const model = document.querySelector('gcode-model-viewer');
+  model.theme = studioTheme('dark');
+  model.buildVolume = { x: 256, y: 256, z: 256 };
+</script>
+```
+
+`camera-fov` takes 10-120 degrees (the default is 50). **An invalid attribute value (non-numeric or outside that
+range) is ignored and the last valid lens is kept; setting the `cameraFov` property to an invalid value throws
+`RangeError`.** `<gcode-model-viewer>` reports `placement` (`known` / `inferred` / `approximated`, or `null` with no plate)
+and `placementOffset` in the `ready` event detail and its state. The 2D renderer ignores `theme` and `camera-fov`.
+See the [Studio look and build plate guide](https://github.com/ChestnutLabs/gcode-preview/blob/dev/docs/manual/guide-looks-lens-plate.md).
+
 ## Examples
 
 `tools/example-webcomponent` in the repository is a framework-free Vite app with two tiers, both

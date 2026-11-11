@@ -1,5 +1,5 @@
 {
-  "note": "App-UI documentation shots (DD-031 docs/demo parity). Unlike shots.manifest.json (mid-grey capability RENDERS), these capture the actual Feature Lab APPLICATION surface — the control/inspector rail, color-mode selector, tabs, diagnostics, and the Preview/Prepare modes — so the README/docs show the interactive product, not just pretty renders. Driven by capture-app.mjs against the running Feature Lab (tools/demo, :5199). The studio-dark chrome IS the product look (not the mid-grey capture look).",
+  "note": "App-UI documentation shots (DD-031 docs/demo parity). Unlike shots.manifest.json (mid-grey capability RENDERS), these capture the actual Feature Lab APPLICATION surface — the control/inspector rail, color-mode selector, tabs, diagnostics, and the Preview/Prepare modes — so the README/docs show the interactive product, not just pretty renders. Driven by capture-app.mjs against the running Feature Lab (tools/demo, :5199). The studio-dark chrome IS the product look. The Feature Lab starts on the opt-in Studio look (DD-032); the shots that show another look, lens or plate say so (`look`, `lens`, `plate`, `lenses`). Studio is a preset a consumer opts into: the SDK's own default look is unchanged.",
   "shots": [
     {
       "name": "app-control-panel",
@@ -9,7 +9,7 @@
       "color": "feature",
       "view": "iso",
       "caption": "The Feature Lab: the inspector rail (move-visibility toggles, feature-role hide, segment inspection) beside a 3DBenchy colored by feature role, with the layer/segment scrub and honest capability badges.",
-      "alt": "The G-code Preview Feature Lab application — a 3DBenchy colored by feature role in the viewport, a floating feature-role legend, camera controls, a layers/segments/time scrub strip, an inspector rail with move-visibility toggles, and capability badges (featureRoles known, feedrate known) in the status bar"
+      "alt": "The G-code Preview Feature Lab application — a 3DBenchy colored by feature role in the viewport on the Studio look, a floating feature-role legend, camera controls, a layers/segments/time scrub strip, an inspector rail with move-visibility toggles, and capability badges (featureRoles known, feedrate known) in the status bar"
     },
     {
       "name": "app-appearance",
@@ -18,8 +18,8 @@
       "tab": "appearance",
       "color": "feature",
       "view": "iso",
-      "caption": "The Appearance tab: the color-mode selector (single / tool / feature / speed / object / layer height / …), each capability-gated to what the file can prove, with the active legend.",
-      "alt": "The Feature Lab Appearance tab showing the color-by selector with feature role active, a legend of outer wall / inner wall / infill / support colors, and color modes greyed out when the file can't support them"
+      "caption": "The Appearance tab: the Look selector (Studio dark and light are opt-in presets; “SDK default” is no theme) above the color-mode selector, each color mode capability-gated to what the file can prove, with the active legend.",
+      "alt": "The Feature Lab Appearance tab showing the Look selector set to Studio dark, with a hint that Studio is an opt-in preset, the color-by selector with feature role active, and a legend of outer wall, inner wall, infill and support colors"
     },
     {
       "name": "app-diagnostics",
@@ -37,8 +37,47 @@
       "mode": "prepare",
       "fixture": "colored-3mf",
       "view": "iso",
-      "caption": "Prepare mode: interactive source-model viewing (STL / 3MF) — the same app viewing a colored 3MF before slicing, with the honest materials capability tier and object/placement counts.",
-      "alt": "The Feature Lab in Prepare mode showing a colored 3MF source model (red, amber, green stacked blocks), a Source Model panel reporting 3 objects, 3 placements, and materials: known, and camera controls"
+      "caption": "Prepare mode: interactive source-model viewing (STL / 3MF) on a 256 mm build plate, with the honest materials tier, the object/placement counts and the plate-placement line (tier and offset exactly as the viewer reports them).",
+      "alt": "The Feature Lab in Prepare mode showing a colored 3MF source model on a build plate under the Studio look, with a Source Model panel reporting 3 objects, 3 placements and materials known, and a Build Plate panel with a placement line"
+    },
+    {
+      "name": "app-studio-light",
+      "mode": "preview",
+      "fixture": "benchy",
+      "tab": "appearance",
+      "color": "feature",
+      "look": "studio-light",
+      "view": "iso",
+      "caption": "The Studio light look on the same 3DBenchy: opt in with `theme: studioTheme('light')` and `cameraFov: STUDIO_CAMERA_FOV`. Without a theme the SDK renders its default look.",
+      "alt": "The Feature Lab with the Look selector set to Studio light: a 3DBenchy colored by feature role on a pale grey gradient backdrop above a mid-grey build plate with a white-and-dark grid and a soft contact shadow"
+    },
+    {
+      "name": "app-lens-compare",
+      "kind": "lens-compare",
+      "mode": "preview",
+      "fixture": "benchy",
+      "view": "iso",
+      "lenses": [
+        50,
+        32
+      ],
+      "labels": [
+        "50° — SDK default lens",
+        "32° — Studio lens (cameraFov: 32)"
+      ],
+      "caption": "The same 3DBenchy at the SDK default 50° lens (left) and the Studio preset's 32° lens (right): a longer lens flattens perspective, and the framing is lens-aware so the model stays fully in view at both.",
+      "alt": "Two renders of the same 3DBenchy side by side, labelled 50 degrees (SDK default lens) and 32 degrees (Studio lens); the 32 degree render shows less perspective distortion, and the model fits the frame in both"
+    },
+    {
+      "name": "app-prepare-plate",
+      "mode": "prepare",
+      "fixture": "two-plate-3mf",
+      "plate": 2,
+      "dolly": 6,
+      "tab": "prepare",
+      "view": "iso",
+      "caption": "Plate selection on a SYNTHETIC two-plate 3MF (generated for the demo, not a slicer export): plate 2 is selected through render scope, and the placement line reads `inferred` with the one-workspace-cell offset the viewer subtracted to draw it on the bed.",
+      "alt": "The Feature Lab in Prepare mode showing one block on a build plate, the plate selector set to the second synthetic plate, and the placement line reading inferred with an x offset of minus 307.2 millimetres"
     }
   ]
 }

@@ -308,6 +308,11 @@
       .gp-panel[hidden] {
         display: none;
       }
+      /* The Prepare plate selector hides itself on a single-plate source. */
+      .gp-field[hidden],
+      .gp-hint[hidden] {
+        display: none;
+      }
 
       /* responsive: collapse the rail to an overlay drawer on narrow widths */
       @media (max-width: 1100px) {
@@ -452,14 +457,20 @@
             <section class="gp-panel" data-panel="appearance" hidden>
               <h3>Scene</h3>
               <div class="gp-field">
-                <label for="theme">Theme</label>
+                <label for="theme">Look</label>
                 <select id="theme" class="gp-input">
-                  <option value="docgrey" selected>Documentation grey</option>
-                  <option value="default">Studio (dark)</option>
+                  <option value="studio-dark" selected>Studio dark</option>
+                  <option value="studio-light">Studio light</option>
+                  <option value="docgrey">Documentation grey</option>
+                  <option value="default">SDK default (no theme)</option>
                   <option value="blueprint">Blueprint</option>
                   <option value="light">Light</option>
                   <option value="bedplate">Bed plate</option>
                 </select>
+                <p class="gp-hint">
+                  Studio is an opt-in preset: <code>theme: studioTheme('dark')</code>. With no theme the SDK
+                  keeps its default look.
+                </p>
               </div>
               <div class="gp-field">
                 <label for="material">Extrusion material</label>
@@ -488,6 +499,17 @@
                   <button class="gp-btn" data-view="right">Right</button>
                   <button class="gp-btn" data-view="iso">Iso</button>
                 </div>
+              </div>
+              <div class="gp-field">
+                <label for="lens">Lens (perspective field of view)</label>
+                <div class="gp-row">
+                  <input type="range" id="lens" class="gp-range" min="10" max="120" step="1" value="32" />
+                  <span class="gp-mono" id="lensLbl">32°</span>
+                </div>
+                <p class="gp-hint" id="lensNote">
+                  10–120°; the SDK default is 50°, the Studio preset uses 32°. A lens set while orthographic
+                  applies when you return to perspective.
+                </p>
               </div>
               <div class="gp-row">
                 <button class="gp-btn" id="saveView">Save view</button>
@@ -586,6 +608,23 @@
               <h3>Source model</h3>
               <p class="gp-hint" id="modelBlurb">Pick a model and press Load to view it before slicing.</p>
               <div class="gp-mono" id="modelInfo" style="margin-top: var(--gp-space-3)">—</div>
+            </section>
+            <section class="gp-panel" data-panel="prepare" hidden>
+              <h3>Build plate</h3>
+              <label class="gp-toggle"><span>Show 256 mm build plate</span><input type="checkbox" id="modelPlate" checked /></label>
+              <div class="gp-mono" id="placementInfo" style="margin-top: var(--gp-space-3)">placement: none (no plate drawn)</div>
+              <p class="gp-hint">
+                The tier is how the part's position on the plate was decided: <code>known</code> (a slicer
+                project places it on the bed), <code>inferred</code> (a whole workspace-cell offset was
+                subtracted) or <code>approximated</code> (centred on the bed). No tier is shown while no
+                plate is drawn or several plates are in scope.
+              </p>
+              <div class="gp-field" id="plateField" hidden>
+                <label for="plateSelect">Plate (render scope)</label>
+                <select id="plateSelect" class="gp-input"></select>
+                <p class="gp-hint">Drives <code>controls.setRenderScope({ plateId })</code>; “All plates” clears it.</p>
+              </div>
+              <p class="gp-hint" id="plateNone">This source declares no plates, so there is nothing to select.</p>
             </section>
           </div>
         </aside>

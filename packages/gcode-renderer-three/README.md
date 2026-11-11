@@ -29,6 +29,43 @@ renderer.setLayerRange(0, 42);
 renderer.setProgress(mapped); // DD-006 MappedProgress overlay
 ```
 
+## Studio look (opt-in)
+
+`studioTheme('dark' | 'light')` returns a `Theme` (gradient backdrop, solid build plate with grid and outline,
+contact shadow) and `STUDIO_CAMERA_FOV` is `32`. Both are optional: with no theme the renderer is unchanged.
+
+```ts
+import { ToolpathRenderer, studioTheme, STUDIO_CAMERA_FOV } from '@chestnutlabs/gcode-renderer-three';
+
+const renderer = new ToolpathRenderer({ canvas, theme: studioTheme('dark'), cameraFov: STUDIO_CAMERA_FOV });
+renderer.setBuildVolumeCage(false); // the preset is measured with the cage off
+```
+
+`cameraFov` accepts 10-120 degrees and throws `RangeError` outside it. See the
+[Studio look and build plate guide](https://github.com/ChestnutLabs/gcode-preview/blob/dev/docs/manual/guide-looks-lens-plate.md).
+
+## Tighter limits on software GL
+
+On headless or software-rendered GL (CI, a VM, a remote desktop) a large file can exhaust memory long before it is
+slow. Nothing in the renderer adapts to this for you yet (`resolveCapability` and `capabilityHint` are
+experimental and diagnostic-only), so read the context yourself and pick tighter limits:
+
+```ts
+import { detectRenderCapability } from '@chestnutlabs/gcode-renderer-three';
+
+const gl = document.createElement('canvas').getContext('webgl2'); // a scratch canvas, not the one you render to
+const { capability } = gl ? detectRenderCapability(gl) : { capability: 'unknown' };
+const constrained = capability !== 'hardware'; // 'unknown' (extension blocked) is treated as constrained
+
+// pass to the parse step (adapters: `parseOptions`) and, on a direct renderer, to `tubeByteBudget`
+const parseOptions = constrained ? { limits: { maxSegments: 2_000_000 } } : {};
+const tubeByteBudget = constrained ? 100_000_000 : undefined;
+```
+
+`detectRenderCapability` never throws; it returns `{ capability: 'unknown', rawRenderer: null }` when the browser hides the
+renderer string. The two numbers above are starting points to tune for your hardware, not recommendations
+from measurement.
+
 Most applications should consume this through [`@chestnutlabs/gcode-preview-core`](../gcode-preview-core/README.md)
 or a framework adapter, which own the parse→render lifecycle.
 

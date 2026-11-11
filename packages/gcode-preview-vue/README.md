@@ -125,6 +125,29 @@ and the `useModelViewer` composable mirror the toolpath component. See
 [`docs/manual/adapters.md`](../../docs/manual/adapters.md) "Two viewers: Preview and Prepare" for the
 cross-adapter tour, and `tools/example-vue/model.html` for a runnable minimal page.
 
+## Look, lens and plate (opt-in)
+
+`<GcodePreview>` and `<ModelViewer>` both take `:theme` and `:camera-fov`; `<ModelViewer>` also takes
+`:build-volume`. The Studio look is an opt-in preset: set nothing and the viewers render as before.
+
+```vue
+<script setup lang="ts">
+import { GcodePreview } from '@chestnutlabs/gcode-preview-vue';
+import { ModelViewer } from '@chestnutlabs/gcode-preview-vue/model';
+import { studioTheme, STUDIO_CAMERA_FOV } from '@chestnutlabs/gcode-renderer-three';
+</script>
+
+<template>
+  <GcodePreview :source="file" :theme="studioTheme('dark')" :camera-fov="STUDIO_CAMERA_FOV" :show-volume-cage="false" />
+  <ModelViewer :source="model" :build-volume="{ x: 256, y: 256, z: 256 }" :theme="studioTheme('dark')" />
+</template>
+```
+
+`:camera-fov` takes 10-120 degrees (the default is 50) and throws `RangeError` outside it. The model viewer reports
+`placement` (`known` / `inferred` / `approximated`, or `null` with no plate) and `placementOffset` on `@ready` and in its state.
+Define the theme once (a `computed` or a constant) so it is not re-applied on every render. The 2D renderer ignores
+`theme` and `camera-fov`. See the [Studio look and build plate guide](https://github.com/ChestnutLabs/gcode-preview/blob/dev/docs/manual/guide-looks-lens-plate.md).
+
 ## Examples
 
 `tools/example-vue` in the repository is a Vite app with two tiers, both driving this published

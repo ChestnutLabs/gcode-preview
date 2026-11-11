@@ -14,6 +14,7 @@ import '@chestnutlabs/gcode-preview-element/define';
 // `gcode-model-viewer`, not the reserved `model-viewer`.
 import '@chestnutlabs/gcode-preview-element/model/define';
 import { FeatureRole } from '@chestnutlabs/toolpath-core';
+import { studioTheme, STUDIO_CAMERA_FOV } from '@chestnutlabs/gcode-renderer-three';
 import {
   FIXTURE_GROUPS,
   FIXTURE_BY_ID,
@@ -27,7 +28,12 @@ import {
   count as formatCount,
   duration as formatDuration,
   DOC_VIEWPORT_THEME,
-  DOC_VIEWPORT_BG
+  DOC_VIEWPORT_BG,
+  LOOKS,
+  LOOK_BY_ID,
+  DEFAULT_LENS,
+  TWO_PLATE_BED,
+  placementLine
 } from '../../demo-kit/index.js';
 import '../../demo-kit/tokens.css';
 
@@ -41,8 +47,40 @@ const modelView = $('modelView');
 // Both viewers render into the shared documentation mid-grey workspace (theme/background are object
 // properties on the elements, not attributes) so the Web Component demo matches the Feature Lab, the
 // other framework showcases, and the docs imagery.
-view.theme = DOC_VIEWPORT_THEME;
 modelView.background = DOC_VIEWPORT_BG;
+
+// DD-032: Studio is an OPT-IN preset (`element.theme = studioTheme('dark')` + `camera-fov="32"`); the SDK default
+// look is unchanged. This showcase starts on it and keeps the previous grey one click away. On the Web
+// Component `theme` / `buildVolume` are PROPERTIES (objects); the lens is the `camera-fov` ATTRIBUTE.
+let lookId = 'studio-dark';
+function applyLook() {
+  const m = LOOK_BY_ID[lookId].mode;
+  view.theme = m ? studioTheme(m) : DOC_VIEWPORT_THEME;
+  modelView.theme = m ? studioTheme(m) : undefined;
+  view.showVolumeCage = m === null; // the Studio look is measured with the cage off
+  $('lookSeg').innerHTML = LOOKS.map(
+    (l) => `<button data-look="${l.id}" class="${l.id === lookId ? 'gp-on' : ''}">${l.label}</button>`
+  ).join('');
+}
+function setLens(deg) {
+  $('lens').value = String(deg);
+  $('lensValue').textContent = `${deg}°`;
+  // Attributes: an invalid value is ignored and the last valid lens kept (the property would throw).
+  view.setAttribute('camera-fov', String(deg));
+  modelView.setAttribute('camera-fov', String(deg));
+}
+$('lookSeg').addEventListener('click', (e) => {
+  const b = e.target.closest('[data-look]');
+  if (!b) return;
+  lookId = b.dataset.look;
+  applyLook();
+  setLens(LOOK_BY_ID[lookId].mode ? STUDIO_CAMERA_FOV : DEFAULT_LENS);
+});
+$('lens').addEventListener('input', (e) => setLens(Number(e.target.value)));
+$('lensNote').textContent = `The SDK default is ${DEFAULT_LENS}°; the Studio preset uses ${STUDIO_CAMERA_FOV}°.`;
+modelView.buildVolume = TWO_PLATE_BED;
+applyLook();
+setLens(STUDIO_CAMERA_FOV);
 let caps = {};
 let layers = 0;
 let segments = 0;
@@ -60,7 +98,10 @@ function fillPreviewFixtures() {
   $('fixture').value = 'skirt-brim';
 }
 function fillModelFixtures() {
-  $('fixture').innerHTML = MODEL_FIXTURES.map((m) => `<option value="${m.id}">${m.label}</option>`).join('');
+  // The multi-plate fixture needs a plate selector (see the Feature Lab); the showcase lists single-plate models.
+  $('fixture').innerHTML = MODEL_FIXTURES.filter((m) => !m.plates)
+    .map((m) => `<option value="${m.id}">${m.label}</option>`)
+    .join('');
   $('fixture').value = 'colored-3mf';
 }
 fillPreviewFixtures();
@@ -272,7 +313,8 @@ function renderModelPanel() {
       `<div>objects: ${formatCount(modelInfo.objectCount)}</div>`,
       `<div>placements: ${formatCount(modelInfo.instancedCount)}</div>`,
       `<div>materials: <span class="gp-badge ${tier.cls}">${tier.label}</span></div>`,
-      modelInfo.plates ? `<div>plates: ${modelInfo.plates.list.length}</div>` : ''
+      modelInfo.plates ? `<div>plates: ${modelInfo.plates.list.length}</div>` : '',
+      `<div>${placementLine(modelInfo.placement, modelInfo.placementOffset)}</div>`
     ]
       .filter(Boolean)
       .join('');

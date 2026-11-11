@@ -140,6 +140,12 @@ are now closed:
   Preview pairing and a controls/capabilities pairing appear early; the homepage hero + a demos
   banner + a Prepare/Preview card were added; the gallery gained a "Try it live" section and swapped
   the stale `diagnostics-panel` for `app-diagnostics`.
+- **Studio look, lens and plate (DD-032).** New app-UI shots: `app-studio-light`, `app-lens-compare` (two real
+  Feature Lab renders side by side, plus labels) and `app-prepare-plate`; the four existing app shots were
+  regenerated because the Feature Lab now starts on Studio dark. The mid-grey capability renders are
+  deliberately **not** re-skinned: Studio is an opt-in preset and the SDK default look is unchanged, so those
+  images still represent what a consumer gets without a theme. Every page that shows a Studio image says it is opt-in.
+  Known gap: the model viewer has no cage control yet, so its cage lines stay visible under Studio in Prepare.
 - **Reproducibility / release gate:** `docs:shots` (capability renders) and `docs:shots:app` (app-UI)
   regenerate the media; the RELEASE_REVIEW Visual disposition now explicitly covers app-UI + live-demo
   parity so a future cut can't advertise a stale UI (see the release template).
@@ -221,8 +227,8 @@ are now closed:
 | Interactive model viewer (`createModelViewer`) | ✅ | model-viewer page + Feature Lab (Prepare) | — | ✅ (prose) | gallery | model-renderer README | covered (interactive) — Feature Lab + all 4 showcases have a Prepare mode; animation still nice-to-have |
 | Model-viewer framework adapters (`<ModelViewer>` / `/model`) | ✅ | Feature Lab + 4 showcases (Prepare) + model.html minimals + **live demos on Pages** | `app-prepare` | ✅ (table + README pairing) | homepage + gallery | adapters + 4 READMEs | covered — app-UI shot + running demos |
 | Multi-object files | ✅ | model page | — | mention | gallery | — | needs screenshot |
-| Multi-plate files + per-plate render | ✅ | ❌ | — | ❌ | gallery | — | needs demo exposure + needs comparison |
-| Render scope / object subsets (`RenderScope`) | ✅ | ❌ | — | ❌ | gallery | recipes | needs demo exposure + needs comparison |
+| Multi-plate files + per-plate render | ✅ | Feature Lab Prepare plate selector (synthetic two-plate 3MF) | `app-prepare-plate` | ❌ | gallery | recipes | covered (single selected plate); a side-by-side comparison is still nice-to-have |
+| Render scope / object subsets (`RenderScope`) | ✅ | Feature Lab plate selector (`{ plateId }` only) | `app-prepare-plate` | ❌ | gallery | recipes ("Show one plate of a multi-plate 3MF") | covered for `{ plateId }`; `{ objectIds }` / `{ instanceFilter }` have no demo (non-visual selectors) |
 | Instance-aware rendering ("N copies") | ✅ | ❌ | — | ❌ | — | — | needs screenshot (badge) |
 
 ## 7. Machine / build geometry
@@ -233,7 +239,10 @@ are now closed:
 | Circular / delta bed | ✅ | harness | `bed-circular` | ✅ | gallery | concept-dialects-containers | covered (media + README + gallery); interactive bed selector still pending |
 | Polygonal bed | ✅ | harness | `bed-polygon` | ✅ | gallery | concept-dialects-containers | covered (media + README + gallery); interactive bed selector still pending |
 | Excluded-region outlines | ✅ | ✅ | — | ❌ | — | — | needs screenshot |
-| Bed surface / texture themes | ✅ | ✅ | — | mention | gallery | — | needs screenshot |
+| Bed surface / texture themes | ✅ | ✅ | `app-studio-light`, `app-control-panel` | ✅ | gallery | guide-looks-lens-plate | covered (via the Studio look, which uses the solid bed surface) |
+| Studio look preset (`studioTheme`, opt-in; gradient backdrop, plate, outline, contact shadow) | ✅ | Feature Lab Look selector (starts on Studio dark) + 4 showcases | `app-control-panel` (dark), `app-studio-light` | ✅ (README caption states opt-in) | homepage card + gallery | guide-looks-lens-plate + adapters + 4 READMEs + renderer-three README | covered — every page showing it says it is an opt-in preset and the default look is unchanged |
+| Camera lens (`cameraFov`, 10-120°) | ✅ | Feature Lab Lens slider + 4 showcases | `app-lens-compare` (50° vs 32°) | ✅ | gallery | guide-looks-lens-plate + adapters | covered |
+| Model-viewer build plate + honest `placement` (`known`/`inferred`/`approximated`/`null`) | ✅ | Feature Lab Prepare (plate toggle, placement line) + showcases (placement line) | `app-prepare`, `app-prepare-plate` | ✅ | gallery | guide-looks-lens-plate | covered — the multi-plate demo file is synthetic and labelled so; only the `inferred` and `known` paths are shown for it, `approximated` for the STL/3MF fixtures |
 
 ## 8. CNC / laser / plotter
 

@@ -79,6 +79,49 @@ imperative `controls.parse(bytes, { plate: 1 })`. When the source is a `Uint8Arr
 `bytes.slice()`. (Re-parsing a now-empty buffer fails cleanly with `E_POST_FAILED`; it no longer
 wedges the preview.)
 
+## Show one plate of a multi-plate 3MF
+
+A Bambu/Orca project 3MF can declare several plates. The model viewer reports them on `ready`
+(`info.plates.list`, each with an `id`, optional `name`, and counts), and a **render scope** draws one plate alone.
+Offer a selector only when the source declares plates:
+
+```tsx
+import { ModelViewer } from '@chestnutlabs/gcode-preview-react/model';
+
+function PlateViewer({ source }) {
+  const [plates, setPlates] = useState([]);
+  const [plateId, setPlateId] = useState(null); // null = every plate
+
+  return (
+    <>
+      {plates.length > 0 && (
+        <select value={plateId ?? 'all'} onChange={(e) => setPlateId(e.target.value === 'all' ? null : Number(e.target.value))}>
+          <option value="all">All plates</option>
+          {plates.map((p) => (
+            <option key={p.id} value={p.id}>{p.name ?? `Plate ${p.id}`}</option>
+          ))}
+        </select>
+      )}
+      <ModelViewer
+        source={source}
+        buildVolume={{ x: 256, y: 256, z: 256 }}
+        renderScope={plateId === null ? null : { plateId }}
+        onReady={(info) => setPlates(info.plates?.list ?? [])}
+      />
+    </>
+  );
+}
+```
+
+The same scope is `controls.setRenderScope({ plateId })` on any adapter, and `renderScope` on `renderModelStill`.
+Other scopes are `{ objectIds }` and `{ instanceFilter }`. Three things to know:
+
+- A source with no declared plates (an STL, a CAD 3MF) has no `info.plates`; `{ plateId }` on such a source matches nothing and renders an empty scene, so gate the selector on `info.plates`.
+- The camera re-fits to the selected plate. With a `buildVolume`, each selection also reports its own `placement` (`known` for plate 1, `inferred` for a later plate whose parts sit one workspace cell over); with every plate in scope there is no single bed, so `placement` is `null` and no plate is drawn. See [Studio look and build plate](guide-looks-lens-plate.md).
+- Reloading a different source: clear or reset the scope first, because a plate id from the previous file selects nothing in the next one.
+
+The Feature Lab's Prepare mode has this selector, on a synthetic two-plate project.
+
 ## A custom worker (slim build, other bundlers, strict CSP)
 
 By default the adapters create a *batteries* worker (every dialect adapter + `.gcode.3mf`) via the

@@ -94,6 +94,28 @@ store handle mirrors the toolpath component. See
 [`docs/manual/adapters.md`](../../docs/manual/adapters.md) "Two viewers: Preview and Prepare" for the
 cross-adapter tour, and `tools/example-svelte/model.html` for a runnable minimal page.
 
+## Look, lens and plate (opt-in)
+
+`GcodePreview` and `ModelViewer` both take `theme` and `cameraFov`; `ModelViewer` also takes `buildVolume`. The
+Studio look is an opt-in preset: set nothing and the viewers render as before.
+
+```svelte
+<script>
+  import GcodePreview from '@chestnutlabs/gcode-preview-svelte/GcodePreview.svelte';
+  import ModelViewer from '@chestnutlabs/gcode-preview-svelte/model/ModelViewer.svelte';
+  import { studioTheme, STUDIO_CAMERA_FOV } from '@chestnutlabs/gcode-renderer-three';
+
+  const theme = studioTheme('dark');
+</script>
+
+<GcodePreview source={file} {theme} cameraFov={STUDIO_CAMERA_FOV} showVolumeCage={false} />
+<ModelViewer source={model} buildVolume={{ x: 256, y: 256, z: 256 }} {theme} />
+```
+
+`cameraFov` takes 10-120 degrees (the default is 50) and throws `RangeError` outside it. The model viewer reports
+`placement` (`known` / `inferred` / `approximated`, or `null` with no plate) and `placementOffset` in `on:ready` and its state.
+The 2D renderer ignores `theme` and `cameraFov`. See the [Studio look and build plate guide](https://github.com/ChestnutLabs/gcode-preview/blob/dev/docs/manual/guide-looks-lens-plate.md).
+
 ## Examples
 
 `tools/example-svelte` in the repository is a Vite app with two tiers, both driving this published

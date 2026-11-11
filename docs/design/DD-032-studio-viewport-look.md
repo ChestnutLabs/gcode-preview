@@ -489,3 +489,10 @@ Release v0.22.0 per `docs/reference/release-process.md` after D, with the owner'
   and the centring, and trusts `printable_area` only when it matches the drawn bed within 1 mm per edge
   (otherwise `approximated`). `printable_area` points over 64 characters are rejected. No tier or field
   renamed.
+- 2026-11-11: Lane D validation re-render of the shipped preset (dev `7469a64`, software GL, 32°, shipped
+  `resolveTheme` + `createBackdrop` + `createBuildVolume` + `createContactShadow`). Top face is exactly `#7c8086`
+  at thickness 4. Minor contrast 1.205 dark / 1.238 light (Round 2: 1.21 / 1.24). **Major lines 1.649 / 1.899
+  against Round-2 1.84 / 2.15, and outline-only edges 2.757 / 2.689 against 3.03 / 3.07 (below 3:1): both miss.**
+  Black body against plate is 4.02; white is 2.92 (white base against shadow 2.61). The grid stays visible inside
+  the contact shadow and is identical across all eight filament × theme cells. Preset values were not changed;
+  the cause is undiagnosed and reported to the lead. Data kept outside the repo.
