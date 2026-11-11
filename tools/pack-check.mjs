@@ -80,7 +80,12 @@ for (const name of PACKAGES) {
   // 1) pack contents snapshot
   const packJson = run(['pack', '--dry-run', '--json'], dir, `${name} pack`);
   const parsed = JSON.parse(packJson);
-  const files = parsed[0].files.map((f) => f.path.replace(/\\/g, '/')).sort();
+  // npm ≤11 emits an array of pack results; npm 12 emits an object keyed by package name.
+  const result = Array.isArray(parsed) ? parsed[0] : Object.values(parsed ?? {})[0];
+  if (!result || !Array.isArray(result.files)) {
+    throw new Error(`${name}: unrecognised \`npm pack --dry-run --json\` output shape`);
+  }
+  const files = result.files.map((f) => f.path.replace(/\\/g, '/')).sort();
   next[name] = files;
   const allowedRoots =
     /^(dist\/|package\.json$|README(\.md)?$|LICENSE(\.md)?$|NOTICE\.md$|CHANGELOG\.md$|GcodePreview\.svelte$)/;
