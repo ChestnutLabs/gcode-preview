@@ -216,9 +216,18 @@ Rules:
     `fitBox` reads `camera.fov`.
   - At 32° that offset shows a half-height of only 2.69·tan 16° ≈ 0.77 r, so the framed sphere is cropped.
 
-  So `framingFromCenterRadius(center, r, fov = 50)` scales the perspective offset by tan 25° / tan(fov/2), with
-  an **exact short-circuit at 50** so default positions are byte-identical. The orthographic `viewHalfHeight`
-  stays 1.25 r, so toggling projection still keeps apparent size.
+  So `framingFromCenterRadius(center, r, fov = 50)` scales the perspective offset by
+  **max(tan 25° / tan(fov/2), sin 25° / sin(fov/2))**, with an **exact short-circuit at 50** so default
+  positions are byte-identical.
+  - **The tan term** keeps the visible half-height at the target at 1.25 r. It wins below 50° (32° → ×1.626).
+  - **The sin term** is the sphere-fit distance (d ≥ r / sin(fov/2)) with today's margin. Wider lenses need
+    it: the tan term alone would put the camera **inside** the bounding sphere above ~74° (0.72 r at 120°).
+    With it, 120° sits at 1.31 r against a 1.155 r minimum.
+  - **The two are equal at 50°**, so the rule is continuous.
+
+  The orthographic `viewHalfHeight` stays 1.25 r, so toggling projection still keeps apparent size. The live
+  lens setter keeps the pure tan dolly, because its job is to keep the user's current apparent size, not to
+  re-fit.
 - **Distance limits scale with the lens.** `frameTo` sets the orbit controls' `minDistance` = max(1, 0.15 r)
   and `maxDistance` = 30 r, then clamps. Both limits are scaled by the same tan 25° / tan(fov/2) factor (an
   exact no-op at 50), so a lens-aware frame is never clamped into a crop.
@@ -453,3 +462,5 @@ Release v0.22.0 per `docs/reference/release-process.md` after D, with the owner'
     the bed source, negative multiples, the cell observed pending the fixture); the §7 header reworded.
   - **Found in passing:** a quadratic `<plate>` regex, filed as #468 (P1, hostile-file hang). It must merge
     before Lane C touches `three-mf.ts`.
+- 2026-11-11: Lane A (PR #470) found the pure tan framing rule puts the camera inside the bounding sphere
+  above ~74°. The framing scale is now max(tan rule, sin rule), identical at 50° and below. No decision changed.
