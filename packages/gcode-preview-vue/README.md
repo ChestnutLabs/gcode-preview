@@ -139,9 +139,17 @@ import { studioTheme, STUDIO_CAMERA_FOV } from '@chestnutlabs/gcode-renderer-thr
 
 <template>
   <GcodePreview :source="file" :theme="studioTheme('dark')" :camera-fov="STUDIO_CAMERA_FOV" :show-volume-cage="false" />
-  <ModelViewer :source="model" :build-volume="{ x: 256, y: 256, z: 256 }" :theme="studioTheme('dark')" />
+  <ModelViewer
+    :source="model"
+    :build-volume="{ x: 256, y: 256, z: 256 }"
+    :theme="studioTheme('dark')"
+    :show-volume-cage="false"
+  />
 </template>
 ```
+
+`<ModelViewer>` takes `:show-volume-cage` too (default `true`; `false` drops only the wireframe and keeps the plate,
+grid and shadow), and `controls.setBuildVolumeCage(visible)` changes it live.
 
 `:camera-fov` takes 10-120 degrees (the default is 50) and throws `RangeError` outside it. The model viewer reports
 `placement` (`known` / `inferred` / `approximated`, or `null` with no plate) and `placementOffset` on `@ready` and in its state.

@@ -121,13 +121,14 @@ The [Studio look and build plate](guide-looks-lens-plate.md) guide has the full 
 | Lens | `cameraFov` / `camera-fov`, `controls.setCameraFov(deg)` | the same |
 | Plate | `buildVolume` (already there) | `buildVolume` (new), `controls.setBuildVolume(def \| null)` |
 | Placement | n/a | `placement` + `placementOffset` on `ready` and in state: `known` / `inferred` / `approximated`, or `null` when no plate is drawn |
-| Cage | `showVolumeCage`, `controls.setBuildVolumeCage` | not available yet; only `capture({ includeBuildVolume: false })` hides the plate |
+| Cage | `showVolumeCage` / `show-volume-cage`, `controls.setBuildVolumeCage(visible)` | the same; it drops only the wireframe, the plate, grid and shadow stay |
 
 Deliberate differences, not drift:
 
 - **Web Component.** `camera-fov` is an attribute (on `<gcode-preview>` and `<gcode-model-viewer>`) and `cameraFov` a
   property. An invalid attribute value (non-numeric or outside 10-120) is ignored and the last valid lens is kept; setting
   the property to an invalid value throws `RangeError`. `theme` and `buildVolume` are properties only (objects).
+  `show-volume-cage` is an attribute too: absent or anything but `"false"` means the cage is on.
 - **Model viewer themes.** Only `background`, the grid and outline fields, `bedSurface` and `contactShadow` apply.
   `theme.background` beats the `background` prop, which is the fallback tier.
 - **2D renderer** (`renderer="2d"`). A flat top-down view: `theme` and the cage are ignored (no-ops); a lens or

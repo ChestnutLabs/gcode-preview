@@ -145,7 +145,8 @@ are now closed:
   regenerated because the Feature Lab now starts on Studio dark. The mid-grey capability renders are
   deliberately **not** re-skinned: Studio is an opt-in preset and the SDK default look is unchanged, so those
   images still represent what a consumer gets without a theme. Every page that shows a Studio image says it is opt-in.
-  Known gap: the model viewer has no cage control yet, so its cage lines stay visible under Studio in Prepare.
+  The model viewer's cage toggle (#490) is now in the Feature Lab, so the Prepare shots follow the Cage setting
+  (off under Studio).
 - **Studio recapture and Pixel ratio.** All seven app-UI shots were recaptured after the Studio preset retune (major
   and outline contrast), and they now show the Feature Lab's Pixel ratio selector. Pixel ratio has no image of its
   own by design (see its row). Known gap: `capture.mjs` (the mid-grey capability renders) still drives the
@@ -218,7 +219,7 @@ are now closed:
 | Perspective vs orthographic | ✅ | ✅ | (in camera trio) | ✅ | gallery | — | covered |
 | Saved/restored camera state | ✅ | ✅ | — | mention | — | recipes | not visually meaningful |
 | Object-aware framing (`frameContent`) | ✅ | ✅ | `frame-all`/`frame-object` | ✅ (prose) | gallery | concept-ir-capabilities | covered — whole-job vs model-aware comparison in the gallery |
-| Build-volume cage toggle | ✅ | ✅ | — | mention | gallery | — | needs screenshot |
+| Build-volume cage toggle (toolpath and model viewer) | ✅ | Feature Lab Cage toggle (both viewers) | `app-control-panel`, `app-prepare` (Studio, cage off) | mention | gallery | guide-looks-lens-plate + adapters + 4 READMEs | covered (the cage-on look is the SDK default, shown in the mid-grey capability renders) |
 | Capture / export → Blob | ✅ | ✅ | — | ✅ | gallery | recipes | covered (demo Capture PNG + README + gallery); in-context screenshot pending |
 | Transparent / independent-background capture | ✅ | ✅ (via capture) | — | ✅ | gallery | recipes | demo + README covered; checkerboard screenshot pending |
 

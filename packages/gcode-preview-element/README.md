@@ -120,7 +120,7 @@ cross-adapter tour, and `tools/example-webcomponent/model.html` for a runnable m
 
 ```html
 <gcode-preview camera-fov="32" show-volume-cage="false"></gcode-preview>
-<gcode-model-viewer camera-fov="32"></gcode-model-viewer>
+<gcode-model-viewer camera-fov="32" show-volume-cage="false"></gcode-model-viewer>
 <script type="module">
   import { studioTheme } from '@chestnutlabs/gcode-renderer-three';
   document.querySelector('gcode-preview').theme = studioTheme('dark');
@@ -129,6 +129,10 @@ cross-adapter tour, and `tools/example-webcomponent/model.html` for a runnable m
   model.buildVolume = { x: 256, y: 256, z: 256 };
 </script>
 ```
+
+`<gcode-model-viewer>` has the cage attribute too: `show-volume-cage` (absent or anything but `"false"` = cage on) with a
+matching `showVolumeCage` property, and `controls.setBuildVolumeCage(visible)`. Off drops only the wireframe; the plate,
+grid and shadow stay.
 
 `camera-fov` takes 10-120 degrees (the default is 50). **An invalid attribute value (non-numeric or outside that
 range) is ignored and the last valid lens is kept; setting the `cameraFov` property to an invalid value throws

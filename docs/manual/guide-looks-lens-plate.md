@@ -26,6 +26,8 @@ import { studioTheme, STUDIO_CAMERA_FOV } from '@chestnutlabs/gcode-renderer-thr
 `studioTheme('dark' | 'light')` returns an ordinary `Theme`, and `STUDIO_CAMERA_FOV` is `32`. Both are exported by
 `@chestnutlabs/gcode-renderer-three`, `@chestnutlabs/gcode-preview-core` and `@chestnutlabs/gcode-model-renderer`. The preset was measured with the
 build-volume cage **off**, so turn it off with it (`showVolumeCage={false}`); the cage is a separate control, not a `Theme` field.
+Both viewers take it: `<ModelViewer>` has the same `showVolumeCage` prop and `controls.setBuildVolumeCage(visible)`, and
+turning the cage off keeps the plate, grid and contact shadow.
 
 | Look | Backdrop | Plate and grid |
 | --- | --- | --- |
@@ -78,7 +80,12 @@ a `buildVolume` that draws a plate under the part:
 ```tsx
 import { ModelViewer } from '@chestnutlabs/gcode-preview-react/model';
 
-<ModelViewer source={source} buildVolume={{ x: 256, y: 256, z: 256 }} theme={studioTheme('dark')} />;
+<ModelViewer
+  source={source}
+  buildVolume={{ x: 256, y: 256, z: 256 }}
+  theme={studioTheme('dark')}
+  showVolumeCage={false}
+/>;
 ```
 
 The model viewer applies only the plate and backdrop part of a theme (`background`, the grid and outline fields,

@@ -109,8 +109,11 @@ Studio look is an opt-in preset: set nothing and the viewers render as before.
 </script>
 
 <GcodePreview source={file} {theme} cameraFov={STUDIO_CAMERA_FOV} showVolumeCage={false} />
-<ModelViewer source={model} buildVolume={{ x: 256, y: 256, z: 256 }} {theme} />
+<ModelViewer source={model} buildVolume={{ x: 256, y: 256, z: 256 }} {theme} showVolumeCage={false} />
 ```
+
+`ModelViewer` takes `showVolumeCage` too (default `true`; `false` drops only the wireframe and keeps the plate, grid and
+shadow), and `controls.setBuildVolumeCage(visible)` changes it live.
 
 `cameraFov` takes 10-120 degrees (the default is 50) and throws `RangeError` outside it. The model viewer reports
 `placement` (`known` / `inferred` / `approximated`, or `null` with no plate) and `placementOffset` in `on:ready` and its state.
