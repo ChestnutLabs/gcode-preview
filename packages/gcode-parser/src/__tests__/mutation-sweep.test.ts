@@ -82,8 +82,13 @@ describe('limits: an explicit `undefined` keeps the default bound (defect: disab
     expect(codes).toContain('line-too-long');
   });
 
-  it('maxProgramIterations: undefined still stops `o1 while [1]` (was an endless loop)', () => {
-    const { codes } = ends('o1 while [1]\no1 endwhile\n', { limits: { maxProgramIterations: undefined } });
+  it('maxProgramIterations: undefined still stops a long loop at the default bound (was unbounded)', () => {
+    // A bounded loop, not `while [1]`: the loop is synchronous, so a test timeout can never fire. Each
+    // pass costs 2 units (the pass + its one statement), so the default 1e6 budget trips near pass
+    // 500 000. With the defect all 600 000 passes run to the end with no warning, and this fails in
+    // seconds instead of hanging CI.
+    const prog = ['#1=0', 'o1 while [#1 lt 600000]', '#1=[#1+1]', 'o1 endwhile', ''].join('\n');
+    const { codes } = ends(prog, { limits: { maxProgramIterations: undefined } });
     expect(codes).toContain('rs274-iteration-limit');
   });
 
@@ -413,5 +418,22 @@ describe('numbers beyond float32 are dropped and disclosed (defect: stored as In
     expect(ir.segments.y1[1] + ir.header.originOffset.y).toBe(2);
     expect(codes).toContain('number-out-of-range');
     expect(codes).not.toContain('rs274-non-finite-value');
+  });
+
+  it('a bracket expression at the float32 limit is kept with no warning', () => {
+    const { ir, codes } = ends('G1 X[340282346638528859811704183484516925440]\n');
+    expect(ir.segments.count).toBe(1);
+    expect(ir.segments.x1[0] + ir.header.originOffset.x).toBe(3.4028234663852886e38);
+    expect(codes).not.toContain('number-out-of-range');
+  });
+
+  it('an overflowing word on a line whose `#` is only in a comment is dropped and disclosed', () => {
+    // The `#` sends the line through the RS274 resolver, which finds no parametric content and hands
+    // it back ('plain') to the normal lexer — that lexer must still report the drop.
+    const { ir, codes } = ends(`G1 X5\nG1 X${nines} Y2 ; see #4\n`);
+    expect(ir.segments.count).toBe(2);
+    expect(ir.segments.x1[1] + ir.header.originOffset.x).toBe(5);
+    expect(ir.segments.y1[1] + ir.header.originOffset.y).toBe(2);
+    expect(codes).toContain('number-out-of-range');
   });
 });

@@ -54,23 +54,28 @@ const FEATURE_MAP: Record<string, number> = {
 };
 
 /**
- * Read the Orca/Bambu print-time comment: one `total estimated time:` / `model printing time:` field, or
- * both on one line separated by `;`. Prefers the total (what the slicer reports for the job), else the
- * model time. Returns null when the comment is not a print-time line; `seconds` is null when it is one
- * but no field parses.
+ * Read the Orca/Bambu print-time comment. Bambu Studio, and OrcaSlicer with a Bambu printer profile,
+ * write `model printing time:` and `total estimated time:` on one line separated by `;`; OrcaSlicer with
+ * any other printer writes the PrusaSlicer form `estimated printing time (normal mode) = …`. The total
+ * (or the normal-mode time, which is the job total) wins over the model time; the first field of a kind
+ * that parses wins. Returns null when no field parses.
  */
-function matchPrintTime(trimmed: string): { seconds: number | null; evidence: string } | null {
-  let total: { seconds: number | null; evidence: string } | null = null;
-  let model: { seconds: number | null; evidence: string } | null = null;
+function matchPrintTime(trimmed: string): { seconds: number; evidence: string } | null {
+  let total: { seconds: number; evidence: string } | null = null;
+  let model: { seconds: number; evidence: string } | null = null;
   for (const part of trimmed.split(';')) {
     const field = part.trim();
-    const m = /^(total estimated time|model printing time)\s*:\s*(\S.*)$/i.exec(field);
-    if (m === null) continue;
-    const found = { seconds: parseHmsToSeconds(m[2]), evidence: field };
-    if (m[1].toLowerCase() === 'total estimated time') total ??= found;
+    const normal = /^estimated printing time \(normal mode\)\s*=\s*(\S.*)$/i.exec(field);
+    const m = normal === null ? /^(total estimated time|model printing time)\s*:\s*(\S.*)$/i.exec(field) : null;
+    const text = normal !== null ? normal[1] : m?.[2];
+    if (text === undefined) continue;
+    const seconds = parseHmsToSeconds(text);
+    if (seconds === null) continue;
+    const found = { seconds, evidence: field };
+    if (m === null || m[1].toLowerCase() === 'total estimated time') total ??= found;
     else model ??= found;
   }
-  return [total, model].find((t) => t !== null && t.seconds !== null) ?? total ?? model;
+  return total ?? model;
 }
 
 interface OrcaState {
@@ -167,16 +172,14 @@ export function orcaBambu(): DialectAdapter {
         s.thumbs.feed(comment, sink);
         return;
       }
-      // Orca/Bambu print-time comments are colon-separated, and Bambu Studio / OrcaSlicer put both on
-      // ONE header line: `; model printing time: 1h 53m 22s; total estimated time: 2h 0m 34s`.
+      // Print time: `; model printing time: 1h 53m 22s; total estimated time: 2h 0m 34s` (Bambu) or
+      // `; estimated printing time (normal mode) = 2h 0m 34s` (Orca, non-Bambu printers).
       const time = matchPrintTime(trimmed);
       if (time !== null) {
-        if (time.seconds !== null) {
-          sink.setPrintEstimate({
-            seconds: time.seconds,
-            source: { adapterId: 'orca-bambu', evidence: `; ${time.evidence}`, srcByte }
-          });
-        }
+        sink.setPrintEstimate({
+          seconds: time.seconds,
+          source: { adapterId: 'orca-bambu', evidence: `; ${time.evidence}`, srcByte }
+        });
         return;
       }
       if (parseFilamentTotals(comment, srcByte, 'orca-bambu', sink)) return;
