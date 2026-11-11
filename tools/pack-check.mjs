@@ -81,7 +81,8 @@ for (const name of PACKAGES) {
   const packJson = run(['pack', '--dry-run', '--json'], dir, `${name} pack`);
   const parsed = JSON.parse(packJson);
   // npm ≤11 emits an array of pack results; npm 12 emits an object keyed by package name.
-  const result = Array.isArray(parsed) ? parsed[0] : Object.values(parsed ?? {})[0];
+  // Key the object by the expected name so a multi-entry shape can never snapshot the wrong package.
+  const result = Array.isArray(parsed) ? parsed[0] : parsed?.[`@chestnutlabs/${name}`];
   if (!result || !Array.isArray(result.files)) {
     throw new Error(`${name}: unrecognised \`npm pack --dry-run --json\` output shape`);
   }
