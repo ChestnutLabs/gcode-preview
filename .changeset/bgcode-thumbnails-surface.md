@@ -10,7 +10,7 @@ entries a plain `.gcode` gets from its comments:
 
 - `mime` is `image/png`, `image/jpeg` or `image/qoi`, from the block's format. A format id outside the
   spec is kept as `application/octet-stream`.
-- Up to 8 are kept, in file order. Empty thumbnail blocks are skipped.
+- Up to 8 of the file's binary thumbnails are kept, in file order. Empty thumbnail blocks are skipped.
 - If the decoded G-code also carries `; thumbnail` comments, those are kept and follow the container's
   thumbnails in the list.
 - The 32 MiB budget for `.bgcode` metadata and thumbnails still applies. A file over it fails with
