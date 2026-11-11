@@ -47,6 +47,7 @@ export class ModelContent {
   private readonly root = new Group();
   private readonly disposables: { dispose(): void }[] = [];
   private framedModel: ModelFraming | null = null;
+  private offset: { x: number; y: number; z: number } | null = null;
 
   constructor(private readonly scene: Scene) {
     this.root.rotation.x = -Math.PI / 2;
@@ -85,9 +86,34 @@ export class ModelContent {
     this.framedModel = { center, radius, sceneMin, sceneMax };
   }
 
-  /** The framing of the last-set scene (`null` before the first {@link setScene}). */
+  /**
+   * Move the model by a presentation offset (DD-032 §4.3, printer axes, mm) — e.g. centre an `approximated`
+   * part on the plate. It moves the model root, never the scene data, so `ModelScene` and bounds stay authored
+   * (DD-025 D3) and mesh/instance matrices (picking) keep working through the root. `null` = authored position.
+   */
+  setPresentationOffset(offset: { x: number; y: number; z: number } | null): void {
+    this.offset = offset;
+    // printer (x, y, z) → scene (x, z, −y), the same mapping as the root rotation.
+    if (offset === null) this.root.position.set(0, 0, 0);
+    else this.root.position.set(offset.x, offset.z, -offset.y);
+  }
+
+  /**
+   * The framing of the last-set scene, **as presented** (authored bounds + the presentation offset), or
+   * `null` before the first {@link setScene}.
+   */
   get framing(): ModelFraming | null {
-    return this.framedModel;
+    const f = this.framedModel;
+    const o = this.offset;
+    if (f === null || o === null) return f;
+    const d = new Vector3(o.x, o.y, o.z);
+    const ds = new Vector3(o.x, o.z, -o.y);
+    return {
+      center: f.center.clone().add(d),
+      radius: f.radius,
+      sceneMin: f.sceneMin.clone().add(ds),
+      sceneMax: f.sceneMax.clone().add(ds)
+    };
   }
 
   private buildMesh(obj: ModelObject): Object3D {

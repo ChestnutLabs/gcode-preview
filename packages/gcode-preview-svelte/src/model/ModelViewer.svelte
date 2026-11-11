@@ -31,6 +31,12 @@
   export let filamentPalette = undefined;
   /** Loader registry (open kind). Default: STL + 3MF. */
   export let loaders = undefined;
+  /** Build plate under the model (DD-032): the full BuildVolumeDef; null/omitted = no plate. */
+  export let buildVolume = undefined;
+  /** Plate/backdrop look, e.g. studioTheme('dark'); lights are deliberately not themed. Beats `background`. */
+  export let theme = undefined;
+  /** Perspective lens in degrees, [10, 120] (default 50). Out of range throws RangeError. */
+  export let cameraFov = undefined;
   /** Advanced/test: inject GL / orbit controls. */
   export let createRenderer = undefined;
   export let createControls = undefined;
@@ -46,6 +52,9 @@
     filamentPalette,
     loaders,
     renderScope,
+    buildVolume,
+    theme,
+    cameraFov,
     createRenderer,
     createControls,
     onProgress: (p) => dispatch('progress', p)
@@ -83,6 +92,10 @@
   $: if (background !== undefined) viewer.controls.setBackground(background);
   $: if (interactionQuality !== undefined) viewer.controls.setInteractionQuality(interactionQuality);
   $: if (renderScope !== undefined) viewer.controls.setRenderScope(renderScope);
+  // DD-032: look + lens (the controller remembers them across canvas rebinds)
+  $: if (buildVolume !== undefined) viewer.controls.setBuildVolume(buildVolume);
+  $: if (theme !== undefined) viewer.controls.setTheme(theme);
+  $: if (cameraFov !== undefined) viewer.controls.setCameraFov(cameraFov);
 
   onDestroy(() => viewer.dispose());
 </script>

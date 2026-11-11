@@ -11,8 +11,8 @@
  * not promised; cache by the `cacheKey` on the returned {@link RenderModelStillResult}.
  */
 import type { Confidence } from '@chestnutlabs/toolpath-core';
-import type { GLRendererLike, RenderTargetCanvas } from '@chestnutlabs/gcode-renderer-three';
-import { ModelRenderer, type ModelBackground, type PresentationView } from './model-renderer.js';
+import type { BuildVolumeDef, GLRendererLike, RenderTargetCanvas, Theme } from '@chestnutlabs/gcode-renderer-three';
+import { ModelRenderer, checkModelFov, type ModelBackground, type PresentationView } from './model-renderer.js';
 import { isModelScene, resolveModelScene } from './loaders.js';
 import {
   applyRenderScope,
@@ -22,6 +22,7 @@ import {
   type RenderScope
 } from './scene-model.js';
 import { computeCacheKey } from './cache-key.js';
+import type { ModelPlacement, PlacementOffset } from './placement.js';
 import type { ModelLimits } from './limits.js';
 
 /**
@@ -59,6 +60,20 @@ export interface RenderModelStillOptions {
    * without plate structure it matches nothing and renders empty (the honest result).
    */
   renderScope?: RenderScope;
+  /**
+   * Draw a build plate under the model (DD-032 §4.3) — the full `BuildVolumeDef` (shape, `min`,
+   * excluded regions), so a saved thumbnail matches the live viewer. Omit for no plate (today's render).
+   * Where the part sits on it is decided honestly: see `ModelPreviewState.placement`.
+   */
+  buildVolume?: BuildVolumeDef;
+  /**
+   * Plate/backdrop look (DD-032), e.g. `studioTheme('dark')`. Only the plate and backdrop fields apply;
+   * lights and `materialPreset` are deliberately not (the model rig is unchanged). `theme.background` beats
+   * `background` (an explicit `null` omits it, falling through to `background`).
+   */
+  theme?: Theme;
+  /** Perspective lens in degrees, [10, 120] (default 50); framing is lens-aware. Throws `RangeError` outside it. */
+  cameraFov?: number;
 }
 
 export interface RenderModelStillResult {
@@ -85,6 +100,10 @@ export interface RenderModelStillResult {
    * declared active plate id when present.
    */
   plates?: { list: ModelPlateSummary[]; active?: number };
+  /** How the plate placement was decided (DD-032); `null` when no plate was drawn. See `ModelPlacement`. */
+  placement: ModelPlacement | null;
+  /** The presentation offset applied to the model, mm (printer axes), or `null` when no plate was drawn. */
+  placementOffset: PlacementOffset | null;
   /** Stable identity for caching: `hash(source) + options + envId`. */
   cacheKey: string;
 }
@@ -121,6 +140,16 @@ function scopeCacheKey(scope?: RenderScope): unknown {
   return { fn: ++scopeKeyCounter }; // opaque predicate → non-cacheable, unique each call
 }
 
+/**
+ * Cache-key fragment for a theme. A bed texture (an `ImageBitmap`/canvas) cannot be serialised, so a textured
+ * theme is non-cacheable — unique each call, never a false cache hit — like an opaque `instanceFilter`.
+ */
+function themeCacheKey(theme?: Theme): unknown {
+  if (!theme) return undefined;
+  if (theme.bedSurface?.texture !== undefined) return { tex: ++scopeKeyCounter };
+  return theme;
+}
+
 export async function renderModelStill(
   source: ModelSource,
   options: RenderModelStillOptions
@@ -130,6 +159,7 @@ export async function renderModelStill(
   const height = options.height ?? canvas.height;
   const background: ModelBackground = options.background ?? 'transparent';
   const view: PresentationView = options.view ?? 'iso';
+  if (options.cameraFov !== undefined) checkModelFov(options.cameraFov); // before any work, like every option error
 
   const { scene: fullScene, sourceBytes } = await toScene(source, options.limits, options.filamentPalette);
   // DD-030 D2: narrow to the requested plate/object subset (framing follows the filtered bounds).
@@ -139,11 +169,14 @@ export async function renderModelStill(
     canvas,
     background,
     ...(options.createRenderer ? { createRenderer: options.createRenderer } : {}),
+    ...(options.buildVolume ? { buildVolume: options.buildVolume } : {}),
+    ...(options.theme ? { theme: options.theme } : {}),
+    ...(options.cameraFov !== undefined ? { cameraFov: options.cameraFov } : {}),
     preserveDrawingBuffer: true
   });
   try {
     renderer.resize(width, height);
-    renderer.setScene(scene);
+    renderer.setScene(scene, { full: fullScene, scope: options.renderScope ?? null });
     renderer.render();
 
     const optionsJson = JSON.stringify({
@@ -154,7 +187,12 @@ export async function renderModelStill(
       palette: options.filamentPalette,
       // Fold the scope so plate-1 and plate-2 thumbnails key distinctly. An opaque `instanceFilter` can't
       // be serialized — such a still is marked non-cacheable (consumers should not reuse it by key).
-      scope: scopeCacheKey(options.renderScope)
+      scope: scopeCacheKey(options.renderScope),
+      // The plate, the theme and the lens change the pixels, so they key the cache; absent ⇒ the key is
+      // unchanged from before DD-032 (JSON.stringify drops undefined).
+      plate: options.buildVolume ?? undefined,
+      theme: themeCacheKey(options.theme),
+      fov: options.cameraFov
     });
     const cacheKey = computeCacheKey(sourceBytes, optionsJson, options.envId);
     return {
@@ -166,6 +204,8 @@ export async function renderModelStill(
       instancedCount: sceneInstanceCount(scene),
       decimationApplied: 1,
       ...(scene.plates !== undefined ? { plates: scene.plates } : {}),
+      placement: renderer.placement.placement,
+      placementOffset: renderer.placement.placementOffset,
       cacheKey
     };
   } finally {

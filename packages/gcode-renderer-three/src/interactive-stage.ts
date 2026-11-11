@@ -160,7 +160,11 @@ export class InteractiveStage {
       ((canvas) => createDefaultGLRenderer(canvas, { preserveDrawingBuffer: opts.preserveDrawingBuffer }))
     )(opts.canvas);
     this.interactionQuality = new InteractionQualityController(
-      { setPixelRatio: (r) => this.gl.setPixelRatio?.(r), render: () => this.render() },
+      {
+        setPixelRatio: (r) => this.gl.setPixelRatio?.(r),
+        getPixelRatio: () => this.gl.getPixelRatio?.() ?? 1,
+        render: () => this.render()
+      },
       opts.interactionQuality ?? 'off'
     );
 

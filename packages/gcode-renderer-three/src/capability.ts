@@ -20,7 +20,14 @@
 /** What the renderer is actually running on (DD-023 §4 D1). `'unknown'` = detection was blind/unrecognized. */
 export type RenderCapability = 'software' | 'hardware' | 'unknown';
 
-/** Consumer intent about what the renderer is running on — CAN (DD-023 §4 D1). Distinct from `qualityMode`. */
+/**
+ * Consumer intent about what the renderer is running on — CAN (DD-023 §4 D1). Distinct from `qualityMode`.
+ *
+ * Diagnostic-only today: no entry point accepts a `capabilityHint` option, and this type has no effect on
+ * rendering or budgets until DD-023 Phase B (capability-aware defaults) lands; it may change.
+ *
+ * @experimental
+ */
 export type CapabilityHint = 'auto' | 'software' | 'hardware';
 
 /**
@@ -131,6 +138,11 @@ export function detectRenderCapability(gl: RendererInfoContext): DetectedCapabil
  * detection); `'auto'` uses detection; and a `'unknown'` detection resolves **conservatively to `'software'`**
  * — never optimistically to hardware, since misclassifying a software client as hardware is the failure that
  * OOMs / hangs, while over-conserving a hardware client only loses some static fidelity.
+ *
+ * Diagnostic-only today: nothing in the renderer calls this, and it has no effect on rendering or budgets
+ * until DD-023 Phase B (capability-aware defaults) lands; it may change.
+ *
+ * @experimental
  */
 export function resolveCapability(
   hint: CapabilityHint | undefined,
