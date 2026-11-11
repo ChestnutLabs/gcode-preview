@@ -14,6 +14,7 @@ import type {
   LoadProgress,
   RenderTargetCanvas
 } from '@chestnutlabs/gcode-renderer-three';
+import type { BuildVolumeDef, Theme } from '@chestnutlabs/gcode-renderer-three';
 import type {
   ModelBackground,
   ModelLimits,
@@ -50,6 +51,12 @@ export const ModelViewer = defineComponent({
     filamentPalette: { type: Array as PropType<readonly (string | undefined)[]>, default: undefined },
     /** Loader registry (open `kind`). Default: STL + 3MF. */
     loaders: { type: Array as PropType<readonly ModelLoader[]>, default: undefined },
+    /** Build plate under the model (DD-032): the full `BuildVolumeDef`; `null`/omitted = no plate. */
+    buildVolume: { type: Object as PropType<BuildVolumeDef | null>, default: undefined },
+    /** Plate/backdrop look, e.g. `studioTheme('dark')`; lights are deliberately not themed. Beats `background`. */
+    theme: { type: Object as PropType<Theme>, default: undefined },
+    /** Perspective lens in degrees, [10, 120] (default 50). Out of range throws `RangeError`. */
+    cameraFov: { type: Number as PropType<number>, default: undefined },
     /** Advanced/test: inject GL / orbit controls. */
     createRenderer: {
       type: Function as PropType<(canvas: RenderTargetCanvas) => GLRendererLike>,
@@ -78,6 +85,9 @@ export const ModelViewer = defineComponent({
       ...(props.filamentPalette !== undefined ? { filamentPalette: props.filamentPalette } : {}),
       ...(props.loaders !== undefined ? { loaders: props.loaders } : {}),
       ...(props.renderScope != null ? { renderScope: props.renderScope } : {}),
+      ...(props.buildVolume != null ? { buildVolume: props.buildVolume } : {}),
+      ...(props.theme !== undefined ? { theme: props.theme } : {}),
+      ...(props.cameraFov !== undefined ? { cameraFov: props.cameraFov } : {}),
       ...(props.createRenderer !== undefined ? { createRenderer: props.createRenderer } : {}),
       ...(props.createControls !== undefined ? { createControls: props.createControls } : {}),
       onProgress: (p) => emit('progress', p)
@@ -146,6 +156,25 @@ export const ModelViewer = defineComponent({
       () => props.renderScope,
       (scope) => {
         if (scope !== undefined) viewer.controls.setRenderScope(scope);
+      }
+    );
+    // DD-032: look + lens. Each prop maps to one controls call; the controller remembers them across rebinds.
+    watch(
+      () => props.buildVolume,
+      (def) => {
+        if (def !== undefined) viewer.controls.setBuildVolume(def);
+      }
+    );
+    watch(
+      () => props.theme,
+      (theme) => {
+        if (theme !== undefined) viewer.controls.setTheme(theme);
+      }
+    );
+    watch(
+      () => props.cameraFov,
+      (fov) => {
+        if (fov !== undefined) viewer.controls.setCameraFov(fov);
       }
     );
 

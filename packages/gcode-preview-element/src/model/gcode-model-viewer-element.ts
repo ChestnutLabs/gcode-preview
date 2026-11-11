@@ -22,7 +22,10 @@ import {
   type PresentationView,
   type RenderScope
 } from '@chestnutlabs/gcode-model-renderer';
+import { resolveTheme } from '@chestnutlabs/gcode-renderer-three';
 import type {
+  BuildVolumeDef,
+  Theme,
   CameraMode,
   CameraState,
   CameraView,
@@ -33,7 +36,14 @@ import type {
 } from '@chestnutlabs/gcode-renderer-three';
 
 /** Observed scalar attributes; rich options (source, cameraState, palettes, loaders, injectables) are property-only. */
-const OBSERVED = ['view', 'background', 'interaction-quality', 'camera-mode'] as const;
+const OBSERVED = ['view', 'background', 'interaction-quality', 'camera-mode', 'camera-fov'] as const;
+
+/** A `camera-fov` attribute as a valid lens, or `undefined` (absent, non-numeric or outside [10, 120]). */
+function parseFovAttribute(value: string | null): number | undefined {
+  if (value === null || value.trim() === '') return undefined;
+  const n = Number(value);
+  return n >= 10 && n <= 120 ? n : undefined;
+}
 
 /** The default tag name for the model viewer. */
 export const DEFAULT_MODEL_TAG = 'gcode-model-viewer';
@@ -54,6 +64,9 @@ export class GcodeModelViewerElement extends HTMLElement {
   private _limits: ModelLimits | undefined;
   private _filamentPalette: readonly (string | undefined)[] | undefined;
   private _loaders: readonly ModelLoader[] | undefined;
+  private _buildVolume: BuildVolumeDef | null = null;
+  private _theme: Theme | undefined;
+  private _cameraFov: number | undefined;
   private _createRenderer: ((canvas: RenderTargetCanvas) => GLRendererLike) | undefined;
   private _createControls: NonNullable<InteractiveStageOptions['createControls']> | undefined;
 
@@ -85,6 +98,38 @@ export class GcodeModelViewerElement extends HTMLElement {
   set renderScope(v: RenderScope | null) {
     this._renderScope = v;
     this.controller?.controls.setRenderScope(v);
+  }
+  /** Build plate under the model (DD-032) — property-only (object-valued). `null`/unset = no plate. */
+  get buildVolume(): BuildVolumeDef | null {
+    return this._buildVolume;
+  }
+  set buildVolume(v: BuildVolumeDef | null) {
+    this._buildVolume = v ?? null;
+    this.controller?.controls.setBuildVolume(this._buildVolume);
+  }
+  /** Plate/backdrop look, e.g. `studioTheme('dark')` (DD-032) — property-only. Throws `RangeError` for invalid values. */
+  get theme(): Theme | undefined {
+    return this._theme;
+  }
+  set theme(v: Theme | undefined) {
+    if (v === undefined) return; // replace semantics: pass `{}` to reset, there is no "unset"
+    resolveTheme(v); // RangeError now, not later from connectedCallback
+    this._theme = v;
+    this.controller?.controls.setTheme(v);
+  }
+  /**
+   * Perspective lens in degrees, [10, 120] (DD-032). Mirrors the `camera-fov` attribute. Setting an
+   * out-of-range value through the property throws `RangeError`, like `controls.setCameraFov`; an invalid
+   * *attribute* is ignored and the last valid lens kept (attribute callbacks must not throw). Not reflected.
+   */
+  get cameraFov(): number | undefined {
+    return this._cameraFov;
+  }
+  set cameraFov(v: number | undefined) {
+    if (v === undefined) return;
+    if (!(v >= 10 && v <= 120)) throw new RangeError(`cameraFov must be in [10, 120] degrees (got ${String(v)})`);
+    this._cameraFov = v;
+    this.controller?.controls.setCameraFov(v);
   }
   get limits(): ModelLimits | undefined {
     return this._limits;
@@ -174,7 +219,12 @@ export class GcodeModelViewerElement extends HTMLElement {
     this.canvasEl = canvas;
 
     const bg = this._background ?? (this.getAttribute('background') as ModelBackground | null) ?? undefined;
+    // An invalid `camera-fov` attribute is ignored (default lens), never thrown from a lifecycle callback.
+    const fov = this._cameraFov ?? parseFovAttribute(this.getAttribute('camera-fov'));
     this.controller = createModelPreviewController({
+      ...(this._buildVolume !== null ? { buildVolume: this._buildVolume } : {}),
+      ...(this._theme !== undefined ? { theme: this._theme } : {}),
+      ...(fov !== undefined ? { cameraFov: fov } : {}),
       ...(this._loaders ? { loaders: this._loaders } : {}),
       ...(bg !== undefined ? { background: bg } : {}),
       ...(this.getAttribute('interaction-quality')
@@ -220,6 +270,15 @@ export class GcodeModelViewerElement extends HTMLElement {
       case 'camera-mode':
         // Construction-time only (projection switching post-mount is out of scope); no-op at runtime.
         break;
+      case 'camera-fov': {
+        // Invalid (or removed) ⇒ ignore and keep the last valid lens; callbacks must not throw.
+        const fov = parseFovAttribute(value);
+        if (fov !== undefined) {
+          c.setCameraFov(fov);
+          this._cameraFov = fov;
+        }
+        break;
+      }
       default:
         break;
     }

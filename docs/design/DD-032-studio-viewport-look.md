@@ -279,8 +279,11 @@ Rules:
   | `null` | No plate is drawn: no `buildVolume`, or the render scope spans **more than one** declared plate | No plate. One bed under a multi-plate layout would misrepresent it |
 
   Notes:
-  - **"The bed"** for these checks is the file's `printable_area` when the project carries one, otherwise the
-    consumer's `buildVolume`.
+  - **"The bed"** for these checks, for the workspace cell and for `approximated` centring is always the
+    consumer's `buildVolume`, the bed that is drawn. The file's `printable_area` is trusted only when it
+    matches that bed within 1 mm on every edge. A project whose `printable_area` does not match (made for a
+    different printer's bed, or hostile) skips the `known` and `inferred` checks and is `approximated`, centred
+    on the drawn bed. With no `printable_area`, the checks run against the drawn bed.
   - **Workspace cell.** The cell is the bed size × (1 + 1/5), with rows stepping −Y. This is **observed
     behaviour, pending the §8 two-plate fixture**: clean-room, from exported files, never from slicer source.
     If the fixture contradicts it, the inferred path changes; `approximated` remains the honest fallback.
@@ -480,3 +483,9 @@ Release v0.22.0 per `docs/reference/release-process.md` after D, with the owner'
   perspective↔orthographic toggle changes apparent size by cos(fov/2) / cos 25° (0.55 at 120°). §4.2 now
   matches PR #470 as merged (84e664a). An exact toggle (ortho half-height from the perspective pose) is
   recorded in §8. No decision changed.
+- 2026-11-11: Lane C review round 1 (PR #484). Placement judged `known` against the file's `printable_area`
+  but drew on the consumer's bed, so a 350 mm project (or a hostile ±1e308 area) read `known` while drawn off
+  the plate, and `approximated` centred on the file bed. §4.3 now uses the drawn bed for every check, the cell
+  and the centring, and trusts `printable_area` only when it matches the drawn bed within 1 mm per edge
+  (otherwise `approximated`). `printable_area` points over 64 characters are rejected. No tier or field
+  renamed.
