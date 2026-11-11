@@ -43,11 +43,46 @@ interface Evidence {
   oWord: boolean; // RS274NGC O-word subroutine/flow (LinuxCNC family)
 }
 
+/**
+ * Remove every `(…)` span (the shortest `(` … `)` runs, left to right). Equivalent to
+ * `text.replace(/\([^)]*\)/g, '')`, which rescans to end of line from each unmatched `(` and is
+ * quadratic on a hostile line.
+ */
+export function stripParenComments(text: string): string {
+  let out = '';
+  let from = 0;
+  for (;;) {
+    const open = text.indexOf('(', from);
+    if (open === -1) return out + text.slice(from);
+    const close = text.indexOf(')', open + 1);
+    // No `)` anywhere after this `(` means no later `(` can match either: keep the rest verbatim.
+    if (close === -1) return out + text.slice(from);
+    out += text.slice(from, open);
+    from = close + 1;
+  }
+}
+
+/**
+ * True when some `%` is the first non-whitespace character of a line. Equivalent to
+ * `/^\s*%/m.test(text)` (whose `\s*` may span blank lines, and whose `^` follows `\n`, `\r`,
+ * `\u2028` or `\u2029`) in a single pass; the regex rescans each blank-line run and is quadratic.
+ */
+export function hasPercentEnvelope(text: string): boolean {
+  let lineStart = true;
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (c === '%' && lineStart) return true;
+    if (c === '\n' || c === '\r' || c === '\u2028' || c === '\u2029') lineStart = true;
+    else if (!/\s/.test(c)) lineStart = false;
+  }
+  return false;
+}
+
 function scoreEvidence(head: string): Evidence {
   // Strip line comments (';…' and LinuxCNC/RS274 '(…)') so words inside them never score as markers.
   const code = head
     .split('\n')
-    .map((l) => l.split(';')[0].replace(/\([^)]*\)/g, ''))
+    .map((l) => stripParenComments(l.split(';')[0]))
     .join('\n');
   const has = (re: RegExp): boolean => re.test(code);
   // G-code words run together without spaces (`G1M3`, `g1z-.1`), so a LEADING word-boundary fails.
@@ -186,7 +221,7 @@ export function linuxCnc(): DialectAdapter {
       if (e.oWord) return { evidence: 'RS274NGC O-word subroutine/flow', confidence: 'inferred' };
       // A `%` program envelope with a spindle and no extrusion (also common in Fanuc-style output;
       // reported family-level, not as a specific controller).
-      if (/^\s*%/m.test(input.headText) && e.m3) {
+      if (hasPercentEnvelope(input.headText) && e.m3) {
         return { evidence: '%-program envelope + M3 spindle, no extrusion', confidence: 'inferred' };
       }
       return null;
