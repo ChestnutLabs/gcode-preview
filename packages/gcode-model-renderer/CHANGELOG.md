@@ -1,5 +1,32 @@
 # @chestnutlabs/gcode-model-renderer
 
+## 0.21.2
+
+### Patch Changes
+
+- [#464](https://github.com/ChestnutLabs/gcode-preview/pull/464) [`be7a9dc`](https://github.com/ChestnutLabs/gcode-preview/commit/be7a9dcbce055ec4424059d0952058b6f99e2be9) Thanks [@sobechestnut-dev](https://github.com/sobechestnut-dev)! - A model 3MF with a single part over the per-entry size cap (`maxExpandedBytesPerEntry`, 512 MiB) is now
+  reported as `E_MODEL_TOO_LARGE`, the same as an archive over the total cap. It used to surface as
+  `E_MODEL_PARSE` with the container library's raw text. Corrupt or CRC-failing parts still report
+  `E_MODEL_PARSE`.
+
+- [#475](https://github.com/ChestnutLabs/gcode-preview/pull/475) [`35b7381`](https://github.com/ChestnutLabs/gcode-preview/commit/35b73813d61a08a88db38a018a0aac5dce71b861) Thanks [@sobechestnut-dev](https://github.com/sobechestnut-dev)! - Hostile-input hardening, no behaviour change ([#468](https://github.com/ChestnutLabs/gcode-preview/issues/468) follow-up). The 3MF model-XML tokenizer was quadratic
+  three ways: a lazy tag body re-scanned to the end of the input from every `<` with no terminating `>` (120 KB
+  of `<a ` froze the load for 12 s), a long tag name backtracked (one 20k-character name took 1 s), and the
+  attribute reader restarted inside every word without an `=` (one 80 KB word took 8.6 s). Both are now linear
+  (each of those inputs takes a few milliseconds). The new tokenizer returns exactly what the old regex did,
+  including for garbled and truncated files; this is verified differentially against the old implementation
+  (corpus 3MFs, hand cases and a million seeded random strings).
+
+- [#473](https://github.com/ChestnutLabs/gcode-preview/pull/473) [`6bfe00a`](https://github.com/ChestnutLabs/gcode-preview/commit/6bfe00a73b0b01c5372238f9d73c5eb8adca9001) Thanks [@sobechestnut-dev](https://github.com/sobechestnut-dev)! - Fix hangs when loading a crafted Bambu/Orca `.3mf`. Reading `Metadata/model_settings.config` took time
+  quadratic in the config size in three places: the plate layout (many `<plate` tags with no closing tag),
+  each plate's `<model_instance>` list, and the per-object/part extruder colours (many `<object id="…"`
+  headers with no closing `>`). A few hundred KiB froze the load for seconds and a few MiB for minutes. All
+  three scans are now linear. Well-formed configs parse exactly as before.
+- Updated dependencies [[`3075656`](https://github.com/ChestnutLabs/gcode-preview/commit/3075656ec105773869bea720c54a4d792bfd51c7)]:
+  - @chestnutlabs/gcode-renderer-three@0.21.2
+  - @chestnutlabs/gcode-containers@0.21.2
+  - @chestnutlabs/toolpath-core@0.21.2
+
 ## 0.21.1
 
 ### Patch Changes

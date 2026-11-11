@@ -1,5 +1,42 @@
 # @chestnutlabs/gcode-dialects
 
+## 0.21.2
+
+### Patch Changes
+
+- [#476](https://github.com/ChestnutLabs/gcode-preview/pull/476) [`73927dd`](https://github.com/ChestnutLabs/gcode-preview/commit/73927ddaf6ed9d1ed89ec22eaee372b128218ef9) Thanks [@sobechestnut-dev](https://github.com/sobechestnut-dev)! - Hostile-input hardening, second pass. Four more dialect regexes could stall a parse for seconds:
+  - CNC / LinuxCNC detection: a 64 KiB head of repeated `O` took ~22 s to scan for RS274NGC O-words (an
+    unanchored regex rescanned the run from every position). Now a linear scan with identical results.
+  - CNC / laser detection's FDM-extrusion check: a 64 KiB head of repeated `G1` took ~7 s (each `G`
+    rescanned the rest of its line for an `E` value). Now one pass per line with identical results.
+  - Orca/Bambu `; total estimated time:` and PrusaSlicer `; estimated printing time (normal mode)` comments:
+    a long whitespace run followed by an embedded line separator (U+2028/U+2029) took ~5 s per comment.
+    Now linear; the parsed estimate is unchanged.
+
+- [#472](https://github.com/ChestnutLabs/gcode-preview/pull/472) [`e1794e9`](https://github.com/ChestnutLabs/gcode-preview/commit/e1794e9bc05d4ab3caf69e06569e7616832f6ef6) Thanks [@sobechestnut-dev](https://github.com/sobechestnut-dev)! - Hostile-input hardening for the dialect adapters, plus two object-marker accuracy fixes.
+
+  Hostile-input hardening (a crafted line or head could stall the parse for seconds, or effectively hang it):
+  - Slicer object markers (`; printing object <name> id:<n>`): a line that repeated `printing object`, or a
+    `name:` suffix padded with spaces, took 0.7–7 s per 64 KiB line. Now linear.
+  - `estimated printing time` / `total estimated time` comments: a long whitespace line made the time parser
+    backtrack polynomially (79 s at 500 spaces). Now linear.
+  - Slicer `key = value` comments with an all-whitespace value took ~5 s per 64 KiB line. Now linear.
+  - CNC / LinuxCNC detection: an unmatched `(` run or a long blank-line run in the 64 KiB head took 4–5 s
+    per file. Now linear.
+
+  Object-marker accuracy: (a) a name containing a word that starts with "id" (`Ender idler pulley`,
+  `Box Identity`) was truncated at that word; (b) an `id<digits>` inside the name (`bracket(id2) id:7`) took
+  the object id, which could merge distinct objects. The object id is now the first whitespace-delimited
+  `id:<n>` token.
+
+  CRLF files: a Klipper `EXCLUDE_OBJECT_*` command and a PrusaSlicer `; estimated printing time (normal mode)`
+  comment were silently ignored when the file used `\r\n` line endings (the parser splits on `\n`, leaving a
+  trailing `\r`). Both are now read correctly, and a regression test runs the slicer fixtures with CRLF endings.
+  A Klipper `NAME=` argument must now be a whole word, so `FOONAME=x` no longer names an object.
+
+- Updated dependencies []:
+  - @chestnutlabs/toolpath-core@0.21.2
+
 ## 0.21.1
 
 ### Patch Changes
