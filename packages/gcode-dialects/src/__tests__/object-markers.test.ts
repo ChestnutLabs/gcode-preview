@@ -41,7 +41,8 @@ const SAMPLES: Array<[string, string, string]> = [
   ['printing object "a"b" id:4', '"a"b"', '4'],
   ['printing object " padded " id:1', 'padded', '1'],
   ['printing object-id1', '', '1'],
-  ['printing object myunique id:1', 'myunique', '1']
+  ['printing object myunique id:1', 'myunique', '1'],
+  ['printing object " id:3', '"', '3']
 ];
 
 describe('matchPrintingObjectStart names (#469)', () => {
@@ -61,6 +62,62 @@ describe('matchPrintingObjectStart names (#469)', () => {
     const got = matchPrintingObjectStart(line);
     const ms = performance.now() - t0;
     expect(got).toEqual({ id: '1', name: undefined });
+    expect(ms).toBeLessThan(100);
+  });
+});
+
+/** Lines whose id/name the previous regexes got WRONG (truncated names, name-embedded `id<digits>`). */
+const FIXED: Array<[string, string, string]> = [
+  ['printing object bracket(id2) id:7', 'bracket(id2)', '7'],
+  ['printing object rev-id5 thing id:3', 'rev-id5 thing', '3'],
+  ['printing object my id thing id:3', 'my id thing', '3'],
+  ['printing object Ender idler pulley id:7', 'Ender idler pulley', '7'],
+  ['printing object Box Identity id:5', 'Box Identity', '5'],
+  ['printing object,id:3', '', '3']
+];
+
+describe('whitespace-anchored id selection', () => {
+  it.each(FIXED)('%s', (line, name, id) => {
+    expect(matchPrintingObjectStart(line)).toEqual({ id, name: name === '' ? undefined : name });
+  });
+
+  it('distinct objects whose names embed id<digits> get distinct ids', () => {
+    const a = matchPrintingObjectStart('printing object bracket(id2) id:7');
+    const b = matchPrintingObjectStart('printing object clip(id2) id:8');
+    expect(a?.id).toBe('7');
+    expect(b?.id).toBe('8');
+  });
+
+  it('keeps Bambu `, unique label id: 89` and Prusa ` id:0 copy 0` ids', () => {
+    expect(matchPrintingObjectStart('start printing object, unique label id: 89')?.id).toBe('89');
+    expect(matchPrintingObjectStart('printing object widget.stl id:0 copy 0')?.id).toBe('0');
+  });
+});
+
+describe('`name:` suffix (#469 review)', () => {
+  /** The pre-fix suffix regex, verbatim, as the differential oracle. */
+  const oldSuffix = (line: string): string | undefined => /\bname:\s*(.+?)\s*$/i.exec(line)?.[1].trim();
+  const cases = ['name: Cube', 'name:', 'name:  a  b', 'name:a name:b', 'name:x name:'];
+
+  it.each(cases)('prefixed %s matches the previous regex', (suffix) => {
+    const line = 'printing object id:1 ' + suffix;
+    const old = oldSuffix(line);
+    expect(matchPrintingObjectStart(line)?.name).toBe(old === '' ? undefined : old);
+  });
+
+  it('literal names', () => {
+    expect(matchPrintingObjectStart('printing object id:1 name: Cube')?.name).toBe('Cube');
+    expect(matchPrintingObjectStart('printing object id:1 name:  a  b')?.name).toBe('a  b');
+    expect(matchPrintingObjectStart('printing object id:1 name:a name:b')?.name).toBe('a name:b');
+  });
+
+  it('a 64 KiB crafted `name:` line returns promptly (was ~6.9 s)', () => {
+    const line = 'printing object id:1 name:a' + ' '.repeat(65536) + 'b';
+    const t0 = performance.now();
+    const got = matchPrintingObjectStart(line);
+    const ms = performance.now() - t0;
+    expect(got?.id).toBe('1');
+    expect(got?.name?.length).toBe(65538);
     expect(ms).toBeLessThan(100);
   });
 });
