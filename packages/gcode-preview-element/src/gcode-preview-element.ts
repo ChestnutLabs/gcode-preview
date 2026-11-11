@@ -26,6 +26,7 @@ import type {
   CameraState,
   CameraView,
   ColorMode,
+  PixelRatioOption,
   Theme,
   TubeOptions
 } from '@chestnutlabs/gcode-renderer-three';
@@ -48,6 +49,7 @@ export type ElementRendererOptions = Omit<
   | 'progressivePreview'
   | 'cameraMode'
   | 'cameraFov'
+  | 'pixelRatio'
   | 'frameContent'
   | 'interactionQuality'
   | 'theme'
@@ -63,6 +65,7 @@ const OBSERVED = [
   'progressive-preview',
   'camera-mode',
   'camera-fov',
+  'pixel-ratio',
   'frame-content',
   'interaction-quality',
   'view',
@@ -96,6 +99,8 @@ export class GcodePreviewElement extends HTMLElement {
   private _theme: Theme | undefined;
   /** The last valid `camera-fov` (DD-032), kept across a bad attribute value and a reconnect. */
   private lastFov: number | undefined;
+  /** The last valid `pixel-ratio`, kept across a bad attribute value and a reconnect. */
+  private lastPixelRatio: PixelRatioOption | undefined;
   private _progress: ProgressObservation | null = null;
   private _createWorker: (() => WorkerLike) | undefined;
   private _rendererOptions: ElementRendererOptions | undefined;
@@ -224,6 +229,24 @@ export class GcodePreviewElement extends HTMLElement {
       throw new RangeError(`fov must be in [10, 120] degrees (got ${String(v)})`);
     }
     this.reflect('camera-fov', v);
+  }
+  /**
+   * Resting pixel ratio of the canvas: a number in (0, 4], or `'device'` (the display's `devicePixelRatio`
+   * capped at 2, followed live; the exact lowercase string). Reflects the `pixel-ratio` attribute; `null`
+   * removes it and keeps the current ratio. Setting the property to anything else throws `RangeError` (never
+   * clamped) and leaves the attribute unchanged. A markup/`setAttribute` value that is not valid is ignored:
+   * the element keeps the last valid ratio. Reads return the effective ratio: a valid attribute, else the
+   * last valid ratio, else `null` (none set: the renderer's own, 1). A ratio of 2 shades 4x the fragments
+   * of 1. The default `capture()` size does not change. 3D only.
+   */
+  get pixelRatio(): PixelRatioOption | null {
+    return parsePixelRatio(this.getAttribute('pixel-ratio')) ?? this.lastPixelRatio ?? null;
+  }
+  set pixelRatio(v: PixelRatioOption | null) {
+    if (v !== null && v !== 'device' && !(typeof v === 'number' && v > 0 && v <= 4)) {
+      throw new RangeError(`pixelRatio must be 'device' or a number in (0, 4] (got ${String(v)})`);
+    }
+    this.reflect('pixel-ratio', v);
   }
   /** #306/#6: frame the printed 'object' (excl. skirt/prime) or 'all' extrusion. */
   get frameContent(): string | null {
@@ -371,6 +394,7 @@ export class GcodePreviewElement extends HTMLElement {
         progressivePreview: (this.getAttribute('progressive-preview') as 'lines' | 'hold' | 'off' | null) ?? undefined,
         cameraMode: (this.getAttribute('camera-mode') as CameraMode | null) ?? undefined,
         cameraFov: this.acceptFov(this.getAttribute('camera-fov')),
+        pixelRatio: this.acceptPixelRatio(this.getAttribute('pixel-ratio')),
         frameContent: (this.getAttribute('frame-content') as 'object' | 'all' | null) ?? undefined,
         interactionQuality: (this.getAttribute('interaction-quality') as 'off' | 'auto' | null) ?? undefined,
         colorMode: this._colorMode,
@@ -418,6 +442,11 @@ export class GcodePreviewElement extends HTMLElement {
       case 'camera-fov': {
         const fov = this.acceptFov(value);
         if (fov !== undefined) c.setCameraFov(fov);
+        break;
+      }
+      case 'pixel-ratio': {
+        const ratio = this.acceptPixelRatio(value);
+        if (ratio !== undefined) c.setPixelRatio(ratio);
         break;
       }
       case 'frame-content':
@@ -515,6 +544,17 @@ export class GcodePreviewElement extends HTMLElement {
     return this.lastFov;
   }
 
+  /**
+   * The `pixel-ratio` attribute as a ratio: `'device'` or a number in (0, 4] is accepted and remembered;
+   * anything else (removed, empty, not valid) yields the last accepted ratio, so a bad markup value never
+   * throws from the attribute callback and never resets the view.
+   */
+  private acceptPixelRatio(value: string | null): PixelRatioOption | undefined {
+    const r = parsePixelRatio(value);
+    if (r !== undefined) this.lastPixelRatio = r;
+    return this.lastPixelRatio;
+  }
+
   private reflect(attr: string, v: string | number | null): void {
     if (v === null) this.removeAttribute(attr);
     else this.setAttribute(attr, String(v));
@@ -608,6 +648,14 @@ function parseRoleList(value: string | null): number[] {
 export function defineGcodePreview(tag: string = DEFAULT_TAG): void {
   if (typeof customElements === 'undefined') return;
   if (customElements.get(tag) === undefined) customElements.define(tag, GcodePreviewElement);
+}
+
+/** A `pixel-ratio` attribute value: exactly `'device'`, or a number in (0, 4]; else `undefined`. */
+function parsePixelRatio(value: string | null): PixelRatioOption | undefined {
+  if (value === 'device') return 'device';
+  // Number(null) and Number('') are 0 and NaN fails both bounds: the range alone decides.
+  const n = Number(value);
+  return n > 0 && n <= 4 ? n : undefined;
 }
 
 /** A `camera-fov` attribute value as a lens in [10, 120], else `undefined` (DD-032). */

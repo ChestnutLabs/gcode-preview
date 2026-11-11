@@ -24,6 +24,7 @@ import type {
   GLRendererLike,
   InteractiveStageOptions,
   LoadProgress,
+  PixelRatioOption,
   RenderTargetCanvas
 } from '@chestnutlabs/gcode-renderer-three';
 import type {
@@ -67,6 +68,8 @@ export interface ModelViewerProps {
   theme?: Theme;
   /** Perspective lens in degrees, [10, 120] (default 50). Out of range throws `RangeError`. */
   cameraFov?: number;
+  /** Resting pixel ratio: (0, 4] or 'device' (DPR capped at 2, followed live). Unset keeps 1. Out of range throws `RangeError`. */
+  pixelRatio?: PixelRatioOption;
   /** Advanced/test: inject GL / orbit controls. */
   createRenderer?: (canvas: RenderTargetCanvas) => GLRendererLike;
   createControls?: NonNullable<InteractiveStageOptions['createControls']>;
@@ -94,6 +97,7 @@ function ModelViewerImpl(props: ModelViewerProps, ref: ForwardedRef<ModelViewerH
     buildVolume,
     theme,
     cameraFov,
+    pixelRatio,
     createRenderer,
     createControls
   } = props;
@@ -110,6 +114,7 @@ function ModelViewerImpl(props: ModelViewerProps, ref: ForwardedRef<ModelViewerH
     ...(buildVolume != null ? { buildVolume } : {}),
     ...(theme !== undefined ? { theme } : {}),
     ...(cameraFov !== undefined ? { cameraFov } : {}),
+    ...(pixelRatio !== undefined ? { pixelRatio } : {}),
     ...(createRenderer !== undefined ? { createRenderer } : {}),
     ...(createControls !== undefined ? { createControls } : {}),
     onProgress: (p) => cbRef.current.onProgress?.(p)
@@ -178,6 +183,9 @@ function ModelViewerImpl(props: ModelViewerProps, ref: ForwardedRef<ModelViewerH
   useEffect(() => {
     if (cameraFov !== undefined) viewer.controls.setCameraFov(cameraFov);
   }, [viewer, cameraFov]);
+  useEffect(() => {
+    if (pixelRatio !== undefined) viewer.controls.setPixelRatio(pixelRatio);
+  }, [viewer, pixelRatio]);
 
   return createElement('canvas', {
     ref: viewer.canvasRef,

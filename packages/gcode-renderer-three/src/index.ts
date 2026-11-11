@@ -38,12 +38,18 @@ export { createBuildVolume, disposeBuildVolume } from './build-volume.js';
 export type { BuildVolumeDef, BuildVolumeStyle, BedShape } from './build-volume.js';
 export { CaptureUnsupportedError } from './capture.js';
 export type { CaptureOptions } from './capture.js';
-export { framingFromCenterRadius, createDefaultGLRenderer, lensScale, framingLensScale } from './stage.js';
-export type { Framing, DefaultGLOptions } from './stage.js';
+export {
+  framingFromCenterRadius,
+  createDefaultGLRenderer,
+  lensScale,
+  framingLensScale,
+  DEVICE_PIXEL_RATIO_CAP
+} from './stage.js';
+export type { Framing, DefaultGLOptions, PixelRatioOption } from './stage.js';
 export { InteractionQualityController } from './interaction-quality.js';
 export type { InteractionQualityDeps } from './interaction-quality.js';
 export { InteractiveStage } from './interactive-stage.js';
-export type { InteractiveStageOptions, ControlsLike } from './interactive-stage.js';
+export type { InteractiveStageOptions, ControlsLike, DisplayEnv, MediaQueryListLike } from './interactive-stage.js';
 export { DEFAULT_THEME, resolveTheme, studioTheme, STUDIO_CAMERA_FOV } from './theme.js';
 export type {
   Theme,

@@ -77,6 +77,9 @@ export class InteractionQualityController {
     mode: 'off' | 'auto' = 'off'
   ) {
     this.mode = mode;
+    // Seed from the renderer's real ratio (a consumer GL may already be at 2), so the first
+    // `applyRatio` compares against what is actually applied, not an assumed 1.
+    this.appliedRatio = deps.getPixelRatio?.() ?? 1;
   }
 
   /**
@@ -120,6 +123,27 @@ export class InteractionQualityController {
       this.settleTimer = null;
       this.restore();
     }, INTERACTION_SETTLE_MS);
+  }
+
+  /**
+   * Move the resting ratio to `ratio` (the owner's pixel-ratio option changed, or the display's DPR did).
+   * At rest the renderer goes straight to it. Mid-gesture the current reduction factor is kept and applied
+   * to the new base, the next adaptation step scales from it, and the settle restores exactly it. Works in
+   * either mode.
+   */
+  rebase(ratio: number): void {
+    this.basePixelRatio = ratio;
+    this.applyRatio(this.interacting ? ratio * this.factor : ratio);
+  }
+
+  /** The ratio currently applied to the renderer (reduced while a gesture is in progress). */
+  get currentRatio(): number {
+    return this.appliedRatio;
+  }
+
+  /** The gesture's reduction of the resting ratio: `applied / base` while interacting, else exactly 1. */
+  get reduction(): number {
+    return this.interacting ? this.appliedRatio / this.basePixelRatio : 1;
   }
 
   /** Release the pending settle timer and stop frame sampling. */

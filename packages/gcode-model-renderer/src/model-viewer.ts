@@ -28,13 +28,14 @@ import {
   type GLRendererLike,
   type InteractiveStageOptions,
   type LoadProgress,
+  type PixelRatioOption,
   type RenderTargetCanvas
 } from '@chestnutlabs/gcode-renderer-three';
 import type { Confidence } from '@chestnutlabs/toolpath-core';
 import { ModelContent } from './model-content.js';
 import { DEFAULT_MODEL_LOADERS, resolveModelScene, type ModelLoader, type ModelSourceInput } from './loaders.js';
 import { ModelParseError, type ModelLimits } from './limits.js';
-import { checkModelFov, type ModelBackground, type PresentationView } from './model-renderer.js';
+import { checkModelFov, checkModelPixelRatio, type ModelBackground, type PresentationView } from './model-renderer.js';
 import { ModelPlate, applyModelBackground } from './model-plate.js';
 import type { ModelPlacement, PlacementOffset } from './placement.js';
 import {
@@ -92,6 +93,12 @@ export interface ModelViewerOptions {
   theme?: Theme;
   /** Perspective lens in degrees, [10, 120] (default 50). Throws `RangeError` outside it. */
   cameraFov?: number;
+  /**
+   * Resting pixel ratio of the canvas: a number in (0, 4], or `'device'` (the display's `devicePixelRatio`
+   * capped at 2, followed live). Unset keeps the renderer's ratio (1). A ratio of 2 shades 4× the fragments
+   * of 1. Throws `RangeError` synchronously otherwise. The default `capture()` size does not change.
+   */
+  pixelRatio?: PixelRatioOption;
 }
 
 /** What the source actually carried, surfaced on `ready` (never fabricated — DD-001). */
@@ -151,6 +158,11 @@ export interface ModelViewer {
   setTheme(theme: Theme): void;
   /** Change the perspective lens, [10, 120]° (`RangeError` outside it). Keeps apparent size; re-fits while auto-framing. */
   setCameraFov(fov: number): void;
+  /**
+   * Change the resting pixel ratio: (0, 4] or `'device'` (DPR capped at 2, followed live). `RangeError`
+   * otherwise. A gesture in progress settles on the new ratio; the default `capture()` size does not change.
+   */
+  setPixelRatio(ratio: PixelRatioOption): void;
   /** The current plate placement decision (`null` placement = no plate drawn). */
   getPlacement(): { placement: ModelPlacement | null; placementOffset: PlacementOffset | null };
   setInteractionQuality(mode: 'off' | 'auto'): void;
@@ -190,6 +202,7 @@ export function createModelViewer(canvas: RenderTargetCanvas, options: ModelView
   // Invalid look/lens options fail synchronously, at construction, before any GL work.
   if (theme !== undefined) resolveTheme(theme);
   if (options.cameraFov !== undefined) checkModelFov(options.cameraFov);
+  if (options.pixelRatio !== undefined) checkModelPixelRatio(options.pixelRatio);
 
   const listeners = new Set<(e: ModelViewerEvent) => void>();
   // Events emitted before any subscriber attaches (e.g. renderer-unsupported at construction) are held
@@ -240,6 +253,7 @@ export function createModelViewer(canvas: RenderTargetCanvas, options: ModelView
       scene,
       cameraMode: options.cameraMode ?? 'perspective',
       interactionQuality: options.interactionQuality ?? 'auto',
+      ...(options.pixelRatio !== undefined ? { pixelRatio: options.pixelRatio } : {}),
       createRenderer: options.createRenderer ?? ((c) => createDefaultGLRenderer(c, { alpha: true })),
       ...(options.createControls ? { createControls: options.createControls } : {}),
       onCameraChanged: (state) => emit({ type: 'camera-changed', state }),
@@ -362,6 +376,10 @@ export function createModelViewer(canvas: RenderTargetCanvas, options: ModelView
       stage?.setFov(fov);
       // Exact re-fit while library-framed (instead of the dolly), and auto-framing stays on.
       if (autoFraming) fit(true);
+    },
+    setPixelRatio(ratio) {
+      checkModelPixelRatio(ratio);
+      stage?.setPixelRatio(ratio);
     },
     getPlacement() {
       const p = plate.getPlacement();

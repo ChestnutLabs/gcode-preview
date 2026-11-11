@@ -119,6 +119,27 @@ export function checkFov(fov: number): void {
 }
 
 /**
+ * The interactive canvas's resting pixel ratio (drawing-buffer pixels per CSS pixel). A number in (0, 4],
+ * or `'device'`: the display's `devicePixelRatio` capped at 2, followed live as it changes (moving the
+ * window to another monitor, browser zoom). Unset, the renderer keeps its own ratio (1).
+ */
+export type PixelRatioOption = number | 'device';
+
+/** The `'device'` ratio cap: past ×2 the fill cost (ratio² fragments) buys little visible detail. */
+export const DEVICE_PIXEL_RATIO_CAP = 2;
+
+/**
+ * A pixel ratio must be `'device'` (the exact string, case-sensitive) or a number in (0, 4]. Throws
+ * `RangeError` otherwise — it never clamps.
+ */
+export function checkPixelRatio(ratio: PixelRatioOption): void {
+  if (ratio === 'device') return;
+  if (!(typeof ratio === 'number' && ratio > 0 && ratio <= 4)) {
+    throw new RangeError(`pixelRatio must be 'device' or a number in (0, 4] (got ${String(ratio)})`);
+  }
+}
+
+/**
  * How far the framing pose backs off at `fov` relative to the 50° pose: the larger of
  * - tan(25°)/tan(fov/2): the same visible half-height at the target plane (what a dolly keeps), and
  * - sin(25°)/sin(fov/2): the same bounding-sphere margin.

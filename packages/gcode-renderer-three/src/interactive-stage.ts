@@ -14,6 +14,9 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import type { Vec3 } from '@chestnutlabs/toolpath-core';
 import {
   checkFov,
+  checkPixelRatio,
+  DEVICE_PIXEL_RATIO_CAP,
+  type PixelRatioOption,
   createDefaultGLRenderer,
   framingFromCenterRadius,
   framingLensScale,
@@ -87,6 +90,13 @@ export interface InteractiveStageOptions {
   cameraMode?: CameraMode;
   /** DD-020 interaction-aware quality; default `'off'`. */
   interactionQuality?: 'off' | 'auto';
+  /**
+   * Resting pixel ratio: a number in (0, 4], or `'device'` (the display's DPR capped at 2, followed live).
+   * Unset, the renderer keeps its own ratio. Throws `RangeError` otherwise, before any GL work.
+   */
+  pixelRatio?: PixelRatioOption;
+  /** Injectable display for `'device'` (tests). Default: `globalThis` (the window in a browser). */
+  displayEnv?: DisplayEnv;
   /** Preserve the drawing buffer so the canvas is readable after a render (headless still). */
   preserveDrawingBuffer?: boolean;
   /** Injectable GL (tests / exotic hosts). Default: the shared stage builder. */
@@ -105,6 +115,61 @@ export interface InteractiveStageOptions {
   onContextLost?: () => void;
   /** WebGL context restored — the owner rebuilds its scene content here. */
   onContextRestored?: () => void;
+}
+
+/** The slice of `window` the `'device'` pixel ratio reads: the DPR and a `resolution` media query. */
+export interface DisplayEnv {
+  readonly devicePixelRatio?: number;
+  matchMedia?(query: string): MediaQueryListLike;
+}
+
+/** The slice of `MediaQueryList` the DPR watcher uses. */
+export interface MediaQueryListLike {
+  addEventListener(type: 'change', listener: () => void): void;
+  removeEventListener(type: 'change', listener: () => void): void;
+}
+
+/**
+ * Follows `devicePixelRatio` for `pixelRatio: 'device'`. A `(resolution: Xdppx)` query only reports
+ * leaving the ratio X, so each change re-arms a query for the new ratio. With no `matchMedia` (a worker,
+ * a headless host) the ratio is read once and not followed.
+ */
+class DevicePixelRatioWatcher {
+  private query: MediaQueryListLike | null = null;
+  private readonly onChange = (): void => {
+    this.arm();
+    this.notify(this.read());
+  };
+
+  constructor(
+    private readonly env: DisplayEnv | undefined,
+    private readonly notify: (ratio: number) => void
+  ) {
+    this.arm();
+  }
+
+  /** The display ratio, capped at {@link DEVICE_PIXEL_RATIO_CAP}; 1 when the host reports none. */
+  read(): number {
+    const dpr = this.env?.devicePixelRatio;
+    return typeof dpr === 'number' && dpr > 0 ? Math.min(dpr, DEVICE_PIXEL_RATIO_CAP) : 1;
+  }
+
+  private arm(): void {
+    this.disarm();
+    const dpr = this.env?.devicePixelRatio;
+    if (typeof this.env?.matchMedia !== 'function' || typeof dpr !== 'number' || !(dpr > 0)) return;
+    this.query = this.env.matchMedia(`(resolution: ${dpr}dppx)`);
+    this.query.addEventListener('change', this.onChange);
+  }
+
+  private disarm(): void {
+    this.query?.removeEventListener('change', this.onChange);
+    this.query = null;
+  }
+
+  dispose(): void {
+    this.disarm();
+  }
 }
 
 /** True for a real DOM canvas (has DOM-only members OffscreenCanvas lacks). */
@@ -137,6 +202,11 @@ export class InteractiveStage {
   private programmaticMove = false;
   /** Lens dolly owed to the perspective camera for a `setFov` made while orthographic (DD-032). */
   private pendingLensScale = 1;
+  /** The resolved resting ratio from the `pixelRatio` option, or null when unset (the renderer's own). */
+  private hostRatio: number | null = null;
+  private readonly displayEnv: DisplayEnv | undefined;
+  /** Live only while the option is `'device'`. */
+  private dprWatcher: DevicePixelRatioWatcher | null = null;
 
   private readonly onContextLost = (ev: Event): void => {
     ev.preventDefault();
@@ -149,6 +219,9 @@ export class InteractiveStage {
   };
 
   constructor(opts: InteractiveStageOptions) {
+    // Validate before any GL resource exists, so a bad value never leaks a context.
+    if (opts.pixelRatio !== undefined) checkPixelRatio(opts.pixelRatio);
+    this.displayEnv = opts.displayEnv ?? (globalThis as DisplayEnv);
     this.canvas = opts.canvas;
     this.scene = opts.scene;
     this.onCameraChanged = opts.onCameraChanged;
@@ -162,11 +235,13 @@ export class InteractiveStage {
     this.interactionQuality = new InteractionQualityController(
       {
         setPixelRatio: (r) => this.gl.setPixelRatio?.(r),
-        getPixelRatio: () => this.gl.getPixelRatio?.() ?? 1,
+        // The consumer's ratio, once set, is the resting one; unset, the renderer's own (#435).
+        getPixelRatio: () => this.hostRatio ?? this.gl.getPixelRatio?.() ?? 1,
         render: () => this.render()
       },
       opts.interactionQuality ?? 'off'
     );
+    if (opts.pixelRatio !== undefined) this.applyPixelRatioOption(opts.pixelRatio);
 
     // Both cameras exist for the stage's lifetime; setCameraMode/frameTo keep their pose in sync so a
     // projection toggle never jumps the view (#150). The ortho frustum is placeholder until frameTo/resize.
@@ -497,6 +572,39 @@ export class InteractiveStage {
     this.interactionQuality.setMode(mode);
   }
 
+  /**
+   * Set the resting pixel ratio: a number in (0, 4], or `'device'` (the display's DPR capped at 2, then
+   * followed live as it changes). Goes through the interaction-quality controller, so a gesture in
+   * progress keeps its reduction and its settle restores the new ratio. Throws `RangeError` otherwise
+   * (never clamps). The default {@link capture} size stays the CSS size: pass `width`/`height` for a
+   * larger image.
+   */
+  setPixelRatio(ratio: PixelRatioOption): void {
+    checkPixelRatio(ratio);
+    if (this.disposedFlag) return;
+    this.applyPixelRatioOption(ratio);
+  }
+
+  private applyPixelRatioOption(ratio: PixelRatioOption): void {
+    this.dprWatcher?.dispose();
+    this.dprWatcher = null;
+    if (ratio === 'device') {
+      this.dprWatcher = new DevicePixelRatioWatcher(this.displayEnv, (r) => this.rebaseRatio(r));
+      this.rebaseRatio(this.dprWatcher.read());
+    } else {
+      this.rebaseRatio(ratio);
+    }
+  }
+
+  private rebaseRatio(ratio: number): void {
+    if (this.disposedFlag) return;
+    const before = this.interactionQuality.currentRatio;
+    this.hostRatio = ratio;
+    this.interactionQuality.rebase(ratio);
+    // A new ratio resizes (and so clears) the drawing buffer: repaint it.
+    if (this.interactionQuality.currentRatio !== before) this.render();
+  }
+
   /** OrbitControls `'change'`: render, and (when auto) adapt detail. */
   onInteractionFrame(): void {
     if (this.disposedFlag) return;
@@ -529,6 +637,9 @@ export class InteractiveStage {
    * nor requires `preserveDrawingBuffer`), reads it back, and encodes it. Rejects with an
    * `E_CAPTURE_UNSUPPORTED` error when the renderer cannot render-to-target (a stub GL / no WebGL) or the
    * stage is disposed / context-lost. The caller owns the returned `Blob` — the library never downloads.
+   * With no `width`/`height` and no `pixelRatio` set, the image is the resting drawing-buffer size, as
+   * before (also mid-gesture). With a `pixelRatio` set it is the canvas's CSS size, so setting one never
+   * changes it; pass `width`/`height` for a crisper image.
    */
   async capture(opts: CaptureOptions = {}): Promise<Blob> {
     if (this.disposedFlag || this.contextLost || !supportsCapture(this.gl)) {
@@ -540,7 +651,12 @@ export class InteractiveStage {
       throw new CaptureUnsupportedError(`capture unavailable: ${why}`);
     }
     const gl = this.gl;
-    const { w, h } = resolveCaptureSize(opts, this.canvas.width, this.canvas.height);
+    // The default size. With a pixelRatio set it is the CSS size: the drawing buffer divided by the ratio
+    // applied right now (the reduced one mid-gesture). Unset, the renderer's own ratio is the consumer's
+    // business, so it is the resting drawing buffer, exactly as before: only a gesture's reduction is undone.
+    const q = this.interactionQuality;
+    const divisor = this.hostRatio === null ? q.reduction : q.currentRatio;
+    const { w, h } = resolveCaptureSize(opts, this.canvas.width / divisor, this.canvas.height / divisor);
     // The render target's texture MUST declare sRGB so three applies the same linear→sRGB output
     // encoding it gives the canvas. A default (NoColorSpace/linear) target makes readRenderTargetPixels
     // return LINEAR bytes — the whole capture (background AND geometry colours) comes back too dark
@@ -577,6 +693,8 @@ export class InteractiveStage {
   dispose(): void {
     if (this.disposedFlag) return;
     this.disposedFlag = true;
+    this.dprWatcher?.dispose();
+    this.dprWatcher = null;
     this.interactionQuality.dispose();
     this.canvas.removeEventListener?.('webglcontextlost', this.onContextLost);
     this.canvas.removeEventListener?.('webglcontextrestored', this.onContextRestored);

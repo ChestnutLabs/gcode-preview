@@ -32,17 +32,26 @@ import type {
   CaptureOptions,
   GLRendererLike,
   InteractiveStageOptions,
+  PixelRatioOption,
   RenderTargetCanvas
 } from '@chestnutlabs/gcode-renderer-three';
 
 /** Observed scalar attributes; rich options (source, cameraState, palettes, loaders, injectables) are property-only. */
-const OBSERVED = ['view', 'background', 'interaction-quality', 'camera-mode', 'camera-fov'] as const;
+const OBSERVED = ['view', 'background', 'interaction-quality', 'camera-mode', 'camera-fov', 'pixel-ratio'] as const;
 
 /** A `camera-fov` attribute as a valid lens, or `undefined` (absent, non-numeric or outside [10, 120]). */
 function parseFovAttribute(value: string | null): number | undefined {
   if (value === null || value.trim() === '') return undefined;
   const n = Number(value);
   return n >= 10 && n <= 120 ? n : undefined;
+}
+
+/** A `pixel-ratio` attribute: exactly `'device'`, or a number in (0, 4]; else `undefined` (absent or invalid). */
+function parsePixelRatioAttribute(value: string | null): PixelRatioOption | undefined {
+  if (value === 'device') return 'device';
+  // Number(null) and Number('') are 0 and NaN fails both bounds: the range alone decides.
+  const n = Number(value);
+  return n > 0 && n <= 4 ? n : undefined;
 }
 
 /** The default tag name for the model viewer. */
@@ -67,6 +76,7 @@ export class GcodeModelViewerElement extends HTMLElement {
   private _buildVolume: BuildVolumeDef | null = null;
   private _theme: Theme | undefined;
   private _cameraFov: number | undefined;
+  private _pixelRatio: PixelRatioOption | undefined;
   private _createRenderer: ((canvas: RenderTargetCanvas) => GLRendererLike) | undefined;
   private _createControls: NonNullable<InteractiveStageOptions['createControls']> | undefined;
 
@@ -130,6 +140,24 @@ export class GcodeModelViewerElement extends HTMLElement {
     if (!(v >= 10 && v <= 120)) throw new RangeError(`cameraFov must be in [10, 120] degrees (got ${String(v)})`);
     this._cameraFov = v;
     this.controller?.controls.setCameraFov(v);
+  }
+  /**
+   * Resting pixel ratio: a number in (0, 4], or `'device'` (the display's DPR capped at 2, followed live;
+   * the exact lowercase string). Mirrors the `pixel-ratio` attribute. Setting anything else through the
+   * property throws `RangeError`, like `controls.setPixelRatio`; an invalid *attribute* is ignored and the
+   * last valid ratio kept (attribute callbacks must not throw). Not reflected. A ratio of 2 shades 4x the
+   * fragments of 1; the default `capture()` size does not change.
+   */
+  get pixelRatio(): PixelRatioOption | undefined {
+    return this._pixelRatio;
+  }
+  set pixelRatio(v: PixelRatioOption | undefined) {
+    if (v === undefined) return;
+    if (v !== 'device' && !(typeof v === 'number' && v > 0 && v <= 4)) {
+      throw new RangeError(`pixelRatio must be 'device' or a number in (0, 4] (got ${String(v)})`);
+    }
+    this._pixelRatio = v;
+    this.controller?.controls.setPixelRatio(v);
   }
   get limits(): ModelLimits | undefined {
     return this._limits;
@@ -221,10 +249,12 @@ export class GcodeModelViewerElement extends HTMLElement {
     const bg = this._background ?? (this.getAttribute('background') as ModelBackground | null) ?? undefined;
     // An invalid `camera-fov` attribute is ignored (default lens), never thrown from a lifecycle callback.
     const fov = this._cameraFov ?? parseFovAttribute(this.getAttribute('camera-fov'));
+    const pixelRatio = this._pixelRatio ?? parsePixelRatioAttribute(this.getAttribute('pixel-ratio'));
     this.controller = createModelPreviewController({
       ...(this._buildVolume !== null ? { buildVolume: this._buildVolume } : {}),
       ...(this._theme !== undefined ? { theme: this._theme } : {}),
       ...(fov !== undefined ? { cameraFov: fov } : {}),
+      ...(pixelRatio !== undefined ? { pixelRatio } : {}),
       ...(this._loaders ? { loaders: this._loaders } : {}),
       ...(bg !== undefined ? { background: bg } : {}),
       ...(this.getAttribute('interaction-quality')
@@ -276,6 +306,15 @@ export class GcodeModelViewerElement extends HTMLElement {
         if (fov !== undefined) {
           c.setCameraFov(fov);
           this._cameraFov = fov;
+        }
+        break;
+      }
+      case 'pixel-ratio': {
+        // Invalid (or removed) ⇒ ignore and keep the last valid ratio; callbacks must not throw.
+        const ratio = parsePixelRatioAttribute(value);
+        if (ratio !== undefined) {
+          c.setPixelRatio(ratio);
+          this._pixelRatio = ratio;
         }
         break;
       }

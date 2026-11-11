@@ -37,6 +37,8 @@
   export let theme = undefined;
   /** Perspective lens in degrees, [10, 120] (default 50). Out of range throws RangeError. */
   export let cameraFov = undefined;
+  /** Resting pixel ratio: (0, 4] or 'device' (DPR capped at 2, followed live). Unset keeps 1. Out of range throws RangeError. */
+  export let pixelRatio = undefined;
   /** Advanced/test: inject GL / orbit controls. */
   export let createRenderer = undefined;
   export let createControls = undefined;
@@ -55,6 +57,7 @@
     buildVolume,
     theme,
     cameraFov,
+    pixelRatio,
     createRenderer,
     createControls,
     onProgress: (p) => dispatch('progress', p)
@@ -96,6 +99,7 @@
   $: if (buildVolume !== undefined) viewer.controls.setBuildVolume(buildVolume);
   $: if (theme !== undefined) viewer.controls.setTheme(theme);
   $: if (cameraFov !== undefined) viewer.controls.setCameraFov(cameraFov);
+  $: if (pixelRatio !== undefined) viewer.controls.setPixelRatio(pixelRatio);
 
   onDestroy(() => viewer.dispose());
 </script>
