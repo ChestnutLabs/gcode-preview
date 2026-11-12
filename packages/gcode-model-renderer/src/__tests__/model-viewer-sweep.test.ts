@@ -53,6 +53,20 @@ describe('renderModelStill cache key', () => {
     expect(scoped.cacheKey).toBe('mr1_9df686241e31e208c1edfa99');
   });
 
+  it('an undefined selector key does not change or collapse the scope cache key', async () => {
+    const opts = { canvas: canvas(), width: 8, height: 8, createRenderer: gl, envId: 'env-1', cameraFov: 40 };
+    const k = async (renderScope: unknown): Promise<string> =>
+      (await renderModelStill({ kind: 'stl', bytes: stl() }, { ...opts, renderScope } as never)).cacheKey;
+    // Same key as the pinned `{ objectIds: ['stl'] }` + fov 40 literal above.
+    expect(await k({ objectIds: ['stl'], plateId: undefined })).toBe('mr1_9df686241e31e208c1edfa99');
+    const none = await k({ objectIds: ['nope'], plateId: undefined });
+    expect(none).not.toBe('mr1_9df686241e31e208c1edfa99');
+    const f1 = await k({ instanceFilter: () => true, plateId: undefined });
+    const f2 = await k({ instanceFilter: () => true, plateId: undefined });
+    const f3 = await k({ instanceFilter: () => true, objectIds: undefined });
+    expect(new Set([none, f1, f2, f3]).size).toBe(4);
+  });
+
   it('keeps 3MF source keys byte-identical to dev (literal; measured at base e6f159d too)', async () => {
     const opts = { canvas: canvas(), width: 8, height: 8, createRenderer: gl, envId: 'env-1' };
     const single = makeZip([{ name: '3D/3dmodel.model', data: enc(singleObjectModel('5 5 0')) }]);

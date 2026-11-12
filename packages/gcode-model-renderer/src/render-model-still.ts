@@ -138,8 +138,11 @@ let scopeKeyCounter = 0;
 /** A stable, serializable cache-key fragment for a render scope (DD-030 D2). */
 function scopeCacheKey(scope?: RenderScope): unknown {
   if (!scope) return undefined;
-  if ('plateId' in scope) return { p: scope.plateId };
-  if ('objectIds' in scope) return { o: [...scope.objectIds].sort() };
+  // Same rule as checkRenderScope: a key with an `undefined` value is not the selector, so
+  // `{ objectIds, plateId: undefined }` keys exactly like `{ objectIds }` (never a shared `{ p: undefined }`).
+  const sel = scope as Partial<{ objectIds: string[]; plateId: number }>;
+  if (sel.plateId !== undefined) return { p: sel.plateId };
+  if (sel.objectIds !== undefined) return { o: [...sel.objectIds].sort() };
   return { fn: ++scopeKeyCounter }; // opaque predicate → non-cacheable, unique each call
 }
 
