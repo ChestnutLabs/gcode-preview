@@ -17,12 +17,13 @@ import { isModelScene, resolveModelScene } from './loaders.js';
 import { assertFiniteBounds } from './finite.js';
 import {
   applyRenderScope,
+  checkRenderScope,
   sceneInstanceCount,
   type ModelPlateSummary,
   type ModelScene,
   type RenderScope
 } from './scene-model.js';
-import { computeCacheKey } from './cache-key.js';
+import { computeCacheKey, sceneFingerprint } from './cache-key.js';
 import type { ModelPlacement, PlacementOffset } from './placement.js';
 import type { ModelLimits } from './limits.js';
 
@@ -116,9 +117,9 @@ async function toScene(
 ): Promise<{ scene: ModelScene; sourceBytes: Uint8Array }> {
   if (isModelScene(source)) {
     assertFiniteBounds(source.bounds, 'ModelScene');
-    // No raw bytes for a pre-built scene: key off a stable structural summary instead.
-    const summary = JSON.stringify({ n: source.objects.length, b: source.bounds, c: source.capabilities });
-    return { scene: source, sourceBytes: new TextEncoder().encode(summary) };
+    // No raw bytes for a pre-built scene: key off a content fingerprint (geometry, transforms, materials,
+    // plates), so two different scenes never share a key.
+    return { scene: source, sourceBytes: new TextEncoder().encode(sceneFingerprint(source)) };
   }
   // Dispatch through the shared open-`kind` loader registry (DD-021 §4.1) — same parse result as before.
   const bytes = source.bytes instanceof Uint8Array ? source.bytes : new Uint8Array(source.bytes);
@@ -162,6 +163,7 @@ export async function renderModelStill(
   const background: ModelBackground = options.background ?? 'transparent';
   const view: PresentationView = options.view ?? 'iso';
   if (options.cameraFov !== undefined) checkModelFov(options.cameraFov); // before any work, like every option error
+  if (options.renderScope !== undefined) checkRenderScope(options.renderScope);
 
   const { scene: fullScene, sourceBytes } = await toScene(source, options.limits, options.filamentPalette);
   // DD-030 D2: narrow to the requested plate/object subset (framing follows the filtered bounds).
