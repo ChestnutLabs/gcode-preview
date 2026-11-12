@@ -73,6 +73,9 @@ Scalar options are **attributes** (also settable as properties); rich options ar
 `build-complete` · `disclosure` · `quality-fallback` · `progress-presentation-changed` ·
 `machine-geometry-discovered` · `machine-geometry-mismatch` · `renderer-unsupported` · `error`.
 
+A `renderer-unsupported` notice for an attribute set at mount fires inside `connectedCallback`, so add the
+listener before `appendChild`; a listener added just after it misses the notice.
+
 A few event `detail`s are DOM-wrapped, an accepted custom-element idiom: `disclosure` detail is
 `{ text }`, `machine-geometry-discovered` is `{ machine }`, and `machine-geometry-mismatch` is
 `{ message }`.

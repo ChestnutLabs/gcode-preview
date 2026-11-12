@@ -165,6 +165,7 @@ function GcodePreviewImpl(props: GcodePreviewProps, ref: ForwardedRef<GcodePrevi
       progressivePreview: props.progressivePreview,
       cameraMode: props.cameraMode ?? 'perspective',
       cameraFov: props.cameraFov,
+      pixelRatio: props.pixelRatio,
       frameContent: props.frameContent ?? 'all',
       interactionQuality: props.interactionQuality ?? 'off',
       theme: props.theme,
@@ -183,7 +184,8 @@ function GcodePreviewImpl(props: GcodePreviewProps, ref: ForwardedRef<GcodePrevi
   // #520: what the controls last received for the four 3D-only construction props. 3D was built with the
   // construction values, so the mount pass is a no-op there (no extra build). 2D starts from the documented
   // defaults, so only a non-default mount value is applied, and the 2D renderer reports it once. Later
-  // changes apply in both modes. pixelRatio is no construction option here, so it starts unset in both.
+  // changes apply in both modes. This ref outlives StrictMode's dispose/recreate of the controller, which
+  // is safe because the recreated 3D controller is built from the same construction values.
   const is2D = props.renderer === '2d';
   const appliedRef = useRef<{
     quality: QualityMode | 'auto';
@@ -194,7 +196,7 @@ function GcodePreviewImpl(props: GcodePreviewProps, ref: ForwardedRef<GcodePrevi
     quality: is2D ? 'auto' : (props.quality ?? 'auto'),
     cameraMode: is2D ? 'perspective' : (props.cameraMode ?? 'perspective'),
     cameraFov: is2D ? DEFAULT_LENS : props.cameraFov,
-    pixelRatio: undefined
+    pixelRatio: is2D ? undefined : props.pixelRatio
   });
   // Tracks which roles THIS prop last hid, so we diff prev→next and don't disturb roles hidden elsewhere.
   const prevHiddenRef = useRef<FeatureRoleValue[]>([]);
@@ -331,8 +333,6 @@ function GcodePreviewImpl(props: GcodePreviewProps, ref: ForwardedRef<GcodePrevi
     appliedRef.current.cameraFov = cameraFov;
     preview.controls.setCameraFov(cameraFov);
   }, [cameraFov]);
-  // Also the mount value: the call queues before the async 3D load and replays before the first frame,
-  // so (unlike the lens) the ratio needs no construction option.
   useEffect(() => {
     if (pixelRatio === undefined || pixelRatio === appliedRef.current.pixelRatio) return;
     appliedRef.current.pixelRatio = pixelRatio;

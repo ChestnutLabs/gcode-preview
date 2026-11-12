@@ -34,7 +34,9 @@ the `svelte` export condition), not from the package index. The ~24-prop default
 `capabilities.featureRoles`), `progress` (DD-006 observation), and `createWorker`. Events (14):
 `ready`, `camerachange`, `parseerror`, `parsecancelled`, `parseprogress`, `stage`, `buildcomplete`,
 `qualityfallback`, `machinegeometrymismatch`/`discovered`, `progresspresentationchanged`,
-`disclosure`, `rendererunsupported`, `error`. The full handle is exported as `preview` (`bind:this` then `.preview`); its
+`disclosure`, `rendererunsupported`, `error`. A `rendererunsupported` notice for a prop set at mount dispatches
+while the component mounts, so listen with an `on:rendererunsupported` directive in the parent template; a `$on`
+attached after `new GcodePreview({ target })` misses it. The full handle is exported as `preview` (`bind:this` then `.preview`); its
 `controls` reach the imperative surface — `getRenderStats()` (render diagnostics),
 `pickSegment(ndcX, ndcY, threshold?)` (source-mapping / picking), `isColorModeAvailable(mode)`, and
 `capture(opts?)` (image `Blob`, also `preview.capture`). The handle `state` carries capability-aware

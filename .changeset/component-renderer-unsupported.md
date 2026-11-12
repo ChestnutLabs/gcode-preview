@@ -18,7 +18,8 @@ lower-level `onEvent` received it.
   fires it once. A default (`'auto'`, `'perspective'`, a 50-degree lens, no ratio) fires nothing, written out or not.
 - **No extra 3D work at mount:** a 3D view no longer re-applies these props at mount, since it was built with them.
   Before, React and Svelte re-applied `quality`, which rebuilt the view when the parse finished before three.js
-  loaded. React still applies a set `pixelRatio` at mount, since it isn't a construction option there.
+  loaded. React now builds the 3D view with `pixelRatio` too, like the other adapters, so under StrictMode the
+  ratio set at mount reaches the live view.
 - **Svelte:** `quality`, `cameraMode`, `cameraFov` and `pixelRatio` now apply only when their value changes.
 - **Core `testing.ts`:** `ComponentHarness` callbacks gain an optional `onRendererUnsupported`, `MountedComponent`
   an optional `setCameraMode`, and `ComponentMountOptions` gains `cameraFov` and `pixelRatio`. Two conformance cases

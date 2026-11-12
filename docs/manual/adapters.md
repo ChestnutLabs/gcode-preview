@@ -127,6 +127,11 @@ defaults are `quality="auto"`, `camera-mode="perspective"`, a lens of 50 degrees
 renderer is built with these values, so the rule never rebuilds a 3D view. The model viewer (`/model`) uses the
 same event names.
 
+These mount-time notices fire while the component mounts, so the listener has to be in place first. On
+`<gcode-preview>` they fire in `connectedCallback`: add the listener before `appendChild`, because one added just
+after it misses them. In Svelte, listen with an `on:rendererunsupported` directive in the parent template; a `$on`
+attached after `new GcodePreview({ target })` misses them.
+
 The lower-level APIs (`useGcodePreview`, `createGcodePreview`, `createPreviewController`) deliver the same event
 through `onEvent`, once per `controls.set*` call. They don't report options passed at construction to a 2D
 renderer. To get the notice, call the control after creating the preview.
