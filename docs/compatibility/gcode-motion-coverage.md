@@ -39,7 +39,7 @@ remaining gaps plainly — and disclosing them at runtime via the `extrusionMode
 Some arcs and cycles cannot be drawn exactly as written: a controller such as LinuxCNC would reject
 them, while Marlin-style firmware draws them anyway. The parser draws them the nearest way and records a
 warning in `ir.header.warnings` (also delivered with the `ready` event), so a viewer can say the
-drawing is approximate. These codes shipped after v0.23.0 (#553):
+drawing is approximate. These codes are new after v0.23.0 (#553):
 
 | Warning code | Raised when | What is drawn |
 |---|---|---|

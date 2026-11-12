@@ -166,7 +166,7 @@ the cross-adapter tour of the four framework wrappers.
 
 Determinism (stills): same input + same environment ⇒ identical output. Cross-GPU/driver pixel identity
 is not promised — cache by the returned `cacheKey`. For a pre-built `ModelScene` input the key covers
-the geometry, transforms, instances, plates and materials; keys stored before the post-v0.23.0 model
-viewer fixes will not match, so regenerate them. Keys for STL and 3MF byte sources did not change.
+the geometry, transforms, instances, plates and materials; keys stored by v0.23.0 or
+earlier will not match, so regenerate them. Keys for STL and 3MF byte sources did not change.
 
 Part of [Chestnut Labs G-code Preview](../../README.md) · MIT

@@ -108,8 +108,9 @@ rejects one of those calls, for example a theme opacity outside 0–1, you get a
 with code `E_CONTROL_REJECTED` and a message that names the control; the other queued controls still apply.
 
 `setLayerRange`, `setScrubPosition` and `setScrubTime` throw `RangeError` at once for a value that is not a
-number, or is `NaN`, even before the renderer has loaded. `null` (clear) and `±Infinity` (an open end) are
-still accepted. On `<gcode-preview>` a non-numeric `scrub` or `scrub-time` attribute is ignored instead, and
+number, or is `NaN`, even before the renderer has loaded. `null` (clear, on `setScrubPosition` and
+`setScrubTime` only; `setLayerRange` takes numbers) and `±Infinity` (an open end, on all three) are still
+accepted. On `<gcode-preview>` a non-numeric `scrub` or `scrub-time` attribute is ignored instead, and
 the previous cut is kept, so the source still parses. A callback of yours that throws (an event handler or
 `onStateChange`) cannot change a parse's outcome: the other callbacks still run, and the error is re-thrown
 from a microtask so it still reaches the console.
