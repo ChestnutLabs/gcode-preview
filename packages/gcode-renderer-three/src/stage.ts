@@ -154,7 +154,7 @@ export function framingLensScale(fov: number): number {
 
 /**
  * Camera-distance factor that keeps apparent size when the vertical fov changes `from` → `to` degrees.
- * Throws `RangeError` when either fov is outside [10, 120] (as {@link checkFov}).
+ * Throws `RangeError` when either fov is outside [10, 120], like the `cameraFov` option.
  */
 export function lensScale(from: number, to: number): number {
   checkFov(from);
