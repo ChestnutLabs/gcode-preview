@@ -1,6 +1,7 @@
 ---
 '@chestnutlabs/gcode-preview-core': patch
 '@chestnutlabs/gcode-renderer-2d': patch
+'@chestnutlabs/gcode-preview-element': patch
 ---
 
 The 2D view no longer goes blank when you clear the layer range. With `renderer: '2d'`, setting
@@ -16,7 +17,8 @@ after a file had loaded left an empty canvas. It now shows the top layer, as the
   number above 0. `LayerView2D` also rejects a negative or non-finite `padding`, and `setAdjacentLayers(NaN)`
   throws with the previous count kept. Before, these drew wrongly with no error (a `NaN` opacity drew the
   ghost layers at full strength). Through the core controller, a bad `adjacentLayers` or `ghostOpacity`
-  throws from `bindCanvas`.
+  throws from `bindCanvas`. On `<gcode-preview renderer="2d">` a non-numeric `adjacent-layers` attribute is
+  bad markup: it is ignored (one ghost layer, the default) and the element still draws.
 - **Travel toggle:** turning travel back on in 2D keeps the travel style you gave the renderer, instead of
   switching to the default grey.
 - **After `dispose()`:** the 2D renderer no longer draws, matching the 3D renderer. A size that is `NaN`,

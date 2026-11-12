@@ -85,6 +85,11 @@ const OBSERVED = [
 /** The default tag name (DD-009 §4.5). */
 export const DEFAULT_TAG = 'gcode-preview';
 
+/** `adjacent-layers` markup → the renderer option: absent or non-numeric (`NaN`) is `undefined`, the default. */
+function markupAdjacentLayers(attr: string | null): number | undefined {
+  return attr === null ? undefined : parseScrub(attr);
+}
+
 export class GcodePreviewElement extends HTMLElement {
   static get observedAttributes(): string[] {
     return [...OBSERVED];
@@ -412,7 +417,8 @@ export class GcodePreviewElement extends HTMLElement {
         colorMode: this._colorMode,
         tube: this._tube,
         theme: this._theme,
-        adjacentLayers: this.hasAttribute('adjacent-layers') ? Number(this.getAttribute('adjacent-layers')) : undefined,
+        // A non-numeric attribute is bad markup: ignored (the default), never a throw out of connectedCallback.
+        adjacentLayers: markupAdjacentLayers(this.getAttribute('adjacent-layers')),
         ...this._rendererOptions
       },
       parseDefaults: this._parseOptions
