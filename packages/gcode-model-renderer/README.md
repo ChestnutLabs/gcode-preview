@@ -55,6 +55,24 @@ Already hold a corrected or richer filament palette (e.g. re-rendering a sliced 
 `filamentPalette` (hex per 0-based slot) to `renderModelStill` / `parse3mf` to override the one read
 from `project_settings.config`. Optional — the renderer reads the file's own palette without it.
 
+### Limits for untrusted files
+
+Source files are untrusted input, so `limits` bounds what a file may ask for. Each field is a non-negative
+integer; leave it out for the default. A bad value (`NaN`, `Infinity`, negative, fractional) throws
+`ModelParseError` with `code: 'E_MODEL_OPTION'` instead of quietly turning the bound off, so there is no
+"unlimited" value; pass a large integer if you need a high bound. `0` is allowed and rejects any file that
+has the thing being counted.
+
+| Field | Default | Rejects with |
+| --- | --- | --- |
+| `maxSourceBytes` | 256 MiB | `E_MODEL_TOO_LARGE` |
+| `maxTriangles` | 5,000,000 | `E_MODEL_TOO_MANY_TRIANGLES` |
+| `maxObjects` | 10,000 | `E_MODEL_TOO_MANY_OBJECTS` (3MF `<object>` elements across the main and any production-extension parts) |
+| `maxInstances` | 50,000 | `E_MODEL_TOO_MANY_INSTANCES` (3MF build items plus component references, counting every node of the assembly) |
+
+A 3MF whose components contain themselves (an object that lists itself, directly or through other objects)
+throws `E_MODEL_CYCLE`. A part shared by several parents is fine.
+
 ## Interactive viewer
 
 For a live surface a user can orbit — a "View in 3D" for a source model, as opposed to a static
