@@ -694,7 +694,9 @@ export function createEngine(input: string | Uint8Array, opts: ParseOptions): En
     if (f !== undefined) modalFeed = f;
     // E is delta-based (DD-010 D1) so M82 arcs classify correctly and `lastE` stays consistent with g0.
     const eDelta = resolveEDelta(e);
-    const pathType = eDelta ? 'extrusion' : toolEngaged ? 'cut' : 'travel';
+    // Same rule as a linear move (g0): only a POSITIVE delta extrudes. A negative one (a retract during
+    // the arc) is not an extrusion, so it is a Cut with the tool engaged and a Travel otherwise (#507).
+    const pathType = eDelta > 0 ? 'extrusion' : toolEngaged ? 'cut' : 'travel';
     if (path === null || path.type !== pathType) {
       breakPath(pathType);
     }
