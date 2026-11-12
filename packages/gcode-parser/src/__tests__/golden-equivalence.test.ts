@@ -57,6 +57,15 @@ const equivalenceFixtures = manifest.fixtures.filter((f) => f.sizeTier !== 'adve
 const INTENTIONAL_MOTION_CORRECTION = new Set(['demo-mach3', 'demo-easel', 'container-adv-traversal-names']);
 
 /**
+ * #522: demo-3dbenchy has G2/G3 arcs that omit I or J. The inherited engine read the missing word as
+ * `undefined`, which made the segment count NaN, so each such arc collapsed to ONE chord; the adapter golden's
+ * digests pin those chords. An omitted centre offset is now 0, so they are real multi-segment arcs: 3 extra
+ * segments and different position digests. Excluded from strict adapter-equivalence (like the CNC
+ * corrections above), pinned by the regenerated native golden, and asserted finite below.
+ */
+const ARC_MISSING_OFFSET_CORRECTION = new Set(['demo-3dbenchy']);
+
+/**
  * #507: a G2/G3 arc with a NEGATIVE E (a retract during the arc) is no longer an extrusion — it takes the
  * same rule as a linear move. The inherited adapter golden still has those arc segments as Extrude, so
  * only the masked-kind digest differs for these two fixtures (positions, tool and layer are unchanged
@@ -77,31 +86,44 @@ function fnv1a(view: ArrayBufferView): string {
 
 describe('native parser vs adapter goldens (#28 gate)', () => {
   for (const fixture of equivalenceFixtures) {
-    it.skipIf(INTENTIONAL_MOTION_CORRECTION.has(fixture.id))(`geometry-equivalent for ${fixture.id}`, () => {
-      const golden = JSON.parse(readFileSync(join(goldenDir, `${fixture.id}.json`), 'utf8'));
-      const text = readFileSync(join(repoRoot, fixture.path), 'utf8');
-      const { ir } = parseGcodeToIR(text, { sourceId: fixture.id, parserVersion: 'golden' });
-      const s = ir.segments;
+    it.skipIf(INTENTIONAL_MOTION_CORRECTION.has(fixture.id) || ARC_MISSING_OFFSET_CORRECTION.has(fixture.id))(
+      `geometry-equivalent for ${fixture.id}`,
+      () => {
+        const golden = JSON.parse(readFileSync(join(goldenDir, `${fixture.id}.json`), 'utf8'));
+        const text = readFileSync(join(repoRoot, fixture.path), 'utf8');
+        const { ir } = parseGcodeToIR(text, { sourceId: fixture.id, parserVersion: 'golden' });
+        const s = ir.segments;
 
-      expect(s.count).toBe(golden.segmentCount);
-      // Exact-position equivalence: identical float math → identical bits.
-      expect(fnv1a(s.x0)).toBe(golden.bufferDigests.x0);
-      expect(fnv1a(s.y0)).toBe(golden.bufferDigests.y0);
-      expect(fnv1a(s.z0)).toBe(golden.bufferDigests.z0);
-      expect(fnv1a(s.x1)).toBe(golden.bufferDigests.x1);
-      expect(fnv1a(s.y1)).toBe(golden.bufferDigests.y1);
-      expect(fnv1a(s.z1)).toBe(golden.bufferDigests.z1);
-      expect(fnv1a(s.tool)).toBe(golden.bufferDigests.tool);
-      expect(fnv1a(s.layer)).toBe(golden.bufferDigests.layer);
-      // Kind masked to the bits the adapter could know (Extrude|Travel).
-      const masked = new Uint8Array(s.count);
-      const mask = MoveKind.Extrude | MoveKind.Travel;
-      for (let i = 0; i < s.count; i++) masked[i] = s.kind[i] & mask;
-      if (!ARC_RETRACT_KIND_CORRECTION.has(fixture.id)) expect(fnv1a(masked)).toBe(golden.bufferDigests.kind);
-      // Same floating origin.
-      expect(ir.header.originOffset.x).toBeCloseTo(golden.originOffset.x, 3);
-      expect(ir.header.originOffset.y).toBeCloseTo(golden.originOffset.y, 3);
-      expect(ir.header.originOffset.z).toBeCloseTo(golden.originOffset.z, 3);
+        expect(s.count).toBe(golden.segmentCount);
+        // Exact-position equivalence: identical float math → identical bits.
+        expect(fnv1a(s.x0)).toBe(golden.bufferDigests.x0);
+        expect(fnv1a(s.y0)).toBe(golden.bufferDigests.y0);
+        expect(fnv1a(s.z0)).toBe(golden.bufferDigests.z0);
+        expect(fnv1a(s.x1)).toBe(golden.bufferDigests.x1);
+        expect(fnv1a(s.y1)).toBe(golden.bufferDigests.y1);
+        expect(fnv1a(s.z1)).toBe(golden.bufferDigests.z1);
+        expect(fnv1a(s.tool)).toBe(golden.bufferDigests.tool);
+        expect(fnv1a(s.layer)).toBe(golden.bufferDigests.layer);
+        // Kind masked to the bits the adapter could know (Extrude|Travel).
+        const masked = new Uint8Array(s.count);
+        const mask = MoveKind.Extrude | MoveKind.Travel;
+        for (let i = 0; i < s.count; i++) masked[i] = s.kind[i] & mask;
+        if (!ARC_RETRACT_KIND_CORRECTION.has(fixture.id)) expect(fnv1a(masked)).toBe(golden.bufferDigests.kind);
+        // Same floating origin.
+        expect(ir.header.originOffset.x).toBeCloseTo(golden.originOffset.x, 3);
+        expect(ir.header.originOffset.y).toBeCloseTo(golden.originOffset.y, 3);
+        expect(ir.header.originOffset.z).toBeCloseTo(golden.originOffset.z, 3);
+      }
+    );
+
+    it(`stores no non-finite coordinate for ${fixture.id} (#522)`, () => {
+      const text = readFileSync(join(repoRoot, fixture.path), 'utf8');
+      const s = parseGcodeToIR(text, { sourceId: fixture.id, parserVersion: 'golden' }).ir.segments;
+      let bad = 0;
+      for (const a of [s.x0, s.y0, s.z0, s.x1, s.y1, s.z1]) {
+        for (let i = 0; i < s.count; i++) if (!Number.isFinite(a[i])) bad++;
+      }
+      expect(bad).toBe(0);
     });
 
     it(`matches the native golden for ${fixture.id}`, () => {
