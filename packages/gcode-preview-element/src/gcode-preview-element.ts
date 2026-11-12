@@ -528,7 +528,10 @@ export class GcodePreviewElement extends HTMLElement {
     if (r === null) c.setLayerRange(0, Number.POSITIVE_INFINITY);
     else c.setLayerRange(r[0], r[1]);
     c.setScrubPosition(this.acceptScrub(this.getAttribute('scrub')) ?? this.lastScrub);
-    c.setScrubTime(this.acceptScrubTime(this.getAttribute('scrub-time')) ?? this.lastScrubTime);
+    // scrub-time only when it has a number (setScrubTime(null) clears the cut, which would drop `scrub`);
+    // it is applied last, so it wins when both are set.
+    const scrubTime = this.acceptScrubTime(this.getAttribute('scrub-time')) ?? this.lastScrubTime;
+    if (scrubTime !== null) c.setScrubTime(scrubTime);
     this.applyHiddenRoles(this.hiddenFeatureRoles);
     this.applyProgress();
     // Camera framing set BEFORE connect: attributeChangedCallback/the cameraState setter both no-op

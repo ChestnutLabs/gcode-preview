@@ -163,13 +163,12 @@ describe('<gcode-preview> non-numeric scrub / scrub-time', () => {
     expect(el.scrubTime).toBeNull();
   });
 
-  // On (re)connect the element applies scrub, then scrub-time; a numeric scrub-time before a parse is a
-  // no-op, so the scrub cut survives and is visible once the new source parses.
+  // On (re)connect the element applies scrub, then scrub-time only if it has a number; a numeric scrub-time
+  // before a parse is a controller no-op, so the scrub cut survives and is visible once the new source parses.
   it('a reconnect applies the last numeric scrub over a non-numeric attribute', async () => {
     const el = await parsed();
     el.setAttribute('scrub', '5');
     el.setAttribute('scrub', 'nope');
-    el.setAttribute('scrub-time', '100');
     el.remove();
     document.body.appendChild(el);
     await el.parse(new Uint8Array(1000));

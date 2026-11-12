@@ -32,5 +32,7 @@ The preview controller no longer misreports a rejected control or a throwing sub
 - **The Web Component ignores a non-numeric `scrub` or `scrub-time` attribute.** `scrub="abc"` (or
   setting the `scrub` / `scrubTime` property to `NaN`) keeps the previous cut instead of throwing, so the
   source still parses. A number, including `Infinity`, still applies, and removing the attribute clears.
+- **`<gcode-preview scrub="5">` keeps its initial cut.** Without a `scrub-time` attribute, connecting the
+  element used to clear the cut that `scrub` had just set. When both are set, `scrub-time` is applied last.
 - **`setScrubTime(ms)` before a successful parse does nothing, as documented.** It used to clear an
   existing scrub cut. `setScrubTime(null)` still clears.
