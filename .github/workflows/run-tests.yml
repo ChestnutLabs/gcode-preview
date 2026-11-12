@@ -75,7 +75,7 @@ jobs:
   # .svelte files and its tests read them as text. This job compiles and mounts the shipped components
   # under each major (latest of the major; the ^4.0.0 floor itself is not exercised). Self-contained
   # harness per leg in tools/svelte-compat/ (own lock); needs the root install only so the sibling
-  # packages' third-party imports (three, ...) resolve. Not a required check.
+  # packages' third-party imports (three, ...) resolve. Both legs are required checks on dev.
   svelte-compat:
 
     runs-on: ubuntu-latest
