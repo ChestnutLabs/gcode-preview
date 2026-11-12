@@ -53,38 +53,38 @@ export type ColorMode =
 export const DEFAULT_FALLBACK: RGB = [0.7, 0.7, 0.7];
 
 /**
- * Min/max of the IR's finite feedrates — the auto-range for color-by-speed (#177). NaN (no `F` yet) and
- * ±Infinity (an `F` word too large for the IR's Float32 channel) are skipped, so one hostile value
- * cannot collapse the whole scale.
+ * Min/max of the finite, non-negative values in a channel, or `[0, 0]` when there are none. A value from
+ * the file with no place on a speed/power scale is skipped — NaN (no `F`/`S` yet), ±Infinity (a word too
+ * large for the Float32 channel), or a negative `F`/`S` — so one hostile value cannot stretch or collapse
+ * the whole scale.
  */
-export function feedrateRange(ir: ToolpathIR): [number, number] {
-  const f = ir.segments.feedrate;
+function channelRange(values: ArrayLike<number>): [number, number] {
   let min = Infinity;
   let max = -Infinity;
-  for (let i = 0; i < f.length; i++) {
-    const v = f[i];
-    if (!Number.isFinite(v)) continue;
+  for (let i = 0; i < values.length; i++) {
+    const v = values[i];
+    if (!(v >= 0) || v === Infinity) continue;
     if (v < min) min = v;
     if (v > max) max = v;
   }
   return min <= max ? [min, max] : [0, 0];
 }
 
-/** Min/max of the IR's captured finite tool-power values — the auto-range for color-by-power
- *  (#189). Non-finite values are skipped (as in {@link feedrateRange}). Returns `[0, 0]` when the
+/**
+ * Min/max of the IR's finite, non-negative feedrates — the auto-range for color-by-speed (#177). NaN (no
+ * `F` yet), ±Infinity (an `F` word too large for the IR's Float32 channel) and negative feedrates (not a
+ * speed) are skipped, so one hostile value cannot distort the whole scale.
+ */
+export function feedrateRange(ir: ToolpathIR): [number, number] {
+  return channelRange(ir.segments.feedrate);
+}
+
+/** Min/max of the IR's captured finite, non-negative tool-power values — the auto-range for
+ *  color-by-power (#189). Values are skipped as in {@link feedrateRange}. Returns `[0, 0]` when the
  *  `toolPower` modal channel was not captured. */
 export function toolPowerRange(ir: ToolpathIR): [number, number] {
   const p = ir.segments.modal?.toolPower;
-  if (p === undefined) return [0, 0];
-  let min = Infinity;
-  let max = -Infinity;
-  for (let i = 0; i < p.length; i++) {
-    const v = p[i];
-    if (!Number.isFinite(v)) continue;
-    if (v < min) min = v;
-    if (v > max) max = v;
-  }
-  return min <= max ? [min, max] : [0, 0];
+  return p === undefined ? [0, 0] : channelRange(p);
 }
 
 /**
@@ -103,15 +103,7 @@ export function layerHeights(ir: ToolpathIR): Float32Array {
 
 /** Min/max finite per-layer height — the auto-range for color-by-layer-height (#179). */
 export function layerHeightRange(ir: ToolpathIR): [number, number] {
-  const h = layerHeights(ir);
-  let min = Infinity;
-  let max = -Infinity;
-  for (let i = 0; i < h.length; i++) {
-    if (!Number.isFinite(h[i])) continue;
-    if (h[i] < min) min = h[i];
-    if (h[i] > max) max = h[i];
-  }
-  return min <= max ? [min, max] : [0, 0];
+  return channelRange(layerHeights(ir));
 }
 
 /** Sample a color ramp at t∈[0,1] with linear interpolation between stops. `t` is clamped; NaN → the start. */
@@ -145,13 +137,50 @@ function swapSlotAt(colorChanges: readonly { segIndex: number }[], segIndex: num
 }
 
 /**
- * Ramp color of `v` on `[lo, lo + span]` (a zero/negative span → the ramp start), or `fallback` when the
- * value has no position: NaN `v`, or a NaN `t` from an infinite value on an infinite range.
+ * Ramp color of `v` on `[lo, lo + span]` (a zero span → the ramp start; values past either end clamp), or
+ * `fallback` when the value has no place on the scale: NaN, or negative (a hostile `F`/`S`; layer heights
+ * are never negative). `lo` and `span` are finite and non-negative ({@link checkColorMode} / the auto-range), so `t` is never
+ * NaN: `v` is a non-negative number here, and `(v - lo) / span` with `span > 0` is finite or +Infinity.
  */
 function rampOrFallback(ramp: RGB[], v: number, lo: number, span: number, fallback: RGB): RGB {
-  if (Number.isNaN(v)) return fallback;
-  const t = span > 0 ? (v - lo) / span : 0;
-  return Number.isNaN(t) ? fallback : rampColor(ramp, t);
+  if (!(v >= 0)) return fallback;
+  return rampColor(ramp, span > 0 ? (v - lo) / span : 0);
+}
+
+/**
+ * Validate a consumer {@link ColorMode}, throwing a `RangeError` for an option that has no meaning, rather
+ * than silently painting every segment one colour later:
+ *
+ * - an explicit `range` (feedrate, layerHeight, power) must be two finite numbers `>= 0` — speeds, powers
+ *   and layer heights are never negative — in ascending order. For a reversed scale, reverse the `ramp`.
+ *   `[v, v]` is a valid point range: every segment is the ramp start;
+ * - object mode's `only` must be a 1-based integer object index (`>= 1`).
+ *
+ * {@link createSegmentColorer} calls this, so a direct renderer user gets it for free. A renderer that
+ * stores a mode before colouring with it should call it first, so a bad mode throws at the call and is
+ * never stored.
+ */
+export function checkColorMode(mode: ColorMode): void {
+  if (mode.mode === 'feedrate' || mode.mode === 'layerHeight' || mode.mode === 'power') {
+    if (mode.range === undefined) return;
+    const [lo, hi] = mode.range;
+    if (!Number.isFinite(lo) || !Number.isFinite(hi) || lo < 0 || hi < 0) {
+      throw new RangeError(
+        `${mode.mode} color range must be two finite numbers >= 0, got [${String(lo)}, ${String(hi)}]`
+      );
+    }
+    if (lo > hi) {
+      throw new RangeError(
+        `${mode.mode} color range is inverted: lo ${String(lo)} > hi ${String(hi)}. ` +
+          'Pass [lo, hi] in ascending order; for a reversed scale, reverse the ramp instead'
+      );
+    }
+  } else if (mode.mode === 'object') {
+    const only = mode.only;
+    if (only !== undefined && !(Number.isSafeInteger(only) && only >= 1)) {
+      throw new RangeError(`object color mode 'only' must be a 1-based integer object index, got ${String(only)}`);
+    }
+  }
 }
 
 /** Per-segment RGB accessor — the loop-friendly form both renderers use. */
@@ -163,6 +192,7 @@ export type SegmentColorer = (segIndex: number) => RGB;
  * The returned RGB is honest: unknown channel values yield the mode's fallback.
  */
 export function createSegmentColorer(ir: ToolpathIR, mode: ColorMode): SegmentColorer {
+  checkColorMode(mode);
   const seg = ir.segments;
   if (mode.mode === 'single') {
     const c = mode.color;
@@ -200,20 +230,17 @@ export function createSegmentColorer(ir: ToolpathIR, mode: ColorMode): SegmentCo
   if (mode.mode === 'feedrate') {
     const [lo, hi] = mode.range ?? feedrateRange(ir);
     const span = hi - lo;
-    // NaN feedrate (before the first F) → fallback, never a fabricated speed color (#177).
+    // NaN feedrate (before the first F) or a negative F → fallback, never a fabricated speed color (#177).
     return (i) => rampOrFallback(mode.ramp, seg.feedrate[i], lo, span, mode.fallback);
   }
   if (mode.mode === 'layerHeight') {
-    // Precompute per-layer heights once → O(1) per segment (#179). An out-of-range layer index
-    // (shouldn't happen; a hostile IR) → fallback, never a fabricated height color.
+    // Precompute per-layer heights once → O(1) per segment (#179). A layer index with no layer entry
+    // (a hostile or hand-built IR) → fallback, never a fabricated height color: a Float32Array read past
+    // its end is `undefined`, which `rampOrFallback` rejects like NaN (`!(undefined >= 0)`).
     const heights = layerHeights(ir);
     const [lo, hi] = mode.range ?? layerHeightRange(ir);
     const span = hi - lo;
-    return (i) => {
-      const li = seg.layer[i];
-      if (li < 0 || li >= heights.length) return mode.fallback;
-      return rampOrFallback(mode.ramp, heights[li], lo, span, mode.fallback);
-    };
+    return (i) => rampOrFallback(mode.ramp, heights[seg.layer[i]], lo, span, mode.fallback);
   }
   if (mode.mode === 'power') {
     const power = seg.modal?.toolPower;
@@ -224,7 +251,7 @@ export function createSegmentColorer(ir: ToolpathIR, mode: ColorMode): SegmentCo
     }
     const [lo, hi] = mode.range ?? toolPowerRange(ir);
     const span = hi - lo;
-    // NaN (tool off / never engaged) → fallback, never a fabricated power color.
+    // NaN (tool off / never engaged) or a negative S → fallback, never a fabricated power color.
     return (i) => rampOrFallback(mode.ramp, power[i], lo, span, mode.fallback);
   }
   if (mode.mode === 'moveKind') {
@@ -250,5 +277,10 @@ export function createSegmentColorer(ir: ToolpathIR, mode: ColorMode): SegmentCo
  * rescanned per call).
  */
 export function segmentColor(ir: ToolpathIR, mode: ColorMode, segIndex: number): RGB {
+  // The hot-path colorer does not bounds-check; this one-off form does, so a bad index is a RangeError
+  // rather than an `undefined` color (or a fabricated one) handed to the renderer.
+  if (!Number.isInteger(segIndex) || segIndex < 0 || segIndex >= ir.segments.count) {
+    throw new RangeError(`segIndex must be an integer in [0, ${ir.segments.count}), got ${String(segIndex)}`);
+  }
   return createSegmentColorer(ir, mode)(segIndex);
 }

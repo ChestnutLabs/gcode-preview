@@ -12,7 +12,7 @@
  * {@link LayerView2D} class is a thin lifecycle wrapper over a real `<canvas>`.
  */
 import { MoveKind, type ToolpathIR } from '@chestnutlabs/toolpath-core';
-import { createSegmentColorer, type ColorMode, type RGB } from '@chestnutlabs/gcode-colors';
+import { checkColorMode, createSegmentColorer, type ColorMode, type RGB } from '@chestnutlabs/gcode-colors';
 
 /** The subset of `CanvasRenderingContext2D` the layer view uses (a real context satisfies it). */
 export type CanvasContext2DLike = Pick<
@@ -499,6 +499,8 @@ export class LayerView2D {
     private readonly canvas: HTMLCanvasElement,
     opts: LayerView2DOptions = {}
   ) {
+    // Validate before storing: a bad mode throws here, never later from render().
+    if (opts.colorMode !== undefined) checkColorMode(opts.colorMode);
     this.layer = opts.layer ?? 0;
     this.colorMode = opts.colorMode ?? DEFAULT_COLOR_MODE;
     this.lineWidth = opts.lineWidth ?? 1;
@@ -519,7 +521,9 @@ export class LayerView2D {
     this.layer = layer < 0 ? 0 : layer;
   }
 
+  /** Throws a `RangeError` for an invalid mode (see `checkColorMode`); the previous mode stays in effect. */
   setColorMode(colorMode: ColorMode): void {
+    checkColorMode(colorMode);
     this.colorMode = colorMode;
   }
 

@@ -33,3 +33,4 @@ export type {
   Drawable2DSummary
 } from './layer-view.js';
 export type { ColorMode, RGB } from '@chestnutlabs/gcode-colors';
+export { checkColorMode } from '@chestnutlabs/gcode-colors';

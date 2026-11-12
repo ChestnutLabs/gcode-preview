@@ -38,6 +38,7 @@ import type {
 } from '@chestnutlabs/gcode-renderer-three';
 import { CaptureUnsupportedError } from '@chestnutlabs/gcode-renderer-three';
 import { LayerView2DRenderer } from './renderer-2d-adapter.js';
+import { checkColorMode } from '@chestnutlabs/gcode-renderer-2d';
 import type { MoveKindToggle, PreviewRenderer, PreviewRendererEvent, RendererMode } from './renderer-interface.js';
 import {
   createProgressMapper,
@@ -389,6 +390,8 @@ export function createPreviewController(options: PreviewControllerOptions = {}):
   let mapper: ProgressMapper | null = null;
   // The consumer's requested colour mode, kept so a `filament` request (colour by the file's own filament
   // colours) can be resolved against the parse metadata as each file loads (DD-024 flash fix).
+  // Validated up front (a bad `range` / `only` throws a RangeError here), so no renderer ever gets it.
+  if (options.renderer?.colorMode !== undefined) checkColorMode(options.renderer.colorMode);
   let requestedColorMode: ColorMode | undefined = options.renderer?.colorMode;
   let lastMetadata: DialectMetadata | undefined;
   let consumerVolumeSet = options.renderer?.buildVolume !== undefined;
@@ -703,6 +706,9 @@ export function createPreviewController(options: PreviewControllerOptions = {}):
     // Availability is IR/renderer-dependent; before the renderer is ready we optimistically queue
     // and report true (the mode applies once bound). Callers can re-check after `parse-complete`.
     setColorMode: (m) => {
+      // Synchronous, before anything is stored or queued: a bad mode throws here, the previous mode stays
+      // in effect, and nothing reaches a renderer bound later.
+      checkColorMode(m);
       // Remember the request so a `filament` mode re-resolves per file; resolve it against the current
       // metadata before handing the concrete mode to the renderer (DD-024).
       requestedColorMode = m;

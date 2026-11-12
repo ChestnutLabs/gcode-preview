@@ -707,6 +707,29 @@ describe('LayerView2D (sweep)', () => {
     expect(m.strokes.slice(m2).map((s) => s.alpha)).toEqual([0.5, 0.5, 1, 1, 1]);
   });
 
+  it('an invalid colour mode throws at construction, before anything is stored', () => {
+    expect(
+      () =>
+        new LayerView2D(fakeCanvas(100, 100, new MockCtx()), {
+          colorMode: { mode: 'feedrate', ramp: [[0, 0, 1]], range: [0, Number.NaN], fallback: [0, 0, 0] }
+        })
+    ).toThrow('feedrate color range must be two finite numbers >= 0, got [0, NaN]');
+  });
+
+  it('setColorMode throws synchronously; the previous mode stays and a valid one still applies', () => {
+    const m = new MockCtx();
+    const view = new LayerView2D(fakeCanvas(100, 100, m), { colorMode: { mode: 'single', color: [0, 0, 1] } });
+    view.setToolpath(makeIR(1, 1));
+    expect(() => view.setColorMode({ mode: 'object', palette: [[1, 0, 0]], fallback: [0, 0, 0], only: 0 })).toThrow(
+      "object color mode 'only' must be a 1-based integer object index, got 0"
+    );
+    view.render();
+    expect(m.strokes.map((s) => s.style)).toEqual(['rgb(0, 0, 255)']);
+    view.setColorMode({ mode: 'single', color: [1, 0, 0] });
+    view.render();
+    expect(m.strokes.map((s) => s.style)).toEqual(['rgb(0, 0, 255)', 'rgb(255, 0, 0)']);
+  });
+
   it('setToolpath clamps an out-of-range layer to the last one; an empty IR to 0', () => {
     const view = new LayerView2D(fakeCanvas(100, 100, new MockCtx()), { layer: 10 });
     view.setToolpath(makeIR(3, 2));
