@@ -90,6 +90,69 @@ export function makeSuiteStubGL(canvas: HTMLCanvasElement): GLRendererLike {
   return { render: () => undefined, setSize: () => undefined, dispose: () => undefined, domElement: canvas };
 }
 
+/**
+ * Exhaustive by construction, like {@link REQUIRED_STATE_KEYS}: adding a `GcodePreviewControls`
+ * method without listing it here fails the type check.
+ */
+const CONTROL_KEYS: Record<keyof GcodePreviewControls, true> = {
+  setLayerRange: true,
+  setScrubPosition: true,
+  setScrubTime: true,
+  setKindVisible: true,
+  setFeatureRoleVisible: true,
+  setShowRetractions: true,
+  setColorMode: true,
+  isColorModeAvailable: true,
+  setQuality: true,
+  setQualityMode: true,
+  setProgressivePreview: true,
+  setCameraMode: true,
+  setCameraFov: true,
+  setPixelRatio: true,
+  setView: true,
+  getCameraState: true,
+  setCameraState: true,
+  setTheme: true,
+  setBuildVolume: true,
+  setBuildVolumeCage: true,
+  setFrameContent: true,
+  setInteractionQuality: true,
+  frame: true,
+  capture: true,
+  getRenderStats: true,
+  pickSegment: true
+};
+
+/** Every `GcodePreviewControls` method must be callable through the adapter (parity guard). */
+export const REQUIRED_CONTROLS: (keyof GcodePreviewControls)[] = Object.keys(
+  CONTROL_KEYS
+) as (keyof GcodePreviewControls)[];
+
+/**
+ * Exhaustive by construction: a `Record` over every `GcodePreviewState` key, so adding a state field
+ * without listing it here fails the type check (and a stale key fails the excess-property check).
+ */
+const STATE_KEYS: Record<keyof GcodePreviewState, true> = {
+  parsing: true,
+  parseProgress: true,
+  summary: true,
+  metadata: true,
+  activeQuality: true,
+  presentation: true,
+  layerCount: true,
+  segmentCount: true,
+  disclosure: true,
+  totalTimeMs: true,
+  timeEstimateSource: true,
+  availableColorModes: true,
+  hasRetractions: true,
+  hasColorChanges: true,
+  error: true
+};
+
+/** Every `GcodePreviewState` field must surface through the adapter (parity guard). */
+export const REQUIRED_STATE_KEYS: (keyof GcodePreviewState)[] = Object.keys(STATE_KEYS) as (keyof GcodePreviewState)[];
+
 /** What every adapter must expose to the suite — its PUBLIC surface, uniformly shaped. */
 export interface AdapterHarness {
   /** Construct one preview bound to a fresh canvas, wired to a SuiteStubWorker + stub GL. */
@@ -338,36 +401,18 @@ export function runBehavioralSuite(name: string, api: TestApi, harness: AdapterH
       await a.parse(new Uint8Array(1_000));
       await a.settle();
       // A capability that ships in core must not silently vanish from an adapter: assert each
-      // GcodePreviewControls method is callable here. Add new controls methods to this list.
-      const required: (keyof GcodePreviewControls)[] = [
-        'setLayerRange',
-        'setScrubPosition',
-        'setScrubTime',
-        'setKindVisible',
-        'setFeatureRoleVisible',
-        'setShowRetractions',
-        'setColorMode',
-        'isColorModeAvailable',
-        'setQuality',
-        'setQualityMode',
-        'setProgressivePreview',
-        'setCameraMode',
-        'setCameraFov',
-        'setPixelRatio',
-        'setView',
-        'getCameraState',
-        'setCameraState',
-        'setTheme',
-        'setBuildVolume',
-        'setBuildVolumeCage',
-        'setFrameContent',
-        'setInteractionQuality',
-        'frame',
-        'capture',
-        'getRenderStats',
-        'pickSegment'
-      ];
-      for (const name of required) expect(typeof a.controls[name] === 'function').toBe(true);
+      // GcodePreviewControls method is callable here (the list is exhaustive by construction).
+      expect(REQUIRED_CONTROLS.filter((k) => typeof a.controls[k] !== 'function').join(',')).toBe('');
+      await a.dispose();
+    });
+
+    it('exposes the full state contract on every adapter (parity guard)', async () => {
+      const a = await harness.create();
+      await a.parse(new Uint8Array(1_000));
+      await a.settle();
+      // `in`, not a truthiness check: `metadata` is legitimately undefined but the key must be present.
+      const s = a.getState() as unknown as Record<string, unknown>;
+      expect(REQUIRED_STATE_KEYS.filter((k) => !(k in s)).join(',')).toBe('');
       await a.dispose();
     });
 
