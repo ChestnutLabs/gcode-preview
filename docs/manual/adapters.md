@@ -99,7 +99,9 @@ Each fires the same events (naming follows each framework's idiom): parse lifecy
 (`ready` / `parse-error` / `parse-cancelled` / `parse-progress`), staged preparation (`stage`),
 `build-complete`, `quality-fallback`, camera settle (`camera-change`), machine geometry
 (`machine-geometry-discovered` / `machine-geometry-mismatch`), `progress-presentation-changed`,
-`disclosure`, `renderer-unsupported`, and `error`.
+`disclosure`, `renderer-unsupported`, and `error`. Every parse that starts ends with exactly one of `ready`,
+`parse-error` or `parse-cancelled`; a parse replaced by a newer source reports `parse-cancelled`, and one
+replaced before it started emits nothing.
 
 Two of them tell your users what the view is not showing. They answer different questions:
 

@@ -14,3 +14,4 @@ picks it up automatically.
 | Fixture | Reproduces |
 |---|---|
 | `deflate-corrupt-stream.zip` | An unobserved `DecompressionStream` writer-side rejection on corrupt deflate data crashed the process as an unhandled rejection (the reader path had already converted its copy to `E_CONTAINER_INFLATE`). Fixed by capturing the writer promise instead of floating it. |
+| `multi-entry-total.zip` | A fuzzing **seed**, not a crash: the smallest input that reaches the archive-wide expanded-bytes total (`E_CONTAINER_LIMIT_TOTAL`, #449) under the fuzz limits. Two deflate entries (`a`, `b`) of 819,200 bytes each (800 KiB of one repeated byte), 1,802 bytes in all, so it fits the fuzzer's 4096-byte `max_len` where the five full-cap entries the old 4 MiB total needed would not. Extracting both under one shared `ExpansionBudget` must succeed for `a` and give `E_CONTAINER_LIMIT_TOTAL` for `b`. Seeds the extract-entry fuzz target at the total boundary. |
