@@ -129,3 +129,158 @@ describe('GeometryWorkerPool (DD-028)', () => {
     pool.dispose();
   });
 });
+
+/** A worker the test answers by hand: records requests, replies only when told to. */
+function manualWorker(
+  log: GeometryBuildRequest[]
+): GeometryWorkerLike & { reply(id: number, vertexCount: number): void } {
+  const w: GeometryWorkerLike & { reply(id: number, vertexCount: number): void } = {
+    onmessage: null,
+    onerror: null,
+    onmessageerror: null,
+    postMessage(msg: GeometryBuildRequest) {
+      log.push(msg);
+    },
+    terminate() {},
+    reply(id, vertexCount) {
+      const empty = new ArrayBuffer(0);
+      w.onmessage?.({
+        data: {
+          id,
+          positions: empty,
+          normals: empty,
+          indices: empty,
+          vertexSegment: empty,
+          vertexCount,
+          indicesPerSegment: 0
+        }
+      });
+    }
+  };
+  return w;
+}
+
+const bareReq = (id: number): GeometryBuildRequest => ({
+  id,
+  positions: new ArrayBuffer(24),
+  count: 1,
+  radialSegments: 8
+});
+
+describe('GeometryWorkerPool: overlapping builds and failures (sweep)', () => {
+  it("a rebuild on the same pool never receives the previous build's reply; the old run stops cleanly", async () => {
+    const log: GeometryBuildRequest[] = [];
+    const w = manualWorker(log);
+    const pool = new GeometryWorkerPool(1, () => w);
+    const oldGot: number[] = [];
+    const newGot: Array<[number, number, number]> = [];
+    const oldRun = pool.buildStreaming([bareReq(0), bareReq(1)], (i) => oldGot.push(i));
+    await Promise.resolve();
+    expect(log).toHaveLength(1);
+    const newRun = pool.buildStreaming([bareReq(0), bareReq(1)], (i, r) => newGot.push([i, r.id, r.vertexCount]));
+    await oldRun; // superseded: resolves, does not hang
+    expect(log).toHaveLength(2); // the new run dispatched its own first request
+    const [staleWire, liveWire] = [log[0].id, log[1].id];
+    expect(staleWire).not.toBe(liveWire);
+    w.reply(staleWire, 111); // the old request finally answers: must be dropped
+    expect(newGot).toEqual([]);
+    w.reply(liveWire, 222);
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(newGot).toEqual([[0, 0, 222]]); // index 0, caller id 0, the NEW build's data
+    w.reply(log[2].id, 333);
+    await newRun;
+    expect(newGot).toEqual([
+      [0, 0, 222],
+      [1, 1, 333]
+    ]);
+    expect(oldGot).toEqual([]);
+  });
+
+  it('after one worker fails, sibling workers deliver nothing more and the run rejects', async () => {
+    const logA: GeometryBuildRequest[] = [];
+    const logB: GeometryBuildRequest[] = [];
+    const wa = manualWorker(logA);
+    const wb = manualWorker(logB);
+    const ws = [wa, wb];
+    const pool = new GeometryWorkerPool(2, () => ws.shift() as GeometryWorkerLike);
+    const got: number[] = [];
+    const run = pool.buildStreaming([bareReq(0), bareReq(1), bareReq(2), bareReq(3)], (i) => got.push(i));
+    const outcome = run.then(
+      () => 'resolved',
+      (e: Error) => e.message
+    );
+    await Promise.resolve();
+    wa.onerror?.(new Error('worker A crashed'));
+    expect(await outcome).toBe('worker A crashed');
+    wb.reply(logB[0].id, 5); // B answers after the failure: must not be delivered, must not pull more work
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(got).toEqual([]);
+    expect(logB).toHaveLength(1);
+    expect(logA).toHaveLength(1);
+  });
+
+  it('a reply that cannot be deserialised (messageerror) rejects instead of hanging', async () => {
+    const w = manualWorker([]);
+    const pool = new GeometryWorkerPool(1, () => w);
+    const run = pool.buildStreaming([bareReq(0)], () => undefined);
+    await Promise.resolve();
+    w.onmessageerror?.(new Error('cannot clone reply'));
+    await expect(run).rejects.toThrow('cannot clone reply');
+  });
+
+  it("the response keeps the caller's request id, not the pool's wire id", async () => {
+    const log: GeometryBuildRequest[] = [];
+    const w = manualWorker(log);
+    const pool = new GeometryWorkerPool(1, () => w);
+    const seen: number[] = [];
+    const run = pool.buildStreaming([bareReq(41)], (_i, r) => seen.push(r.id));
+    await Promise.resolve();
+    w.reply(log[0].id, 1);
+    await run;
+    expect(seen).toEqual([41]);
+  });
+
+  it('a run superseded from inside onResult dispatches nothing more (loop-top liveness)', async () => {
+    const log: GeometryBuildRequest[] = [];
+    const w = manualWorker(log);
+    const pool = new GeometryWorkerPool(1, () => w);
+    let newRun: Promise<void> | null = null;
+    const oldRun = pool.buildStreaming([bareReq(0), bareReq(1)], (i) => {
+      if (i === 0) newRun = pool.buildStreaming([bareReq(9)], () => undefined);
+    });
+    await Promise.resolve();
+    w.reply(log[0].id, 1); // old request 0 answers -> onResult supersedes the run with a new one
+    await oldRun; // the old run stops cleanly
+    expect(log).toHaveLength(2); // old0 + new0; the old run's request 1 was never sent
+    w.reply(log[1].id, 2);
+    await newRun;
+  });
+
+  it('dispose() terminates every worker exactly once', () => {
+    let terminated = 0;
+    const mk = (): GeometryWorkerLike => ({ onmessage: null, postMessage() {}, terminate: () => void terminated++ });
+    const pool = new GeometryWorkerPool(3, mk);
+    pool.dispose();
+    expect(terminated).toBe(3);
+  });
+
+  it('a size-0 pool still creates one worker (a pool is never empty)', () => {
+    let created = 0;
+    const pool = new GeometryWorkerPool(0, () => {
+      created++;
+      return { onmessage: null, postMessage() {}, terminate() {} };
+    });
+    expect(created).toBe(1);
+    pool.dispose();
+  });
+
+  it('resolvePoolSize: a 0, negative or non-finite core budget falls back to 1 worker', () => {
+    expect(resolvePoolSize(0)).toBe(1);
+    expect(resolvePoolSize(-4)).toBe(1);
+    expect(resolvePoolSize(Number.POSITIVE_INFINITY)).toBe(1);
+    expect(resolvePoolSize(2.9)).toBe(1);
+    expect(resolvePoolSize(3)).toBe(2);
+  });
+});
