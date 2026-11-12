@@ -9,10 +9,13 @@
 import { FeatureRole, type ToolpathIR } from '@chestnutlabs/toolpath-core';
 import type { AnnotationSink, DialectAdapter } from './contracts.js';
 import {
+  INVALID_VALUE_WARNING,
   ThumbnailCollector,
   applyMarkerRanges,
   applyWipeRanges,
   bedFromPoints,
+  finiteNonNegative,
+  finitePositive,
   matchWipeComment,
   parseAreaPoints,
   parseKeyValue,
@@ -45,13 +48,19 @@ const TYPE_MAP: Record<string, number> = {
  * Parse PrusaSlicer/Orca `<d>d <h>h <m>m <s>s` (any part optional) → seconds; null when zero/unparsed.
  * The slicers add the day field for prints of 24 h or more (`1d 2h 3m 4s`).
  */
-export function parseHmsToSeconds(text: string): number | null {
+export function parseHmsToSeconds(text: string, onInvalid?: () => void): number | null {
   // Whitespace is consumed once, after each token: adjacent optional `\s*` runs backtrack
   // polynomially on a long whitespace line.
   const m = /^\s*(?:(\d+)\s*d\s*)?(?:(\d+)\s*h\s*)?(?:(\d+)\s*m\s*)?(?:(\d+)\s*s\s*)?$/.exec(text);
   if (m === null) return null;
   const total = Number(m[1] ?? 0) * 86400 + Number(m[2] ?? 0) * 3600 + Number(m[3] ?? 0) * 60 + Number(m[4] ?? 0);
-  return total > 0 ? total : null;
+  if (total === 0) return null;
+  // A digit run long enough to overflow is Infinity: drop it (and report it), never pass it on.
+  if (!Number.isFinite(total)) {
+    onInvalid?.();
+    return null;
+  }
+  return total;
 }
 
 /**
@@ -66,19 +75,30 @@ export function parseFilamentTotals(
   sink: AnnotationSink
 ): boolean {
   const source = { adapterId, evidence: '; filament used comments', srcByte };
+  // `[\d.]+` also matches `.` / `1.2.3` (NaN) and overflowing digit runs (Infinity): such a value is
+  // dropped with a warning, but the comment still counts as a filament total (consumed).
+  const read = (text: string, field: string): number | undefined => {
+    const v = finiteNonNegative(Number(text)); // Number, not parseFloat: `1.2.3` is unreadable, not 1.2
+    if (v === undefined)
+      sink.warn(INVALID_VALUE_WARNING, `${field} value '${text.slice(0, 32)}' unreadable; dropped`, srcByte);
+    return v;
+  };
   let m = /^\s*filament used \[mm\]\s*=\s*([\d.]+)/i.exec(comment);
   if (m !== null) {
-    sink.setFilamentUsage({ lengthMm: parseFloat(m[1]), source });
+    const v = read(m[1], 'filament used [mm]');
+    if (v !== undefined) sink.setFilamentUsage({ lengthMm: v, source });
     return true;
   }
   m = /^\s*filament used \[cm3\]\s*=\s*([\d.]+)/i.exec(comment);
   if (m !== null) {
-    sink.setFilamentUsage({ volumeCm3: parseFloat(m[1]), source });
+    const v = read(m[1], 'filament used [cm3]');
+    if (v !== undefined) sink.setFilamentUsage({ volumeCm3: v, source });
     return true;
   }
   m = /^\s*total filament used \[g\]\s*=\s*([\d.]+)/i.exec(comment);
   if (m !== null) {
-    sink.setFilamentUsage({ weightG: parseFloat(m[1]), source });
+    const v = read(m[1], 'total filament used [g]');
+    if (v !== undefined) sink.setFilamentUsage({ weightG: v, source });
     return true;
   }
   return false;
@@ -151,7 +171,9 @@ export function prusaSlicer(): DialectAdapter {
       if (parseFilamentTotals(comment, srcByte, 'prusaslicer', sink)) return;
       const time = /^\s*estimated printing time \(normal mode\)\s*=\s*(\S.*)$/i.exec(comment.trimEnd());
       if (time !== null) {
-        const sec = parseHmsToSeconds(time[1].trim());
+        const sec = parseHmsToSeconds(time[1].trim(), () =>
+          sink.warn(INVALID_VALUE_WARNING, 'estimated printing time out of range; dropped', srcByte)
+        );
         if (sec !== null) {
           sink.setPrintEstimate({
             seconds: sec,
@@ -167,8 +189,9 @@ export function prusaSlicer(): DialectAdapter {
         s.bedPoints = kv.value;
         s.bedSrcByte = srcByte;
       } else if (kv.key === 'max_print_height') {
-        const h = parseFloat(kv.value);
-        if (Number.isFinite(h)) s.heightMm = h;
+        const h = finitePositive(parseFloat(kv.value));
+        if (h !== undefined) s.heightMm = h;
+        else sink.warn(INVALID_VALUE_WARNING, 'max_print_height is not a positive number; dropped', srcByte);
       } else if (kv.key === 'printer_model') {
         s.printerModel = kv.value;
       }

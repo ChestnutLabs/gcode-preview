@@ -143,5 +143,11 @@ export function meatpackDecode(data: Uint8Array, limit: number): Uint8Array {
         break;
     }
   }
+  // A stream may only end between tokens. Ending with a full-width byte still due ('leftFull' would
+  // leave its NUL placeholder in the output; 'rightFull' would drop it) or inside a 0xFF signal
+  // ('first'/'second') is a cut or corrupt stream.
+  if (state !== 'disabled' && state !== 'enabled') {
+    throw new ContainerError('E_BGCODE_MEATPACK', `MeatPack stream ends mid-token (state ${state})`);
+  }
   return out.subarray(0, pos);
 }

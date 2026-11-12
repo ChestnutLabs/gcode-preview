@@ -8,6 +8,23 @@
 import { MoveKind, type MachineGeometry, type Point2, type ToolpathIR } from '@chestnutlabs/toolpath-core';
 import type { AnnotationSink } from './contracts.js';
 
+/** Warning code for a file value that has the right syntax but an unusable number (dropped, not used). */
+export const INVALID_VALUE_WARNING = 'dialect-metadata-invalid';
+
+/**
+ * `n` when it is a finite number above zero, else undefined. Slicer comments are untrusted file data:
+ * a value that is NaN, Infinity (a digit run past ~309 digits), zero or negative is left out of the
+ * metadata, never passed on.
+ */
+export function finitePositive(n: number): number | undefined {
+  return Number.isFinite(n) && n > 0 ? n : undefined;
+}
+
+/** `n` when it is a finite number of zero or more, else undefined (amounts where 0 is a real value). */
+export function finiteNonNegative(n: number): number | undefined {
+  return Number.isFinite(n) && n >= 0 ? n : undefined;
+}
+
 /** First segment whose producing command starts at or after `byte`. */
 export function segAtOrAfterByte(ir: ToolpathIR, byte: number): number {
   const offsets = ir.sourceIndex.byteOffsets;
@@ -184,7 +201,11 @@ export function parseAreaPoints(value: string): Point2[] | null {
   for (const p of parts) {
     const m = /^\s*(-?\d+(?:\.\d+)?)x(-?\d+(?:\.\d+)?)\s*$/.exec(p);
     if (m === null) return null;
-    points.push({ x: parseFloat(m[1]), y: parseFloat(m[2]) });
+    const x = parseFloat(m[1]);
+    const y = parseFloat(m[2]);
+    // A digit run past ~309 digits parses to Infinity: an unreadable point, same as a malformed one.
+    if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
+    points.push({ x, y });
   }
   return points;
 }
@@ -264,15 +285,17 @@ export class ThumbnailCollector {
     const begin = /^thumbnail(_JPG|_QOI)? begin (\d+)[x ](\d+) (\d+)/i.exec(trimmed);
     if (begin !== null) {
       const declared = parseInt(begin[4]);
+      const width = parseInt(begin[2]);
+      const height = parseInt(begin[3]);
+      // Image dimensions must be 1..65535: anything else is not a real thumbnail. Drop the block.
+      if (!(width >= 1 && width <= 65535 && height >= 1 && height <= 65535)) {
+        sink.warn(INVALID_VALUE_WARNING, `thumbnail dimensions ${begin[2]}x${begin[3]} out of range; dropped`);
+        this.active = null;
+        return;
+      }
       this.active =
         declared <= this.maxBytesPerThumbnail
-          ? {
-              width: parseInt(begin[2]),
-              height: parseInt(begin[3]),
-              mime: thumbnailMime(begin[1]),
-              b64: [],
-              bytes: 0
-            }
+          ? { width, height, mime: thumbnailMime(begin[1]), b64: [], bytes: 0 }
           : null;
       return;
     }
