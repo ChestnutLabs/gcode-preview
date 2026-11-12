@@ -117,7 +117,9 @@ export class InteractionQualityController {
 
   /** OrbitControls `'end'`: restore full detail a short debounce after the camera settles. */
   settle(): void {
-    if (this.mode !== 'auto') return;
+    // Nothing to restore unless a gesture actually reduced detail: a bare click fires `end` with no `change`,
+    // and `restore()` would then write the never-read resting ratio (1) over the renderer's own.
+    if (this.mode !== 'auto' || !this.interacting) return;
     this.clearTimer();
     this.settleTimer = setTimeout(() => {
       this.settleTimer = null;
