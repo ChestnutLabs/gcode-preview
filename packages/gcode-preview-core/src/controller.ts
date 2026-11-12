@@ -394,6 +394,8 @@ export function createPreviewController(options: PreviewControllerOptions = {}):
   if (options.renderer?.pixelRatio !== undefined) checkPixelRatio(options.renderer.pixelRatio);
   let pixelRatio: PixelRatioOption | undefined = options.renderer?.pixelRatio;
   let activeParse: Promise<unknown> | null = null;
+  // Bumped by every parse() call: a call that is no longer the newest after an await was superseded (#529).
+  let parseGen = 0;
   let resizeObserver: { disconnect(): void } | null = null;
   let windowResize: (() => void) | null = null;
   let disposed = false;
@@ -567,10 +569,14 @@ export function createPreviewController(options: PreviewControllerOptions = {}):
 
   async function parse(input: Uint8Array | ArrayBuffer | File, opts?: WireParseOptions): Promise<ParseOutcome> {
     if (disposed) return { ok: false, error: { code: 'E_DISPOSED', message: 'preview disposed' } };
+    const gen = ++parseGen;
     if (snapshot.parsing) {
       // §5: parse-during-parse cancels then restarts (session semantics preserved).
       session.cancel();
       await activeParse?.catch(() => undefined);
+      // #529: several calls can wait on the same running parse (a; b; c in one tick). Only the newest may
+      // start; an older one was superseded before it began, so it reports cancelled (no event: it never ran).
+      if (gen !== parseGen || disposed) return { ok: false, cancelled: true };
     }
     mutate({ parsing: true, parseProgress: null, error: null });
     const bytes =
@@ -583,6 +589,9 @@ export function createPreviewController(options: PreviewControllerOptions = {}):
     activeParse = run;
     try {
       const result = await run;
+      // #529: a newer parse() was issued while this one ran (its cancel can lose the race to completion).
+      // Its result is for a file the caller has replaced: never apply it.
+      if (gen !== parseGen) throw new CancelledError('superseded by a newer parse');
       lastIR = result.ir;
       lastMetadata = result.metadata;
       lastMachine = result.metadata?.machine;
@@ -674,9 +683,11 @@ export function createPreviewController(options: PreviewControllerOptions = {}):
     setLayerRange: (a, b) => withRenderer((r) => r.setLayerRange(a, b)),
     setScrubPosition: (s) => withRenderer((r) => r.setScrubPosition(s)),
     setScrubTime: (ms) => {
-      // Resolve a print time to a segment-index scrub cut via the kinematic axis (#181).
-      const seg = ms === null || timeAxis === null ? null : segmentsCompletedAtTime(timeAxis.cumulativeMs, ms);
-      withRenderer((r) => r.setScrubPosition(seg));
+      // Resolve a print time to a segment-index scrub cut via the kinematic axis (#181). `completed` segments
+      // are done, and the renderer's scrub index is INCLUSIVE (draws indices <= it), so the cut is completed - 1
+      // (-1 draws nothing: no segment has finished at that time).
+      const completed = ms === null || timeAxis === null ? null : segmentsCompletedAtTime(timeAxis.cumulativeMs, ms);
+      withRenderer((r) => r.setScrubPosition(completed === null ? null : completed - 1));
     },
     setKindVisible: (k, v) => withRenderer((r) => r.setKindVisible(k, v)),
     setFeatureRoleVisible: (role, v) => withRenderer((r) => r.setFeatureRoleVisible?.(role, v)),
