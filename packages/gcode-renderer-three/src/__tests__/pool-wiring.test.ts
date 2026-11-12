@@ -192,4 +192,22 @@ describe('DD-028 renderer pool wiring', () => {
     expect(stats?.geometryMode).toBe('tubes');
     big.dispose();
   });
+
+  it('buildComplete carries skippedNonFinite on the pool path and the serial path (#518)', async () => {
+    for (const concurrency of [2, 'off'] as const) {
+      const ir = makeTubeIR(6, 800);
+      ir.segments.z1[1234] = Number.POSITIVE_INFINITY;
+      ir.segments.x0[2345] = Number.NaN;
+      const r = makeRenderer({ concurrency });
+      const counts: Array<number | undefined> = [];
+      r.onEvent((e) => {
+        if (e.type === 'buildComplete') counts.push(e.skippedNonFinite);
+      });
+      r.setIR(ir);
+      await settle();
+      expect(r.getRenderStats()?.buildParallelism).toBe(concurrency === 2 ? 'pool' : 'main');
+      expect(JSON.stringify(counts)).toBe('[2]');
+      r.dispose();
+    }
+  });
 });

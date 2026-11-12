@@ -19,17 +19,20 @@ runComponentConformanceSuite(
   'vue <GcodePreview>',
   { describe, it, expect },
   {
-    mount(cb) {
+    mount(cb, opts = {}) {
       const canvas = document.createElement('canvas');
-      const comp = ref<{ preview: { raw: { renderer(): unknown } } } | null>(null);
+      const comp = ref<{
+        preview: { raw: { renderer(): unknown }; parse(bytes: Uint8Array): Promise<unknown> };
+      } | null>(null);
       const container = document.body.appendChild(document.createElement('div'));
       const app = createApp(
         defineComponent({
           setup: () => () =>
             h(GcodePreview, {
               ref: comp,
+              renderer: opts.renderer,
               quality: 'lines',
-              createWorker: () => new SuiteStubWorker(),
+              createWorker: () => new SuiteStubWorker(undefined, opts.ir),
               rendererOptions: {
                 createRenderer: () => makeSuiteStubGL(canvas),
                 scheduleFrame: (f: () => void) => f(),
@@ -44,6 +47,11 @@ runComponentConformanceSuite(
       return {
         emitBuild: (decimation, segments) =>
           emitSuiteBuild(comp.value?.preview.raw.renderer() ?? null, decimation, segments),
+        parse: async (bytes) => {
+          const out = await comp.value?.preview.parse(bytes);
+          await nextTick();
+          return out;
+        },
         settle,
         unmount: () => {
           app.unmount();

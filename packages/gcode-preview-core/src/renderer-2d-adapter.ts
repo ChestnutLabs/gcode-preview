@@ -14,6 +14,7 @@
 import {
   LayerView2D,
   describe2DDisclosures,
+  summarize2DDrawable,
   type ColorMode,
   type LayerProgress,
   type TravelStyle
@@ -89,6 +90,19 @@ export class LayerView2DRenderer implements PreviewRenderer {
     // Disclose what a flat 2D view cannot faithfully represent (non-planar/CNC), never silently
     // (DD-014 §6/§11) — an honest capability signal on the same channel as 3D-only-option notices.
     for (const message of describe2DDisclosures(ir)) this.disclose('layers', message);
+    // The 2D view prepares the whole toolpath in one synchronous step, so it reports one `buildComplete`
+    // per setIR, with values that are true for 2D (#518): every drawable segment, no decimation, no travel
+    // omitted for decimation, flat line geometry, and the segments skipped for a non-finite x/y. Core turns
+    // that count into its `disclosure` text, which every framework adapter forwards on build-complete.
+    const { drawable, skippedNonFinite } = summarize2DDrawable(ir);
+    this.emit({
+      type: 'buildComplete',
+      segments: drawable,
+      decimationApplied: 1,
+      travelHidden: false,
+      quality: 'lines',
+      skippedNonFinite
+    });
   }
 
   /** 3D-only progressive preview; the 2D view draws on the final IR (§3 non-goal). */

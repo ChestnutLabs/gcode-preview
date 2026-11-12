@@ -13,8 +13,7 @@ canvas or never returning.
   non-finite and the camera frames the build volume (or the preview bounds), not the remaining
   toolpath. With `frameContent: 'object'` it tries the model, then the object bounds, then the build
   volume. `buildChunks` reports the number of skipped segments in a new `skippedNonFinite` field.
-  Only this package reports it: core and the framework adapters do not surface the count yet. The 2D
-  renderer skips on x/y only, so the two renderers do not skip exactly the same segments.
+  The 2D renderer skips on x/y only, so the two renderers do not skip exactly the same segments.
 - **A build volume that cannot be drawn now throws a `RangeError` instead of hanging.** Before, an
   `Infinity` size, a grid pitch of 0, a negative or `NaN` pitch, or a huge size such as 1e9 mm at a
   10 mm pitch ran the grid loop until the tab ran out of memory. `createBuildVolume`, `setBuildVolume`

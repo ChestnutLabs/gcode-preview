@@ -124,6 +124,9 @@ export type RendererEvent =
       decimationApplied: number;
       travelHidden: boolean;
       quality: QualityMode;
+      /** Segments left out for an Infinity/NaN x/y/z endpoint (`ChunkBuildResult.skippedNonFinite`, #518).
+       *  Optional so a custom renderer that omits it still type-checks; core reads a missing value as 0. */
+      skippedNonFinite?: number;
     }
   | { type: 'qualityFallback'; from: QualityMode; to: QualityMode; reason: string }
   | { type: 'previewAppend'; cumulativeSegments: number; decimationApplied: number }
@@ -877,7 +880,8 @@ export class ToolpathRenderer {
       segments: result.totalSegmentsIncluded,
       decimationApplied: result.decimationApplied,
       travelHidden: result.travelHidden,
-      quality: this.active
+      quality: this.active,
+      skippedNonFinite: result.skippedNonFinite
     });
     this.lastRenderStats = this.assembleRenderStats();
     this.emit({ type: 'renderStats', stats: this.lastRenderStats });
@@ -1064,7 +1068,8 @@ export class ToolpathRenderer {
         segments: this.buildResult.totalSegmentsIncluded,
         decimationApplied: this.buildResult.decimationApplied,
         travelHidden: this.buildResult.travelHidden,
-        quality: this.active
+        quality: this.active,
+        skippedNonFinite: this.buildResult.skippedNonFinite
       });
       // DD-027: assemble + publish the render-diagnostics snapshot for this build.
       this.lastRenderStats = this.assembleRenderStats();
