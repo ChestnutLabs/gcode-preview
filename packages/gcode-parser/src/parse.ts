@@ -77,6 +77,38 @@ export const DEFAULT_LIMITS: ParseLimits = {
 };
 
 /**
+ * Thrown before parsing when a caller's option is invalid (#508). `code` is `E_PARSE_OPTION`; through a
+ * parse session it arrives as a `ParseSessionError`-style rejection carrying the same code.
+ */
+export class ParseOptionError extends Error {
+  readonly code = 'E_PARSE_OPTION';
+  constructor(message: string) {
+    super(message);
+    this.name = 'ParseOptionError';
+  }
+}
+
+/**
+ * Validate a caller's limits: a PRESENT field must be a non-negative integer, else {@link ParseOptionError}.
+ * `NaN`, `null` and a string would switch the bound off (`x > NaN` and `x > 'a'` are never true, `x > null`
+ * compares against 0), and `Infinity` means "no bound" for a hostile input; reject, never clamp. A field
+ * that is absent or `undefined` keeps its default (an optional setting forwarded as-is).
+ */
+export function resolveParseLimits(limits?: Partial<ParseLimits>): ParseLimits {
+  const out: ParseLimits = { ...DEFAULT_LIMITS };
+  if (limits === undefined || limits === null) return out;
+  for (const key of Object.keys(DEFAULT_LIMITS) as (keyof ParseLimits)[]) {
+    const value: unknown = limits[key];
+    if (value === undefined) continue;
+    if (!(typeof value === 'number' && Number.isSafeInteger(value) && value >= 0)) {
+      throw new ParseOptionError(`limits.${key} must be a non-negative integer (got ${String(value)})`);
+    }
+    out[key] = value;
+  }
+  return out;
+}
+
+/**
  * Read-only normalized command event (DD-005 §4.3, amendment 1): observers see
  * each lexed command BEFORE dispatch and cannot alter parsing.
  */
@@ -301,12 +333,7 @@ export interface Engine {
 
 /** Internal: build an engine over decoded text (streaming passes '' and feeds lines itself). */
 export function createEngine(input: string | Uint8Array, opts: ParseOptions): Engine {
-  // A key passed as `undefined` (an optional setting forwarded as-is) keeps its default. A plain spread
-  // would copy the `undefined`, and every `x > undefined` check is false, so the bound would be OFF.
-  const limits: ParseLimits = { ...DEFAULT_LIMITS };
-  for (const [key, value] of Object.entries(opts.limits ?? {}) as [keyof ParseLimits, number | undefined][]) {
-    if (value !== undefined) limits[key] = value;
-  }
+  const limits = resolveParseLimits(opts.limits);
   const tolerance = opts.minLayerThreshold ?? LAYER_TOLERANCE;
   const text = typeof input === 'string' ? input : new TextDecoder().decode(input);
   let byteLength = typeof input === 'string' ? text.length : input.byteLength;
