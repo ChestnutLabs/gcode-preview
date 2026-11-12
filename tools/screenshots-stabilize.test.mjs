@@ -42,6 +42,14 @@ describe('applyUntilStable', () => {
     expect(log.applies).toBe(4);
   });
 
+  it('defaults to a bound of 6 rounds, as the README documents', async () => {
+    const { io, log } = fakePage(99);
+    await expect(applyUntilStable(io)).rejects.toThrow(
+      'settings did not stabilise after 6 rounds (builds kept firing)'
+    );
+    expect(log.applies).toBe(6);
+  });
+
   it('succeeds on the last allowed round', async () => {
     const { io } = fakePage(3);
     expect(await applyUntilStable({ ...io, maxRounds: 4 })).toBe(4);
