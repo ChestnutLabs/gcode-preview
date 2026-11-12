@@ -366,7 +366,10 @@ describe('annotation range helpers', () => {
 describe('ThumbnailCollector bounds', () => {
   const capture = () => {
     const thumbs: ThumbnailData[] = [];
-    const sink = { addThumbnail: (t: ThumbnailData) => thumbs.push(t) } as unknown as AnnotationSink;
+    const sink = {
+      addThumbnail: (t: ThumbnailData) => thumbs.push(t),
+      warn: () => undefined
+    } as unknown as AnnotationSink;
     return { thumbs, sink };
   };
 

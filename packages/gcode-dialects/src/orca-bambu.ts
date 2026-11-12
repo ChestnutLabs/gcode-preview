@@ -22,6 +22,7 @@ import {
   applyMarkerRanges,
   applyWipeRanges,
   bedFromPoints,
+  hasBedArea,
   finitePositive,
   matchBracketComment,
   matchWipeComment,
@@ -206,6 +207,7 @@ export function orcaBambu(): DialectAdapter {
     },
     finalize(ir: ToolpathIR, sink) {
       const s = stateFor(sink);
+      s.thumbs.close(sink);
       const features = applyMarkerRanges(ir, s.features, (a, b, v) => sink.setFeature(a, b, v));
       // Housekeeping brackets (DD-026 D3) override the surrounding ;TYPE: role — apply them AFTER the
       // feature markers so the bracket range wins (setFeature fills, last write per segment holds).
@@ -216,7 +218,9 @@ export function orcaBambu(): DialectAdapter {
       if (applyWipeRanges(ir, s.wipes, sink) > 0) sink.upgradeCapability('wipeMoves', 'known');
       if (s.bedPoints !== null) {
         const points = parseAreaPoints(s.bedPoints);
-        if (points !== null) {
+        if (points !== null && !hasBedArea(points)) {
+          sink.warn(INVALID_VALUE_WARNING, 'printable_area encloses no area; dropped', s.bedSrcByte);
+        } else if (points !== null) {
           sink.setMachine(
             bedFromPoints(
               points,

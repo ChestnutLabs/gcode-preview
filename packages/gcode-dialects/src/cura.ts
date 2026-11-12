@@ -72,9 +72,13 @@ export function cura(): DialectAdapter {
       }
       // Cura print-time comment: `;TIME:<seconds>` (total; per-layer `;TIME_ELAPSED:` is ignored).
       if (trimmed.startsWith('TIME:')) {
-        const sec = Number(trimmed.slice('TIME:'.length).trim());
+        const text = trimmed.slice('TIME:'.length).trim();
+        const sec = Number(text);
+        if (sec === 0 && text !== '') return; // `;TIME:0` is a real (empty) value, not an estimate
         if (Number.isFinite(sec) && sec > 0) {
           sink.setPrintEstimate({ seconds: sec, source: { adapterId: 'cura', evidence: ';TIME:', srcByte } });
+        } else {
+          sink.warn(INVALID_VALUE_WARNING, `TIME value '${text.slice(0, 32)}' unreadable; dropped`, srcByte);
         }
         return;
       }

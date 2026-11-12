@@ -210,6 +210,20 @@ export function parseAreaPoints(value: string): Point2[] | null {
   return points;
 }
 
+/**
+ * True when the bed outline encloses a real area. A zero-area outline (every point the same, or all
+ * on one line) is an impossible build plate, and so is one whose area overflows to Infinity / NaN.
+ */
+export function hasBedArea(points: Point2[]): boolean {
+  let twice = 0; // shoelace: twice the signed area
+  for (let i = 0; i < points.length; i++) {
+    const a = points[i];
+    const b = points[(i + 1) % points.length];
+    twice += a.x * b.y - b.x * a.y;
+  }
+  return Number.isFinite(twice) && twice !== 0;
+}
+
 /** Points → MachineGeometry bed (axis-aligned quad becomes rect, else polygon). */
 export function bedFromPoints(
   points: Point2[],
@@ -279,6 +293,12 @@ export class ThumbnailCollector {
     return this.active !== null;
   }
 
+  /** End of input: a block still open never ended, so its data is dropped (and reported). */
+  close(sink: AnnotationSink): void {
+    if (this.active !== null) sink.warn(INVALID_VALUE_WARNING, 'thumbnail block never ended; dropped');
+    this.active = null;
+  }
+
   /** Feed one comment line; emits to the sink when a bounded thumbnail completes. */
   feed(comment: string, sink: AnnotationSink): void {
     const trimmed = comment.trim();
@@ -287,25 +307,30 @@ export class ThumbnailCollector {
       const declared = parseInt(begin[4]);
       const width = parseInt(begin[2]);
       const height = parseInt(begin[3]);
+      this.close(sink); // a begin inside an open block drops the open one
       // Image dimensions must be 1..65535: anything else is not a real thumbnail. Drop the block.
       if (!(width >= 1 && width <= 65535 && height >= 1 && height <= 65535)) {
         sink.warn(INVALID_VALUE_WARNING, `thumbnail dimensions ${begin[2]}x${begin[3]} out of range; dropped`);
         this.active = null;
         return;
       }
-      this.active =
-        declared <= this.maxBytesPerThumbnail
-          ? { width, height, mime: thumbnailMime(begin[1]), b64: [], bytes: 0 }
-          : null;
+      if (declared <= this.maxBytesPerThumbnail) {
+        this.active = { width, height, mime: thumbnailMime(begin[1]), b64: [], bytes: 0 };
+      } else {
+        sink.warn(INVALID_VALUE_WARNING, `thumbnail of ${begin[4].slice(0, 32)} bytes is over the size cap; dropped`);
+        this.active = null;
+      }
       return;
     }
     const end = /^thumbnail(_JPG|_QOI)? end/i.exec(trimmed);
     if (end !== null) {
-      // A block whose end variant differs from its begin variant is malformed — drop it (fail closed).
-      if (this.active !== null && thumbnailMime(end[1]) === this.active.mime) {
-        const bytes = decodeBase64(this.active.b64.join(''));
+      if (this.active !== null) {
+        // A block whose end variant differs from its begin variant is malformed — drop it (fail closed).
+        const bytes = thumbnailMime(end[1]) === this.active.mime ? decodeBase64(this.active.b64.join('')) : null;
         if (bytes !== null && bytes.byteLength > 0) {
           sink.addThumbnail({ width: this.active.width, height: this.active.height, mime: this.active.mime, bytes });
+        } else {
+          sink.warn(INVALID_VALUE_WARNING, 'thumbnail data is mismatched, empty or not base64; dropped');
         }
       }
       this.active = null;
@@ -315,6 +340,7 @@ export class ThumbnailCollector {
       this.active.bytes += trimmed.length;
       if (this.active.bytes > (this.maxBytesPerThumbnail * 4) / 3 + 8) {
         this.active = null; // lied about its size — drop, stay bounded
+        sink.warn(INVALID_VALUE_WARNING, 'thumbnail data is longer than its declared size; dropped');
         return;
       }
       this.active.b64.push(trimmed);
