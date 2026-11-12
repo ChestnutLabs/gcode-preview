@@ -48,6 +48,15 @@ const UNIT_TO_MM: Record<string, number> = {
 /** Max component-resolution depth (guards cyclic / pathological assemblies). */
 const MAX_DEPTH = 50;
 
+const tooManyInstances = (lim: ResolvedLimits): ModelParseError =>
+  new ModelParseError(
+    'E_MODEL_TOO_MANY_INSTANCES',
+    `3MF declares more than ${lim.maxInstances} instance placements or component references`
+  );
+
+const componentCycle = (objectid: string): ModelParseError =>
+  new ModelParseError('E_MODEL_CYCLE', `3MF object ${objectid} contains itself through its components`);
+
 interface Component {
   /** Absolute OPC path to an external model part (production extension), or undefined = same part. */
   path?: string;
@@ -381,6 +390,7 @@ function parseModelPart(xml: string, lim: ResolvedLimits): ModelPart {
   let curObjId: string | null = null;
   let curPaletteId: string | null = null;
   let inBuild = false;
+  let objectTags = 0;
 
   const tags = new TagScanner(xml);
   while (tags.next()) {
@@ -409,6 +419,9 @@ function parseModelPart(xml: string, lim: ResolvedLimits): ModelPart {
         curObj = null;
         curObjId = null;
       } else {
+        if (++objectTags > lim.maxObjects) {
+          throw new ModelParseError('E_MODEL_TOO_MANY_OBJECTS', `3MF declares more than ${lim.maxObjects} objects`);
+        }
         const a = attrs(raw);
         curObjId = a.id ?? null;
         curObj = {
@@ -824,18 +837,28 @@ function estimateSceneCost(
   const countedMasters = new Set<string>();
 
   const checkInstances = (): void => {
-    if (instanceCount > lim.maxInstances) {
-      throw new ModelParseError(
-        'E_MODEL_TOO_MANY_INSTANCES',
-        `3MF declares more than ${lim.maxInstances} instance placements`
-      );
-    }
+    if (instanceCount > lim.maxInstances) throw tooManyInstances(lim);
   };
+
+  // Every node visit (mesh, container or dangling reference) is charged to the instance cap: a DAG that doubles
+  // per level (each object listing the next twice) has no mesh until its leaves and is 2^depth visits.
+  let visits = 0;
+  // Objects on the current descent path. A reference back to one of them is a cycle (A → A); a shared child
+  // reused across siblings (a diamond) is valid 3MF and is NOT on the path when revisited.
+  const ancestors = new Set<string>();
 
   const visit = (part: ModelPart, objectid: string, depth: number): void => {
     if (depth > MAX_DEPTH) return;
+    if (++visits > lim.maxInstances) throw tooManyInstances(lim);
     const obj = part.objects.get(objectid);
     if (obj === undefined) return;
+    if (ancestors.has(objectid)) throw componentCycle(objectid);
+    ancestors.add(objectid);
+    visitObject(part, objectid, obj, depth);
+    ancestors.delete(objectid);
+  };
+
+  const visitObject = (part: ModelPart, objectid: string, obj: ParsedObject, depth: number): void => {
     if (obj.tris.length > 0) {
       instanceCount++;
       const key = `local:${objectid}`;
@@ -870,12 +893,7 @@ function estimateSceneCost(
       : [...mainPart.objects.keys()].map((objectid) => ({ objectid, transform: null }));
   for (const inst of roots) visit(mainPart, inst.objectid, 0);
 
-  if (instanceCount > lim.maxInstances) {
-    throw new ModelParseError(
-      'E_MODEL_TOO_MANY_INSTANCES',
-      `3MF declares more than ${lim.maxInstances} instance placements`
-    );
-  }
+  if (instanceCount > lim.maxInstances) throw tooManyInstances(lim);
   if (estTriangles > lim.maxTriangles * EST_REJECT_MARGIN) {
     throw new ModelParseError(
       'E_MODEL_TOO_MANY_TRIANGLES',
@@ -945,6 +963,7 @@ export async function parse3mf(
 
   // Lazily parse model parts by absolute OPC path (production-extension components reference them).
   const partCache = new Map<string, ModelPart>();
+  let objectsInScene = 0;
   const parseEntry = async (entry: ZipDirectory['entries'][number]): Promise<ModelPart> => {
     const key = entry.name.toLowerCase();
     const cached = partCache.get(key);
@@ -956,6 +975,11 @@ export async function parse3mf(
       throw unzipFailure(e);
     }
     const part = parseModelPart(xml, lim);
+    // maxObjects is a scene-wide bound: the objects of every part (main + production-extension) count together.
+    objectsInScene += part.objects.size;
+    if (objectsInScene > lim.maxObjects) {
+      throw new ModelParseError('E_MODEL_TOO_MANY_OBJECTS', `3MF declares more than ${lim.maxObjects} objects`);
+    }
     partCache.set(key, part);
     return part;
   };
@@ -1053,6 +1077,8 @@ export async function parse3mf(
   // Resolve an object (mesh and/or components) within `part`, folding component transforms into the
   // running placement `matrix` (DD-022) instead of baking vertices. `partKey` identifies the part so the
   // same `${partKey}#${objectid}` master, reached via different placements, is instanced not copied.
+  let visits = 0;
+  const ancestors = new Set<string>();
   const resolve = async (
     part: ModelPart,
     objectid: string,
@@ -1061,9 +1087,14 @@ export async function parse3mf(
     depth: number
   ): Promise<void> => {
     if (depth > MAX_DEPTH) return;
+    // Same cap as the pre-walk, but this walk also covers external parts (the pre-walk treats them as leaves).
+    if (++visits > lim.maxInstances) throw tooManyInstances(lim);
     const obj = part.objects.get(objectid);
     if (obj === undefined) return;
-    if (obj.tris.length > 0) placeMaster(obj, part, matrix, `${partKey}#${objectid}`, st, lim);
+    const nodeKey = `${partKey}#${objectid}`;
+    if (ancestors.has(nodeKey)) throw componentCycle(objectid);
+    ancestors.add(nodeKey);
+    if (obj.tris.length > 0) placeMaster(obj, part, matrix, nodeKey, st, lim);
     for (const comp of obj.components) {
       const targetPart = comp.path !== undefined ? await getPartByPath(comp.path) : part;
       if (targetPart === null) continue;
@@ -1073,6 +1104,7 @@ export async function parse3mf(
       const childKey = comp.path !== undefined ? comp.path.replace(/^\//, '').toLowerCase() : partKey;
       await resolve(targetPart, comp.objectid, childMatrix, childKey, depth + 1);
     }
+    ancestors.delete(nodeKey);
   };
 
   // With no <build>, resolve every declared object at identity (some minimal 3MFs omit build).
