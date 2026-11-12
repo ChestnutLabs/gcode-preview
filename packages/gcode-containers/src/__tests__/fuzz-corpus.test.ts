@@ -14,7 +14,8 @@ import { basename, dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, it, expect } from 'vitest';
 import { crc32 as referenceCrc32 } from 'node:zlib';
-import { readDirectory, streamEntry, extractEntry, ContainerError } from '../index.js';
+import { readDirectory, streamEntry, extractEntry, ExpansionBudget, ContainerError } from '../index.js';
+import { buildZip } from './zip-builder';
 
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..', '..');
 const corpusDir = join(repoRoot, 'test-data', 'fixtures', 'fuzz-regressions');
@@ -25,7 +26,7 @@ const FUZZ_LIMITS = {
   maxEntries: 64,
   maxEntryNameBytes: 256,
   maxExpandedBytesPerEntry: 1 * 1024 * 1024,
-  maxExpandedBytesTotal: 4 * 1024 * 1024,
+  maxExpandedBytesTotal: 1536 * 1024,
   maxMetadataBytes: 256 * 1024
 };
 const CAP = 1 * 1024 * 1024;
@@ -54,12 +55,13 @@ const EXTRACT_CODES = new Set([
   'E_CONTAINER_ENCRYPTED',
   'E_CONTAINER_HEADER_MISMATCH',
   'E_CONTAINER_LIMIT_EXPANDED',
+  'E_CONTAINER_LIMIT_TOTAL',
   'E_CONTAINER_METHOD',
   'E_CONTAINER_INFLATE',
   'E_CONTAINER_CRC'
 ]);
 
-async function exerciseExtract(bytes: Uint8Array): Promise<void> {
+async function exerciseExtract(bytes: Uint8Array, seenCodes: string[] = []): Promise<void> {
   let dir;
   try {
     dir = readDirectory(bytes, FUZZ_LIMITS);
@@ -67,12 +69,17 @@ async function exerciseExtract(bytes: Uint8Array): Promise<void> {
     if (e instanceof ContainerError) return;
     throw e;
   }
+  // One budget per input, shared by every entry (#458), as the fuzz target does.
+  const budget = new ExpansionBudget(FUZZ_LIMITS.maxExpandedBytesTotal);
   for (const entry of dir.entries) {
     let out: Uint8Array;
     try {
-      out = await extractEntry(bytes, entry, CAP);
+      out = await extractEntry(bytes, entry, CAP, budget);
     } catch (e) {
-      if (e instanceof ContainerError && EXTRACT_CODES.has(e.code)) continue;
+      if (e instanceof ContainerError && EXTRACT_CODES.has(e.code)) {
+        seenCodes.push(e.code);
+        continue;
+      }
       throw e;
     }
     expect(out.byteLength).toBeLessThanOrEqual(CAP);
@@ -125,6 +132,18 @@ describe('scheduled stream-entry fuzz timeout seed', () => {
 describe('extractEntry fuzz property replay (fuzz-extract-entry.mjs seeds)', () => {
   it('seeds the six committed adversarial inputs', () => {
     expect(adversarial.length).toBe(6);
+  });
+
+  it('a multi-entry input trips the archive total: 800 KiB + 800 KiB + 100 KiB → E_CONTAINER_LIMIT_TOTAL on the second only', async () => {
+    const bytes = buildZip([
+      { name: 'a.txt', data: 'a'.repeat(800 * 1024) },
+      { name: 'b.txt', data: 'b'.repeat(800 * 1024) },
+      { name: 'c.txt', data: 'c'.repeat(100 * 1024) }
+    ]).bytes;
+    const seen: string[] = [];
+    await exerciseExtract(bytes, seen);
+    // a (800 KiB) fits the 1536 KiB total; b would reach 1600 KiB and trips; c (900 KiB cumulative) fits.
+    expect(seen).toEqual(['E_CONTAINER_LIMIT_TOTAL']);
   });
 
   const seeds = [...inputs.map((n) => join(corpusDir, n)), ...adversarial.map((n) => join(adversarialDir, n))];

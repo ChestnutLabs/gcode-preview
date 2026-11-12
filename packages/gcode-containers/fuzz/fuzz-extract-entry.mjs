@@ -13,7 +13,7 @@
  *     --sync=false -- -max_total_time=900
  */
 import { crc32 as referenceCrc32 } from 'node:zlib';
-import { readDirectory, extractEntry, ContainerError } from '../dist/index.js';
+import { readDirectory, extractEntry, ExpansionBudget, ContainerError } from '../dist/index.js';
 import { FUZZ_LIMITS, FUZZ_STREAM_CAP } from './limits.mjs';
 
 /** Every code locatePayload / streamEntry / extractEntry can raise. */
@@ -22,6 +22,7 @@ const EXTRACT_CODES = new Set([
   'E_CONTAINER_ENCRYPTED',
   'E_CONTAINER_HEADER_MISMATCH',
   'E_CONTAINER_LIMIT_EXPANDED',
+  'E_CONTAINER_LIMIT_TOTAL',
   'E_CONTAINER_METHOD',
   'E_CONTAINER_INFLATE',
   'E_CONTAINER_CRC'
@@ -36,10 +37,13 @@ export async function fuzz(data) {
     if (e instanceof ContainerError) return;
     throw e;
   }
+  // One budget per input, shared by every entry (#458): the archive-wide total (#449) is only reachable
+  // when the same ExpansionBudget is passed to each extraction, as openGcode3mf does.
+  const budget = new ExpansionBudget(FUZZ_LIMITS.maxExpandedBytesTotal);
   for (const entry of dir.entries) {
     let out;
     try {
-      out = await extractEntry(bytes, entry, FUZZ_STREAM_CAP);
+      out = await extractEntry(bytes, entry, FUZZ_STREAM_CAP, budget);
     } catch (e) {
       if (e instanceof ContainerError) {
         if (!EXTRACT_CODES.has(e.code)) {

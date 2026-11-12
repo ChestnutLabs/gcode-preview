@@ -7,7 +7,8 @@ export const FUZZ_LIMITS = {
   maxEntries: 64,
   maxEntryNameBytes: 256,
   maxExpandedBytesPerEntry: 1 * 1024 * 1024,
-  maxExpandedBytesTotal: 4 * 1024 * 1024,
+  // Below two full-cap entries (FUZZ_STREAM_CAP = 1 MiB), so a multi-entry input trips E_CONTAINER_LIMIT_TOTAL.
+  maxExpandedBytesTotal: 1536 * 1024,
   maxMetadataBytes: 256 * 1024
 };
 
