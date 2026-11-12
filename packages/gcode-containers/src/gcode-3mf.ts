@@ -100,7 +100,16 @@ export function sniffGcode3mf(prefix: Uint8Array, name?: string): boolean {
   return ZIP_MAGIC.every((b, i) => prefix[i] === b);
 }
 
-/** Bambu/Orca `printable_area`: ["0x0","256x0","256x256","0x256"] or "0x0,256x0,..." */
+/** Warning code for a settings value that is present but unusable (dropped, never thrown). */
+const METADATA_INVALID = 'container-metadata-invalid';
+
+type Warn = (message: string) => void;
+
+/**
+ * Bambu/Orca `printable_area`: ["0x0","256x0","256x256","0x256"] or "0x0,256x0,...". Null when the
+ * value is not 3..64 well-formed points with finite coordinates (a digit run past ~309 digits parses
+ * to Infinity: an unreadable point, same as a malformed one).
+ */
 function parsePrintableArea(value: unknown): Point2[] | null {
   const parts = Array.isArray(value) ? value : typeof value === 'string' ? value.split(',') : null;
   if (parts === null || parts.length < 3 || parts.length > 64) return null;
@@ -109,21 +118,41 @@ function parsePrintableArea(value: unknown): Point2[] | null {
     if (typeof p !== 'string') return null;
     const m = /^\s*(-?\d+(?:\.\d+)?)x(-?\d+(?:\.\d+)?)\s*$/.exec(p);
     if (m === null) return null;
-    points.push({ x: parseFloat(m[1]), y: parseFloat(m[2]) });
+    const x = parseFloat(m[1]);
+    const y = parseFloat(m[2]);
+    if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
+    points.push({ x, y });
   }
   return points;
 }
 
-function machineFromSettings(settings: Record<string, unknown>): MachineGeometry | undefined {
-  const points = parsePrintableArea(settings['printable_area']);
-  if (points === null) return undefined;
+/**
+ * `printable_height` in mm when it is a finite number above zero (Bambu/Orca write it as a string,
+ * e.g. "250"). Absent → undefined silently; present but unusable → undefined and a warning.
+ */
+function heightFromSettings(value: unknown, warn: Warn): number | undefined {
+  if (value === undefined) return undefined;
+  // Only a string or a number can hold a height; Number('') and Number('  ') are 0 and fail the > 0 test.
+  const height = typeof value === 'string' || typeof value === 'number' ? Number(value) : NaN;
+  if (Number.isFinite(height) && height > 0) return height;
+  warn(`printable_height ${JSON.stringify(String(value)).slice(0, 80)} is not a positive number; ignored`);
+  return undefined;
+}
+
+function machineFromSettings(settings: Record<string, unknown>, warn: Warn): MachineGeometry | undefined {
+  const area = settings['printable_area'];
+  if (area === undefined) return undefined;
+  const points = parsePrintableArea(area);
+  if (points === null) {
+    warn('printable_area is not 3 to 64 finite "XxY" points; no machine geometry');
+    return undefined;
+  }
   const xs = points.map((p) => p.x);
   const ys = points.map((p) => p.y);
   const min = { x: Math.min(...xs), y: Math.min(...ys) };
   const max = { x: Math.max(...xs), y: Math.max(...ys) };
   const axisAlignedRect =
     points.length === 4 && points.every((p) => (p.x === min.x || p.x === max.x) && (p.y === min.y || p.y === max.y));
-  const height = Number(settings['printable_height']);
   const printerName =
     typeof settings['printer_model'] === 'string'
       ? settings['printer_model']
@@ -133,7 +162,7 @@ function machineFromSettings(settings: Record<string, unknown>): MachineGeometry
   return {
     bed: axisAlignedRect ? { kind: 'rect', min, max } : { kind: 'polygon', points },
     origin: { x: 0, y: 0 },
-    heightMm: Number.isFinite(height) ? height : undefined,
+    heightMm: heightFromSettings(settings['printable_height'], warn),
     printerName,
     confidence: 'known', // read from the project's own machine config
     source: { adapterId: 'gcode-3mf', evidence: 'Metadata/project_settings.config printable_area' }
@@ -171,21 +200,25 @@ export async function openGcode3mf(bytes: Uint8Array, requested?: ContainerLimit
   const dir = readDirectory(bytes, limits);
   const warnings = [...dir.warnings];
 
-  const plates: (PlateEntry & { entry: ZipEntry })[] = [];
+  // `number` is the N of plate_N, taken from the CANONICAL name: the raw name may use `\` or `//`
+  // separators, which canonicalName normalises but PLATE_RE (anchored on `metadata/`) would not match.
+  const plates: (PlateEntry & { entry: ZipEntry; number: string })[] = [];
   for (const entry of dir.entries) {
     const m = PLATE_RE.exec(entry.name);
     if (m !== null) {
-      plates.push({ index: plates.length, name: entry.rawName, estimatedBytes: entry.uncompressedSize, entry });
+      plates.push({
+        index: plates.length,
+        name: entry.rawName,
+        estimatedBytes: entry.uncompressedSize,
+        entry,
+        number: m[1]
+      });
     }
   }
-  plates.sort(
-    (a, b) =>
-      parseInt(PLATE_RE.exec(a.name.toLowerCase())?.[1] ?? '0') -
-      parseInt(PLATE_RE.exec(b.name.toLowerCase())?.[1] ?? '0')
-  );
+  plates.sort((a, b) => parseInt(a.number) - parseInt(b.number));
   plates.forEach((p, i) => (p.index = i));
   // The plate NUMBER N from each name (plates are sorted by it; indices are positions in that order).
-  const plateNumbers = plates.map((p) => PLATE_RE.exec(p.name.toLowerCase())?.[1] ?? '0');
+  const plateNumbers = plates.map((p) => p.number);
   if (plates.length === 0) {
     // Distinguish the common user mistake: a MODEL/PROJECT 3MF (meshes, no
     // sliced G-code) vs a genuinely empty/unrecognized archive. Slicing is a
@@ -224,8 +257,13 @@ export async function openGcode3mf(bytes: Uint8Array, requested?: ContainerLimit
         const text = new TextDecoder().decode(
           await extractEntry(bytes, settingsEntry, limits.maxMetadataBytes, budget)
         );
-        const settings = JSON.parse(text) as Record<string, unknown>;
-        machine = machineFromSettings(settings);
+        const parsed: unknown = JSON.parse(text);
+        // Valid JSON that is not an object (null, an array, a number) holds no settings.
+        if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
+          throw new Error('not a JSON object');
+        }
+        const settings = parsed as Record<string, unknown>;
+        machine = machineFromSettings(settings, (message) => warnings.push({ code: METADATA_INVALID, message }));
         filaments = filamentsFromSettings(settings);
         for (const key of RAW_WHITELIST) {
           const v = settings[key];
@@ -234,7 +272,7 @@ export async function openGcode3mf(bytes: Uint8Array, requested?: ContainerLimit
         }
       } catch (err) {
         warnings.push({
-          code: 'container-metadata-invalid',
+          code: METADATA_INVALID,
           message: `project_settings.config unreadable: ${err instanceof Error ? err.message : err}`
         });
       }

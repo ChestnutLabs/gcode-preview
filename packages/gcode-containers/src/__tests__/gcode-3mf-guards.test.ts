@@ -17,6 +17,11 @@ const SETTINGS_NAME = 'Metadata/project_settings.config';
 const project = (settings: unknown, over: Partial<BuildEntry> = {}): Uint8Array =>
   buildZip([PLATE, { name: SETTINGS_NAME, data: JSON.stringify(settings), deflate: true, ...over }]).bytes;
 
+const AREA_INVALID = {
+  code: 'container-metadata-invalid',
+  message: 'printable_area is not 3 to 64 finite "XxY" points; no machine geometry'
+};
+
 const pts = (n: number): string[] => Array.from({ length: n }, (_, i) => `${i}x${i * 2}`);
 
 describe('printable_area part-count bound', () => {
@@ -29,11 +34,12 @@ describe('printable_area part-count bound', () => {
     ['3 parts (string)', '0x0,10x0,0x10', 3]
   ])('%s → %s polygon points', async (_label, area, expected) => {
     const opened = await openGcode3mf(project({ printable_area: area }));
-    expect(opened.metadata.warnings).toEqual([]);
     const bed = opened.metadata.machine?.bed;
     if (expected === undefined) {
       expect(opened.metadata.machine).toBeUndefined();
+      expect(opened.metadata.warnings).toEqual([AREA_INVALID]);
     } else {
+      expect(opened.metadata.warnings).toEqual([]);
       expect(bed?.kind).toBe('polygon');
       expect(bed?.kind === 'polygon' ? bed.points.length : -1).toBe(expected);
     }
@@ -49,10 +55,15 @@ describe('printable_area part-count bound', () => {
     // String(['0x0']) === '0x0' would match the regex: only the typeof check rejects it.
     ['a nested-array part', [['0x0'], '10x0', '0x10']],
     ['a malformed part', ['0x0', '10by0', '0x10']],
-    ['a number', 5],
-    ['missing', undefined]
-  ])('%s → no machine, no warning', async (_label, area) => {
+    ['a number', 5]
+  ])('%s → no machine, container-metadata-invalid warning', async (_label, area) => {
     const opened = await openGcode3mf(project({ printable_area: area }));
+    expect(opened.metadata.machine).toBeUndefined();
+    expect(opened.metadata.warnings).toEqual([AREA_INVALID]);
+  });
+
+  it('missing → no machine, no warning', async () => {
+    const opened = await openGcode3mf(project({ printer_model: 'M' }));
     expect(opened.metadata.machine).toBeUndefined();
     expect(opened.metadata.warnings).toEqual([]);
   });
