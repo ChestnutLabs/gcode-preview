@@ -527,15 +527,29 @@ export function createEngine(input: string | Uint8Array, opts: ParseOptions): En
     tool: number;
   }[] = [];
 
+  // Segments dropped because a stored position or E delta is beyond float32 (#510). They count toward
+  // `maxSegments` like stored ones: otherwise a run of dropped segments (an arc whose every point is out of
+  // range) never reaches the budget and loops for as long as its arc length says (#525).
+  let droppedSegments = 0;
+  const segmentBudgetReached = (): boolean => {
+    if (writer.count + droppedSegments < limits.maxSegments) return false;
+    stopReason = {
+      code: 'E_LIMIT_SEGMENTS',
+      message: `segment limit ${limits.maxSegments} reached`,
+      srcByte: currentSrcByte
+    };
+    return true;
+  };
+  const warnStoredOutOfRange = (what: string): void => {
+    warn(
+      NUMBER_OUT_OF_RANGE_WARN,
+      `a stored position is beyond the float32 range the toolpath stores; ${what} dropped`,
+      currentSrcByte
+    );
+  };
+
   const emitSegment = (x: number, y: number, z: number, eDelta: number, kind: number): boolean => {
-    if (writer.count >= limits.maxSegments) {
-      stopReason = {
-        code: 'E_LIMIT_SEGMENTS',
-        message: `segment limit ${limits.maxSegments} reached`,
-        srcByte: currentSrcByte
-      };
-      return false;
-    }
+    if (segmentBudgetReached()) return false;
     if (!originSet) {
       originSet = true;
       ox = prevX;
@@ -554,11 +568,8 @@ export function createEngine(input: string | Uint8Array, opts: ParseOptions): En
     const sy1 = y - oy;
     const sz1 = z - oz;
     if (!storedInRange(sx0, sy0, sz0) || !storedInRange(sx1, sy1, sz1) || Math.abs(eDelta) > FLOAT32_MAX) {
-      warn(
-        NUMBER_OUT_OF_RANGE_WARN,
-        'a stored position is beyond the float32 range the toolpath stores; segment dropped',
-        currentSrcByte
-      );
+      warnStoredOutOfRange('segment');
+      droppedSegments++;
       prevX = x;
       prevY = y;
       prevZ = z;
@@ -810,10 +821,41 @@ export function createEngine(input: string | Uint8Array, opts: ParseOptions): En
     const eachE = e !== undefined ? eDelta / Math.max(1, Math.ceil(totalSegments)) : 0;
 
     // Map an in-plane point (pa,pb) + through-axis pc back to (x,y,z) for the active plane.
+    const toXYZ = (pa: number, pb: number, pcv: number): [number, number, number] =>
+      arcPlane === 'xz' ? [pa, pcv, pb] : arcPlane === 'yz' ? [pcv, pa, pb] : [pa, pb, pcv];
     const emitArc = (pa: number, pb: number, pcv: number): boolean => {
-      const [px, py, pz] = arcPlane === 'xz' ? [pa, pcv, pb] : arcPlane === 'yz' ? [pcv, pa, pb] : [pa, pb, pcv];
+      const [px, py, pz] = toXYZ(pa, pb, pcv);
       return emitSegment(px, py, pz, eachE, kind);
     };
+
+    // O(1) range pre-check (#525): every interpolated point lies inside the centre ± radius box in the
+    // plane, with its through-axis value between the start's and the target's. If the target or a corner of
+    // that box cannot be stored as float32, drop the whole arc now (one dropped segment toward the budget)
+    // instead of interpolating up to ~1e39 points that would each be dropped. The start is checked too: it
+    // lies on the circle in exact arithmetic, but the centre (start + offset) is rounded, so with a huge
+    // offset the box can collapse onto an in-range value while the start is out of range. The origin is the
+    // one emitSegment would fix on this arc's first point when none is set yet.
+    const rx = originSet ? ox : prevX;
+    const ry = originSet ? oy : prevY;
+    const rz = originSet ? oz : prevZ;
+    const inRange = ([px, py, pz]: [number, number, number]): boolean => storedInRange(px - rx, py - ry, pz - rz);
+    if (
+      !inRange(toXYZ(sa, sb, sc)) ||
+      !inRange(toXYZ(ta, tb, tc)) ||
+      !inRange(toXYZ(centerA - arcRadius, centerB - arcRadius, sc)) ||
+      !inRange(toXYZ(centerA + arcRadius, centerB + arcRadius, sc))
+    ) {
+      if (segmentBudgetReached()) return false;
+      warnStoredOutOfRange('arc');
+      droppedSegments++;
+      sx = tx;
+      sy = ty;
+      sz = tz;
+      prevX = tx;
+      prevY = ty;
+      prevZ = tz;
+      return true;
+    }
 
     let pc = sc;
     let currentAngle = arcCurrentAngle;
