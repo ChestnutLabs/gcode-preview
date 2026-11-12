@@ -2,7 +2,7 @@
 
 **Status:** Accepted <!-- Draft | Proposed | Accepted | Superseded | Rejected -->
 **Authors/Owners:** Nathaniel Chestnut (with Claude)
-**Date:** 2026-08-26 · **Last revised:** 2026-08-26
+**Date:** 2026-08-26 · **Last revised:** 2026-11-12
 **Owning Epic:** ModelRenderer / ToolpathRenderer (cross-cutting) · **Milestone:** TBD (post-v0.12.0)
 **Supersedes / Superseded by:** none
 **Related:** [DD-022](DD-022-model-instancing-and-lod.md) §8 (the `capabilityHint` software/hardware detection this generalizes), [RR-006](../research/RR-006-tube-mesh-memory-and-large-file-budget.md) + the v0.12.0 `tubeByteBudget` (the toolpath memory budget this adds a *time* axis to), [DD-020](DD-020-interaction-aware-quality.md) (interaction-aware quality — the responsiveness net), [DD-018](DD-018-model-renderer.md) / [DD-021](DD-021-interactive-model-viewer.md) (`renderModelStill` / `createModelViewer`). Consumer/proof case: AnyBridge farm file-manager — the `Baby_Opossum` full-sheet source `.3mf` and large forced-`tubes` toolpaths.
@@ -252,6 +252,14 @@ resolved before the phase that needs them):
 - **`qualityMode: 'full' | 'adaptive' | 'fast'`** (D6) — user/admin intent, on both interactive and headless
   entry points of both paths. Deployment/admin-configurable default + user/session override; default must not
   be `'fast'` or silently degrading (recommend `'adaptive'`). Distinct from `capabilityHint`.
+  **Delivery status as of 2026-11-12:** *toolpath path delivered* — `GcodePreview` (interactive) and
+  `renderStill` (headless, #530) both accept `qualityMode` and forward it to the renderer
+  (`scene.ts`: `'full'` ⇒ decimation 1 and no `tubeByteBudget` tubes→lines fallback; `'fast'` ⇒ flat
+  lines). *Model path not delivered — Phase B:* `renderModelStill` and `createModelViewer` do not accept
+  it, deliberately. The model renderer has no quality tiers (`decimationApplied` is always 1 until model
+  LOD, DD-022 Phase 2) and no time budget (§10), so the three modes would render identical pixels; an
+  accepted-but-inert option would mislead consumers. It lands with Phase B, when there is behaviour for
+  it to select.
 - **`capabilityHint: 'auto' | 'software' | 'hardware'`** — *proposed* as an option generalized from the
   model options (DD-022 §8) to the toolpath renderer options and `renderStill`, default `'auto'`. **Not
   delivered as of 2026-11-11 (#432):** no entry point accepts it. The classifier ships;
