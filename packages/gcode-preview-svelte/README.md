@@ -62,6 +62,8 @@ UI data (`availableColorModes`, `hasRetractions`, `hasColorChanges`).
 `preview.state` follows the Svelte store contract (immediate emission + every snapshot after),
 so `$`-prefix auto-subscription works. Headless (non-component) users call `dispose()` themselves.
 
+Invalid numbers throw a `RangeError`, and a control the renderer rejects surfaces as an `error` with code `E_CONTROL_REJECTED`; both are described in [Adapters](../../docs/manual/adapters.md).
+
 ## Workers
 
 Batteries default (all dialect adapters + `.gcode.3mf`) needs zero setup under Vite; pass

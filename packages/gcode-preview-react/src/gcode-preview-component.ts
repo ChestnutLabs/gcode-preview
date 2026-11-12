@@ -198,6 +198,10 @@ function GcodePreviewImpl(props: GcodePreviewProps, ref: ForwardedRef<GcodePrevi
     cameraFov: is2D ? DEFAULT_LENS : props.cameraFov,
     pixelRatio: is2D ? undefined : props.pixelRatio
   });
+  // The plain BuildVolumeDef the renderer was last given (construction value first); see the buildVolume effect.
+  const appliedVolumeRef = useRef<BuildVolumeDef | MachineGeometry | undefined>(
+    isMachine ? undefined : props.buildVolume
+  );
   // Tracks which roles THIS prop last hid, so we diff prev→next and don't disturb roles hidden elsewhere.
   const prevHiddenRef = useRef<FeatureRoleValue[]>([]);
   useEffect(() => {
@@ -354,7 +358,17 @@ function GcodePreviewImpl(props: GcodePreviewProps, ref: ForwardedRef<GcodePrevi
     if (theme !== undefined) preview.controls.setTheme(theme);
   }, [theme]);
   useEffect(() => {
-    if (buildVolume !== undefined && 'bed' in buildVolume) preview.controls.setBuildVolume(buildVolume);
+    if (buildVolume === undefined) return;
+    if ('bed' in buildVolume) {
+      // A MachineGeometry is never a construction option, so it applies on every pass (incl. a StrictMode remount).
+      preview.controls.setBuildVolume(buildVolume);
+      return;
+    }
+    // A plain BuildVolumeDef is built into the renderer, so the mount pass is a no-op; a later change re-applies
+    // it, as Vue's watch and Svelte's `$:` do (DD-031 parity, #274).
+    if (buildVolume === appliedVolumeRef.current) return;
+    appliedVolumeRef.current = buildVolume;
+    preview.controls.setBuildVolume(buildVolume);
   }, [buildVolume]);
   useEffect(() => {
     // Feature-role visibility (DD-031 G3): diff prev→next so we only toggle roles this prop owns.
