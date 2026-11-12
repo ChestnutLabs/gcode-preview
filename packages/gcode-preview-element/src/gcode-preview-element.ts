@@ -59,6 +59,9 @@ export type ElementRendererOptions = Omit<
 type PreviewControllerRenderer = NonNullable<Parameters<typeof createPreviewController>[0]>['renderer'];
 
 /** Observed scalar/boolean/number attributes; rich options are property-only. */
+/** The perspective lens every renderer starts with, in degrees (#520: a mount value of 50 asks for nothing). */
+const DEFAULT_LENS = 50;
+
 const OBSERVED = [
   'quality',
   'quality-mode',
@@ -101,6 +104,9 @@ export class GcodePreviewElement extends HTMLElement {
   private lastFov: number | undefined;
   /** The last valid `pixel-ratio`, kept across a bad attribute value and a reconnect. */
   private lastPixelRatio: PixelRatioOption | undefined;
+  /** The last numeric `scrub` / `scrub-time` (null = cleared), kept across a non-numeric value and a reconnect. */
+  private lastScrub: number | null = null;
+  private lastScrubTime: number | null = null;
   private _progress: ProgressObservation | null = null;
   private _createWorker: (() => WorkerLike) | undefined;
   private _rendererOptions: ElementRendererOptions | undefined;
@@ -306,17 +312,18 @@ export class GcodePreviewElement extends HTMLElement {
   set showVolumeCage(v: boolean) {
     this.setAttribute('show-volume-cage', v ? 'true' : 'false');
   }
+  /** Segment-index scrub cut. A non-numeric value (`scrub="abc"`, `NaN`) is ignored: the last numeric one stays. */
   get scrub(): number | null {
     const a = this.getAttribute('scrub');
-    return a === null ? null : Number(a);
+    return a === null ? null : (parseScrub(a) ?? this.lastScrub);
   }
   set scrub(v: number | null) {
     this.reflect('scrub', v);
   }
-  /** Time-based scrub cut in ms of print time (#181). */
+  /** Time-based scrub cut in ms of print time (#181). A non-numeric value is ignored, like `scrub`. */
   get scrubTime(): number | null {
     const a = this.getAttribute('scrub-time');
-    return a === null ? null : Number(a);
+    return a === null ? null : (parseScrub(a) ?? this.lastScrubTime);
   }
   set scrubTime(v: number | null) {
     this.reflect('scrub-time', v);
@@ -383,18 +390,23 @@ export class GcodePreviewElement extends HTMLElement {
     this.canvasEl = canvas;
 
     const isMachine = this._buildVolume !== undefined && 'bed' in this._buildVolume;
+    const mode = (this.getAttribute('renderer') as RendererMode | null) ?? undefined;
+    const quality = this.getAttribute('quality') as 'auto' | 'lines' | 'tubes' | null;
+    const cameraMode = this.getAttribute('camera-mode') as CameraMode | null;
+    const cameraFov = this.acceptFov(this.getAttribute('camera-fov'));
+    const pixelRatio = this.acceptPixelRatio(this.getAttribute('pixel-ratio'));
     this.controller = createPreviewController({
       createWorker: this._createWorker,
       renderer: {
         // DD-014 D5: construction-time renderer selection (mode switching post-mount is out of scope).
-        mode: (this.getAttribute('renderer') as RendererMode | null) ?? undefined,
+        mode,
         buildVolume: isMachine ? undefined : (this._buildVolume as BuildVolumeDef | undefined),
-        quality: (this.getAttribute('quality') as 'auto' | 'lines' | 'tubes' | null) ?? 'auto',
+        quality: quality ?? 'auto',
         qualityMode: (this.getAttribute('quality-mode') as 'full' | 'adaptive' | 'fast' | null) ?? undefined,
         progressivePreview: (this.getAttribute('progressive-preview') as 'lines' | 'hold' | 'off' | null) ?? undefined,
-        cameraMode: (this.getAttribute('camera-mode') as CameraMode | null) ?? undefined,
-        cameraFov: this.acceptFov(this.getAttribute('camera-fov')),
-        pixelRatio: this.acceptPixelRatio(this.getAttribute('pixel-ratio')),
+        cameraMode: cameraMode ?? undefined,
+        cameraFov,
+        pixelRatio,
         frameContent: (this.getAttribute('frame-content') as 'object' | 'all' | null) ?? undefined,
         interactionQuality: (this.getAttribute('interaction-quality') as 'off' | 'auto' | null) ?? undefined,
         colorMode: this._colorMode,
@@ -407,6 +419,16 @@ export class GcodePreviewElement extends HTMLElement {
     });
     this.controller.onEvent((e) => this.reemit(e));
     this.controller.bindCanvas(canvas);
+    // #520: the 2D renderer cannot honour these four 3D-only construction settings, so one set to a
+    // non-default value is also applied through controls, and 2D reports `renderer-unsupported` once per
+    // connect. 3D was built with them, so it skips this (a re-applied quality would rebuild).
+    if (mode === '2d') {
+      const c = this.controller.controls;
+      if (quality !== null && quality !== 'auto') c.setQuality(quality);
+      if (cameraMode !== null && cameraMode !== 'perspective') c.setCameraMode(cameraMode);
+      if (cameraFov !== undefined && cameraFov !== DEFAULT_LENS) c.setCameraFov(cameraFov);
+      if (pixelRatio !== undefined) c.setPixelRatio(pixelRatio);
+    }
     if (isMachine) this.controller.controls.setBuildVolume(this._buildVolume as MachineGeometry);
     this.applyRuntimeState();
     if (this._source !== null) void this.controller.parse(this._source, this._parseOptions);
@@ -470,12 +492,16 @@ export class GcodePreviewElement extends HTMLElement {
       case 'show-retractions':
         c.setShowRetractions(value === 'true');
         break;
-      case 'scrub':
-        c.setScrubPosition(value === null ? null : Number(value));
+      case 'scrub': {
+        const s = this.acceptScrub(value);
+        if (s !== undefined) c.setScrubPosition(s);
         break;
-      case 'scrub-time':
-        c.setScrubTime(value === null ? null : Number(value));
+      }
+      case 'scrub-time': {
+        const t = this.acceptScrubTime(value);
+        if (t !== undefined) c.setScrubTime(t);
         break;
+      }
       case 'layer-range': {
         const r = parseLayerRange(value);
         if (r === null) c.setLayerRange(0, Number.POSITIVE_INFINITY);
@@ -501,8 +527,11 @@ export class GcodePreviewElement extends HTMLElement {
     const r = this.layerRange;
     if (r === null) c.setLayerRange(0, Number.POSITIVE_INFINITY);
     else c.setLayerRange(r[0], r[1]);
-    c.setScrubPosition(this.scrub);
-    c.setScrubTime(this.scrubTime);
+    c.setScrubPosition(this.acceptScrub(this.getAttribute('scrub')) ?? this.lastScrub);
+    // scrub-time only when it has a number (setScrubTime(null) clears the cut, which would drop `scrub`);
+    // it is applied last, so it wins when both are set.
+    const scrubTime = this.acceptScrubTime(this.getAttribute('scrub-time')) ?? this.lastScrubTime;
+    if (scrubTime !== null) c.setScrubTime(scrubTime);
     this.applyHiddenRoles(this.hiddenFeatureRoles);
     this.applyProgress();
     // Camera framing set BEFORE connect: attributeChangedCallback/the cameraState setter both no-op
@@ -553,6 +582,27 @@ export class GcodePreviewElement extends HTMLElement {
     const r = parsePixelRatio(value);
     if (r !== undefined) this.lastPixelRatio = r;
     return this.lastPixelRatio;
+  }
+
+  /**
+   * The `scrub` attribute as a segment index: removed (`null`) clears and is remembered, a number
+   * (including `±Infinity`) is accepted and remembered, and anything that is not a number (`'abc'`,
+   * `'NaN'`) returns `undefined` so the caller keeps the previous cut. A bad markup value never throws
+   * from the attribute callback (the controller throws `RangeError` on `NaN`) and never blocks a parse.
+   */
+  private acceptScrub(value: string | null): number | null | undefined {
+    if (value === null) return (this.lastScrub = null);
+    const n = parseScrub(value);
+    if (n !== undefined) this.lastScrub = n;
+    return n;
+  }
+
+  /** The `scrub-time` attribute in ms, with the same rules as {@link acceptScrub}. */
+  private acceptScrubTime(value: string | null): number | null | undefined {
+    if (value === null) return (this.lastScrubTime = null);
+    const n = parseScrub(value);
+    if (n !== undefined) this.lastScrubTime = n;
+    return n;
   }
 
   private reflect(attr: string, v: string | number | null): void {
@@ -618,6 +668,10 @@ export class GcodePreviewElement extends HTMLElement {
         if (e.code === 'machine-geometry-mismatch') emit('machine-geometry-mismatch', { message: e.message });
         else emit('error', { code: e.code, message: e.message });
         break;
+      case 'renderer-unsupported':
+        // #520: the renderer cannot honour a requested setting (e.g. a lens on the 2D renderer); once per request.
+        emit('renderer-unsupported', { feature: e.feature, message: e.message });
+        break;
       default:
         break;
     }
@@ -656,6 +710,12 @@ function parsePixelRatio(value: string | null): PixelRatioOption | undefined {
   // Number(null) and Number('') are 0 and NaN fails both bounds: the range alone decides.
   const n = Number(value);
   return n > 0 && n <= 4 ? n : undefined;
+}
+
+/** A scrub attribute value as a number, or `undefined` when it is not one (`Number(value)` is `NaN`). */
+function parseScrub(value: string): number | undefined {
+  const n = Number(value);
+  return Number.isNaN(n) ? undefined : n;
 }
 
 /** A `camera-fov` attribute value as a lens in [10, 120], else `undefined` (DD-032). */

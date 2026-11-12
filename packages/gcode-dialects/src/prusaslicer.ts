@@ -14,6 +14,7 @@ import {
   applyMarkerRanges,
   applyWipeRanges,
   bedFromPoints,
+  hasBedArea,
   finiteNonNegative,
   finitePositive,
   matchWipeComment,
@@ -198,13 +199,16 @@ export function prusaSlicer(): DialectAdapter {
     },
     finalize(ir: ToolpathIR, sink) {
       const s = stateFor(sink);
+      s.thumbs.close(sink);
       const applied = applyMarkerRanges(ir, s.markers, (a, b, v) => sink.setFeature(a, b, v));
       if (applied > 0) sink.upgradeCapability('featureRoles', 'known');
       s.objectTracker.apply(ir, sink);
       if (applyWipeRanges(ir, s.wipes, sink) > 0) sink.upgradeCapability('wipeMoves', 'known');
       if (s.bedPoints !== null) {
         const points = parseAreaPoints(s.bedPoints);
-        if (points !== null) {
+        if (points !== null && !hasBedArea(points)) {
+          sink.warn(INVALID_VALUE_WARNING, 'bed_shape encloses no area; dropped', s.bedSrcByte);
+        } else if (points !== null) {
           sink.setMachine(
             bedFromPoints(
               points,

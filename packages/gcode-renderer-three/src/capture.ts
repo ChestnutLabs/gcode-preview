@@ -47,6 +47,33 @@ export interface CaptureOptions {
   includeBuildVolume?: boolean;
 }
 
+/** Largest accepted `width` / `height` (the common WebGL `MAX_TEXTURE_SIZE` / `MAX_RENDERBUFFER_SIZE` ceiling). */
+export const MAX_CAPTURE_DIMENSION = 16384;
+/** Largest accepted `width × height` (≈67 Mpx → a 256 MiB RGBA readback buffer). */
+export const MAX_CAPTURE_PIXELS = 1 << 26;
+
+/**
+ * `width` / `height`, when given, must be finite numbers whose rounded value is ≤ {@link MAX_CAPTURE_DIMENSION}. Throws `RangeError` otherwise — a NaN size used to reach
+ * `new WebGLRenderTarget(NaN, NaN)` and an absurd one tried to allocate the readback buffer. Values ≤ 0 still clamp
+ * to 1 (see {@link resolveCaptureSize}).
+ */
+export function checkCaptureSize(opts: CaptureOptions): void {
+  for (const key of ['width', 'height'] as const) {
+    const v = opts[key];
+    if (v === undefined) continue;
+    if (typeof v !== 'number' || !Number.isFinite(v) || Math.round(v) > MAX_CAPTURE_DIMENSION) {
+      throw new RangeError(`capture ${key} must be a finite number ≤ ${MAX_CAPTURE_DIMENSION} (got ${String(v)})`);
+    }
+  }
+}
+
+/** The resolved size's area must be ≤ {@link MAX_CAPTURE_PIXELS} (one given side + a large live buffer can exceed it). */
+export function checkCaptureArea(w: number, h: number): void {
+  if (!(w * h <= MAX_CAPTURE_PIXELS)) {
+    throw new RangeError(`capture size ${w}×${h} exceeds ${MAX_CAPTURE_PIXELS} pixels`);
+  }
+}
+
 /** Resolve the capture pixel size from options + the live drawing-buffer size (both clamped to ≥1). */
 export function resolveCaptureSize(opts: CaptureOptions, bufferW: number, bufferH: number): { w: number; h: number } {
   const w = Math.max(1, Math.round(opts.width ?? bufferW));

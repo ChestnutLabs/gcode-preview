@@ -40,6 +40,7 @@ import { ModelPlate, applyModelBackground } from './model-plate.js';
 import type { ModelPlacement, PlacementOffset } from './placement.js';
 import {
   applyRenderScope,
+  checkRenderScope,
   sceneInstanceCount,
   type ModelBounds,
   type ModelPlateSummary,
@@ -214,6 +215,7 @@ export function createModelViewer(canvas: RenderTargetCanvas, options: ModelView
   if (theme !== undefined) resolveTheme(theme);
   if (options.cameraFov !== undefined) checkModelFov(options.cameraFov);
   if (options.pixelRatio !== undefined) checkModelPixelRatio(options.pixelRatio);
+  if (options.renderScope !== undefined) checkRenderScope(options.renderScope);
 
   const listeners = new Set<(e: ModelViewerEvent) => void>();
   // Events emitted before any subscriber attaches (e.g. renderer-unsupported at construction) are held
@@ -343,7 +345,9 @@ export function createModelViewer(canvas: RenderTargetCanvas, options: ModelView
       const message = err instanceof Error ? err.message : String(err);
       // Loader/limit failures surface as an event, never thrown out of the render loop (DD §6) — but the
       // returned promise still rejects so an awaiting caller sees the failure.
-      emit({ type: 'error', code, message });
+      // A superseded (or disposed) load reports to its own caller only: its failure must not land as an
+      // error event after the newer load's `ready`.
+      if (my === sourceToken && !disposed) emit({ type: 'error', code, message });
       throw err;
     }
   }
@@ -413,6 +417,7 @@ export function createModelViewer(canvas: RenderTargetCanvas, options: ModelView
       fit();
     },
     setRenderScope(scope) {
+      if (scope !== null) checkRenderScope(scope); // throws before anything changes
       currentScope = scope;
       const shown = scopedScene();
       if (shown === null || stage === null) return; // no source yet — applied on the next setSource

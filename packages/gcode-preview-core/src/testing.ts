@@ -511,15 +511,27 @@ export interface ComponentHarness {
       onReady: (segments: number) => void;
       onBuildComplete: (segments: number) => void;
       onDisclosure: (text: string) => void;
+      /**
+       * The component's renderer-unsupported callback/event (#520), with its `feature` and `message`. Optional
+       * so existing harnesses keep compiling; the #520 cases fail with an explicit message without it.
+       */
+      onRendererUnsupported?: (feature: string, message: string) => void;
     },
     opts?: ComponentMountOptions
   ): Promise<MountedComponent> | MountedComponent;
 }
 
-/** What a {@link ComponentHarness} mount configures beyond the callbacks (#518). */
+/**
+ * What a {@link ComponentHarness} mount configures beyond the callbacks (#518). Every mount also sets the
+ * component's quality to `'lines'` (the stub GL has no tube path); the #520 cases expect that.
+ */
 export interface ComponentMountOptions {
   renderer?: '2d';
   ir?: () => ToolpathIR;
+  /** The component's lens prop/attribute at mount (#520). */
+  cameraFov?: number;
+  /** The component's pixel-ratio prop/attribute at mount (#520). */
+  pixelRatio?: number;
 }
 
 export interface MountedComponent {
@@ -531,6 +543,11 @@ export interface MountedComponent {
   emitBuild(decimationApplied: number, segments: number): Promise<void> | void;
   /** Parse through the component's own preview handle (`parse(bytes)`), inside the framework's update scope. */
   parse(bytes: Uint8Array): Promise<unknown>;
+  /**
+   * Call `controls.setCameraMode(mode)` on the component's own preview handle, inside the framework's update
+   * scope (#520). Optional like `onRendererUnsupported`.
+   */
+  setCameraMode?(mode: 'perspective' | 'orthographic'): Promise<void> | void;
   /** Let microtask round-trips + framework effects settle. */
   settle(): Promise<void>;
   unmount(): Promise<void> | void;
@@ -642,5 +659,72 @@ export function runComponentConformanceSuite(name: string, api: TestApi, harness
       expect(JSON.stringify(log.filter((l) => l.startsWith('ready ')))).toBe('["ready 13"]');
       await m.unmount();
     });
+
+    it('2D: 3D-only settings at mount each report renderer-unsupported once; 3D reports none (#520)', async () => {
+      const log: string[] = [];
+      const callbacks = {
+        onReady: (segments: number) => log.push(`ready ${segments}`),
+        onBuildComplete: (segments: number) => log.push(`build ${segments}`),
+        onDisclosure: (text: string) => log.push(`disclosure ${text}`),
+        onRendererUnsupported: (feature: string, message: string) => log.push(`unsupported ${feature} ${message}`)
+      };
+      const m2d = await harness.mount(callbacks, { renderer: '2d', cameraFov: 32, pixelRatio: 2 });
+      await m2d.settle();
+      requireUnsupportedWired(log);
+      expect(JSON.stringify(log)).toBe(
+        JSON.stringify([
+          'unsupported quality Quality/geometry modes apply only to the 3D renderer; the 2D view has none.',
+          'unsupported camera The camera lens applies only to the 3D renderer; the 2D view is flat top-down.',
+          'unsupported quality The pixel ratio applies only to the 3D renderer; the 2D view keeps its own resolution.'
+        ])
+      );
+      await m2d.unmount();
+
+      log.length = 0;
+      const m3d = await harness.mount(callbacks, { cameraFov: 32, pixelRatio: 2 });
+      await m3d.settle();
+      expect(JSON.stringify(log)).toBe('[]');
+      // One parse, one build: the mount pass re-applied nothing to 3D (a re-applied quality rebuilds).
+      await m3d.parse(new Uint8Array(1_000));
+      await m3d.settle();
+      expect(JSON.stringify(log.filter((l) => !l.startsWith('ready ')))).toBe('["build 12","disclosure "]');
+      await m3d.unmount();
+    });
+
+    it('2D: a control call after mount reports renderer-unsupported once per call, with no dedupe (#520)', async () => {
+      const log: string[] = [];
+      const m = await harness.mount(
+        {
+          onReady: () => undefined,
+          onBuildComplete: () => undefined,
+          onDisclosure: () => undefined,
+          onRendererUnsupported: (feature, message) => log.push(`unsupported ${feature} ${message}`)
+        },
+        { renderer: '2d' }
+      );
+      await m.settle();
+      requireUnsupportedWired(log);
+      log.length = 0; // the harness's mount-time quality notice is covered above
+      if (m.setCameraMode === undefined) throw new Error('harness must implement setCameraMode (#520)');
+      const line =
+        'unsupported camera Camera projection applies only to the 3D renderer; the 2D view is flat top-down.';
+      await m.setCameraMode('orthographic');
+      await m.settle();
+      expect(JSON.stringify(log)).toBe(JSON.stringify([line]));
+      // The same request again is a second request: a second event, not deduplicated.
+      await m.setCameraMode('orthographic');
+      await m.settle();
+      expect(JSON.stringify(log)).toBe(JSON.stringify([line, line]));
+      await m.unmount();
+    });
   });
+}
+
+/** The #520 cases need the optional callback wired; a harness without it fails with this, not a bare diff. */
+function requireUnsupportedWired(log: readonly string[]): void {
+  if (!log.some((l) => l.startsWith('unsupported '))) {
+    throw new Error(
+      'harness must implement onRendererUnsupported (#520): no renderer-unsupported reached it from a 2D mount'
+    );
+  }
 }

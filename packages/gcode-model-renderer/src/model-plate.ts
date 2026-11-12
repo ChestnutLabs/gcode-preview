@@ -130,7 +130,7 @@ export class ModelPlate {
     this.result =
       full === null || shown === null ? NO_PLACEMENT : computePlacement(full, shown, scope, bedOf(this.def));
     content.setPresentationOffset(this.result.placementOffset);
-    if (shown === null || this.result.placement === null) {
+    if (shown === null) {
       this.footprint = null;
     } else {
       const b = presentedBounds(shown.bounds, this.result.placementOffset);
@@ -176,7 +176,6 @@ export class ModelPlate {
   }
 
   dispose(): void {
-    if (this.disposed) return;
     this.disposed = true;
     this.free();
     this.scene.remove(this.root);

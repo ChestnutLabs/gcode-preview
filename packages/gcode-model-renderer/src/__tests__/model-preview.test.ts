@@ -123,7 +123,7 @@ describe('createModelPreviewController (DD-031)', () => {
 
   it('capture before a canvas binds rejects rather than throwing', async () => {
     const c = createModelPreviewController({ createRenderer: stubGL });
-    await expect(c.controls.capture()).rejects.toThrow(/E_CAPTURE_UNSUPPORTED/);
+    await expect(c.controls.capture()).rejects.toMatchObject({ code: 'E_CAPTURE_UNSUPPORTED' });
     c.dispose();
   });
 
