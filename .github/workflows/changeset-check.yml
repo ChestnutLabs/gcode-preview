@@ -12,6 +12,7 @@ on:
 jobs:
   changeset-check:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     if: >
       github.head_ref != 'changeset-release/dev' &&
       !contains(github.event.pull_request.labels.*.name, 'no-changeset-needed')
