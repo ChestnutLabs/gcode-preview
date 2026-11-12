@@ -131,8 +131,16 @@ Support the constructs real programs use; each O-word keyed by its number/name:
 RS274NGC is effectively Turing-complete; `o while [1]` or unbounded recursion must not hang/OOM the
 worker. Extend `ParseLimits` (DD-003):
 
-- **`maxProgramIterations`** — total loop-body executions across the program (recommend `1_000_000`);
-  exceeding ⇒ stop with a `StopReason` (like `maxSegments`), partial IR returned, disclosed.
+- **`maxProgramIterations`** — total interpreter work **units** across the program (recommend
+  `1_000_000`); exceeding ⇒ stop, partial IR returned, disclosed as `rs274-iteration-limit`. *As built,
+  the bound is per unit, not per loop pass.* Work only repeats inside a loop or a subroutine, so only
+  there is it charged: 1 unit per loop pass, 1 per statement or `call`, 1 per `call` argument, 1 per
+  `if`/`elseif` condition tested, 1 per loop entered from inside a loop or sub (so empty `while [0]`
+  blocks are not free), plus **1 per 256 characters** of any statement, condition, count or argument
+  scanned. Root-level code outside any loop or sub is never charged (a long straight-line program is
+  not truncated). An earlier draft charged only passes and statements; a ~56 KB program (`elseif`
+  ladder, long conditions or many `call` arguments inside a loop) could then run for hours before the cap
+  was reached, because each pass did far more than one unit of work.
 - **`maxCallDepth`** — subroutine recursion depth (recommend `50`); exceeding ⇒ disclosed, call skipped.
 - Existing `maxSegments`/`maxBufferBytes` still bound emitted geometry. Parameter store bounded by the
   `#1`–`#5399` range + a cap on named params. **No I/O, no `eval`** — a pure arithmetic evaluator over a

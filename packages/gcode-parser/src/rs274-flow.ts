@@ -56,6 +56,9 @@ const MAX_CONTROL_NESTING = 256;
  */
 const MAX_EXEC_DEPTH = 512;
 
+/** One extra budget unit per this many characters of text the interpreter scans in a loop or sub. */
+const TEXT_UNIT_CHARS = 256;
+
 /** The recognized O-word keywords. An `o<id>` line with any OTHER trailing word is NOT a control line
  *  (e.g. a stray `o5 g1`) — it falls through to the normal lexer, so detection never hijacks plain code. */
 export const KNOWN_OWORD_KEYWORDS: ReadonlySet<string> = new Set([
@@ -544,8 +547,9 @@ export function interpretOWordProgram(lines: readonly FlowLine[], host: FlowHost
    * statements are bounded by input size and are not charged, so a large straight-line program is not
    * truncated.
    */
-  const charge = (offset?: number): boolean => {
-    if (++iterations > host.maxProgramIterations) {
+  const charge = (offset?: number, units = 1): boolean => {
+    iterations += units;
+    if (iterations > host.maxProgramIterations) {
       if (!iterationWarned) {
         iterationWarned = true;
         disclose(
@@ -558,6 +562,18 @@ export function interpretOWordProgram(lines: readonly FlowLine[], host: FlowHost
       return false;
     }
     return true;
+  };
+
+  /** Extra units for text the interpreter must scan: 1 per 256 chars, so one ordinary line costs nothing
+   *  extra but an 8 KB condition or a 64 KB line cannot be re-run for free. */
+  const textUnits = (s: string): number => Math.floor(s.length / TEXT_UNIT_CHARS);
+  /** True anywhere inside a loop or a subroutine — the only places work repeats, hence the only charged ones. */
+  const repeating = (): boolean => loopDepth > 0 || callDepth > 0;
+
+  /** Text weight of a loop's condition / count, charged each time it is evaluated. */
+  const condOk = (n: { expr: string; offset: number }): boolean => {
+    const u = textUnits(n.expr);
+    return u === 0 || charge(n.offset, u);
   };
 
   const truthy = (expr: string, offset: number): boolean => {
@@ -592,8 +608,13 @@ export function interpretOWordProgram(lines: readonly FlowLine[], host: FlowHost
         // callDepth > 0, so a loop-free fan-out (`o100 sub` calling `o100` twice) that maxCallDepth
         // bounds only in DEPTH is bounded in total work here. Root-level statements (both depths 0) run
         // once and stay bounded by input size, so a large straight-line program is not truncated.
-        if ((loopDepth > 0 || callDepth > 0) && n.t !== 'if' && n.t !== 'loop') {
-          if (!charge(n.t === 'line' || n.t === 'call' ? n.offset : undefined)) return;
+        if (repeating() && n.t !== 'if' && n.t !== 'loop') {
+          // A statement costs 1, plus text weight for a long line, plus 1 (+ text weight) per `call` argument
+          // (each argument is an expression evaluated on every call).
+          let units = 1;
+          if (n.t === 'line') units += textUnits(n.text);
+          else if (n.t === 'call') for (const a of n.args) units += 1 + textUnits(a);
+          if (!charge(n.t === 'line' || n.t === 'call' ? n.offset : undefined, units)) return;
         }
         switch (n.t) {
           case 'line':
@@ -626,6 +647,9 @@ export function interpretOWordProgram(lines: readonly FlowLine[], host: FlowHost
             break;
           case 'if': {
             for (const br of n.branches) {
+              // Every tested condition costs 1 (+ text weight): an `elseif` ladder or a long condition inside
+              // a loop re-runs on every pass, so it must draw on the same budget as the statements do.
+              if (br.expr !== null && repeating() && !charge(br.offset, 1 + textUnits(br.expr))) return;
               if (br.expr === null || truthy(br.expr, br.offset)) {
                 execBlock(br.body);
                 break;
@@ -634,6 +658,9 @@ export function interpretOWordProgram(lines: readonly FlowLine[], host: FlowHost
             break;
           }
           case 'loop':
+            // Entering a loop from inside a loop or sub costs 1 even when it runs zero passes (`while [0]`),
+            // so thousands of empty nested loops cannot be re-entered for free.
+            if (repeating() && !charge(n.offset)) return;
             execLoop(n);
             break;
         }
@@ -682,6 +709,7 @@ export function interpretOWordProgram(lines: readonly FlowLine[], host: FlowHost
     frameLoopDepth++; // this loop can catch a break/continue in the current call frame
     try {
       if (n.kind === 'repeat') {
+        if (!condOk(n)) return;
         const cv = host.evalExpression(n.expr, n.offset);
         if (cv === null) {
           degraded = true;
@@ -705,7 +733,7 @@ export function interpretOWordProgram(lines: readonly FlowLine[], host: FlowHost
         return;
       }
       if (n.kind === 'while') {
-        while (!halted && !host.stopped() && truthy(n.expr, n.offset)) {
+        while (!halted && !host.stopped() && condOk(n) && truthy(n.expr, n.offset)) {
           if (!charge(n.offset)) return;
           try {
             execBlock(n.body);
@@ -731,7 +759,7 @@ export function interpretOWordProgram(lines: readonly FlowLine[], host: FlowHost
           if (e instanceof ContinueSignal) continue; // fall through to the condition test
           throw e;
         }
-      } while (!halted && !host.stopped() && truthy(n.expr, n.offset));
+      } while (!halted && !host.stopped() && condOk(n) && truthy(n.expr, n.offset));
     } finally {
       loopDepth--;
       frameLoopDepth--;
