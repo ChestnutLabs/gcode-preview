@@ -33,6 +33,52 @@ function fnv1aString(s: string, seed = FNV_OFFSET): number {
   return h >>> 0;
 }
 
+function typedHash(a: ArrayBufferView | undefined): string | null {
+  if (a === undefined) return null;
+  return hex8(fnv1aBytes(new Uint8Array(a.buffer, a.byteOffset, a.byteLength)));
+}
+
+/**
+ * A deterministic fingerprint of a pre-built scene (no source bytes exist for it): everything that affects the
+ * pixels or the reported placement — per-object id/name, geometry content (positions, normals, indices, colours),
+ * transforms, instances, plate membership and material — plus bounds, capabilities, plates and the source's
+ * plate claim. Returned as JSON text to hash with {@link computeCacheKey}.
+ */
+export function sceneFingerprint(scene: {
+  objects: readonly {
+    id: string;
+    name?: string;
+    geometry: { positions: Float32Array; normals?: Float32Array; indices?: Uint32Array; colors?: Float32Array };
+    transform: readonly number[];
+    instances?: readonly (readonly number[])[];
+    plateIds?: readonly number[];
+    material?: unknown;
+  }[];
+  bounds: unknown;
+  capabilities: unknown;
+  plates?: unknown;
+  source?: unknown;
+}): string {
+  return JSON.stringify({
+    o: scene.objects.map((o) => ({
+      i: o.id,
+      n: o.name,
+      p: typedHash(o.geometry.positions),
+      nm: typedHash(o.geometry.normals),
+      ix: typedHash(o.geometry.indices),
+      c: typedHash(o.geometry.colors),
+      t: o.transform,
+      in: o.instances,
+      pl: o.plateIds,
+      m: o.material
+    })),
+    b: scene.bounds,
+    c: scene.capabilities,
+    pl: scene.plates,
+    s: scene.source
+  });
+}
+
 function hex8(n: number): string {
   return (n >>> 0).toString(16).padStart(8, '0');
 }

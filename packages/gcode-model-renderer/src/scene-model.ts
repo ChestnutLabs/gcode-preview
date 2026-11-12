@@ -160,6 +160,32 @@ export type RenderScope =
   | { plateId: number }
   | { instanceFilter: (objectId: string, placementIndex: number) => boolean };
 
+/**
+ * Validate a consumer-supplied render scope; throws `RangeError` for anything but exactly one well-formed
+ * selector (`objectIds`: array of strings; `plateId`: integer; `instanceFilter`: function). `null`/`undefined`
+ * are the caller's "whole source" and are not checked here.
+ */
+export function checkRenderScope(scope: RenderScope): void {
+  const s = scope as unknown as Record<string, unknown> | null;
+  if (typeof s !== 'object' || s === null) throw new RangeError('renderScope must be an object');
+  // A key present with an `undefined` value is not a selector (a scope built from optional fields,
+  // `{ objectIds: sel, plateId: undefined }`, is type-valid and selects by `objectIds`).
+  const keys = ['objectIds', 'plateId', 'instanceFilter'].filter((k) => s[k] !== undefined);
+  if (keys.length !== 1) {
+    throw new RangeError('renderScope must have exactly one of objectIds, plateId, instanceFilter');
+  }
+  if (keys[0] === 'objectIds') {
+    const ids = s.objectIds;
+    if (!Array.isArray(ids) || ids.some((i) => typeof i !== 'string')) {
+      throw new RangeError('renderScope.objectIds must be an array of strings');
+    }
+  } else if (keys[0] === 'plateId') {
+    if (!Number.isInteger(s.plateId)) throw new RangeError('renderScope.plateId must be an integer');
+  } else if (typeof s.instanceFilter !== 'function') {
+    throw new RangeError('renderScope.instanceFilter must be a function');
+  }
+}
+
 /** Local axis-aligned bounds of a geometry's positions. */
 function geometryAABB(positions: Float32Array): { min: [number, number, number]; max: [number, number, number] } {
   const min: [number, number, number] = [Infinity, Infinity, Infinity];
@@ -212,10 +238,17 @@ function accumulatePlacementBounds(geom: MeshGeometry, placements: readonly Mat4
  * structure is unchanged; only what is *rendered* is narrowed).
  */
 export function applyRenderScope(scene: ModelScene, scope: RenderScope): ModelScene {
+  checkRenderScope(scope);
+  // Same rule as checkRenderScope: a key with an `undefined` value is not the selector.
+  const sel = scope as Partial<{
+    objectIds: string[];
+    plateId: number;
+    instanceFilter: (objectId: string, placementIndex: number) => boolean;
+  }>;
   const matches = (o: ModelObject, i: number): boolean => {
-    if ('objectIds' in scope) return scope.objectIds.includes(o.id);
-    if ('plateId' in scope) return o.plateIds?.[i] === scope.plateId;
-    return scope.instanceFilter(o.id, i);
+    if (sel.objectIds !== undefined) return sel.objectIds.includes(o.id);
+    if (sel.plateId !== undefined) return o.plateIds?.[i] === sel.plateId;
+    return sel.instanceFilter!(o.id, i);
   };
   const objects: ModelObject[] = [];
   const bounds: ModelBounds = { min: [Infinity, Infinity, Infinity], max: [-Infinity, -Infinity, -Infinity] };
@@ -234,7 +267,8 @@ export function applyRenderScope(scene: ModelScene, scope: RenderScope): ModelSc
     objects.push(next);
     accumulatePlacementBounds(o.geometry, keptPlacements, bounds);
   }
-  const finalBounds: ModelBounds = objects.length === 0 ? { min: [0, 0, 0], max: [0, 0, 0] } : bounds;
+  // Nothing kept, or only empty geometry kept (bounds never left ±Infinity): the empty box, never ±Infinity.
+  const finalBounds: ModelBounds = bounds.min[0] > bounds.max[0] ? { min: [0, 0, 0], max: [0, 0, 0] } : bounds;
   return { ...scene, objects, bounds: finalBounds };
 }
 
