@@ -752,8 +752,10 @@ export function createEngine(input: string | Uint8Array, opts: ParseOptions): En
           ? [sy, sz, sx, ty, tz, tx, p.j, p.k]
           : [sx, sy, sz, tx, ty, tz, p.i, p.j];
 
-    let ia = oa;
-    let ib = ob;
+    // An omitted centre offset is 0 (RS274NGC / Marlin), but only when R is absent. Reading it straight
+    // from the word gave `sa + undefined = NaN` coordinates that the renderers then skip (#522).
+    let ia = oa ?? 0;
+    let ib = ob ?? 0;
     if (r) {
       const deltaA = ta - sa;
       const deltaB = tb - sb;
@@ -767,6 +769,16 @@ export function createEngine(input: string | Uint8Array, opts: ParseOptions): En
       if ((cw && r < 0.0) || (!cw && r > 0.0)) hDivD = -hDivD;
       ia = deltaA / 2 + deltaB * hDivD;
       ib = deltaB / 2 - deltaA * hDivD;
+    }
+
+    // No I/J(/K) and no R: nothing defines the arc. The zero offsets make it a straight move to the target
+    // (radius 0, one segment); say so rather than silently drawing a line for an "arc" (#522).
+    if (oa === undefined && ob === undefined && !r) {
+      warn(
+        'arc-missing-center',
+        'G2/G3 arc has no I/J/K centre offset and no R radius; drawn as a straight move to the target.',
+        currentSrcByte
+      );
     }
 
     const wholeCircle = sa == ta && sb == tb;
