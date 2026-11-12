@@ -39,6 +39,8 @@ const png = await canvas.convertToBlob({ type: 'image/png' }); // caller extract
 | `quality` | `'auto'` (default) / `'tubes'` / `'lines'` |
 | `colorMode` | single / by-tool / by-feature (feature is capability-gated) |
 | `tube` | tube profile parameters |
+| `tubeByteBudget` | memory ceiling, in bytes, for the retained tube mesh; a plate whose tubes would exceed it is drawn as lines instead (`result.quality` says which). Raise it when the host has RAM to spare. Ignored when `qualityMode` is `'full'` |
+| `qualityMode` | fidelity policy: `'adaptive'` (default) keeps tubes unless `tubeByteBudget` forces lines; `'full'` always draws full geometry and never falls back to lines; `'fast'` always draws flat lines. Same option and meaning as the interactive viewer |
 | `buildVolume` | a renderer volume or discovered `MachineGeometry` |
 | `layerRange` | inclusive `[start, end]` layer clip |
 | `scrub` | draw up to a segment index (progress-style clip) |

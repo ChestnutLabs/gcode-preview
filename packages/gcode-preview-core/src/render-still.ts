@@ -30,6 +30,7 @@ import {
   type GeometryWorkerLike,
   type GLRendererLike,
   type QualityMode,
+  type QualityPolicy,
   type RenderTargetCanvas,
   type Theme,
   type ThemeColor,
@@ -121,6 +122,13 @@ export interface RenderStillOptions {
    * for the default.
    */
   tubeByteBudget?: number;
+  /**
+   * Fidelity POLICY (DD-023 §4 D6, §5: "on both interactive and headless entry points"), forwarded to the
+   * renderer exactly as `GcodePreview` does: `'adaptive'` (default — today's behaviour), `'full'` (no
+   * decimation, no byte-budget tubes→lines fallback, so `tubeByteBudget` is ignored), or `'fast'` (flat
+   * lines). Distinct from the geometry `quality` tier. Omit for the default.
+   */
+  qualityMode?: QualityPolicy;
   /** Geometry-worker factory override (tests / exotic hosts). Defaults to the browser Web Worker when
    *  `Worker` is available and `geometryConcurrency !== 'off'`. */
   createGeometryWorker?: () => GeometryWorkerLike;
@@ -268,6 +276,7 @@ export async function renderStill(
     ...(options.colorMode ? { colorMode: options.colorMode } : {}),
     ...(options.tube ? { tube: options.tube } : {}),
     ...(options.tubeByteBudget !== undefined ? { tubeByteBudget: options.tubeByteBudget } : {}),
+    ...(options.qualityMode !== undefined ? { qualityMode: options.qualityMode } : {}),
     ...(options.buildVolume ? { buildVolume: toVolume(options.buildVolume) } : {}),
     preserveDrawingBuffer: true,
     scheduleFrame: (cb) => queueMicrotask(cb),

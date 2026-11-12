@@ -778,6 +778,28 @@
       "limitations": "Not a real print; a minimized crash reproduction. Streaming its single entry must raise E_CONTAINER_INFLATE, never crash the process."
     },
     {
+      "id": "fuzz-multi-entry-total",
+      "path": "test-data/fixtures/fuzz-regressions/multi-entry-total.zip",
+      "sha256": "8f76a81ab8b06572536122f34d77bf2fa58aaaa59b66f85d7636cacd2fe8e629",
+      "bytes": 1802,
+      "origin": "Chestnut-constructed fuzzing seed (#458): deterministic deflate ZIP with two 800 KiB entries; the smallest input that reaches the archive-wide expanded-bytes total under the fuzz limits. Build recipe in the fixture README.",
+      "contributor": "chestnutlabs",
+      "redistribution": "chestnut-original-mit",
+      "slicer": "n/a (synthetic ZIP)",
+      "targetFamily": "container (adversarial)",
+      "features": [
+        "container",
+        "adversarial",
+        "fuzz-regression",
+        "expansion-total"
+      ],
+      "expectedCapabilities": {
+        "geometry": "unavailable"
+      },
+      "sizeTier": "small",
+      "limitations": "Not a real print; a fuzzing seed. Extracting its entries in order under one shared ExpansionBudget must give E_CONTAINER_LIMIT_TOTAL on the second entry only."
+    },
+    {
       "id": "bgcode-adv-deflate-over-declared",
       "path": "test-data/fixtures/bgcode/adversarial/deflate-over-declared.bgcode",
       "sha256": "9b8c5f2dd5386f2f72f9061bc8df7f8a397aa10b582232db5a18b1252d32f11f",

@@ -418,4 +418,24 @@ describe('renderStill (#132)', () => {
     });
     expect(starved.quality).toBe('lines');
   });
+
+  it('forwards qualityMode (DD-023 §5): fast → lines; full ignores a starving tubeByteBudget; adaptive and omitted honour it', async () => {
+    const run = (extra: { qualityMode?: 'full' | 'adaptive' | 'fast'; tubeByteBudget?: number }) =>
+      renderStill(makeTestIR(), {
+        canvas: makeStubCanvas(),
+        quality: 'tubes',
+        createRenderer: makeCountingGL().gl,
+        ...extra
+      });
+
+    // fast: tubes were requested but the policy forces flat lines.
+    expect((await run({ qualityMode: 'fast' })).quality).toBe('lines');
+    // full: the 1000 B budget that degrades adaptive to lines is not applied, so tubes survive.
+    expect((await run({ qualityMode: 'full', tubeByteBudget: 1000 })).quality).toBe('tubes');
+    // adaptive and the omitted default behave identically: the starving budget still degrades to lines.
+    expect((await run({ qualityMode: 'adaptive', tubeByteBudget: 1000 })).quality).toBe('lines');
+    expect((await run({ tubeByteBudget: 1000 })).quality).toBe('lines');
+    // adaptive with no budget pressure keeps the requested tubes.
+    expect((await run({ qualityMode: 'adaptive' })).quality).toBe('tubes');
+  });
 });
