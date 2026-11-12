@@ -430,13 +430,10 @@ export function createModelViewer(canvas: RenderTargetCanvas, options: ModelView
       if (stage === null) {
         throw new CaptureUnsupportedError('model viewer renderer unavailable');
       }
-      // includeBuildVolume:false hides the plate and its shadow for this render only (DD-032 §4.3).
-      const restore = opts?.includeBuildVolume === false ? plate.hide() : null;
-      try {
-        return await stage.capture(opts);
-      } finally {
-        restore?.();
-      }
+      // includeBuildVolume:false hides the plate and its shadow for the off-screen render only (DD-032 §4.3).
+      // The stage calls the borrow synchronously before the render and undoes it right after readback, so the
+      // plate is never hidden across the encode await (a live frame or overlapping capture still sees it).
+      return await stage.capture(opts, opts?.includeBuildVolume === false ? () => plate.hide() : undefined);
     },
     onEvent(cb) {
       listeners.add(cb);

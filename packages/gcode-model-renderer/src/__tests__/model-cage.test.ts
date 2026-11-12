@@ -4,7 +4,7 @@
  * remembered across every plate rebuild (theme, bed, scope, context restore) and a capture cutout, the plate
  * itself unaffected, and the controller's pre-bind / option / rebind paths. Headless: stub GL + stub controls.
  */
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { Vector3, type Object3D, type PerspectiveCamera, type Scene } from 'three';
 import { studioTheme, type ControlsLike, type GLRendererLike } from '@chestnutlabs/gcode-renderer-three';
 import { createModelViewer, type ModelViewerOptions } from '../model-viewer.js';
@@ -35,6 +35,7 @@ const plateOf = (s: Scene): Object3D | undefined => s.getObjectByName('buildVolu
 function rig(options: ModelViewerOptions = {}, opts: { capture?: boolean } = {}) {
   const canvas = document.createElement('canvas');
   const frames: Frame[] = [];
+  const reads: Array<[number, number]> = [];
   let scene: Scene | null = null;
   let target: unknown = null;
   const gl: GLRendererLike = {
@@ -50,7 +51,9 @@ function rig(options: ModelViewerOptions = {}, opts: { capture?: boolean } = {})
           setRenderTarget: (t: unknown) => {
             target = t;
           },
-          readRenderTargetPixels: () => undefined
+          readRenderTargetPixels: (_t: unknown, _x: number, _y: number, w: number, h: number) => {
+            reads.push([w, h]);
+          }
         }
       : {})
   };
@@ -59,7 +62,7 @@ function rig(options: ModelViewerOptions = {}, opts: { capture?: boolean } = {})
     createControls: (cam) => stubControls(cam as PerspectiveCamera),
     ...options
   });
-  return { viewer, canvas, frames, scene: () => scene! };
+  return { viewer, canvas, frames, reads, scene: () => scene! };
 }
 
 /** Two 10 mm objects so an `{ objectIds }` scope is a real rebuild of a smaller scene. */
@@ -183,6 +186,66 @@ describe('model viewer — setBuildVolumeCage', () => {
     expect(cap[0].plate).toBe(false);
     expect(plateOf(r.scene())!.visible).toBe(true);
     expect(cageOf(r.scene())!.visible).toBe(false);
+  });
+
+  it('includeBuildVolume:false hides the plate only for the synchronous render, not across the encode await', async () => {
+    const r = rig({ buildVolume: BED }, { capture: true });
+    r.viewer.resize(400, 300);
+    await r.viewer.setSource(twoObjects());
+    const before = r.frames.length;
+    // No await: capture() runs synchronously up to the first await, i.e. render + readback, then the encode.
+    const first = r.viewer.capture({ includeBuildVolume: false }).catch(() => undefined); // encoding needs a real 2D canvas
+    // During the encode a live frame and an overlapping default capture must both see the plate.
+    expect(plateOf(r.scene())!.visible).toBe(true);
+    const second = r.viewer.capture().catch(() => undefined);
+    const frames = r.frames.slice(before).filter((f) => f.target !== null);
+    expect(frames.map((f) => f.plate)).toEqual([false, true]);
+    expect(plateOf(r.scene())!.visible).toBe(true);
+    await Promise.all([first, second]);
+    expect(plateOf(r.scene())!.visible).toBe(true);
+  });
+
+  it('the plate is visible again after includeBuildVolume:false capture rejects', async () => {
+    const r = rig({ buildVolume: BED }, { capture: true });
+    r.viewer.resize(400, 300);
+    await r.viewer.setSource(twoObjects());
+    // No 2D canvas in happy-dom, so the encode rejects.
+    await expect(r.viewer.capture({ includeBuildVolume: false })).rejects.toThrow(/2D canvas/);
+    expect(plateOf(r.scene())!.visible).toBe(true);
+  });
+
+  it('the plate is visible again after includeBuildVolume:false capture resolves', async () => {
+    vi.stubGlobal(
+      'OffscreenCanvas',
+      class {
+        getContext() {
+          return { putImageData: () => undefined };
+        }
+        convertToBlob() {
+          return Promise.resolve(new Blob(['x'], { type: 'image/png' }));
+        }
+      }
+    );
+    vi.stubGlobal('ImageData', class {});
+    try {
+      const r = rig({ buildVolume: BED }, { capture: true });
+      r.viewer.resize(400, 300);
+      await r.viewer.setSource(twoObjects());
+      const blob = await r.viewer.capture({ includeBuildVolume: false });
+      expect(blob.size).toBe(1);
+      expect(r.frames.filter((f) => f.target !== null).map((f) => f.plate)).toEqual([false]);
+      expect(plateOf(r.scene())!.visible).toBe(true);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('capture({ includeBuildVolume: false, width, height }) still passes the size to the stage', async () => {
+    const r = rig({ buildVolume: BED }, { capture: true });
+    r.viewer.resize(400, 300);
+    await r.viewer.setSource(twoObjects());
+    await r.viewer.capture({ includeBuildVolume: false, width: 64, height: 32 }).catch(() => undefined);
+    expect(r.reads).toEqual([[64, 32]]);
   });
 
   it('a default capture keeps the cage off too', async () => {
