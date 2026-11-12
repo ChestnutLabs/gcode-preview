@@ -18,6 +18,7 @@ import {
   layerBounds2D,
   modelBounds2D,
   rgbToCss,
+  summarize2DDrawable,
   type CanvasContext2DLike,
   type LayerBounds2D,
   type LayerFit
@@ -907,5 +908,62 @@ describe('computeLayerFit: every non-finite bounds edge falls back (#501)', () =
     const fit = computeLayerFit(b, 100, Number.NaN, 0);
     expect(fit.scale).toBe(0.1);
     expect(fit.project(10, 10)).toEqual([50.5, 0]);
+  });
+});
+
+// ---------------------------------------------------------------------------------------------
+// Audit of the #516 sweep (2026-11-12). #516 recorded its mutant M24 (`spanX > 0` → `spanX >= 0`)
+// as equivalent. It is not: a direct caller can pass bounds whose span is -0 (maxX = -0, minX = 0),
+// and `availW / -0` is -Infinity, a NaN transform. These pin both axes with literal values.
+// ---------------------------------------------------------------------------------------------
+
+describe('computeLayerFit: a -0 span is zero, not a divisor (#516 M24 audit)', () => {
+  it('X span -0 (maxX = -0, minX = 0): Y limits the scale, the line sits at the canvas centre', () => {
+    // avail 80×80; spanX = -0 - 0 = -0 (no X limit), spanY = 10 → scale 8; drawn 0×80;
+    // offsetX = 10 + 80 / 2 = 50, offsetYTop = 10.
+    const fit = computeLayerFit({ minX: 0, minY: 0, maxX: -0, maxY: 10, hasContent: true }, 100, 100, 10);
+    expect(fit.scale).toBe(8);
+    expect(fit.project(0, 0)).toEqual([50, 90]);
+    expect(fit.project(0, 10)).toEqual([50, 10]);
+  });
+
+  it('Y span -0 (maxY = -0, minY = 0): X limits the scale, the line sits at the canvas middle', () => {
+    // avail 80×80; spanX = 10 → scale 8, spanY = -0 (no Y limit); drawn 80×0;
+    // offsetX = 10, offsetYTop = 10 + 80 / 2 = 50.
+    const fit = computeLayerFit({ minX: 0, minY: 0, maxX: 10, maxY: -0, hasContent: true }, 100, 100, 10);
+    expect(fit.scale).toBe(8);
+    expect(fit.project(0, 0)).toEqual([10, 50]);
+    expect(fit.project(10, 0)).toEqual([90, 50]);
+  });
+});
+
+describe('summarize2DDrawable (whole-toolpath draw summary, #518)', () => {
+  it('counts extrusion and travel only, splitting finite from non-finite x/y', () => {
+    const ir = irOf([
+      { x0: 0, y0: 0, x1: 1, y1: 0 }, // 0 extrude, finite → drawable
+      { x0: 1, y0: 0, x1: 2, y1: 0, kind: MoveKind.Travel }, // 1 travel, finite → drawable
+      { x0: 2, y0: 0, x1: 3, y1: 0, kind: MoveKind.Wipe }, // 2 wipe → not counted
+      { x0: 3, y0: 0, x1: 4, y1: 0, kind: MoveKind.Extrude | MoveKind.ArcSegment }, // 3 arc extrude → drawable
+      { x0: 4, y0: 0, x1: 5, y1: 0 }, // 4 extrude, y0 NaN below → skipped
+      { x0: 5, y0: 0, x1: 6, y1: 0, kind: MoveKind.Travel }, // 5 travel, x1 Infinity below → skipped
+      { x0: 6, y0: 0, x1: 7, y1: 0, kind: MoveKind.Wipe } // 6 wipe, NaN below → still not counted
+    ]);
+    ir.segments.y0[4] = Number.NaN;
+    ir.segments.x1[5] = Infinity;
+    ir.segments.x0[6] = Number.NaN;
+    expect(summarize2DDrawable(ir)).toEqual({ drawable: 3, skippedNonFinite: 2 });
+  });
+
+  it('every layer counts, and a non-finite Z does not matter (the view is flat)', () => {
+    const ir = irOf([
+      { x0: 0, y0: 0, x1: 1, y1: 0, layer: 0 },
+      { x0: 0, y0: 0, x1: 1, y1: 0, layer: 1 }
+    ]);
+    ir.segments.z1[1] = Number.NaN;
+    expect(summarize2DDrawable(ir)).toEqual({ drawable: 2, skippedNonFinite: 0 });
+  });
+
+  it('an IR with no segments is all zeros', () => {
+    expect(summarize2DDrawable(irOf([]))).toEqual({ drawable: 0, skippedNonFinite: 0 });
   });
 });
