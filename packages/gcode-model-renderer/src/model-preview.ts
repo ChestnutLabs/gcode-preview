@@ -21,19 +21,30 @@
  * Distinct surface from the toolpath controller (no layers/travel/scrub/IR) — capability tiers pass
  * through from the parsed model, never recomputed (DD-001 honesty).
  */
+import { resolveTheme } from '@chestnutlabs/gcode-renderer-three';
 import type {
+  BuildVolumeDef,
+  Theme,
   CameraState,
   CameraView,
   CaptureOptions,
   GLRendererLike,
   InteractiveStageOptions,
   LoadProgress,
+  PixelRatioOption,
   RenderTargetCanvas
 } from '@chestnutlabs/gcode-renderer-three';
 import type { Confidence } from '@chestnutlabs/toolpath-core';
-import { createModelViewer, type ModelViewer, type ModelViewerEvent, type ModelReadyInfo } from './model-viewer.js';
+import {
+  createModelViewer,
+  type ModelViewer,
+  type ModelViewerEvent,
+  type ModelViewerOptions,
+  type ModelReadyInfo
+} from './model-viewer.js';
 import type { ModelSourceInput, ModelLoader } from './loaders.js';
-import type { ModelBackground, PresentationView } from './model-renderer.js';
+import { checkModelFov, checkModelPixelRatio, type ModelBackground, type PresentationView } from './model-renderer.js';
+import type { ModelPlacement, PlacementOffset } from './placement.js';
 import type { ModelBounds, ModelPlateSummary, RenderScope } from './scene-model.js';
 import type { ModelLimits } from './limits.js';
 
@@ -57,6 +68,32 @@ export interface ModelPreviewControllerOptions {
   createControls?: NonNullable<InteractiveStageOptions['createControls']>;
   /** Re-fit the model on canvas resize until the user moves the camera (default `true`). */
   autoFrameOnResize?: boolean;
+  /**
+   * Build plate under the model (DD-032 §4.3): the full `BuildVolumeDef` (shape, `min`, excluded regions).
+   * Omit/`null` for no plate — the viewer then renders exactly as before. Where the part sits on it is
+   * reported honestly as `state.placement`.
+   */
+  buildVolume?: BuildVolumeDef | null;
+  /**
+   * Draw the build-volume wireframe cage over the plate (default `true`). `false` drops only the cage: the
+   * plate, grid and shadow stay. Remembered across canvas rebinds.
+   */
+  showVolumeCage?: boolean;
+  /**
+   * Plate/backdrop look, e.g. `studioTheme('dark')`. Only the plate and backdrop fields apply; lights and
+   * `materialPreset` are deliberately not applicable to the model viewer (its lighting is unchanged).
+   * `theme.background` beats `background` (the fallback tier). Invalid values throw `RangeError` synchronously.
+   */
+  theme?: Theme;
+  /** Perspective lens in degrees, [10, 120] (default 50). Throws `RangeError` synchronously outside it. */
+  cameraFov?: number;
+  /**
+   * Resting pixel ratio of the canvas: a number in (0, 4], or `'device'` (the display's `devicePixelRatio`
+   * capped at 2, followed live as it changes). Unset keeps the renderer's ratio (1). Sharper on HiDPI
+   * screens, at a fill cost: a ratio of 2 shades 4× the fragments of 1. Throws `RangeError` synchronously
+   * otherwise. The default `capture()` size does not change. Remembered across canvas rebinds.
+   */
+  pixelRatio?: PixelRatioOption;
 }
 
 /** Reactive snapshot of the model viewer, derived from engine events. Immutable — every change replaces it. */
@@ -81,6 +118,15 @@ export interface ModelPreviewState {
   plates: { list: ModelPlateSummary[]; active?: number } | null;
   /** Capability-aware convenience: the source declares plates (build a plate selector). */
   hasPlates: boolean;
+  /**
+   * How the model's position on the drawn plate is known (DD-032 §4.3): `'known'` (a Bambu/Orca project
+   * whose parts lie on the bed), `'inferred'` (such a project, shifted by whole workspace cells),
+   * `'approximated'` (anything else: centred on the bed at z = 0), or `null` — no plate is drawn (no
+   * `buildVolume`, nothing shown, or the render scope spans more than one declared plate).
+   */
+  placement: ModelPlacement | null;
+  /** The presentation offset applied to the model, mm (printer axes), to map authored ↔ drawn; `null` with no plate. `bounds` stays authored. */
+  placementOffset: PlacementOffset | null;
   /** Current camera pose, or null before a source / when unsupported. */
   cameraState: CameraState | null;
   /** Latest staged loading progress (DD-024), or null. */
@@ -96,7 +142,25 @@ export interface ModelPreviewControls {
   setView(view: PresentationView | CameraView): void;
   getCameraState(): CameraState | null;
   setCameraState(state: CameraState): void;
+  /** The fallback background tier: beaten by `theme.background` (DD-032), so it shows only while the theme sets none. */
   setBackground(bg: ModelBackground): void;
+  /** Set or remove (`null`) the build plate; the model is re-placed and, while auto-framing, re-fitted. */
+  setBuildVolume(def: BuildVolumeDef | null): void;
+  /**
+   * Show/hide the build-volume wireframe cage, independently of the plate (parity with the toolpath
+   * `setBuildVolumeCage`). The model does not move. Remembered across plate rebuilds and canvas rebinds.
+   */
+  setBuildVolumeCage(visible: boolean): void;
+  /** Replace the plate/backdrop theme (replace semantics). Throws `RangeError` synchronously for invalid values. */
+  setTheme(theme: Theme): void;
+  /** Change the perspective lens, [10, 120]°. Throws `RangeError` synchronously outside it, even before a canvas binds. Remembered across canvas rebinds. */
+  setCameraFov(deg: number): void;
+  /**
+   * Change the resting pixel ratio: (0, 4] or `'device'` (DPR capped at 2, followed live). Throws
+   * `RangeError` synchronously otherwise, even before a canvas binds. Remembered across canvas rebinds. A
+   * gesture in progress settles on the new ratio; the default `capture()` size does not change.
+   */
+  setPixelRatio(ratio: PixelRatioOption): void;
   setInteractionQuality(mode: 'off' | 'auto'): void;
   /** Render only a subset of the source (`{ plateId }` / `{ objectIds }` / `{ instanceFilter }`); null = whole source. */
   setRenderScope(scope: RenderScope | null): void;
@@ -130,6 +194,8 @@ export const INITIAL_MODEL_STATE: ModelPreviewState = {
   bounds: null,
   plates: null,
   hasPlates: false,
+  placement: null,
+  placementOffset: null,
   cameraState: null,
   progress: null,
   error: null
@@ -159,7 +225,18 @@ export function createModelPreviewController(options: ModelPreviewControllerOpti
   /** Callers of `setSource` before the engine exists — settled by the replayed load. */
   const pendingSourceWaiters: Array<{ resolve: (i: ModelReadyInfo) => void; reject: (e: unknown) => void }> = [];
 
-  const engineOptions = {
+  // The plate look and the lens are remembered here (not only in the engine), so a canvas rebind — a
+  // StrictMode remount, a replaced canvas — rebuilds the engine with the latest values, not the initial ones.
+  if (options.theme !== undefined) resolveTheme(options.theme); // invalid options fail synchronously
+  if (options.cameraFov !== undefined) checkModelFov(options.cameraFov);
+  let currentBuildVolume: BuildVolumeDef | null = options.buildVolume ?? null;
+  let currentTheme: Theme | undefined = options.theme;
+  let currentFov: number | undefined = options.cameraFov;
+  let currentCage: boolean = options.showVolumeCage ?? true;
+  if (options.pixelRatio !== undefined) checkModelPixelRatio(options.pixelRatio);
+  let currentPixelRatio: PixelRatioOption | undefined = options.pixelRatio;
+
+  const engineOptions = (): ModelViewerOptions => ({
     ...(options.loaders ? { loaders: options.loaders } : {}),
     ...(options.background !== undefined ? { background: options.background } : {}),
     ...(options.interactionQuality ? { interactionQuality: options.interactionQuality } : {}),
@@ -170,11 +247,29 @@ export function createModelPreviewController(options: ModelPreviewControllerOpti
     ...(options.createRenderer ? { createRenderer: options.createRenderer } : {}),
     ...(options.createControls ? { createControls: options.createControls } : {}),
     ...(options.autoFrameOnResize !== undefined ? { autoFrameOnResize: options.autoFrameOnResize } : {}),
+    ...(currentBuildVolume !== null ? { buildVolume: currentBuildVolume } : {}),
+    ...(currentTheme !== undefined ? { theme: currentTheme } : {}),
+    showVolumeCage: currentCage,
+    ...(currentFov !== undefined ? { cameraFov: currentFov } : {}),
+    ...(currentPixelRatio !== undefined ? { pixelRatio: currentPixelRatio } : {}),
     // Fold progress into state, then hand it to the consumer's callback.
     onProgress: (p: LoadProgress): void => {
       mutate({ progress: p, loading: p.stage !== 'ready' });
       options.onProgress?.(p);
     }
+  });
+
+  /** Mirror the engine's current plate placement into state after something that can change it. */
+  const syncPlacement = (): void => {
+    if (engine === null) return;
+    const p = engine.getPlacement();
+    const o = snapshot.placementOffset;
+    const same =
+      p.placement === snapshot.placement &&
+      (p.placementOffset === null
+        ? o === null
+        : o !== null && o.x === p.placementOffset.x && o.y === p.placementOffset.y && o.z === p.placementOffset.z);
+    if (!same) mutate({ placement: p.placement, placementOffset: p.placementOffset });
   };
 
   const applyReady = (info: ModelReadyInfo): void => {
@@ -188,7 +283,9 @@ export function createModelPreviewController(options: ModelPreviewControllerOpti
       decimationApplied: info.decimationApplied,
       bounds: info.bounds,
       plates: info.plates ?? null,
-      hasPlates: info.plates !== undefined
+      hasPlates: info.plates !== undefined,
+      placement: info.placement,
+      placementOffset: info.placementOffset
     });
   };
 
@@ -258,7 +355,7 @@ export function createModelPreviewController(options: ModelPreviewControllerOpti
     boundCanvas = canvas;
     if (canvas === null) return;
 
-    const v = createModelViewer(canvas, engineOptions);
+    const v = createModelViewer(canvas, engineOptions());
     engine = v;
     wire(v);
     trackCanvasSize(canvas, v);
@@ -305,13 +402,41 @@ export function createModelPreviewController(options: ModelPreviewControllerOpti
       if (engine !== null) engine.setBackground(bg);
       else pendingOps.push((v) => v.setBackground(bg));
     },
+    setBuildVolume(def) {
+      currentBuildVolume = def;
+      if (engine !== null) {
+        engine.setBuildVolume(def);
+        syncPlacement();
+      }
+    },
+    setBuildVolumeCage(visible) {
+      currentCage = visible;
+      if (engine !== null) engine.setBuildVolumeCage(visible);
+    },
+    setTheme(theme) {
+      resolveTheme(theme); // synchronous RangeError, before and after a canvas binds
+      currentTheme = theme;
+      if (engine !== null) engine.setTheme(theme);
+    },
+    setCameraFov(deg) {
+      checkModelFov(deg);
+      currentFov = deg;
+      if (engine !== null) engine.setCameraFov(deg);
+    },
+    setPixelRatio(ratio) {
+      checkModelPixelRatio(ratio);
+      currentPixelRatio = ratio;
+      if (engine !== null) engine.setPixelRatio(ratio);
+    },
     setInteractionQuality(mode) {
       if (engine !== null) engine.setInteractionQuality(mode);
       else pendingOps.push((v) => v.setInteractionQuality(mode));
     },
     setRenderScope(scope) {
-      if (engine !== null) engine.setRenderScope(scope);
-      else pendingOps.push((v) => v.setRenderScope(scope));
+      if (engine !== null) {
+        engine.setRenderScope(scope);
+        syncPlacement();
+      } else pendingOps.push((v) => v.setRenderScope(scope));
     },
     frame() {
       if (engine !== null) engine.frame();

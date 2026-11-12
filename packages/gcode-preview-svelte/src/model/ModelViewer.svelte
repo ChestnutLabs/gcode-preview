@@ -31,6 +31,16 @@
   export let filamentPalette = undefined;
   /** Loader registry (open kind). Default: STL + 3MF. */
   export let loaders = undefined;
+  /** Build plate under the model (DD-032): the full BuildVolumeDef; null/omitted = no plate. */
+  export let buildVolume = undefined;
+  /** Show the build-volume wireframe cage over the plate (the plate, grid and shadow stay). Default true. */
+  export let showVolumeCage = true;
+  /** Plate/backdrop look, e.g. studioTheme('dark'); lights are deliberately not themed. Beats `background`. */
+  export let theme = undefined;
+  /** Perspective lens in degrees, [10, 120] (default 50). Out of range throws RangeError. */
+  export let cameraFov = undefined;
+  /** Resting pixel ratio: (0, 4] or 'device' (DPR capped at 2, followed live). Unset keeps 1. Out of range throws RangeError. */
+  export let pixelRatio = undefined;
   /** Advanced/test: inject GL / orbit controls. */
   export let createRenderer = undefined;
   export let createControls = undefined;
@@ -46,6 +56,10 @@
     filamentPalette,
     loaders,
     renderScope,
+    buildVolume,
+    theme,
+    cameraFov,
+    pixelRatio,
     createRenderer,
     createControls,
     onProgress: (p) => dispatch('progress', p)
@@ -83,6 +97,12 @@
   $: if (background !== undefined) viewer.controls.setBackground(background);
   $: if (interactionQuality !== undefined) viewer.controls.setInteractionQuality(interactionQuality);
   $: if (renderScope !== undefined) viewer.controls.setRenderScope(renderScope);
+  // DD-032: look + lens (the controller remembers them across canvas rebinds)
+  $: if (buildVolume !== undefined) viewer.controls.setBuildVolume(buildVolume);
+  $: viewer.controls.setBuildVolumeCage(showVolumeCage);
+  $: if (theme !== undefined) viewer.controls.setTheme(theme);
+  $: if (cameraFov !== undefined) viewer.controls.setCameraFov(cameraFov);
+  $: if (pixelRatio !== undefined) viewer.controls.setPixelRatio(pixelRatio);
 
   onDestroy(() => viewer.dispose());
 </script>

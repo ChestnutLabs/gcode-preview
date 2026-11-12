@@ -13,8 +13,13 @@ import { Color, OrthographicCamera, PerspectiveCamera, Scene, SRGBColorSpace, Ve
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import type { Vec3 } from '@chestnutlabs/toolpath-core';
 import {
+  checkFov,
+  checkPixelRatio,
+  DEVICE_PIXEL_RATIO_CAP,
+  type PixelRatioOption,
   createDefaultGLRenderer,
   framingFromCenterRadius,
+  framingLensScale,
   supportsCapture,
   type GLRendererLike,
   type RenderTargetCanvas
@@ -85,6 +90,13 @@ export interface InteractiveStageOptions {
   cameraMode?: CameraMode;
   /** DD-020 interaction-aware quality; default `'off'`. */
   interactionQuality?: 'off' | 'auto';
+  /**
+   * Resting pixel ratio: a number in (0, 4], or `'device'` (the display's DPR capped at 2, followed live).
+   * Unset, the renderer keeps its own ratio. Throws `RangeError` otherwise, before any GL work.
+   */
+  pixelRatio?: PixelRatioOption;
+  /** Injectable display for `'device'` (tests). Default: `globalThis` (the window in a browser). */
+  displayEnv?: DisplayEnv;
   /** Preserve the drawing buffer so the canvas is readable after a render (headless still). */
   preserveDrawingBuffer?: boolean;
   /** Injectable GL (tests / exotic hosts). Default: the shared stage builder. */
@@ -103,6 +115,61 @@ export interface InteractiveStageOptions {
   onContextLost?: () => void;
   /** WebGL context restored — the owner rebuilds its scene content here. */
   onContextRestored?: () => void;
+}
+
+/** The slice of `window` the `'device'` pixel ratio reads: the DPR and a `resolution` media query. */
+export interface DisplayEnv {
+  readonly devicePixelRatio?: number;
+  matchMedia?(query: string): MediaQueryListLike;
+}
+
+/** The slice of `MediaQueryList` the DPR watcher uses. */
+export interface MediaQueryListLike {
+  addEventListener(type: 'change', listener: () => void): void;
+  removeEventListener(type: 'change', listener: () => void): void;
+}
+
+/**
+ * Follows `devicePixelRatio` for `pixelRatio: 'device'`. A `(resolution: Xdppx)` query only reports
+ * leaving the ratio X, so each change re-arms a query for the new ratio. With no `matchMedia` (a worker,
+ * a headless host) the ratio is read once and not followed.
+ */
+class DevicePixelRatioWatcher {
+  private query: MediaQueryListLike | null = null;
+  private readonly onChange = (): void => {
+    this.arm();
+    this.notify(this.read());
+  };
+
+  constructor(
+    private readonly env: DisplayEnv | undefined,
+    private readonly notify: (ratio: number) => void
+  ) {
+    this.arm();
+  }
+
+  /** The display ratio, capped at {@link DEVICE_PIXEL_RATIO_CAP}; 1 when the host reports none. */
+  read(): number {
+    const dpr = this.env?.devicePixelRatio;
+    return typeof dpr === 'number' && dpr > 0 ? Math.min(dpr, DEVICE_PIXEL_RATIO_CAP) : 1;
+  }
+
+  private arm(): void {
+    this.disarm();
+    const dpr = this.env?.devicePixelRatio;
+    if (typeof this.env?.matchMedia !== 'function' || typeof dpr !== 'number' || !(dpr > 0)) return;
+    this.query = this.env.matchMedia(`(resolution: ${dpr}dppx)`);
+    this.query.addEventListener('change', this.onChange);
+  }
+
+  private disarm(): void {
+    this.query?.removeEventListener('change', this.onChange);
+    this.query = null;
+  }
+
+  dispose(): void {
+    this.disarm();
+  }
 }
 
 /** True for a real DOM canvas (has DOM-only members OffscreenCanvas lacks). */
@@ -133,6 +200,13 @@ export class InteractiveStage {
   private disposedFlag = false;
   /** True while the stage itself drives `controls.update()`, so its `change` is not read as a user move. */
   private programmaticMove = false;
+  /** Lens dolly owed to the perspective camera for a `setFov` made while orthographic (DD-032). */
+  private pendingLensScale = 1;
+  /** The resolved resting ratio from the `pixelRatio` option, or null when unset (the renderer's own). */
+  private hostRatio: number | null = null;
+  private readonly displayEnv: DisplayEnv | undefined;
+  /** Live only while the option is `'device'`. */
+  private dprWatcher: DevicePixelRatioWatcher | null = null;
 
   private readonly onContextLost = (ev: Event): void => {
     ev.preventDefault();
@@ -145,6 +219,9 @@ export class InteractiveStage {
   };
 
   constructor(opts: InteractiveStageOptions) {
+    // Validate before any GL resource exists, so a bad value never leaks a context.
+    if (opts.pixelRatio !== undefined) checkPixelRatio(opts.pixelRatio);
+    this.displayEnv = opts.displayEnv ?? (globalThis as DisplayEnv);
     this.canvas = opts.canvas;
     this.scene = opts.scene;
     this.onCameraChanged = opts.onCameraChanged;
@@ -156,9 +233,15 @@ export class InteractiveStage {
       ((canvas) => createDefaultGLRenderer(canvas, { preserveDrawingBuffer: opts.preserveDrawingBuffer }))
     )(opts.canvas);
     this.interactionQuality = new InteractionQualityController(
-      { setPixelRatio: (r) => this.gl.setPixelRatio?.(r), render: () => this.render() },
+      {
+        setPixelRatio: (r) => this.gl.setPixelRatio?.(r),
+        // The consumer's ratio, once set, is the resting one; unset, the renderer's own (#435).
+        getPixelRatio: () => this.hostRatio ?? this.gl.getPixelRatio?.() ?? 1,
+        render: () => this.render()
+      },
       opts.interactionQuality ?? 'off'
     );
+    if (opts.pixelRatio !== undefined) this.applyPixelRatioOption(opts.pixelRatio);
 
     // Both cameras exist for the stage's lifetime; setCameraMode/frameTo keep their pose in sync so a
     // projection toggle never jumps the view (#150). The ortho frustum is placeholder until frameTo/resize.
@@ -243,6 +326,12 @@ export class InteractiveStage {
       this.controls.object = next;
       this.updateControls();
     }
+    // A lens set while orthographic takes its dolly now, on the way back to perspective.
+    if (mode === 'perspective' && this.pendingLensScale !== 1) {
+      const scale = this.pendingLensScale;
+      this.pendingLensScale = 1;
+      this.applyLensDolly(scale);
+    }
     this.render();
   }
 
@@ -297,6 +386,47 @@ export class InteractiveStage {
     };
   }
 
+  /** The perspective camera's vertical field of view, degrees (default 50). */
+  get fov(): number {
+    return this.perspectiveCamera.fov;
+  }
+
+  /**
+   * Change the perspective lens (DD-032) without a re-fit: the target stays and the camera distance is
+   * scaled by framingLensScale(new)/framingLensScale(old), the same factor framing uses, so a framed view
+   * after setFov(f) equals a fresh frame at f. It keeps the apparent size at ≤50°; above 50° it keeps the
+   * frame margin instead (a pure tan dolly would put the camera inside the model). The zoom-distance limits
+   * scale by the same factor, so the dolly is never clamped. In orthographic mode the view is untouched;
+   * the value is kept and its dolly is applied on the next switch back to perspective. Programmatic: never
+   * emits camera-changed. Throws `RangeError` for a `fov` outside [10, 120] — it never clamps.
+   */
+  setFov(fov: number): void {
+    checkFov(fov);
+    if (this.disposedFlag || fov === this.perspectiveCamera.fov) return;
+    const scale = framingLensScale(fov) / framingLensScale(this.perspectiveCamera.fov);
+    this.perspectiveCamera.fov = fov;
+    this.perspectiveCamera.updateProjectionMatrix();
+    if (this.cameraModeState !== 'perspective') {
+      this.pendingLensScale *= scale;
+      return;
+    }
+    this.applyLensDolly(scale);
+    this.render();
+  }
+
+  /** Dolly the perspective camera along its view line by `scale` (target fixed) and scale the limits. */
+  private applyLensDolly(scale: number): void {
+    const target = this.currentTarget();
+    const offset = this.perspectiveCamera.position.clone().sub(target);
+    this.perspectiveCamera.position.copy(target).add(offset.multiplyScalar(scale));
+    this.perspectiveCamera.lookAt(target);
+    if (this.controls) {
+      if (this.controls.minDistance !== undefined) this.controls.minDistance *= scale;
+      if (this.controls.maxDistance !== undefined) this.controls.maxDistance *= scale;
+      this.updateControls();
+    }
+  }
+
   /** Restore a {@link CameraState} verbatim (#268) — no re-fit to the current model's bounds. */
   setCameraState(state: CameraState): void {
     if (this.disposedFlag) return;
@@ -324,7 +454,9 @@ export class InteractiveStage {
    */
   frameTo(center: Vector3, radius: number): void {
     if (this.disposedFlag) return;
-    const { target, position, viewHalfHeight } = framingFromCenterRadius(center, radius);
+    const { target, position, viewHalfHeight } = framingFromCenterRadius(center, radius, this.perspectiveCamera.fov);
+    // This pose is already for the current lens: a dolly owed from an earlier ortho setFov is void.
+    this.pendingLensScale = 1;
     this.viewHalfHeight = viewHalfHeight;
     this.framedTarget.copy(target);
     this.activeCameraRef.position.copy(position);
@@ -332,8 +464,10 @@ export class InteractiveStage {
     this.updateCameraProjection();
     if (this.controls) {
       this.controls.target.copy(target);
-      this.controls.minDistance = Math.max(1, radius * 0.15);
-      this.controls.maxDistance = radius * 30;
+      // The limits follow the lens (the framed distance does), so controls.update() never crops the frame.
+      const k = framingLensScale(this.perspectiveCamera.fov);
+      this.controls.minDistance = Math.max(1, radius * 0.15) * k;
+      this.controls.maxDistance = radius * 30 * k;
       this.updateControls();
     }
     this.render();
@@ -410,6 +544,7 @@ export class InteractiveStage {
     this.perspectiveCamera.far = far;
     this.orthographicCamera.far = far;
     this.viewHalfHeight = Math.max(1e-3, Math.max(halfH, halfW / Math.max(1e-6, this.aspect)) * margin);
+    this.pendingLensScale = 1; // solved for the current lens: any dolly owed from an ortho setFov is void
     this.framedTarget.copy(target);
     const cam = this.activeCameraRef;
     cam.up.copy(up);
@@ -435,6 +570,39 @@ export class InteractiveStage {
   setInteractionQuality(mode: 'off' | 'auto'): void {
     if (this.disposedFlag) return;
     this.interactionQuality.setMode(mode);
+  }
+
+  /**
+   * Set the resting pixel ratio: a number in (0, 4], or `'device'` (the display's DPR capped at 2, then
+   * followed live as it changes). Goes through the interaction-quality controller, so a gesture in
+   * progress keeps its reduction and its settle restores the new ratio. Throws `RangeError` otherwise
+   * (never clamps). The default {@link capture} size stays the CSS size: pass `width`/`height` for a
+   * larger image.
+   */
+  setPixelRatio(ratio: PixelRatioOption): void {
+    checkPixelRatio(ratio);
+    if (this.disposedFlag) return;
+    this.applyPixelRatioOption(ratio);
+  }
+
+  private applyPixelRatioOption(ratio: PixelRatioOption): void {
+    this.dprWatcher?.dispose();
+    this.dprWatcher = null;
+    if (ratio === 'device') {
+      this.dprWatcher = new DevicePixelRatioWatcher(this.displayEnv, (r) => this.rebaseRatio(r));
+      this.rebaseRatio(this.dprWatcher.read());
+    } else {
+      this.rebaseRatio(ratio);
+    }
+  }
+
+  private rebaseRatio(ratio: number): void {
+    if (this.disposedFlag) return;
+    const before = this.interactionQuality.currentRatio;
+    this.hostRatio = ratio;
+    this.interactionQuality.rebase(ratio);
+    // A new ratio resizes (and so clears) the drawing buffer: repaint it.
+    if (this.interactionQuality.currentRatio !== before) this.render();
   }
 
   /** OrbitControls `'change'`: render, and (when auto) adapt detail. */
@@ -469,6 +637,9 @@ export class InteractiveStage {
    * nor requires `preserveDrawingBuffer`), reads it back, and encodes it. Rejects with an
    * `E_CAPTURE_UNSUPPORTED` error when the renderer cannot render-to-target (a stub GL / no WebGL) or the
    * stage is disposed / context-lost. The caller owns the returned `Blob` — the library never downloads.
+   * With no `width`/`height` and no `pixelRatio` set, the image is the resting drawing-buffer size, as
+   * before (also mid-gesture). With a `pixelRatio` set it is the canvas's CSS size, so setting one never
+   * changes it; pass `width`/`height` for a crisper image.
    */
   async capture(opts: CaptureOptions = {}): Promise<Blob> {
     if (this.disposedFlag || this.contextLost || !supportsCapture(this.gl)) {
@@ -480,7 +651,12 @@ export class InteractiveStage {
       throw new CaptureUnsupportedError(`capture unavailable: ${why}`);
     }
     const gl = this.gl;
-    const { w, h } = resolveCaptureSize(opts, this.canvas.width, this.canvas.height);
+    // The default size. With a pixelRatio set it is the CSS size: the drawing buffer divided by the ratio
+    // applied right now (the reduced one mid-gesture). Unset, the renderer's own ratio is the consumer's
+    // business, so it is the resting drawing buffer, exactly as before: only a gesture's reduction is undone.
+    const q = this.interactionQuality;
+    const divisor = this.hostRatio === null ? q.reduction : q.currentRatio;
+    const { w, h } = resolveCaptureSize(opts, this.canvas.width / divisor, this.canvas.height / divisor);
     // The render target's texture MUST declare sRGB so three applies the same linear→sRGB output
     // encoding it gives the canvas. A default (NoColorSpace/linear) target makes readRenderTargetPixels
     // return LINEAR bytes — the whole capture (background AND geometry colours) comes back too dark
@@ -517,6 +693,8 @@ export class InteractiveStage {
   dispose(): void {
     if (this.disposedFlag) return;
     this.disposedFlag = true;
+    this.dprWatcher?.dispose();
+    this.dprWatcher = null;
     this.interactionQuality.dispose();
     this.canvas.removeEventListener?.('webglcontextlost', this.onContextLost);
     this.canvas.removeEventListener?.('webglcontextrestored', this.onContextRestored);

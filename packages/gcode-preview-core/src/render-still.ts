@@ -36,12 +36,13 @@ import {
   type TubeOptions
 } from '@chestnutlabs/gcode-renderer-three';
 import { type MachineGeometry, type ToolpathIR } from '@chestnutlabs/toolpath-core';
+import { checkCameraFov } from './lens.js';
 
 /** Explicit camera pose (scene coordinates), overriding the deterministic frame(). */
 export interface StillCameraPose {
   position: [number, number, number];
   target: [number, number, number];
-  /** Vertical field of view in degrees (default: the renderer's 50°). */
+  /** Vertical field of view in degrees (default: {@link RenderStillOptions.cameraFov}, else 50°). Beats `cameraFov`. */
   fov?: number;
 }
 
@@ -55,6 +56,12 @@ export interface RenderStillOptions {
   quality?: QualityMode | 'auto';
   /** Camera projection (#150, DD-009 D3); default 'perspective'. */
   cameraMode?: CameraMode;
+  /**
+   * Perspective lens, vertical field of view in degrees (DD-032 §4.2); default 50. The deterministic
+   * framing reads it, so the framed content fits at any lens; an explicit `camera.fov` beats it. Must be
+   * in [10, 120]: anything else rejects with `RangeError` before any parse or GL work.
+   */
+  cameraFov?: number;
   /** Framing target (#306/#6): 'all' extrusion (default) or the printed 'object' (excludes skirt/prime). */
   frameContent?: 'object' | 'all';
   colorMode?: ColorMode;
@@ -138,6 +145,28 @@ export interface RenderStillResult {
   parsed: boolean;
 }
 
+/**
+ * The error {@link renderStill} rejects with when the toolpath geometry build fails (instead of never
+ * settling). Same shape as the parser's `ParseSessionError`, so a still job handles a parse failure and a
+ * build failure the same way: branch on `code`, show `message`.
+ *
+ * - `code` — the renderer's error code, e.g. `'E_GEOMETRY_BUILD'`.
+ * - `message` — the renderer's description of what failed.
+ *
+ * The internal renderer is already disposed when this rejection arrives.
+ */
+export class RenderStillError extends Error {
+  constructor(
+    /** The renderer's error code, e.g. `'E_GEOMETRY_BUILD'`. */
+    public readonly code: string,
+    /** The renderer's description of what failed. */
+    message: string
+  ) {
+    super(message);
+    this.name = 'RenderStillError';
+  }
+}
+
 function isToolpathIR(v: unknown): v is ToolpathIR {
   return (
     typeof v === 'object' &&
@@ -156,12 +185,14 @@ function toVolume(def: BuildVolumeDef | MachineGeometry): BuildVolumeDef {
 
 /**
  * Render one still image. Resolves after the geometry is fully built and a single
- * frame has been drawn to `options.canvas`.
+ * frame has been drawn to `options.canvas`. Rejects (with an `Error` whose `code` is `E_GEOMETRY_BUILD`)
+ * when the geometry build fails; the internal renderer is disposed on every outcome.
  */
 export async function renderStill(
   source: Uint8Array | ArrayBuffer | ToolpathIR,
   options: RenderStillOptions
 ): Promise<RenderStillResult> {
+  if (options.cameraFov !== undefined) checkCameraFov(options.cameraFov);
   const { canvas } = options;
   const width = options.width ?? canvas.width;
   const height = options.height ?? canvas.height;
@@ -231,6 +262,7 @@ export async function renderStill(
     renderDuringBuild: false,
     ...geometryPoolOpts,
     ...(options.cameraMode ? { cameraMode: options.cameraMode } : {}),
+    ...(options.cameraFov !== undefined ? { cameraFov: options.cameraFov } : {}),
     ...(options.frameContent ? { frameContent: options.frameContent } : {}),
     ...(resolvedTheme ? { theme: resolvedTheme } : {}),
     ...(options.colorMode ? { colorMode: options.colorMode } : {}),
@@ -246,18 +278,27 @@ export async function renderStill(
     renderer.resize(width, height);
 
     let decimationApplied = 1;
-    await new Promise<void>((resolve) => {
+    await new Promise<void>((resolve, reject) => {
       let settled = false;
-      const finish = (): void => {
+      const finish = (err?: Error): void => {
         if (settled) return;
         settled = true;
         off();
-        resolve();
+        if (err === undefined) resolve();
+        else reject(err);
       };
       const off = renderer.onEvent((e) => {
         if (e.type === 'buildComplete') {
           decimationApplied = e.decimationApplied;
           finish();
+        } else if (e.type === 'error') {
+          // A failed geometry build emits `error` (E_GEOMETRY_BUILD) and never `buildComplete` — without
+          // this branch the await never settles and the renderer is never disposed (#435). Every `error`
+          // the renderer can emit inside this window (setIR → buildComplete) is that build failure; the
+          // non-fatal disclosures come from setColorMode/setFrameContent/setBuildVolume, which renderStill
+          // only calls after the build settles. Rejecting on any code also keeps a future fatal code from
+          // re-introducing the hang.
+          finish(new RenderStillError(e.code, e.message));
         }
       });
       renderer.setIR(ir);

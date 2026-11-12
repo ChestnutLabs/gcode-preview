@@ -16,7 +16,8 @@ on a neutral slicer/CAD viewport — nothing mocked. This page is the visual com
 
 > The capability shots below are **real renders** on a neutral mid-grey documentation viewport. The
 > application shots in this first section show the **live Feature Lab** in its studio-dark chrome —
-> the actual interactive product.
+> the actual interactive product. The Feature Lab starts on the opt-in **Studio** viewport look; see
+> [Studio look, lens & plate](#studio-look-lens--plate) below. The SDK's own default look is unchanged.
 
 ## Try it live — Prepare & Preview
 
@@ -39,6 +40,22 @@ source model (Prepare), each with real controls:
 | Color modes, capability-gated | Render diagnostics & capabilities |
 |---|---|
 | ![The Feature Lab Appearance tab: a color-by selector with the active feature-role legend; unsupported modes greyed out](../media/app-appearance.png) | ![The Feature Lab Diagnostics tab: capability badges and getRenderStats output](../media/app-diagnostics.png) |
+
+## Studio look, lens & plate
+
+An **opt-in preset**, not a change of default: `theme: studioTheme('dark' | 'light')` and `cameraFov: 32` give a
+gradient backdrop, a solid build plate with a grid and outline, and a soft contact shadow. With no `theme` the
+renderer is unchanged. Full guide: [Studio look and build plate](guide-looks-lens-plate.md).
+
+| Studio light | Lens: 50° default vs 32° Studio |
+|---|---|
+| ![The Feature Lab on the Studio light look: a 3DBenchy on a pale gradient backdrop above a mid-grey build plate](../media/app-studio-light.png) | ![The same 3DBenchy at the SDK default 50 degree lens and the Studio 32 degree lens](../media/app-lens-compare.png) |
+
+The Prepare viewer can draw the same plate under a source model and reports how the part's position was decided
+(`known` / `inferred` / `approximated`). Plate selection uses a render scope; the shot below is a **synthetic**
+two-plate project generated for the demo:
+
+![Plate two of a synthetic two-plate 3MF on a 256 mm build plate, with the placement line reading inferred and an x offset of minus 307.2 mm](../media/app-prepare-plate.png)
 
 ## Toolpath inspection
 

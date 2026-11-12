@@ -42,7 +42,7 @@ import {
   type Warning
 } from '@chestnutlabs/toolpath-core';
 import { BudgetExceededError, SegmentWriter } from './growable.js';
-import { Rs274Context, lineUsesParametric } from './rs274.js';
+import { FLOAT32_MAX, NUMBER_OUT_OF_RANGE_WARN, Rs274Context, lineUsesParametric } from './rs274.js';
 import { RS274_FLOW_WARN, interpretOWordProgram, programUsesOWords, type FlowLine } from './rs274-flow.js';
 
 export interface ParseLimits {
@@ -204,7 +204,7 @@ const SPLIT_LETTERS = /([a-zA-Z])/g;
  * `N`-words (line numbers) are dropped, and non-command letters become params. FDM lines have a single
  * command word, so `codes = [thatCommand]` and behavior is byte-identical to the inherited lexer.
  */
-function lexLine(line: string): Cmd {
+function lexLine(line: string, onOutOfRange?: (key: string) => void): Cmd {
   const body = line.trim().split(';')[0];
   const parts = body
     .split(SPLIT_LETTERS)
@@ -239,7 +239,11 @@ function lexLine(line: string): Cmd {
       // Line number — not a command, not a motion word. Ignored (fixes Fanuc/Mach/TinyG files).
     } else {
       const p = parseFloat(value);
-      if (Number.isFinite(p)) params[key] = p;
+      // A word that is not a number is dropped silently (as always). One that IS a number but too big
+      // for the IR's float32 channels (it would be stored as ±Infinity) is dropped too, and reported.
+      if (Number.isNaN(p)) continue;
+      if (Math.abs(p) <= FLOAT32_MAX) params[key] = p;
+      else onOutOfRange?.(key);
     }
   }
   return { codes, params };
@@ -297,7 +301,12 @@ export interface Engine {
 
 /** Internal: build an engine over decoded text (streaming passes '' and feeds lines itself). */
 export function createEngine(input: string | Uint8Array, opts: ParseOptions): Engine {
-  const limits: ParseLimits = { ...DEFAULT_LIMITS, ...opts.limits };
+  // A key passed as `undefined` (an optional setting forwarded as-is) keeps its default. A plain spread
+  // would copy the `undefined`, and every `x > undefined` check is false, so the bound would be OFF.
+  const limits: ParseLimits = { ...DEFAULT_LIMITS };
+  for (const [key, value] of Object.entries(opts.limits ?? {}) as [keyof ParseLimits, number | undefined][]) {
+    if (value !== undefined) limits[key] = value;
+  }
   const tolerance = opts.minLayerThreshold ?? LAYER_TOLERANCE;
   const text = typeof input === 'string' ? input : new TextDecoder().decode(input);
   let byteLength = typeof input === 'string' ? text.length : input.byteLength;
@@ -687,7 +696,9 @@ export function createEngine(input: string | Uint8Array, opts: ParseOptions): En
       const deltaA = ta - sa;
       const deltaB = tb - sb;
       const minR = Math.sqrt(Math.pow(deltaA / 2, 2) + Math.pow(deltaB / 2, 2));
-      r = Math.max(r, minR);
+      // A negative R selects the arc longer than 180°: clamp the magnitude only, so the sign survives
+      // to the long-way test below (clamping the signed value turned every negative R into +minR).
+      r = r < 0 ? -Math.max(-r, minR) : Math.max(r, minR);
       const dSquared = Math.pow(deltaA, 2) + Math.pow(deltaB, 2);
       const hSquared = Math.pow(r, 2) - dSquared / 4;
       let hDivD = Math.sqrt(hSquared / dSquared);
@@ -716,9 +727,10 @@ export function createEngine(input: string | Uint8Array, opts: ParseOptions): En
     let arcAngleIncrement = totalArc / totalSegments;
     arcAngleIncrement *= cw ? -1 : 1;
 
-    // Through-axis linear ramp — preserves the inherited step (byte-identical for planar XY arcs,
-    // where the through axis is unchanged so the ramp is flat).
-    const cStep = (sc - tc) / totalSegments;
+    // Through-axis linear ramp from the start toward the target (a helix). The inherited step had the
+    // sign reversed, so a helix ramped away from its target and jumped back on the last segment. Planar
+    // arcs (through axis unchanged) have a zero step either way, so they stay byte-identical.
+    const cStep = (tc - sc) / totalSegments;
 
     const kind = kindForPath(pathType) | MoveKind.ArcSegment;
     const eachE = e !== undefined ? eDelta / Math.max(1, Math.ceil(totalSegments)) : 0;
@@ -780,6 +792,12 @@ export function createEngine(input: string | Uint8Array, opts: ParseOptions): En
 
   const onComment = opts.onComment;
   const onCommand = opts.onCommand;
+  const warnOutOfRange = (key: string): void =>
+    warn(
+      NUMBER_OUT_OF_RANGE_WARN,
+      `word '${key.toUpperCase()}' is beyond the float32 range the toolpath stores; dropped`,
+      currentSrcByte
+    );
 
   const processLine = (rawLine: string, offset: number): void => {
     stats.lines++;
@@ -804,9 +822,9 @@ export function createEngine(input: string | Uint8Array, opts: ParseOptions): En
     if (lineUsesParametric(rawLine)) {
       const r = rs274.lexLine(rawLine, offset);
       if (r.kind === 'assign' || r.kind === 'empty') return; // assignment applied / nothing to do
-      cmd = r.kind === 'cmd' ? { codes: r.codes, params: r.params } : lexLine(rawLine); // 'plain' → normal
+      cmd = r.kind === 'cmd' ? { codes: r.codes, params: r.params } : lexLine(rawLine, warnOutOfRange); // 'plain' → normal
     } else {
-      cmd = lexLine(rawLine);
+      cmd = lexLine(rawLine, warnOutOfRange);
     }
     // Skip only genuinely empty lines. A line with no lexable words but real content (a dialect
     // extended command like `EXCLUDE_OBJECT_START NAME=cube`, a macro) must NOT be dropped — the

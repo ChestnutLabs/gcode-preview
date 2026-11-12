@@ -5,23 +5,35 @@
  */
 import { describe, it, expect } from 'vitest';
 import type { DialectMetadata, ToolpathIR } from '@chestnutlabs/toolpath-core';
-import { hexToRgb, filamentPalette, resolveColorMode } from '../color-resolve.js';
+import { filamentPalette, resolveColorMode } from '../color-resolve.js';
 
 const md = (filaments: DialectMetadata['filaments']): DialectMetadata => ({ filaments }) as DialectMetadata;
 const irWith = (colorChanges: number): ToolpathIR =>
   ({ colorChanges: Array.from({ length: colorChanges }, () => ({})) }) as unknown as ToolpathIR;
 
-describe('hexToRgb', () => {
+/** Hex parsing (module-private `hexToRgb`) is exercised through `filamentPalette`, its only caller. */
+const colorOf = (color: string | undefined) => filamentPalette(md([{ slot: 0, color }]));
+
+describe('filament colour hex parsing (via filamentPalette)', () => {
   it('parses #RRGGBB and #RGB to 0..1', () => {
-    expect(hexToRgb('#FF0000')).toEqual([1, 0, 0]);
-    expect(hexToRgb('#00ff00')).toEqual([0, 1, 0]);
-    expect(hexToRgb('#fff')).toEqual([1, 1, 1]);
+    expect(colorOf('#FF0000')).toEqual([[1, 0, 0]]);
+    expect(colorOf('#00ff00')).toEqual([[0, 1, 0]]);
+    expect(colorOf('#fff')).toEqual([[1, 1, 1]]);
+    expect(colorOf('#f80')).toEqual([[1, 0.5333333333333333, 0]]);
+    expect(colorOf('#336699')).toEqual([[0.2, 0.4, 0.6]]);
   });
-  it('returns null for missing / malformed colours', () => {
-    expect(hexToRgb(undefined)).toBeNull();
-    expect(hexToRgb('')).toBeNull();
-    expect(hexToRgb('red')).toBeNull();
-    expect(hexToRgb('#12')).toBeNull();
+  it('accepts a missing # and surrounding whitespace', () => {
+    expect(colorOf('0000FF')).toEqual([[0, 0, 1]]);
+    expect(colorOf('  #FF0000 ')).toEqual([[1, 0, 0]]);
+  });
+  it('treats missing / malformed colours as unusable (empty palette)', () => {
+    expect(colorOf(undefined)).toEqual([]);
+    expect(colorOf('')).toEqual([]);
+    expect(colorOf('red')).toEqual([]);
+    expect(colorOf('#12')).toEqual([]);
+    expect(colorOf('#1234567')).toEqual([]);
+    expect(colorOf('#gggggg')).toEqual([]);
+    expect(colorOf('#ggg')).toEqual([]);
   });
 });
 

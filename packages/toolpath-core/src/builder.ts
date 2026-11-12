@@ -111,7 +111,11 @@ export class ToolpathIRBuilder {
     }
   }
 
-  /** Record a retraction/unretraction event (DD-009 D1, #148). Position is absolute; stored origin-relative. */
+  /**
+   * Record a retraction/unretraction event (DD-009 D1, #148). Position is absolute; the IR stores it
+   * origin-relative. Rebased in {@link ToolpathIRBuilder.finalize}, so an event recorded before the first segment (which
+   * fixes the floating origin) lands in the same frame as the segments.
+   */
   addRetraction(r: {
     x: number;
     y: number;
@@ -120,28 +124,12 @@ export class ToolpathIRBuilder {
     srcByte: number;
     segIndex: number;
   }): void {
-    const o = this.originOffset ?? { x: 0, y: 0, z: 0 };
-    this.retractionsList.push({
-      x: r.x - o.x,
-      y: r.y - o.y,
-      z: r.z - o.z,
-      kind: r.kind,
-      srcByte: r.srcByte,
-      segIndex: r.segIndex
-    });
+    this.retractionsList.push({ x: r.x, y: r.y, z: r.z, kind: r.kind, srcByte: r.srcByte, segIndex: r.segIndex });
   }
 
-  /** Record an M600 color-change boundary (DD-009 D2, #147). Position is absolute; stored origin-relative. */
+  /** Record an M600 color-change boundary (DD-009 D2, #147). Position is absolute; rebased like retractions. */
   addColorChange(c: { x: number; y: number; z: number; segIndex: number; srcByte: number; tool: number }): void {
-    const o = this.originOffset ?? { x: 0, y: 0, z: 0 };
-    this.colorChangesList.push({
-      x: c.x - o.x,
-      y: c.y - o.y,
-      z: c.z - o.z,
-      segIndex: c.segIndex,
-      srcByte: c.srcByte,
-      tool: c.tool
-    });
+    this.colorChangesList.push({ x: c.x, y: c.y, z: c.z, segIndex: c.segIndex, srcByte: c.srcByte, tool: c.tool });
   }
 
   addWarning(w: Warning): void {
@@ -214,8 +202,13 @@ export class ToolpathIRBuilder {
       layers,
       tools,
       objects: this.objectsList,
-      retractions: this.retractionsList,
-      colorChanges: this.colorChangesList,
+      retractions: this.retractionsList.map((r) => ({ ...r, x: r.x - origin.x, y: r.y - origin.y, z: r.z - origin.z })),
+      colorChanges: this.colorChangesList.map((c) => ({
+        ...c,
+        x: c.x - origin.x,
+        y: c.y - origin.y,
+        z: c.z - origin.z
+      })),
       bounds,
       boundsWithTravel,
       objectBounds,

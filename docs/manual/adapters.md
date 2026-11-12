@@ -82,8 +82,8 @@ and are attributes or properties on the Web Component (see the Web Component not
 **Inspect** — `layerRange` · `scrub` · `scrubTime` · `showTravel` · `showWipe` · `showRetractions` ·
 `hiddenFeatureRoles`
 **Appearance** — `colorMode` · `theme`
-**View / camera** — `cameraMode` · `view` · `cameraState` · `frameContent` · `showVolumeCage`
-**Rendering** — `quality` · `qualityMode` · `progressivePreview` · `interactionQuality` · `tube`
+**View / camera** — `cameraMode` · `cameraFov` · `view` · `cameraState` · `frameContent` · `showVolumeCage`
+**Rendering** — `quality` · `qualityMode` · `progressivePreview` · `interactionQuality` · `pixelRatio` · `tube`
 **Machine & progress** — `buildVolume` · `progress`
 
 A `Uint8Array` or `ArrayBuffer` given as `source` (or to `controls.parse`) is handed to the parse
@@ -106,6 +106,55 @@ Beyond the declarative props, the same **imperative surface** is reachable throu
 source-mapping (`pickSegment`), the color-mode capability gate (`isColorModeAvailable`), and image
 `capture`. Capability-aware state (`availableColorModes`, `hasRetractions`, `hasColorChanges`) lets
 your UI offer and *explain* controls honestly rather than guessing.
+
+## Look, lens and plate (opt-in)
+
+The **Studio look** (`studioTheme('dark' | 'light')`, a gradient backdrop, a solid build plate with grid and
+outline, and a contact shadow) and a **camera lens** (`cameraFov`, 10-120 degrees, default 50; the preset uses
+`STUDIO_CAMERA_FOV` = 32) are optional. With no `theme` and no `cameraFov` every viewer renders as before. Import
+the preset from `@chestnutlabs/gcode-renderer-three` (also re-exported by `-core` and `-model-renderer`).
+The [Studio look and build plate](guide-looks-lens-plate.md) guide has the full tour.
+
+| | Toolpath (`GcodePreview`) | Model viewer (`/model`) |
+| --- | --- | --- |
+| Look | `theme` (declarative), `controls.setTheme` | `theme`, `controls.setTheme`; plate and backdrop fields only, lights are not themed |
+| Lens | `cameraFov` / `camera-fov`, `controls.setCameraFov(deg)` | the same |
+| Plate | `buildVolume` (already there) | `buildVolume` (new), `controls.setBuildVolume(def \| null)` |
+| Placement | n/a | `placement` + `placementOffset` on `ready` and in state: `known` / `inferred` / `approximated`, or `null` when no plate is drawn |
+| Cage | `showVolumeCage` / `show-volume-cage`, `controls.setBuildVolumeCage(visible)` | the same; it drops only the wireframe, the plate, grid and shadow stay |
+
+Deliberate differences, not drift:
+
+- **Web Component.** `camera-fov` is an attribute (on `<gcode-preview>` and `<gcode-model-viewer>`) and `cameraFov` a
+  property. An invalid attribute value (non-numeric or outside 10-120) is ignored and the last valid lens is kept; setting
+  the property to an invalid value throws `RangeError`. `theme` and `buildVolume` are properties only (objects).
+  `show-volume-cage` is an attribute too: absent or anything but `"false"` means the cage is on.
+- **Model viewer themes.** Only `background`, the grid and outline fields, `bedSurface` and `contactShadow` apply.
+  `theme.background` beats the `background` prop, which is the fallback tier.
+- **2D renderer** (`renderer="2d"`). A flat top-down view: `theme` and the cage are ignored (no-ops); a lens or
+  pixel-ratio call records a `renderer-unsupported` disclosure. The 2D renderer has no 3D look to preset.
+
+## Pixel ratio (opt-in)
+
+`pixelRatio` sets the resting pixel ratio of the interactive 3D canvas: a number in (0, 4], or `'device'`, which
+follows `min(devicePixelRatio, 2)` live (monitor change, browser zoom). Anything else throws `RangeError` and is never
+clamped. Left unset, the renderer keeps its own ratio and nothing changes.
+
+| | Toolpath (`GcodePreview`) | Model viewer (`/model`) |
+| --- | --- | --- |
+| Ratio | `pixelRatio` / `pixel-ratio`, `controls.setPixelRatio(ratio)`; core: `renderer: { pixelRatio }` | `pixelRatio` / `pixel-ratio`, `controls.setPixelRatio(ratio)` |
+
+- **Fill cost.** Ratio 2 shades four times the fragments of ratio 1 (ratio squared). `'device'` suits a page with one
+  viewer; leave it unset, or use a number, for many viewers or weak GPUs. `interactionQuality: 'auto'` still lowers the
+  ratio while you orbit and settles back on yours.
+- **`capture()` size.** With no `width`/`height`, unset gives the resting drawing-buffer size and a set ratio gives the
+  canvas's CSS size. With the built-in renderer, setting a ratio never changes the default capture size. A custom
+  `createRenderer` decides for itself. Pass `width`/`height` for a crisper image.
+- **Web Component.** `pixel-ratio` is an attribute and `pixelRatio` a property on `<gcode-preview>` and
+  `<gcode-model-viewer>`. An invalid attribute is ignored and the last valid ratio kept; an invalid property value
+  throws `RangeError`.
+- **2D renderer.** A no-op that records a `renderer-unsupported` disclosure (feature `quality`). Stills
+  (`renderStill`, `renderModelStill`) have no pixel-ratio option; size them with `width`/`height`.
 
 ## Vue
 

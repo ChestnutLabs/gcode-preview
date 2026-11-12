@@ -24,6 +24,8 @@ export interface GLRendererLike {
   render(scene: Scene, camera: Camera): void;
   setSize(width: number, height: number, updateStyle?: boolean): void;
   setPixelRatio?(ratio: number): void;
+  /** The current pixel ratio — DD-020 restores exactly this after a reduced-detail gesture (#435). */
+  getPixelRatio?(): number;
   dispose(): void;
   domElement: RenderTargetCanvas;
   // Render-target readback for interactive `capture()` (DD-030 D1). Optional: a real `WebGLRenderer`
@@ -90,12 +92,68 @@ export interface Framing {
  * target plane is ≈2.69·radius·tan(25°) ≈ 1.25·radius; an orthographic frustum uses the same
  * half-height so toggling projection keeps the model the same apparent size (#150).
  *
+ * Lens-aware (DD-032): a perspective `fov` other than 50° scales the offset by {@link framingLensScale}, so
+ * the sphere stays in view at any lens (the 32° Studio lens backs off ≈1.63×). At exactly 50 the offset is
+ * the original one, byte-identical. `viewHalfHeight` (the ortho frustum) does not depend on the lens.
+ * Throws `RangeError` for a `fov` outside [10, 120].
+ *
  * Extracted verbatim from `ToolpathRenderer.frame()` (DD-018 Phase 0) so `ModelRenderer` frames
  * identically. Pure — allocates and returns fresh vectors; mutates nothing.
  */
-export function framingFromCenterRadius(center: Vector3, radius: number): Framing {
+export function framingFromCenterRadius(center: Vector3, radius: number, fov = 50): Framing {
+  checkFov(fov);
   const target = new Vector3(center.x, center.z, -center.y);
   const viewHalfHeight = radius * 1.25;
-  const position = new Vector3(target.x - radius * 1.2, target.y + radius * 1.6, target.z + radius * 1.8);
+  if (fov === 50) {
+    const position = new Vector3(target.x - radius * 1.2, target.y + radius * 1.6, target.z + radius * 1.8);
+    return { target, position, viewHalfHeight };
+  }
+  const k = framingLensScale(fov);
+  const position = new Vector3(target.x - radius * 1.2 * k, target.y + radius * 1.6 * k, target.z + radius * 1.8 * k);
   return { target, position, viewHalfHeight };
+}
+
+/** A perspective vertical fov must be a number in [10, 120] degrees (extreme lenses put the camera absurdly far/near). */
+export function checkFov(fov: number): void {
+  if (!(fov >= 10 && fov <= 120)) throw new RangeError(`fov must be in [10, 120] degrees (got ${String(fov)})`);
+}
+
+/**
+ * The interactive canvas's resting pixel ratio (drawing-buffer pixels per CSS pixel). A number in (0, 4],
+ * or `'device'`: the display's `devicePixelRatio` capped at 2, followed live as it changes (moving the
+ * window to another monitor, browser zoom). Unset, the renderer keeps its own ratio (1).
+ */
+export type PixelRatioOption = number | 'device';
+
+/** The `'device'` ratio cap: past ×2 the fill cost (ratio² fragments) buys little visible detail. */
+export const DEVICE_PIXEL_RATIO_CAP = 2;
+
+/**
+ * A pixel ratio must be `'device'` (the exact string, case-sensitive) or a number in (0, 4]. Throws
+ * `RangeError` otherwise — it never clamps.
+ */
+export function checkPixelRatio(ratio: PixelRatioOption): void {
+  if (ratio === 'device') return;
+  if (!(typeof ratio === 'number' && ratio > 0 && ratio <= 4)) {
+    throw new RangeError(`pixelRatio must be 'device' or a number in (0, 4] (got ${String(ratio)})`);
+  }
+}
+
+/**
+ * How far the framing pose backs off at `fov` relative to the 50° pose: the larger of
+ * - tan(25°)/tan(fov/2): the same visible half-height at the target plane (what a dolly keeps), and
+ * - sin(25°)/sin(fov/2): the same bounding-sphere margin.
+ * Narrower than 50° the first wins; wider, the tan rule alone would put the camera inside the sphere
+ * (at 120° it lands at 0.72·r), so the sphere rule takes over. Exactly 1 at 50.
+ */
+export function framingLensScale(fov: number): number {
+  if (fov === 50) return 1;
+  const half = ((fov / 2) * Math.PI) / 180;
+  const half50 = (25 * Math.PI) / 180;
+  return Math.max(Math.tan(half50) / Math.tan(half), Math.sin(half50) / Math.sin(half));
+}
+
+/** Camera-distance factor that keeps apparent size when the vertical fov changes `from` → `to` degrees. */
+export function lensScale(from: number, to: number): number {
+  return Math.tan(((from / 2) * Math.PI) / 180) / Math.tan(((to / 2) * Math.PI) / 180);
 }

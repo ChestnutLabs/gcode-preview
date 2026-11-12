@@ -152,6 +152,42 @@ write(
   ])
 );
 
+/** A valid RGB PNG (real chunk CRCs, deflated filter-0 rows) of a flat colour — deterministic bytes. */
+function makePng(width, height, rgb) {
+  const chunk = (type, body) => {
+    const t = Buffer.from(type, 'ascii');
+    return Buffer.concat([u32be(body.length), t, body, u32be(crc32(Buffer.concat([t, body])))]);
+  };
+  const ihdr = Buffer.concat([u32be(width), u32be(height), Buffer.from([8, 2, 0, 0, 0])]);
+  const row = Buffer.concat([Buffer.from([0]), Buffer.from(Array.from({ length: width }, () => rgb).flat())]);
+  const raw = Buffer.concat(Array.from({ length: height }, () => row));
+  return Buffer.concat([
+    Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+    chunk('IHDR', ihdr),
+    chunk('IDAT', zlib.deflateSync(raw)),
+    chunk('IEND', Buffer.alloc(0))
+  ]);
+}
+const u32be = (n) => Buffer.from([(n >>> 24) & 0xff, (n >>> 16) & 0xff, (n >>> 8) & 0xff, n & 0xff]);
+
+// Plate thumbnails (#483) — SYNTHETIC: plates 1 and 3 (a numbering gap), stored out of order, each with the
+// slicer's plate_N.png + plate_N_small.png plus top_N / pick_N images the reader must ignore. Built to this
+// repo's reading of the Bambu/Orca layout; not validated against a real slicer export.
+write(
+  'mini-thumbs.gcode.3mf',
+  makeZip([
+    { name: 'Metadata/plate_3.png', data: makePng(8, 6, [200, 40, 40]), deflate: true },
+    { name: 'Metadata/plate_3.gcode', data: plateGcode(3, 120), deflate: true },
+    { name: 'Metadata/plate_1_small.png', data: makePng(2, 1, [40, 200, 40]), deflate: false },
+    { name: 'Metadata/top_1.png', data: makePng(5, 5, [1, 2, 3]), deflate: true },
+    { name: 'Metadata/pick_1.png', data: makePng(5, 5, [4, 5, 6]), deflate: true },
+    { name: 'Metadata/plate_1.png', data: makePng(4, 3, [40, 40, 200]), deflate: true },
+    { name: 'Metadata/plate_1.gcode', data: plateGcode(1, 200), deflate: true },
+    { name: 'Metadata/plate_3_small.png', data: makePng(4, 3, [200, 200, 40]), deflate: false },
+    { name: 'Metadata/project_settings.config', data: settings, deflate: true }
+  ])
+);
+
 // Model/project 3MF (meshes + settings, NO sliced plates) — the common user
 // mistake of loading a saved project instead of an exported sliced file.
 write(

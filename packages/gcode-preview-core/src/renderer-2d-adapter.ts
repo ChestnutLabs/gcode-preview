@@ -23,6 +23,7 @@ import type {
   CameraMode,
   CameraState,
   CameraView,
+  PixelRatioOption,
   ProgressivePreview,
   QualityMode,
   QualityPolicy,
@@ -194,6 +195,14 @@ export class LayerView2DRenderer implements PreviewRenderer {
 
   setCameraMode(_mode: CameraMode): void {
     this.disclose('camera', 'Camera projection applies only to the 3D renderer; the 2D view is flat top-down.');
+  }
+
+  setCameraFov(_fov: number): void {
+    this.disclose('camera', 'The camera lens applies only to the 3D renderer; the 2D view is flat top-down.');
+  }
+
+  setPixelRatio(_ratio: PixelRatioOption): void {
+    this.disclose('quality', 'The pixel ratio applies only to the 3D renderer; the 2D view keeps its own resolution.');
   }
 
   setView(_view: CameraView): void {

@@ -210,3 +210,30 @@ describe('InteractiveStage — programmatic moves vs user moves (fitBox / auto-f
     h.stage.dispose();
   });
 });
+
+describe("InteractiveStage — interaction quality keeps the renderer's own pixel ratio (#435)", () => {
+  it('a gesture reduces from and settles back to the GL ratio, not devicePixelRatio', async () => {
+    const canvas = document.createElement('canvas');
+    const ratios: number[] = [];
+    let controls: ReturnType<typeof stubControls> | null = null;
+    const stage = new InteractiveStage({
+      canvas,
+      scene: new Scene(),
+      interactionQuality: 'auto',
+      createRenderer: () => ({
+        render: () => 0,
+        setSize: () => 0,
+        setPixelRatio: (r: number) => ratios.push(r),
+        getPixelRatio: () => 2,
+        dispose: () => 0,
+        domElement: canvas
+      }),
+      createControls: (cam) => (controls = stubControls(cam))
+    });
+    controls!.fire('change');
+    controls!.fire('end');
+    await new Promise((r) => setTimeout(r, 200)); // past the 150 ms settle debounce
+    expect(ratios).toEqual([1.2, 2]);
+    stage.dispose();
+  });
+});

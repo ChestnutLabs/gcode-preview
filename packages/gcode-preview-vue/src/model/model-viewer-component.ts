@@ -12,8 +12,10 @@ import type {
   GLRendererLike,
   InteractiveStageOptions,
   LoadProgress,
+  PixelRatioOption,
   RenderTargetCanvas
 } from '@chestnutlabs/gcode-renderer-three';
+import type { BuildVolumeDef, Theme } from '@chestnutlabs/gcode-renderer-three';
 import type {
   ModelBackground,
   ModelLimits,
@@ -50,6 +52,16 @@ export const ModelViewer = defineComponent({
     filamentPalette: { type: Array as PropType<readonly (string | undefined)[]>, default: undefined },
     /** Loader registry (open `kind`). Default: STL + 3MF. */
     loaders: { type: Array as PropType<readonly ModelLoader[]>, default: undefined },
+    /** Build plate under the model (DD-032): the full `BuildVolumeDef`; `null`/omitted = no plate. */
+    buildVolume: { type: Object as PropType<BuildVolumeDef | null>, default: undefined },
+    /** Show the build-volume wireframe cage over the plate (the plate, grid and shadow stay). Default true. */
+    showVolumeCage: { type: Boolean, default: true },
+    /** Plate/backdrop look, e.g. `studioTheme('dark')`; lights are deliberately not themed. Beats `background`. */
+    theme: { type: Object as PropType<Theme>, default: undefined },
+    /** Perspective lens in degrees, [10, 120] (default 50). Out of range throws `RangeError`. */
+    cameraFov: { type: Number as PropType<number>, default: undefined },
+    /** Resting pixel ratio: (0, 4] or 'device' (DPR capped at 2, followed live). Unset keeps 1. Out of range throws `RangeError`. */
+    pixelRatio: { type: [Number, String] as PropType<PixelRatioOption>, default: undefined },
     /** Advanced/test: inject GL / orbit controls. */
     createRenderer: {
       type: Function as PropType<(canvas: RenderTargetCanvas) => GLRendererLike>,
@@ -78,6 +90,11 @@ export const ModelViewer = defineComponent({
       ...(props.filamentPalette !== undefined ? { filamentPalette: props.filamentPalette } : {}),
       ...(props.loaders !== undefined ? { loaders: props.loaders } : {}),
       ...(props.renderScope != null ? { renderScope: props.renderScope } : {}),
+      ...(props.buildVolume != null ? { buildVolume: props.buildVolume } : {}),
+      showVolumeCage: props.showVolumeCage,
+      ...(props.theme !== undefined ? { theme: props.theme } : {}),
+      ...(props.cameraFov !== undefined ? { cameraFov: props.cameraFov } : {}),
+      ...(props.pixelRatio !== undefined ? { pixelRatio: props.pixelRatio } : {}),
       ...(props.createRenderer !== undefined ? { createRenderer: props.createRenderer } : {}),
       ...(props.createControls !== undefined ? { createControls: props.createControls } : {}),
       onProgress: (p) => emit('progress', p)
@@ -146,6 +163,35 @@ export const ModelViewer = defineComponent({
       () => props.renderScope,
       (scope) => {
         if (scope !== undefined) viewer.controls.setRenderScope(scope);
+      }
+    );
+    // DD-032: look + lens. Each prop maps to one controls call; the controller remembers them across rebinds.
+    watch(
+      () => props.buildVolume,
+      (def) => {
+        if (def !== undefined) viewer.controls.setBuildVolume(def);
+      }
+    );
+    watch(
+      () => props.showVolumeCage,
+      (visible) => viewer.controls.setBuildVolumeCage(visible)
+    );
+    watch(
+      () => props.theme,
+      (theme) => {
+        if (theme !== undefined) viewer.controls.setTheme(theme);
+      }
+    );
+    watch(
+      () => props.cameraFov,
+      (fov) => {
+        if (fov !== undefined) viewer.controls.setCameraFov(fov);
+      }
+    );
+    watch(
+      () => props.pixelRatio,
+      (ratio) => {
+        if (ratio !== undefined) viewer.controls.setPixelRatio(ratio);
       }
     );
 

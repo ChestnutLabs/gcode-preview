@@ -12,11 +12,15 @@
  * capability tiers are passed through from the parsed `ModelScene`, never recomputed (DD-001 honesty).
  * Interactive is a browser concern — headless/offscreen stills stay `renderModelStill` (DD-018 §4.3).
  */
-import { Color, Scene } from 'three';
+import { Scene } from 'three';
 import {
   CaptureUnsupportedError,
   InteractiveStage,
   createDefaultGLRenderer,
+  resolveTheme,
+  type Backdrop,
+  type BuildVolumeDef,
+  type Theme,
   type CameraMode,
   type CameraState,
   type CameraView,
@@ -24,13 +28,16 @@ import {
   type GLRendererLike,
   type InteractiveStageOptions,
   type LoadProgress,
+  type PixelRatioOption,
   type RenderTargetCanvas
 } from '@chestnutlabs/gcode-renderer-three';
 import type { Confidence } from '@chestnutlabs/toolpath-core';
 import { ModelContent } from './model-content.js';
 import { DEFAULT_MODEL_LOADERS, resolveModelScene, type ModelLoader, type ModelSourceInput } from './loaders.js';
 import { ModelParseError, type ModelLimits } from './limits.js';
-import type { ModelBackground, PresentationView } from './model-renderer.js';
+import { checkModelFov, checkModelPixelRatio, type ModelBackground, type PresentationView } from './model-renderer.js';
+import { ModelPlate, applyModelBackground } from './model-plate.js';
+import type { ModelPlacement, PlacementOffset } from './placement.js';
 import {
   applyRenderScope,
   sceneInstanceCount,
@@ -71,6 +78,32 @@ export interface ModelViewerOptions {
    * a new source, or a render-scope change resumes auto-framing. Default `true`.
    */
   autoFrameOnResize?: boolean;
+  /**
+   * Build plate under the model (DD-032 §4.3) — the full `BuildVolumeDef` (shape, `min`, excluded regions).
+   * Omit/`null` for no plate: the viewer then renders exactly as before. Where the part sits on the plate is
+   * decided honestly and reported as `placement` (see {@link ModelPlacement}).
+   */
+  buildVolume?: BuildVolumeDef | null;
+  /**
+   * Draw the build-volume wireframe cage over the plate. Default `true`. `false` keeps the plate, its grid and
+   * the contact shadow and drops only the cage, as the toolpath viewer's `setBuildVolumeCage(false)` does.
+   */
+  showVolumeCage?: boolean;
+  /**
+   * Plate/backdrop look (DD-032), e.g. `studioTheme('dark')`. Only the plate and backdrop fields apply
+   * (`background`, `gridColor`, `gridOpacity`, `gridMajor`, `bedOutline`, `bedSurface`, `bedColor`,
+   * `contactShadow`); lights and `materialPreset` are deliberately not applicable — the model rig is unchanged.
+   * `theme.background` beats `background`, which is the fallback tier.
+   */
+  theme?: Theme;
+  /** Perspective lens in degrees, [10, 120] (default 50). Throws `RangeError` outside it. */
+  cameraFov?: number;
+  /**
+   * Resting pixel ratio of the canvas: a number in (0, 4], or `'device'` (the display's `devicePixelRatio`
+   * capped at 2, followed live). Unset keeps the renderer's ratio (1). A ratio of 2 shades 4× the fragments
+   * of 1. Throws `RangeError` synchronously otherwise. The default `capture()` size does not change.
+   */
+  pixelRatio?: PixelRatioOption;
 }
 
 /** What the source actually carried, surfaced on `ready` (never fabricated — DD-001). */
@@ -95,6 +128,10 @@ export interface ModelReadyInfo {
    * single/plate-less source. `active` is the source's declared active plate id when present.
    */
   plates?: { list: ModelPlateSummary[]; active?: number };
+  /** How the plate placement was decided (DD-032 §4.3); `null` when no plate is drawn. */
+  placement: ModelPlacement | null;
+  /** The presentation offset applied to the model, mm (printer axes); `null` when no plate is drawn. */
+  placementOffset: PlacementOffset | null;
   // Reserved additive extension (not v1): `objects?: { name?: string; materials?: Confidence }[]`.
 }
 
@@ -115,7 +152,30 @@ export interface ModelViewer {
   /** Current camera pose, or `null` before a source is set / when the renderer is unsupported. */
   getCameraState(): CameraState | null;
   setCameraState(state: CameraState): void;
+  /**
+   * The fallback background tier (DD-032): beaten by a `theme.background`, so after `setTheme` with a theme
+   * that sets one this has no visible effect until that theme's `background` is cleared.
+   */
   setBackground(bg: ModelBackground): void;
+  /** Set or remove (`null`) the build plate. Re-places the model and, while auto-framing, re-fits the camera. */
+  setBuildVolume(def: BuildVolumeDef | null): void;
+  /**
+   * Show/hide the build-volume wireframe cage, independently of the plate, grid and shadow (parity with the
+   * toolpath `setBuildVolumeCage`). The model does not move and the camera is not re-fitted. Remembered when the
+   * plate is rebuilt (a new bed, theme or scope).
+   */
+  setBuildVolumeCage(visible: boolean): void;
+  /** Replace the plate/backdrop theme (replace semantics). Throws `RangeError` for an invalid opacity/`every`. */
+  setTheme(theme: Theme): void;
+  /** Change the perspective lens, [10, 120]° (`RangeError` outside it). Keeps apparent size; re-fits while auto-framing. */
+  setCameraFov(fov: number): void;
+  /**
+   * Change the resting pixel ratio: (0, 4] or `'device'` (DPR capped at 2, followed live). `RangeError`
+   * otherwise. A gesture in progress settles on the new ratio; the default `capture()` size does not change.
+   */
+  setPixelRatio(ratio: PixelRatioOption): void;
+  /** The current plate placement decision (`null` placement = no plate drawn). */
+  getPlacement(): { placement: ModelPlacement | null; placementOffset: PlacementOffset | null };
   setInteractionQuality(mode: 'off' | 'auto'): void;
   resize(width: number, height: number): void;
   /**
@@ -138,10 +198,6 @@ export interface ModelViewer {
   dispose(): void;
 }
 
-function backgroundColor(bg: ModelBackground): Color | null {
-  return bg === 'transparent' ? null : new Color(bg as string | number);
-}
-
 /**
  * Create an interactive model viewer bound to a live `<canvas>`. If WebGL is unavailable the handle is
  * still returned but inert; it emits a `renderer-unsupported` event (flushed to the first `onEvent`
@@ -151,7 +207,13 @@ export function createModelViewer(canvas: RenderTargetCanvas, options: ModelView
   const loaders = options.loaders ?? DEFAULT_MODEL_LOADERS;
   const limits = options.limits;
   const filamentPalette = options.filamentPalette;
-  const background: ModelBackground = options.background ?? 'transparent';
+  // The fallback background tier (DD-032): beaten by `theme.background`, beaten in turn by a capture override.
+  let fallbackBackground: ModelBackground = options.background ?? 'transparent';
+  let theme: Theme | undefined = options.theme;
+  // Invalid look/lens options fail synchronously, at construction, before any GL work.
+  if (theme !== undefined) resolveTheme(theme);
+  if (options.cameraFov !== undefined) checkModelFov(options.cameraFov);
+  if (options.pixelRatio !== undefined) checkModelPixelRatio(options.pixelRatio);
 
   const listeners = new Set<(e: ModelViewerEvent) => void>();
   // Events emitted before any subscriber attaches (e.g. renderer-unsupported at construction) are held
@@ -166,8 +228,9 @@ export function createModelViewer(canvas: RenderTargetCanvas, options: ModelView
   };
 
   const scene = new Scene();
-  scene.background = backgroundColor(background);
+  let backdrop: Backdrop | null = applyModelBackground(scene, theme, fallbackBackground, null);
   const content = new ModelContent(scene);
+  const plate = new ModelPlate(scene, options.buildVolume ?? null, theme, options.showVolumeCage ?? true);
 
   // Retained so context-loss recovery can rebuild meshes from the last-set scene.
   let currentScene: ModelScene | null = null;
@@ -191,12 +254,17 @@ export function createModelViewer(canvas: RenderTargetCanvas, options: ModelView
     if (f === null || stage === null) return;
     stage.fitBox(f.sceneMin, f.sceneMax, keepDirection ? { direction: stage.viewDirection() } : {});
   };
+  /** Re-place the model on the plate for the current scene/scope/bed/theme (rebuilds the plate + shadow). */
+  const replate = (): void => {
+    plate.update(content, currentScene, scopedScene(), currentScope);
+  };
   try {
     stage = new InteractiveStage({
       canvas,
       scene,
       cameraMode: options.cameraMode ?? 'perspective',
       interactionQuality: options.interactionQuality ?? 'auto',
+      ...(options.pixelRatio !== undefined ? { pixelRatio: options.pixelRatio } : {}),
       createRenderer: options.createRenderer ?? ((c) => createDefaultGLRenderer(c, { alpha: true })),
       ...(options.createControls ? { createControls: options.createControls } : {}),
       onCameraChanged: (state) => emit({ type: 'camera-changed', state }),
@@ -210,6 +278,7 @@ export function createModelViewer(canvas: RenderTargetCanvas, options: ModelView
         const shown = scopedScene();
         if (shown !== null && stage !== null) {
           content.setScene(shown);
+          replate(); // the plate's textures/geometry are GPU resources too: rebuild, freeing the old
           if (autoFraming) fit(true);
         }
         emit({ type: 'context-restored' });
@@ -222,6 +291,7 @@ export function createModelViewer(canvas: RenderTargetCanvas, options: ModelView
       message: err instanceof Error ? err.message : String(err)
     });
   }
+  if (stage !== null && options.cameraFov !== undefined) stage.setFov(options.cameraFov);
 
   async function setSource(input: ModelSourceInput): Promise<ModelReadyInfo> {
     const my = ++sourceToken;
@@ -247,7 +317,9 @@ export function createModelViewer(canvas: RenderTargetCanvas, options: ModelView
         materials: parsed.capabilities.materials,
         bounds: parsed.bounds,
         instancedCount: sceneInstanceCount(parsed),
-        decimationApplied: 1
+        decimationApplied: 1,
+        placement: null,
+        placementOffset: null
       };
       if (parsed.plates !== undefined) info.plates = parsed.plates;
       // Last-wins: a newer setSource (or a dispose) superseded this one — discard without mutating.
@@ -258,6 +330,9 @@ export function createModelViewer(canvas: RenderTargetCanvas, options: ModelView
       const total = shown.objects.length;
       progress({ stage: 'building-geometry', done: 0, total, unit: 'objects' });
       content.setScene(shown, (done) => progress({ stage: 'building-geometry', done, total, unit: 'objects' }));
+      replate();
+      info.placement = plate.getPlacement().placement;
+      info.placementOffset = plate.getPlacement().placementOffset;
       autoFraming = true;
       fit();
       progress({ stage: 'ready' });
@@ -288,8 +363,42 @@ export function createModelViewer(canvas: RenderTargetCanvas, options: ModelView
       stage?.setCameraState(state);
     },
     setBackground(bg) {
-      scene.background = backgroundColor(bg);
+      fallbackBackground = bg;
+      backdrop = applyModelBackground(scene, theme, fallbackBackground, backdrop);
       stage?.render();
+    },
+    setBuildVolume(def) {
+      plate.setBuildVolume(def);
+      replate();
+      // The presented bounds moved (new bed ⇒ new offset): while library-framed, re-fit to them.
+      if (autoFraming) fit(true);
+      stage?.render();
+    },
+    setBuildVolumeCage(visible) {
+      plate.setCageVisible(visible);
+      stage?.render();
+    },
+    setTheme(next) {
+      resolveTheme(next); // throws before anything changes
+      theme = next;
+      plate.setTheme(next);
+      backdrop = applyModelBackground(scene, theme, fallbackBackground, backdrop);
+      replate();
+      stage?.render();
+    },
+    setCameraFov(fov) {
+      checkModelFov(fov);
+      stage?.setFov(fov);
+      // Exact re-fit while library-framed (instead of the dolly), and auto-framing stays on.
+      if (autoFraming) fit(true);
+    },
+    setPixelRatio(ratio) {
+      checkModelPixelRatio(ratio);
+      stage?.setPixelRatio(ratio);
+    },
+    getPlacement() {
+      const p = plate.getPlacement();
+      return { placement: p.placement, placementOffset: p.placementOffset };
     },
     setInteractionQuality(mode) {
       stage?.setInteractionQuality(mode);
@@ -308,14 +417,21 @@ export function createModelViewer(canvas: RenderTargetCanvas, options: ModelView
       const shown = scopedScene();
       if (shown === null || stage === null) return; // no source yet — applied on the next setSource
       content.setScene(shown);
+      replate();
       autoFraming = true;
       fit();
     },
-    capture(opts) {
+    async capture(opts) {
       if (stage === null) {
-        return Promise.reject(new CaptureUnsupportedError('model viewer renderer unavailable'));
+        throw new CaptureUnsupportedError('model viewer renderer unavailable');
       }
-      return stage.capture(opts);
+      // includeBuildVolume:false hides the plate and its shadow for this render only (DD-032 §4.3).
+      const restore = opts?.includeBuildVolume === false ? plate.hide() : null;
+      try {
+        return await stage.capture(opts);
+      } finally {
+        restore?.();
+      }
     },
     onEvent(cb) {
       listeners.add(cb);
@@ -329,6 +445,9 @@ export function createModelViewer(canvas: RenderTargetCanvas, options: ModelView
       if (disposed) return;
       disposed = true;
       stage?.dispose();
+      plate.dispose();
+      backdrop?.dispose();
+      backdrop = null;
       content.dispose();
       listeners.clear();
     }

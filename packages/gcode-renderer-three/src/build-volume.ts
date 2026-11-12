@@ -15,15 +15,18 @@ import {
   LineBasicMaterial,
   LineLoop,
   LineSegments,
+  type Material,
   Mesh,
   MeshBasicMaterial,
+  type Object3D,
   PlaneGeometry,
   SRGBColorSpace,
   Shape,
-  ShapeGeometry
+  ShapeGeometry,
+  type Texture
 } from 'three';
 import type { Point2, Region2 } from '@chestnutlabs/toolpath-core';
-import type { BedSurface, ThemeColor } from './theme.js';
+import type { BedSurface, ThemeBedOutline, ThemeColor, ThemeGridMajor } from './theme.js';
 
 /**
  * The bed's true outline (DD-030 D3). Omitted (or `'rect'`) ⇒ the rectangular `[min .. min+size]` bed —
@@ -65,7 +68,25 @@ export interface BuildVolumeStyle {
    * (#306/#6), so a consumer can present the printable bed without the whole machine volume.
    */
   showCage?: boolean;
+  /**
+   * Major grid tier (DD-032). `every` snaps to whole minor pitches: every k-th minor line (by integer
+   * index from the bed minimum, k = max(1, round(every / grid))) is drawn as a major line instead. So
+   * `every: 50` on a 15 mm grid gives majors every 45 mm, and a grid-pitch change never throws.
+   * Omit for one tier.
+   */
+  gridMajor?: ThemeGridMajor;
+  /**
+   * Bed boundary loop for every shape, rect included (DD-032), drawn above the grid. When set, grid lines
+   * lying on the bed edge and the cage's floor edges are not drawn: the outline replaces them. Omit: no
+   * loop on rect beds, today's grid-colored loop (opacity +0.3) on non-rect beds.
+   */
+  bedOutline?: ThemeBedOutline;
 }
+
+/** Draw order (DD-032): slab walls, then the plate top, then the grid (default 0), then the outline. */
+const ORDER_BED_EDGE = -2;
+const ORDER_BED_TOP = -1;
+const ORDER_OUTLINE = 1;
 
 function lines(positions: number[], color: ThemeColor, opacity = 1): LineSegments {
   const geometry = new BufferGeometry();
@@ -74,7 +95,24 @@ function lines(positions: number[], color: ThemeColor, opacity = 1): LineSegment
   return new LineSegments(geometry, material);
 }
 
-/** Build the volume group. Caller owns disposal (traverse geometries/materials). */
+/**
+ * Free everything a build-volume group (or any plate-level group) owns: each object's geometry, its
+ * material(s), and each material's `map` (three's `material.dispose()` does not free textures, so the
+ * bed texture used to leak on every rebuild).
+ */
+export function disposeBuildVolume(group: Object3D): void {
+  group.traverse((obj) => {
+    const o = obj as { geometry?: BufferGeometry; material?: Material | Material[] };
+    o.geometry?.dispose();
+    const mats = o.material === undefined ? [] : Array.isArray(o.material) ? o.material : [o.material];
+    for (const m of mats) {
+      (m as Material & { map?: Texture | null }).map?.dispose();
+      m.dispose();
+    }
+  });
+}
+
+/** Build the volume group. Caller owns disposal ({@link disposeBuildVolume}). */
 export function createBuildVolume(def: BuildVolumeDef, style?: BuildVolumeStyle): Group {
   const group = new Group();
   group.name = 'buildVolume';
@@ -87,6 +125,21 @@ export function createBuildVolume(def: BuildVolumeDef, style?: BuildVolumeStyle)
   const y0 = def.min?.y ?? 0;
   const x1 = x0 + def.x;
   const y1 = y0 + def.y;
+  const major = style?.gridMajor;
+  const edged = style?.bedOutline !== undefined;
+  // Every k-th grid line by INTEGER index (k = 0, step, 2·step…) belongs to the major tier and is NOT
+  // also drawn as minor — no float comparison of positions.
+  let majorStep = 0;
+  if (major !== undefined) {
+    if (!(Number.isFinite(major.every) && major.every > 0)) {
+      throw new RangeError(`gridMajor.every must be a positive number (got ${String(major.every)})`);
+    }
+    majorStep = Math.max(1, Math.round(major.every / pitch));
+  }
+  const tierOf = (k: number): 'major' | 'minor' => (majorStep > 0 && k % majorStep === 0 ? 'major' : 'minor');
+  // With an outline set, a rect grid line ON the bed edge is left to the outline (no double blend).
+  const onEdge = (v: number, lo: number, hi: number): boolean =>
+    edged && (Math.abs(v - lo) < 1e-6 || Math.abs(v - hi) < 1e-6);
 
   // The bed outline (DD-030 D3). `null` ⇒ rectangular: every branch below takes its original,
   // byte-identical path. A non-null polygon ⇒ a delta/round/irregular bed to fill, outline, and clip to.
@@ -97,25 +150,60 @@ export function createBuildVolume(def: BuildVolumeDef, style?: BuildVolumeStyle)
   // layer. `mode:'none'` (default) skips it entirely — the bare-grid look is unchanged.
   const surface = style?.bedSurface;
   if (surface && surface.mode === 'solid') {
+    if ((surface.thickness ?? 0) > 0) {
+      const ring: Point2[] = outline ?? [
+        { x: x0, y: y0 },
+        { x: x1, y: y0 },
+        { x: x1, y: y1 },
+        { x: x0, y: y1 }
+      ];
+      group.add(bedEdgeWalls(ring, surface));
+    }
     group.add(outline ? bedShapeMesh(outline, surface) : bedPlate(x0, y0, x1, y1, surface));
   }
 
   if (outline) {
     // Non-rectangular bed: draw only the grid lines inside the outline, plus the outline itself, so the
     // printable area reads honestly (a round bed is not a square with a circle drawn on it).
-    group.add(lines(clipGridToPolygon(x0, y0, x1, y1, pitch, outline), gridColor, gridOpacity));
-    group.add(bedOutlineLoop(outline, gridColor, Math.min(1, gridOpacity + 0.3)));
+    const minorLines = clipGridToPolygon(x0, y0, x1, y1, pitch, outline, tierOf, 'minor', edged);
+    group.add(lines(minorLines, gridColor, gridOpacity));
+    if (major !== undefined) {
+      const majorLines = clipGridToPolygon(x0, y0, x1, y1, pitch, outline, tierOf, 'major', edged);
+      group.add(namedLines(majorLines, major.color ?? gridColor, major.opacity, 'gridMajor'));
+    }
+    const o = style?.bedOutline;
+    group.add(
+      o !== undefined
+        ? bedOutlineLoop(outline, o.color ?? gridColor, o.opacity, ORDER_OUTLINE, true)
+        : bedOutlineLoop(outline, gridColor, Math.min(1, gridOpacity + 0.3))
+    );
   } else {
     // Rectangular bed at z=0 spanning [min..min+size]: the bed occupies the same coordinates the G-code
     // (and the toolpath) uses. Unchanged from before DD-030 — byte-identical.
     const grid: number[] = [];
+    const majorGrid: number[] = [];
+    let k = 0;
     for (let gx = x0; gx <= x1 + 1e-6; gx += pitch) {
-      grid.push(gx, y0, 0, gx, y1, 0);
+      const tier = tierOf(k++);
+      if (!onEdge(gx, x0, x1)) (tier === 'major' ? majorGrid : grid).push(gx, y0, 0, gx, y1, 0);
     }
+    k = 0;
     for (let gy = y0; gy <= y1 + 1e-6; gy += pitch) {
-      grid.push(x0, gy, 0, x1, gy, 0);
+      const tier = tierOf(k++);
+      if (!onEdge(gy, y0, y1)) (tier === 'major' ? majorGrid : grid).push(x0, gy, 0, x1, gy, 0);
     }
     group.add(lines(grid, gridColor, gridOpacity));
+    if (major !== undefined) group.add(namedLines(majorGrid, major.color ?? gridColor, major.opacity, 'gridMajor'));
+    const o = style?.bedOutline;
+    if (o !== undefined) {
+      const rect = [
+        { x: x0, y: y0 },
+        { x: x1, y: y0 },
+        { x: x1, y: y1 },
+        { x: x0, y: y1 }
+      ];
+      group.add(bedOutlineLoop(rect, o.color ?? gridColor, o.opacity, ORDER_OUTLINE, true));
+    }
   }
 
   // Volume wireframe box.
@@ -130,7 +218,7 @@ export function createBuildVolume(def: BuildVolumeDef, style?: BuildVolumeStyle)
   for (let i = 0; i < 4; i++) {
     const [x1, y1] = corners[i];
     const [x2, y2] = corners[(i + 1) % 4];
-    box.push(x1, y1, 0, x2, y2, 0); // floor edges
+    if (!edged) box.push(x1, y1, 0, x2, y2, 0); // floor edges (a set outline replaces them)
     box.push(x1, y1, z, x2, y2, z); // top edges
     box.push(x1, y1, 0, x1, y1, z); // verticals
   }
@@ -156,6 +244,42 @@ export function createBuildVolume(def: BuildVolumeDef, style?: BuildVolumeStyle)
   return group;
 }
 
+function namedLines(positions: number[], color: ThemeColor, opacity: number, name: string): LineSegments {
+  const l = lines(positions, color, opacity);
+  l.name = name;
+  return l;
+}
+
+/**
+ * The side walls of a thick plate (DD-032): unlit quads from the top face (z = −0.05) down by
+ * `thickness`, along the bed ring, in `edgeColor`. No bottom face (DoubleSide walls; from below the top
+ * face shows as before). Drawn before the top face (renderOrder −2 vs −1) so it never paints over it.
+ */
+function bedEdgeWalls(ring: Point2[], surface: BedSurface): Mesh {
+  const zTop = -0.05;
+  const zBot = zTop - (surface.thickness ?? 0);
+  const pos: number[] = [];
+  for (let i = 0; i < ring.length; i++) {
+    const a = ring[i];
+    const b = ring[(i + 1) % ring.length];
+    pos.push(a.x, a.y, zTop, b.x, b.y, zTop, b.x, b.y, zBot);
+    pos.push(a.x, a.y, zTop, b.x, b.y, zBot, a.x, a.y, zBot);
+  }
+  const geom = new BufferGeometry();
+  geom.setAttribute('position', new Float32BufferAttribute(pos, 3));
+  const material = new MeshBasicMaterial({
+    color: surface.edgeColor ?? surface.color ?? 0x2a2f3a,
+    opacity: surface.opacity ?? 1,
+    transparent: (surface.opacity ?? 1) < 1,
+    side: DoubleSide,
+    depthWrite: false
+  });
+  const mesh = new Mesh(geom, material);
+  mesh.name = 'bedSurfaceEdge';
+  mesh.renderOrder = ORDER_BED_EDGE;
+  return mesh;
+}
+
 /** A filled, unlit plate spanning the bed, drawn just below z=0. Named 'bedSurface' for lookup/tests. */
 function bedPlate(x0: number, y0: number, x1: number, y1: number, surface: BedSurface): Mesh {
   const w = x1 - x0;
@@ -178,7 +302,7 @@ function bedPlate(x0: number, y0: number, x1: number, y1: number, surface: BedSu
   }
   const mesh = new Mesh(geom, material);
   mesh.name = 'bedSurface';
-  mesh.renderOrder = -1; // draw first, behind everything
+  mesh.renderOrder = ORDER_BED_TOP; // behind everything but the slab walls
   return mesh;
 }
 
@@ -207,6 +331,21 @@ function bedOutlinePoints(def: BuildVolumeDef): Point2[] | null {
   return shape.points.map((p) => ({ x: p.x, y: p.y }));
 }
 
+/** Whether (x, y) lies on one of the polygon's edges (within 1e-6 mm). */
+function onPolygonEdge(x: number, y: number, poly: Point2[]): boolean {
+  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+    const ax = poly[j].x;
+    const ay = poly[j].y;
+    const dx = poly[i].x - ax;
+    const dy = poly[i].y - ay;
+    const len2 = dx * dx + dy * dy;
+    if (len2 === 0) continue;
+    const t = Math.max(0, Math.min(1, ((x - ax) * dx + (y - ay) * dy) / len2));
+    if (Math.hypot(x - (ax + dx * t), y - (ay + dy * t)) < 1e-6) return true;
+  }
+  return false;
+}
+
 /** Ray-cast point-in-polygon (handles convex and concave outlines). */
 function pointInPolygon(x: number, y: number, poly: Point2[]): boolean {
   let inside = false;
@@ -224,7 +363,17 @@ function pointInPolygon(x: number, y: number, poly: Point2[]): boolean {
  * Clip the rectangular grid to the bed outline: for each grid line, keep only the sub-segments whose
  * midpoint lies inside the polygon. Handles concave outlines. Returns flat `LineSegments` positions.
  */
-function clipGridToPolygon(x0: number, y0: number, x1: number, y1: number, pitch: number, poly: Point2[]): number[] {
+function clipGridToPolygon(
+  x0: number,
+  y0: number,
+  x1: number,
+  y1: number,
+  pitch: number,
+  poly: Point2[],
+  tierOf: (k: number) => 'major' | 'minor',
+  tier: 'major' | 'minor',
+  skipOnEdge: boolean
+): number[] {
   const out: number[] = [];
   const addClipped = (ax: number, ay: number, bx: number, by: number): void => {
     // Parameter values (0..1 along A→B) where the segment crosses a polygon edge, plus the endpoints.
@@ -241,13 +390,16 @@ function clipGridToPolygon(x0: number, y0: number, x1: number, y1: number, pitch
       const mt = (t0 + t1) / 2;
       const mx = ax + (bx - ax) * mt;
       const my = ay + (by - ay) * mt;
+      if (skipOnEdge && onPolygonEdge(mx, my, poly)) continue; // the outline draws this run
       if (pointInPolygon(mx, my, poly)) {
         out.push(ax + (bx - ax) * t0, ay + (by - ay) * t0, 0, ax + (bx - ax) * t1, ay + (by - ay) * t1, 0);
       }
     }
   };
-  for (let gx = x0; gx <= x1 + 1e-6; gx += pitch) addClipped(gx, y0, gx, y1);
-  for (let gy = y0; gy <= y1 + 1e-6; gy += pitch) addClipped(x0, gy, x1, gy);
+  let k = 0;
+  for (let gx = x0; gx <= x1 + 1e-6; gx += pitch) if (tierOf(k++) === tier) addClipped(gx, y0, gx, y1);
+  k = 0;
+  for (let gy = y0; gy <= y1 + 1e-6; gy += pitch) if (tierOf(k++) === tier) addClipped(x0, gy, x1, gy);
   return out;
 }
 
@@ -297,18 +449,28 @@ function bedShapeMesh(poly: Point2[], surface: BedSurface): Mesh {
   }
   const mesh = new Mesh(geom, material);
   mesh.name = 'bedSurface';
-  mesh.renderOrder = -1;
+  mesh.renderOrder = ORDER_BED_TOP;
   return mesh;
 }
 
 /** The bed boundary as a closed loop at z≈0. Named 'bedOutline'. */
-function bedOutlineLoop(poly: Point2[], color: ThemeColor, opacity: number): LineLoop {
+function bedOutlineLoop(
+  poly: Point2[],
+  color: ThemeColor,
+  opacity: number,
+  renderOrder = 0,
+  forceTransparent = false
+): LineLoop {
   const pts: number[] = [];
   for (const p of poly) pts.push(p.x, p.y, 0.01);
   const geom = new BufferGeometry();
   geom.setAttribute('position', new Float32BufferAttribute(pts, 3));
-  const loop = new LineLoop(geom, new LineBasicMaterial({ color, transparent: opacity < 1, opacity }));
+  // A themed outline is always transparent: it then sorts in three's transparent list, where its
+  // renderOrder (above the grid) holds even at opacity 1.
+  const material = new LineBasicMaterial({ color, transparent: forceTransparent || opacity < 1, opacity });
+  const loop = new LineLoop(geom, material);
   loop.name = 'bedOutline';
+  loop.renderOrder = renderOrder;
   return loop;
 }
 

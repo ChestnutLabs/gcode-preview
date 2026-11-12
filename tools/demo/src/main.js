@@ -5,7 +5,7 @@
  * Shared control metadata / palettes / fixtures / tokens come from the workspace-internal demo-kit.
  */
 import '../../demo-kit/tokens.css';
-import { createPreviewController } from '@chestnutlabs/gcode-preview-core';
+import { createPreviewController, studioTheme, STUDIO_CAMERA_FOV } from '@chestnutlabs/gcode-preview-core';
 // DD-031: the Prepare-side controller for source-model (STL/3MF) viewing — the counterpart to the
 // toolpath controller above. The flagship demonstrates both halves of the SDK.
 import { createModelPreviewController } from '@chestnutlabs/gcode-model-renderer';
@@ -22,7 +22,11 @@ import {
   MODEL_FIXTURE_BY_ID,
   count,
   duration,
-  timeSourceNote
+  timeSourceNote,
+  LOOK_BY_ID,
+  DEFAULT_LENS,
+  TWO_PLATE_BED,
+  placementLine
 } from '../../demo-kit/index.js';
 import { downloadToolpathStl } from './stl-export.js';
 
@@ -49,17 +53,43 @@ const THEMES = {
     bedSurface: { mode: 'solid', color: '#20242c', opacity: 1 }
   }
 };
-const themeFor = () => ({ ...(THEMES[els.theme.value] ?? {}), materialPreset: els.material.value });
-// The Prepare (model) viewport shares the toolpath theme's background so both halves read as one
+// DD-032 Studio look: an OPT-IN preset (`studioTheme('dark' | 'light')` + `STUDIO_CAMERA_FOV`); the SDK's
+// default look is unchanged. The Feature Lab starts on Studio dark (our own design language) and keeps the
+// no-theme default one click away as 'SDK default'.
+const studioMode = () => LOOK_BY_ID[els.theme.value]?.mode ?? null;
+const themeFor = () => ({
+  ...(studioMode() !== null ? studioTheme(studioMode()) : (THEMES[els.theme.value] ?? {})),
+  materialPreset: els.material.value
+});
+// The model viewer honours only the plate/backdrop part of a Theme (lights are deliberately not themed), so
+// outside Studio it keeps its previous behaviour: a flat background, via the fallback tier.
+const modelThemeFor = () => (studioMode() !== null ? studioTheme(studioMode()) : {});
+// The Prepare (model) viewport shares the toolpath theme's flat background so both halves read as one
 // workspace — the canonical documentation mid-grey by default, not the page's app chrome behind a
-// transparent canvas.
-const modelBg = () => THEMES[els.theme.value]?.background ?? '#6d7176';
+// transparent canvas. A Studio look supplies its own gradient backdrop, which beats this fallback.
+const modelBg = () => {
+  const bg = THEMES[els.theme.value]?.background;
+  return typeof bg === 'string' ? bg : '#6d7176';
+};
+const initialLens = () => (studioMode() !== null ? STUDIO_CAMERA_FOV : DEFAULT_LENS);
 
 // ---- controller (the published core, 3D by default) ----
 const preview = createPreviewController({
-  renderer: { quality: 'auto', qualityMode: 'adaptive', progressivePreview: 'auto', interactionQuality: 'off' }
+  renderer: {
+    quality: 'auto',
+    qualityMode: 'adaptive',
+    progressivePreview: 'auto',
+    interactionQuality: 'off',
+    cameraFov: initialLens()
+  }
 });
 preview.bindCanvas(els.view);
+// Start on the selected look: Studio has no cage (Round 2 was measured with it off — DD-032 §4.4).
+els.lens.value = String(initialLens());
+els.lensLbl.textContent = `${initialLens()}°`;
+els.cage.checked = studioMode() === null;
+preview.controls.setTheme(themeFor());
+preview.controls.setBuildVolumeCage(els.cage.checked);
 
 // mutable view state
 let fileBytes = 0;
@@ -74,12 +104,24 @@ let modelInfo = null;
 
 function ensureModel() {
   if (modelController !== null) return modelController;
-  modelController = createModelPreviewController({ background: modelBg(), interactionQuality: 'auto' });
+  modelController = createModelPreviewController({
+    background: modelBg(),
+    interactionQuality: 'auto',
+    // DD-032: a plate under the part, with the placement decision reported honestly in state.
+    buildVolume: els.modelPlate.checked ? TWO_PLATE_BED : null,
+    theme: modelThemeFor(),
+    cameraFov: Number(els.lens.value),
+    showVolumeCage: els.cage.checked,
+    // Follow the selector when the model viewer is created after the ratio was chosen (unset stays unset).
+    ...(els.pixelRatio.value === '' ? {} : { pixelRatio: ratioValue() })
+  });
   modelController.bindCanvas(els.modelView);
+  modelController.onStateChange(renderPlacement);
   modelController.onEvent((e) => {
     if (e.type === 'ready') {
       modelInfo = e.info;
       renderModelInfo();
+      selectInitialPlate(e.info);
     } else if (e.type === 'error') {
       els.status.textContent = `Model error: ${e.code} — ${e.message}`;
     }
@@ -98,6 +140,40 @@ function renderModelInfo() {
     `objects: ${count(modelInfo.objectCount)}\n` +
     `placements: ${count(modelInfo.instancedCount)}\n` +
     `materials: <span class="gp-badge ${t.cls}">${t.label}</span>${plates}`;
+}
+
+// ---- Prepare: build-plate placement + plate selection (DD-032, DD-030 render scope) ----
+let plateKey = '';
+function renderPlacement(state) {
+  // The tier word and the offset exactly as ModelPreviewState reports them.
+  els.placementInfo.textContent = placementLine(state.placement, state.placementOffset);
+  const list = state.plates?.list ?? [];
+  const key = list.map((p) => p.id).join(',');
+  els.plateField.hidden = list.length === 0;
+  els.plateNone.hidden = list.length > 0;
+  if (key === plateKey) return;
+  plateKey = key;
+  els.plateSelect.innerHTML = '';
+  if (list.length === 0) return;
+  const all = document.createElement('option');
+  all.value = 'all';
+  all.textContent = 'All plates';
+  els.plateSelect.appendChild(all);
+  for (const p of list) {
+    const o = document.createElement('option');
+    o.value = String(p.id);
+    o.textContent = `${p.name ?? `Plate ${p.id}`} — ${count(p.instanceCount)} placement${p.instanceCount === 1 ? '' : 's'}`;
+    els.plateSelect.appendChild(o);
+  }
+}
+// A consumer's natural initial selection is the source's active plate (else the first); the renderer never
+// forces all-plates. With one plate selected the placement tier applies; "All plates" shows none.
+function selectInitialPlate(info) {
+  const list = info.plates?.list ?? [];
+  if (list.length === 0) return;
+  const id = info.plates.active ?? list[0].id;
+  els.plateSelect.value = String(id);
+  modelController.controls.setRenderScope({ plateId: id });
 }
 
 function populateFixtures(prepare) {
@@ -246,6 +322,9 @@ function loadSelectedModel() {
   renderModelInfo();
   els.status.textContent = `${fx.label} — ${fx.blurb}`;
   els.modelBlurb.textContent = fx.blurb;
+  // A scope from the previous source would select nothing here: clear it, then load.
+  ensureModel().controls.setRenderScope(null);
+  els.plateSelect.value = 'all';
   ensureModel().controls.setSource(fx.source());
 }
 
@@ -489,6 +568,13 @@ els.colorMode.addEventListener('change', applyColorMode);
 els.theme.addEventListener('change', () => {
   preview.controls.setTheme(themeFor());
   modelController?.controls.setBackground(modelBg());
+  modelController?.controls.setTheme(modelThemeFor());
+  // The preset pairs its look with its 32° lens and no cage; the SDK default keeps 50° and the cage.
+  els.lens.value = String(initialLens());
+  applyLens();
+  els.cage.checked = studioMode() === null;
+  preview.controls.setBuildVolumeCage(els.cage.checked);
+  modelController?.controls.setBuildVolumeCage(els.cage.checked);
 });
 els.material.addEventListener('change', () => preview.controls.setTheme(themeFor()));
 
@@ -519,7 +605,45 @@ els.frameSeg.addEventListener('click', (ev) => {
   for (const x of els.frameSeg.children) x.classList.toggle('gp-on', x === b);
   preview.controls.setFrameContent(b.dataset.frame);
 });
-els.cage.addEventListener('change', () => preview.controls.setBuildVolumeCage(els.cage.checked));
+// The cage toggle drives both viewers (the model viewer's cage is only drawn with a plate, see Prepare's plate toggle).
+els.cage.addEventListener('change', () => {
+  preview.controls.setBuildVolumeCage(els.cage.checked);
+  modelController?.controls.setBuildVolumeCage(els.cage.checked);
+});
+// Lens: both viewers take the same [10, 120]° range (outside it `setCameraFov` throws RangeError).
+function applyLens() {
+  const deg = Number(els.lens.value);
+  els.lensLbl.textContent = `${deg}°`;
+  try {
+    preview.controls.setCameraFov(deg);
+    modelController?.controls.setCameraFov(deg);
+  } catch (err) {
+    els.status.textContent = `Lens rejected: ${err.message}`;
+  }
+}
+els.lens.addEventListener('input', applyLens);
+// Pixel ratio: a number in (0, 4] or 'device'. Unset (the first option) makes no call, so the renderer keeps its own
+// ratio; once a ratio has been set there is no "unset" call, so that option re-applies 1, the renderer's default.
+function ratioValue() {
+  const v = els.pixelRatio.value;
+  return v === 'device' ? 'device' : v === '' ? 1 : Number(v);
+}
+function applyPixelRatio() {
+  try {
+    preview.controls.setPixelRatio(ratioValue());
+    modelController?.controls.setPixelRatio(ratioValue());
+  } catch (err) {
+    els.status.textContent = `Pixel ratio rejected: ${err.message}`;
+  }
+}
+els.pixelRatio.addEventListener('change', applyPixelRatio);
+els.modelPlate.addEventListener('change', () =>
+  modelController?.controls.setBuildVolume(els.modelPlate.checked ? TWO_PLATE_BED : null)
+);
+els.plateSelect.addEventListener('change', () => {
+  const v = els.plateSelect.value;
+  modelController?.controls.setRenderScope(v === 'all' ? null : { plateId: Number(v) });
+});
 els.saveView.addEventListener('click', () => {
   savedCamera = preview.controls.getCameraState();
   els.restoreView.disabled = savedCamera == null;

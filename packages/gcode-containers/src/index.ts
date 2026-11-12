@@ -20,4 +20,11 @@ export {
 } from './zip.js';
 export type { ContainerLimits, ZipEntry, ZipDirectory } from './zip.js';
 export { openGcode3mf, sniffGcode3mf, filamentColoursFromSettings } from './gcode-3mf.js';
-export type { OpenedContainer, PlateEntry, ContainerMetadata, StreamLike } from './gcode-3mf.js';
+export type {
+  OpenedContainer,
+  PlateEntry,
+  PlateThumbnail,
+  PlateThumbnails,
+  ContainerMetadata,
+  StreamLike
+} from './gcode-3mf.js';

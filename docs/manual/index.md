@@ -23,6 +23,10 @@
     <div class="gp-card-body"><h3><a href="https://chestnutlabs.github.io/gcode-preview/demos/feature-lab/index.html">Prepare &amp; Preview</a></h3><p>Two viewers, one SDK: the sliced-G-code toolpath and the source model (STL / 3MF) — a <code>&lt;ModelViewer&gt;</code> on every framework's <code>/model</code> subpath.</p></div>
   </li>
   <li class="gp-card">
+    <img src="https://chestnutlabs.github.io/gcode-preview/media/app-studio-light.png" alt="">
+    <div class="gp-card-body"><h3><a href="https://chestnutlabs.github.io/gcode-preview/documents/Studio_look_and_build_plate.html">Studio look, lens &amp; plate</a></h3><p>An opt-in preset: <code>studioTheme('light')</code> backdrop, build plate and 32° lens. Off unless you set it; the default look is unchanged.</p></div>
+  </li>
+  <li class="gp-card">
     <img src="https://chestnutlabs.github.io/gcode-preview/media/layer-clip-benchy.png" alt="">
     <div class="gp-card-body"><h3><a href="https://chestnutlabs.github.io/gcode-preview/documents/Feature_gallery.html">Toolpath inspection</a></h3><p>Layer clip, segment &amp; time scrub, travel / retraction / seam markers, source-line mapping.</p></div>
   </li>
@@ -114,6 +118,6 @@ viewer is reachable without switching APIs.
   [Parametric programs (RS274NGC)](concept-parametric-programs.md).
 - **API reference** — pick a package in the sidebar (`toolpath-core`, `gcode-parser`, …).
 
-> **Status:** published — all fourteen `@chestnutlabs/*` packages are on npm (latest `v0.21.2`,
+> **Status:** published — all fourteen `@chestnutlabs/*` packages are on npm (latest `v0.22.0`,
 > lockstep-versioned with provenance). Governance and epic status live in the
 > [repository docs](https://github.com/ChestnutLabs/gcode-preview/tree/dev/docs).

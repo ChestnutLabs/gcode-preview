@@ -208,6 +208,57 @@ export function runBehavioralSuite(name: string, api: TestApi, harness: AdapterH
       await a.dispose();
     });
 
+    it('the camera lens reaches the renderer: dolly, no camera-changed, RangeError (DD-032)', async () => {
+      const a = await harness.create();
+      await a.parse(new Uint8Array(1_000));
+      await a.settle();
+      const types: string[] = [];
+      a.onEvent((e) => types.push(e.type));
+      const dist = (): number => {
+        const s = a.controls.getCameraState()!;
+        return Math.hypot(s.position.x - s.target.x, s.position.y - s.target.y, s.position.z - s.target.z);
+      };
+      const d50 = dist();
+      a.controls.setCameraFov(32);
+      await a.settle();
+      // The target stays; the camera backs off by tan(25°)/tan(16°) so the framing is kept.
+      expect(dist() / d50).toBeCloseTo(1.626208, 5);
+      expect(types.includes('camera-changed')).toBe(false);
+      let err: unknown = null;
+      try {
+        a.controls.setCameraFov(121);
+      } catch (e) {
+        err = e;
+      }
+      expect(err instanceof RangeError).toBe(true);
+      expect(dist() / d50).toBeCloseTo(1.626208, 5);
+      await a.dispose();
+    });
+
+    it('the pixel ratio: (0, 4] or exactly "device", RangeError otherwise, before and after a load', async () => {
+      const a = await harness.create();
+      const errorName = (v: unknown): string => {
+        try {
+          a.controls.setPixelRatio(v as number);
+          return 'none';
+        } catch (e) {
+          return (e as Error).name;
+        }
+      };
+      // Before the renderer is ready: validated synchronously, never clamped.
+      expect(errorName(0)).toBe('RangeError');
+      expect(errorName(4.0001)).toBe('RangeError');
+      expect(errorName('Device')).toBe('RangeError');
+      expect(errorName(4)).toBe('none');
+      await a.parse(new Uint8Array(1_000));
+      await a.settle();
+      expect(errorName(-1)).toBe('RangeError');
+      expect(errorName(' device')).toBe('RangeError');
+      expect(errorName('device')).toBe('none');
+      expect(errorName(1.5)).toBe('none');
+      await a.dispose();
+    });
+
     it('drives the DD-006 progress chain honestly (exact → cleared)', async () => {
       const a = await harness.create();
       await a.parse(new Uint8Array(1_000));
@@ -301,6 +352,8 @@ export function runBehavioralSuite(name: string, api: TestApi, harness: AdapterH
         'setQualityMode',
         'setProgressivePreview',
         'setCameraMode',
+        'setCameraFov',
+        'setPixelRatio',
         'setView',
         'getCameraState',
         'setCameraState',

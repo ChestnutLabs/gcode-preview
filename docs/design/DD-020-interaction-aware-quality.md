@@ -2,13 +2,21 @@
 
 **Status:** Accepted <!-- Draft | Proposed | Accepted | Superseded | Rejected -->
 **Authors/Owners:** Nathaniel Chestnut (maintainer)
-**Date:** 2026-08-24 · **Last revised:** 2026-08-24
+**Date:** 2026-08-24 · **Last revised:** 2026-11-11
 **Owning Epic:** #306 (ToolpathRenderer enhancements) · **Milestone:** M1
 **Supersedes / Superseded by:** none
 **Related:** DD-004 §4.3/§4.4 (quality tiers, decimation), `chooseQuality`, the `qualityFallback` event, #306 item 2.
 
 > **Accepted 2026-08-24 (maintainer).** Design-then-build: the maintainer pre-approved implementation once
 > the API is additive/backward-compatible (which it is). Build proceeds without a second approval gate.
+>
+> **Revised 2026-11-11 (#435, audit 2026-09-01).** Two defects in the v1 build, corrected here and in
+> `interaction-quality.ts`: (1) `base` was taken from `window.devicePixelRatio` instead of the renderer's
+> own ratio, so the first settle on a HiDPI display (or over a consumer-set ratio) left the renderer at
+> DPR permanently, and the first interaction frame could *exceed* the resting ratio — violating §5 and §7;
+> (2) the frame-time step timed the synchronous `render()` call with `Date.now()`, which is CPU submit time
+> (GPU work is queued, not awaited), so frames almost never measured slow and the factor climbed back to 1
+> within ~3 pointer events regardless of GPU load. §5, §8 and §9 now describe the corrected behavior.
 
 ---
 
@@ -82,6 +90,14 @@ The renderer already listens to OrbitControls `start` / `change` / `end`. When `
 `base` pixel ratio is the renderer's normal ratio (default 1; a consumer/host may set higher). Interaction
 only scales it down transiently. Disposal/context-loss reset the state.
 
+- `base` is **read from the renderer** (`GLRendererLike.getPixelRatio`, optional; absent → 1) at each gesture
+  start, so a ratio the consumer changes between gestures is honored. It is never derived from
+  `window.devicePixelRatio` — the controller does not choose the resting ratio, only restores it (#435).
+- `setPixelRatio` is called only when the target ratio actually changes (three's `setPixelRatio` resizes
+  the drawing buffer), not on every `change`.
+- `setInteractionQuality('off')` restores `base` (and repaints) **only** if a gesture had reduced it or a
+  settle is pending; otherwise it leaves the renderer's pixel ratio untouched.
+
 ## 6. Errors & failure behavior
 
 Purely presentational and bounded: if `GLRendererLike.setPixelRatio` is absent (a stub/exotic backend),
@@ -97,18 +113,57 @@ is clamped to `[MIN_FACTOR, 1]` (e.g. 0.4–1.0) so it can never amplify cost.
 
 - **Lever (v1):** during interaction, `pixelRatio = base × factor`. Fewer fragments ⇒ cheaper frames for
   fill/overdraw-bound heavy tube scenes; restored on settle so the resting image is full-resolution.
-- **Frame-time adaptation (bounded):** measure `render()` wall time during interaction; if a frame exceeds a
-  budget (≈ 22 ms, ~45 fps) step `factor` down one notch (min ≈ 0.4); if comfortably under (≈ 12 ms) step up
-  one notch (max 1.0). A tiny hysteresis loop, not a framework — derived from the DD-004 §8 16 ms stall
-  budget with interaction headroom. `Date.now()` around the single `render()` call; no rAF profiling.
+- **Frame-interval adaptation (bounded; revised #435):** while a gesture is rendering, a
+  `requestAnimationFrame` sampler measures the **rAF → rAF interval** — the browser's real frame cadence,
+  which stretches when the GPU falls behind. (v1 timed the synchronous `render()` with `Date.now()`; that
+  is CPU submit time, excludes GPU work, and almost never read slow — see the revision note.) Rules:
+  - The first tick after the sampler starts is a **baseline only** (not a sample).
+  - An interval **> 22 ms** (a missed 60 Hz vsync) is slow; **< 18 ms** (keeping up with 60 Hz or better)
+    is fast; 18–22 ms is neutral. The 12 ms "fast" budget of v1 is unreachable under vsync (60 Hz ≥ 16.7 ms).
+  - A **streak of 3** consecutive slow (fast) samples steps `factor` down (up) one 0.15 notch, clamped to
+    `[0.4, 1]`; a neutral sample breaks both streaks. One hitch (GC, a worker message) never flips detail.
+  - A tick with **no interaction render** since the previous one is not a measurement — input is often
+    slower than the display (60 Hz input on a 120 Hz screen leaves every other frame empty). It
+    **re-baselines** (the next sample starts at this tick) and leaves the streaks intact, so every sampled
+    interval spans exactly one frame that rendered. (The first #435 build treated one empty frame as
+    a pause and reset the streaks; that pinned 120 Hz / 60 Hz-input hardware at the proactive factor for
+    the whole gesture — #486 review.)
+  - A **pause** is **6 consecutive** empty frames: the sampler stops and the streaks reset; the next
+    `change` restarts it with a fresh baseline. The sampler is also stopped on restore (settle / `'off'`)
+    and `dispose`, so it costs nothing outside a gesture.
+  - An injected `requestFrame` is only cancelled through the injected `cancelFrame` — never the global
+    `cancelAnimationFrame`, whose handle space is different (a foreign id could cancel an unrelated rAF).
+    Without `cancelFrame`, a late tick after the gesture ends is ignored (the sampler-generation check).
+  - Rendering stays synchronous in the `change` handler; a step takes effect on the next `change`.
+  - With no `requestAnimationFrame` (non-browser host) there is no adaptation: the proactive 0.6 factor
+    holds for the whole gesture.
+- **Known limits** (absolute thresholds; both restore full detail on settle):
+  - A **50 Hz** display (20 ms frames) sits in the 18–22 ms dead band: no step either way, so it stays at
+    the proactive 0.6 factor for the whole gesture, however fast the GPU.
+  - A rAF **throttled to 30 Hz** (battery saver, background throttling) reads every frame as slow and
+    steps down to 0.4 even on a fast GPU.
+  - Thresholds relative to the gesture's fastest observed interval were considered and rejected: a GPU
+    that is steadily slow (e.g. a constant 30 fps) has no fast reference, so a relative rule never steps
+    down for exactly the hardware the feature exists for (#486 review).
+- Rejected alternatives for the measurement: `EXT_disjoint_timer_query_webgl2` (true GPU time, but async
+  results, disjoint handling, absent on Safari/Firefox → a fallback is needed anyway, and it needs the raw
+  GL context); `gl.finish()` + `performance.now()` (forces a CPU/GPU sync every interaction frame — adds
+  the stutter it is meant to remove).
 - Measured against a real heavy plate on the low-resource host before acceptance (reuse the E8 benchmark
   harness).
 
 ## 9. Testing
 
 - Unit (stub GL records `setPixelRatio`): `interactionQuality:'auto'` → pixel ratio drops on interaction
-  start, restores on settle; `'off'` → never touched. Frame-time step: a slow stubbed `render` steps the
-  factor down (clamped); a fast one steps up (clamped ≤ 1). Toggle at runtime works. 2D no-op.
+  start, restores on settle; `'off'` → never touched. Toggle at runtime works. 2D no-op.
+- Revised (#435): the controller takes an injectable `requestFrame`/`cancelFrame` and `getPixelRatio`, so
+  tests drive the sampler with a manual frame queue and literal timestamps (no GPU, no real rAF). Pinned:
+  base read from `getPixelRatio` per gesture and restored exactly; `setPixelRatio` only on change;
+  `'off'` before a gesture touches nothing; first tick discarded; 22/23 ms and 18 ms boundaries; streak of
+  3; neutral streak breaks; empty frames re-baseline without breaking a streak (60 Hz input on a
+  120 Hz display climbs to 1); 6 (not 5) consecutive empty frames pause and reset, counted consecutively;
+  an injected `requestFrame` is never cancelled through the global; 0.4/1 clamps; no-rAF host → fixed factor; sampler cancelled
+  on settle/`'off'`/dispose. A stage-level test pins the `getPixelRatio` wiring (ratio 2 → 1.2 → 2).
 - The default (`'off'`) leaves all existing renderer tests byte-identical.
 
 ## 10. Migration

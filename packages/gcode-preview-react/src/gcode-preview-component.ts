@@ -24,6 +24,7 @@ import type {
   CameraState,
   CameraView,
   ColorMode,
+  PixelRatioOption,
   ProgressivePreview,
   PreparationStage,
   QualityMode,
@@ -40,6 +41,7 @@ import {
   type RendererMode,
   type UseGcodePreviewOptions
 } from './use-gcode-preview.js';
+import { readLiveState } from './live-state.js';
 
 export type GcodePreviewSource = Uint8Array | ArrayBuffer | File | null;
 
@@ -63,6 +65,13 @@ export interface GcodePreviewProps {
   progressivePreview?: ProgressivePreview;
   /** #150 (DD-009 D3): camera projection. */
   cameraMode?: CameraMode;
+  /** DD-032: perspective lens in degrees, [10, 120] (default 50; `STUDIO_CAMERA_FOV` = 32). Unset keeps the
+   *  current lens. Out of range throws `RangeError` (never clamped). 3D only. */
+  cameraFov?: number;
+  /** Resting pixel ratio of the canvas: a number in (0, 4], or 'device' (the display's
+   *  devicePixelRatio capped at 2, followed live). Unset keeps the renderer's ratio (1). A ratio of 2 shades
+   *  4x the fragments of 1. Out of range throws RangeError (never clamped). 3D only. */
+  pixelRatio?: PixelRatioOption;
   /** #306/#6: frame the printed 'object' (excl. skirt/prime) or 'all' extrusion. Default 'all'. */
   frameContent?: 'object' | 'all';
   /** #306/2 (DD-020): 'auto' reduces detail while the camera moves. Default 'off'. */
@@ -103,6 +112,8 @@ export interface GcodePreviewProps {
     | 'qualityMode'
     | 'progressivePreview'
     | 'cameraMode'
+    | 'cameraFov'
+    | 'pixelRatio'
     | 'frameContent'
     | 'interactionQuality'
     | 'theme'
@@ -144,6 +155,7 @@ function GcodePreviewImpl(props: GcodePreviewProps, ref: ForwardedRef<GcodePrevi
       qualityMode: props.qualityMode,
       progressivePreview: props.progressivePreview,
       cameraMode: props.cameraMode ?? 'perspective',
+      cameraFov: props.cameraFov,
       frameContent: props.frameContent ?? 'all',
       interactionQuality: props.interactionQuality ?? 'off',
       theme: props.theme,
@@ -192,7 +204,8 @@ function GcodePreviewImpl(props: GcodePreviewProps, ref: ForwardedRef<GcodePrevi
           break;
         case 'buildComplete':
           p.onBuildComplete?.({ segments: e.segments, quality: e.quality });
-          p.onDisclosure?.(preview.state.disclosure);
+          // #430: the controller's live state, not `preview.state` (a render snapshot one commit behind).
+          p.onDisclosure?.(readLiveState(preview).disclosure);
           break;
         case 'qualityFallback':
           p.onQualityFallback?.({ from: e.from, to: e.to, reason: e.reason });
@@ -230,6 +243,8 @@ function GcodePreviewImpl(props: GcodePreviewProps, ref: ForwardedRef<GcodePrevi
     qualityMode,
     progressivePreview,
     cameraMode,
+    cameraFov,
+    pixelRatio,
     frameContent,
     interactionQuality,
     view,
@@ -279,6 +294,14 @@ function GcodePreviewImpl(props: GcodePreviewProps, ref: ForwardedRef<GcodePrevi
   useEffect(() => {
     if (cameraMode !== undefined) preview.controls.setCameraMode(cameraMode);
   }, [cameraMode]);
+  useEffect(() => {
+    if (cameraFov !== undefined) preview.controls.setCameraFov(cameraFov);
+  }, [cameraFov]);
+  // Also the mount value: the call queues before the async 3D load and replays before the first frame,
+  // so (unlike the lens) the ratio needs no construction option.
+  useEffect(() => {
+    if (pixelRatio !== undefined) preview.controls.setPixelRatio(pixelRatio);
+  }, [pixelRatio]);
   useEffect(() => {
     if (frameContent !== undefined) preview.controls.setFrameContent(frameContent);
   }, [frameContent]);

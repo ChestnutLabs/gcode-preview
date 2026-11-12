@@ -29,8 +29,10 @@ import {
   type ModelObject,
   type ModelPlateSummary,
   type ModelScene,
+  type ModelSceneSource,
   type RGB
 } from './scene-model.js';
+import { parsePrintableArea } from './placement.js';
 import { ModelParseError, resolveLimits, type ModelLimits, type ResolvedLimits } from './limits.js';
 
 /** millimeter is the 3MF default; convert others to mm. */
@@ -716,7 +718,7 @@ function scanBlocks(xml: string, tag: string): string[] {
  *
  * Returns `null` when no `<plate>` is declared (⇒ implicit single plate, `'unavailable'`).
  */
-export function parsePlateConfig(xml: string): PlateConfig | null {
+function parsePlateConfig(xml: string): PlateConfig | null {
   const plateBlocks = scanBlocks(xml, 'plate');
   if (plateBlocks.length === 0) return null;
   const membership = new Map<string, number>();
@@ -749,7 +751,7 @@ export function parsePlateConfig(xml: string): PlateConfig | null {
  * extruder is the FIRST `key="extruder"` in the window from its header to the next object/part header (so a
  * part's extruder overrides its parent object's default). Empty map ⇒ no assignments declared.
  */
-export function parseObjectExtruders(xml: string): Map<string, number> {
+function parseObjectExtruders(xml: string): Map<string, number> {
   const map = new Map<string, number>();
   // Linear scan (#468): the lazy single-regex form re-scanned to the end of the input from every header
   // with no `>`. A header's tag ends at the first `>` after its id (none ⇒ no later header has one either,
@@ -772,7 +774,8 @@ export function parseObjectExtruders(xml: string): Map<string, number> {
     const ext = /key="extruder"\s+value="(\d+)"/i.exec(xml.slice(start, end));
     if (ext !== null) {
       const n = parseInt(ext[1], 10);
-      if (Number.isFinite(n) && n >= 1) map.set(id, n);
+      // n = 0 is kept: `paintPalette[0 - 1]` is undefined, so extruder 0 resolves neutral like an absent mapping.
+      if (Number.isFinite(n)) map.set(id, n);
     }
   }
   return map;
@@ -979,23 +982,29 @@ export async function parse3mf(
   // (`filament_colour`), NOT the model XML, so the render is self-contained and needs no slicer output.
   let paintPalette: RGB[] = [];
   const override = opts?.filamentPalette;
+  // DD-032: the same config also says where the file's bed is (`printable_area`) and proves the file is a
+  // Bambu/Orca slicer project, so it is read even when the consumer overrides the palette. The extraction is
+  // bounded by `climits.maxMetadataBytes` and the shared expansion budget, exactly as before.
+  let printableArea: ModelSceneSource['printableArea'];
+  let isSlicerProject = false;
+  const settingsEntry = entryByName('metadata/project_settings.config');
+  if (settingsEntry !== undefined) {
+    isSlicerProject = true;
+    try {
+      const json = new TextDecoder().decode(await extractEntry(bytes, settingsEntry, climits.maxMetadataBytes, budget));
+      const settings = JSON.parse(json) as Record<string, unknown>;
+      if (override === undefined || override.length === 0) {
+        paintPalette = hexPaletteToLinear(filamentColoursFromSettings(settings));
+      }
+      printableArea = parsePrintableArea(settings.printable_area);
+    } catch {
+      // Malformed/oversized settings → no palette, no declared bed; paint stays capability-honest `unavailable`.
+      paintPalette = [];
+    }
+  }
   if (override !== undefined && override.length > 0) {
     // Consumer-supplied palette wins over the file's own (e.g. a corrected slicer palette).
     paintPalette = hexPaletteToLinear(override);
-  } else {
-    const settingsEntry = entryByName('metadata/project_settings.config');
-    if (settingsEntry !== undefined) {
-      try {
-        const json = new TextDecoder().decode(
-          await extractEntry(bytes, settingsEntry, climits.maxMetadataBytes, budget)
-        );
-        const settings = JSON.parse(json) as Record<string, unknown>;
-        paintPalette = hexPaletteToLinear(filamentColoursFromSettings(settings));
-      } catch {
-        // Malformed/oversized settings → no palette; paint stays capability-honest `unavailable`.
-        paintPalette = [];
-      }
-    }
   }
   // `model_settings.config` (Bambu/Orca) carries both the default extruder for unpainted facets AND the
   // declared plate structure (DD-025) — read once.
@@ -1004,6 +1013,7 @@ export async function parse3mf(
   let objectExtruders = new Map<string, number>();
   const modelSettingsEntry = entryByName('metadata/model_settings.config');
   if (modelSettingsEntry !== undefined) {
+    isSlicerProject = true;
     try {
       const xml = new TextDecoder().decode(
         await extractEntry(bytes, modelSettingsEntry, climits.maxMetadataBytes, budget)
@@ -1110,6 +1120,10 @@ export async function parse3mf(
       plates: st.plateConfig !== null ? 'known' : 'unavailable'
     }
   };
+
+  if (isSlicerProject) {
+    scene.source = { slicerProject: 'bambu-orca', ...(printableArea !== undefined ? { printableArea } : {}) };
+  }
 
   const pc = st.plateConfig;
   if (pc !== null) {

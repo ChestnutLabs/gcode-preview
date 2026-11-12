@@ -11,7 +11,7 @@
  * `@chestnutlabs/gcode-model-renderer/testing` subpath. Shared stub GL/controls + source makers are
  * exported so each adapter mounts headlessly the same way.
  */
-import { Vector3 } from 'three';
+import { Vector3, type Camera, type PerspectiveCamera, type Scene } from 'three';
 import type { GLRendererLike, RenderTargetCanvas } from '@chestnutlabs/gcode-renderer-three';
 import type { ModelPreviewControls, ModelPreviewControllerOptions, ModelPreviewState } from './model-preview.js';
 import type { ModelViewerEvent } from './model-viewer.js';
@@ -36,6 +36,40 @@ export const MODEL_STUB_CONTROLS: NonNullable<ModelPreviewControllerOptions['cre
   addEventListener: () => undefined,
   listenToKeyEvents: () => undefined
 });
+
+/**
+ * A stub GL that remembers what it was last asked to render, so an adapter test can assert the DD-032 look
+ * reached the scene through the declarative props: the lens, whether a plate is in the scene, whether its
+ * cage is drawn (`null` = no plate), and the background kind (`'null'` | `'Color'` | `'DataTexture'`).
+ */
+export function makeModelRecordingGL(): {
+  createRenderer: (canvas: RenderTargetCanvas) => GLRendererLike;
+  snapshot(): { fov: number; plate: boolean; cage: boolean | null; shadow: boolean; background: string };
+} {
+  let last: { scene: Scene; camera: Camera } | null = null;
+  return {
+    createRenderer: (canvas) => ({
+      render: (scene, camera) => {
+        last = { scene, camera };
+      },
+      setSize: () => undefined,
+      dispose: () => undefined,
+      domElement: canvas
+    }),
+    snapshot() {
+      if (last === null) throw new Error('nothing rendered yet');
+      const { scene, camera } = last;
+      return {
+        fov: (camera as PerspectiveCamera).fov,
+        plate: scene.getObjectByName('buildVolume') !== undefined,
+        // Whether the wireframe cage is drawn; `null` when there is no plate (so no cage) at all.
+        cage: scene.getObjectByName('volumeCage')?.visible ?? null,
+        shadow: scene.getObjectByName('contactShadow') !== undefined,
+        background: scene.background === null ? 'null' : scene.background.constructor.name
+      };
+    }
+  };
+}
 
 /** A one-triangle binary STL — carries no colour, so materials stays honest `unavailable`. */
 export function makeStlModelSource(): ModelSourceInput {
@@ -118,6 +152,11 @@ export const REQUIRED_MODEL_CONTROLS: (keyof ModelPreviewControls)[] = [
   'getCameraState',
   'setCameraState',
   'setBackground',
+  'setBuildVolume',
+  'setBuildVolumeCage',
+  'setTheme',
+  'setCameraFov',
+  'setPixelRatio',
   'setInteractionQuality',
   'setRenderScope',
   'frame',
@@ -137,6 +176,8 @@ export const REQUIRED_MODEL_STATE_KEYS: (keyof ModelPreviewState)[] = [
   'bounds',
   'plates',
   'hasPlates',
+  'placement',
+  'placementOffset',
   'cameraState',
   'progress',
   'error'
@@ -187,6 +228,79 @@ export function runModelBehavioralSuite(name: string, api: TestApi, harness: Mod
       // A pose is available once a source is shown (null only before that / when unsupported).
       const pose = a.controls.getCameraState();
       expect(pose === null ? 0 : 1).toBeGreaterThanOrEqual(0); // reachable without throwing
+      await a.dispose();
+    });
+
+    it('draws a plate honestly: an STL on a 100 mm bed is approximated, centred, with the offset reported', async () => {
+      const a = await harness.create();
+      expect(a.getState().placement).toBeNull(); // no plate yet
+      a.controls.setBuildVolume({ x: 100, y: 100, z: 100 });
+      await a.controls.setSource(makeStlModelSource());
+      await a.settle();
+      const s = a.getState();
+      expect(s.placement).toBe('approximated');
+      expect(s.placementOffset).toMatchObject({ x: 45, y: 40, z: 0 });
+      expect(s.bounds).toMatchObject({ min: [0, 0, 0], max: [10, 20, 0] }); // bounds stay authored
+      a.controls.setBuildVolume(null);
+      await a.settle();
+      expect(a.getState().placement).toBeNull();
+      expect(a.getState().placementOffset).toBeNull();
+      await a.dispose();
+    });
+
+    it('setCameraFov / setTheme reject invalid values synchronously, even before a source', async () => {
+      const a = await harness.create();
+      let fovError = '';
+      try {
+        a.controls.setCameraFov(5);
+      } catch (e) {
+        fovError = (e as Error).name;
+      }
+      expect(fovError).toBe('RangeError');
+      let themeError = '';
+      try {
+        a.controls.setTheme({ gridOpacity: 2 });
+      } catch (e) {
+        themeError = (e as Error).name;
+      }
+      expect(themeError).toBe('RangeError');
+      a.controls.setCameraFov(32); // a valid lens is accepted
+      await a.dispose();
+    });
+
+    it('setBuildVolumeCage never moves the model: the placement is unchanged, before and after a source', async () => {
+      const a = await harness.create();
+      a.controls.setBuildVolume({ x: 100, y: 100, z: 100 });
+      a.controls.setBuildVolumeCage(false); // before a source (and, on some adapters, before the canvas binds)
+      await a.controls.setSource(makeStlModelSource());
+      await a.settle();
+      expect(a.getState().placement).toBe('approximated');
+      expect(a.getState().placementOffset).toMatchObject({ x: 45, y: 40, z: 0 });
+      a.controls.setBuildVolumeCage(true);
+      await a.settle();
+      expect(a.getState().placement).toBe('approximated');
+      expect(a.getState().placementOffset).toMatchObject({ x: 45, y: 40, z: 0 });
+      await a.dispose();
+    });
+
+    it('setPixelRatio accepts (0, 4] or exactly "device" and rejects the rest synchronously', async () => {
+      const a = await harness.create();
+      const errorName = (v: unknown): string => {
+        try {
+          a.controls.setPixelRatio(v as number);
+          return 'none';
+        } catch (e) {
+          return (e as Error).name;
+        }
+      };
+      expect(errorName(0)).toBe('RangeError');
+      expect(errorName(4.0001)).toBe('RangeError');
+      expect(errorName('Device')).toBe('RangeError');
+      expect(errorName(4)).toBe('none');
+      expect(errorName('device')).toBe('none');
+      await a.settle();
+      expect(errorName(-1)).toBe('RangeError');
+      expect(errorName(1.5)).toBe('none');
       await a.dispose();
     });
 

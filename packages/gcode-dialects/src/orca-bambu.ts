@@ -53,6 +53,31 @@ const FEATURE_MAP: Record<string, number> = {
   custom: FeatureRole.Custom
 };
 
+/**
+ * Read the Orca/Bambu print-time comment. Bambu Studio, and OrcaSlicer with a Bambu printer profile,
+ * write `model printing time:` and `total estimated time:` on one line separated by `;`; OrcaSlicer with
+ * any other printer writes the PrusaSlicer form `estimated printing time (normal mode) = …`. The total
+ * (or the normal-mode time, which is the job total) wins over the model time; the first field of a kind
+ * that parses wins. Returns null when no field parses.
+ */
+function matchPrintTime(trimmed: string): { seconds: number; evidence: string } | null {
+  let total: { seconds: number; evidence: string } | null = null;
+  let model: { seconds: number; evidence: string } | null = null;
+  for (const part of trimmed.split(';')) {
+    const field = part.trim();
+    const normal = /^estimated printing time \(normal mode\)\s*=\s*(\S.*)$/i.exec(field);
+    const m = normal === null ? /^(total estimated time|model printing time)\s*:\s*(\S.*)$/i.exec(field) : null;
+    const text = normal !== null ? normal[1] : m?.[2];
+    if (text === undefined) continue;
+    const seconds = parseHmsToSeconds(text);
+    if (seconds === null) continue;
+    const found = { seconds, evidence: field };
+    if (m === null || m[1].toLowerCase() === 'total estimated time') total ??= found;
+    else model ??= found;
+  }
+  return total ?? model;
+}
+
 interface OrcaState {
   features: RangeMarker[];
   wipes: WipeMark[];
@@ -147,16 +172,14 @@ export function orcaBambu(): DialectAdapter {
         s.thumbs.feed(comment, sink);
         return;
       }
-      // Orca/Bambu print-time comments are colon-separated (`; total estimated time: 1h 2m 3s`).
-      const timeMatch = /^(?:total estimated time|model printing time)\s*:\s*(\S.*)$/i.exec(trimmed);
-      if (timeMatch !== null) {
-        const sec = parseHmsToSeconds(timeMatch[1]);
-        if (sec !== null) {
-          sink.setPrintEstimate({
-            seconds: sec,
-            source: { adapterId: 'orca-bambu', evidence: `; ${trimmed}`, srcByte }
-          });
-        }
+      // Print time: `; model printing time: 1h 53m 22s; total estimated time: 2h 0m 34s` (Bambu) or
+      // `; estimated printing time (normal mode) = 2h 0m 34s` (Orca, non-Bambu printers).
+      const time = matchPrintTime(trimmed);
+      if (time !== null) {
+        sink.setPrintEstimate({
+          seconds: time.seconds,
+          source: { adapterId: 'orca-bambu', evidence: `; ${time.evidence}`, srcByte }
+        });
         return;
       }
       if (parseFilamentTotals(comment, srcByte, 'orca-bambu', sink)) return;

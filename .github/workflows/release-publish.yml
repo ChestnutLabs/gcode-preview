@@ -1,8 +1,9 @@
 # DD-008 D3 (#130): the ONLY path that publishes @chestnutlabs/* — a GitHub Release
 # (tag vX.Y.Z) cut from `main`. Fresh install, every repository gate, then a
 # dependency-ordered `npm publish` ×14 with npm provenance. Trusted publishing (OIDC)
-# is the intended auth; a granular NPM_TOKEN secret is the recorded fallback
-# (DD-008 §4.3 — the @chestnutlabs scope is user-owned; org conversion deferred).
+# is the primary auth from v0.22.0 (#460); the granular NPM_TOKEN secret stays as the
+# fallback until one clean trusted publish has landed (DD-008 §4.3 — the @chestnutlabs
+# scope is user-owned; org conversion deferred).
 # No workstation publishing, ever.
 name: Release / publish
 
@@ -36,17 +37,41 @@ jobs:
           node-version: '22.x'
           cache: 'npm'
           registry-url: 'https://registry.npmjs.org'
-      # Fail fast on a dead/misconfigured npm credential (#460): a bad NPM_TOKEN otherwise dies
-      # as a cryptic E404/E403 on package 1 only AFTER the whole gate below. Interim until
-      # trusted publishing (OIDC) replaces the token. Needs no install, so it runs in seconds.
-      - name: Probe npm publish auth (fail fast on a bad NPM_TOKEN)
+      # Trusted publishing (OIDC, #460) needs npm CLI >= 11.5.1 and Node >= 22.14.0; Node 22.x
+      # bundles npm 10, so install an exact npm 11 pin (bump deliberately) and assert both floors.
+      - name: Install npm for trusted publishing (>= 11.5.1)
+        run: |
+          npm install -g npm@11.21.2
+          node_v="$(node --version)"; node_v="${node_v#v}"; npm_v="$(npm --version)"
+          echo "node ${node_v}, npm ${npm_v}"
+          at_least() { [ "$(printf '%s\n' "$2" "$1" | sort -V | head -n 1)" = "$2" ]; }
+          at_least "$node_v" 22.14.0 || { echo "::error::Node ${node_v} < 22.14.0 (trusted publishing floor)"; exit 1; }
+          at_least "$npm_v" 11.5.1 || { echo "::error::npm ${npm_v} < 11.5.1 (trusted publishing floor)"; exit 1; }
+      # Fail fast only when NO publish credential can work (#460). npm tries OIDC trusted
+      # publishing first and falls back to NODE_AUTH_TOKEN (docs.npmjs.com/trusted-publishers), so:
+      #   1. NPM_TOKEN set and `npm whoami` accepts it      -> ok (token fallback is live).
+      #   2. token missing/rejected, OIDC request env present -> ::warning::, continue: the publish
+      #      relies on trusted publishing. The runner only exposes ACTIONS_ID_TOKEN_REQUEST_URL/_TOKEN
+      #      when the job has `id-token: write`; this cannot prove a trusted publisher is configured
+      #      on npmjs.com — that surfaces as ENEEDAUTH/E404 at the publish step.
+      #   3. token missing/rejected AND no OIDC request env -> ::error::, exit 1 before the gate.
+      # A whoami failure on a present token is still a warning in case 2: under OIDC the fallback
+      # token may legitimately be expired. Needs no install, so it runs in seconds.
+      - name: Probe npm publish auth (fail fast when neither OIDC nor NPM_TOKEN can work)
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
-          npm whoami || {
-            echo "::error title=npm publish auth probe failed::npm whoami rejected the credential (NPM_TOKEN missing, expired or revoked) — replace the NPM_TOKEN secret; see docs/reference/release-process.md#auth-dd-008-d3-as-amended"
-            exit 1
-          }
+          if [ -n "$NODE_AUTH_TOKEN" ] && npm whoami; then
+            echo "npm publish auth: NPM_TOKEN accepted (fallback available); OIDC is still tried first"
+            exit 0
+          fi
+          if [ -n "$NODE_AUTH_TOKEN" ]; then token_state="rejected by npm whoami (expired or revoked)"; else token_state="not set"; fi
+          if [ -n "$ACTIONS_ID_TOKEN_REQUEST_URL" ] && [ -n "$ACTIONS_ID_TOKEN_REQUEST_TOKEN" ]; then
+            echo "::warning title=npm token fallback unavailable::NPM_TOKEN is ${token_state} — publishing will rely on trusted publishing (OIDC); each package needs a trusted publisher for release-publish.yml on npmjs.com"
+            exit 0
+          fi
+          echo "::error title=npm publish auth probe failed::NPM_TOKEN is ${token_state} and no OIDC id-token is available (id-token: write missing?) — neither trusted publishing nor the token can publish; see docs/reference/release-process.md#auth-dd-008-d3-as-amended"
+          exit 1
       - run: npm ci
       # Owner ruling 6a (AnyBridge#2765): no tarball goes out without LICENSE + NOTICE.md.
       - run: npm run pack:license-check
@@ -64,10 +89,57 @@ jobs:
       - run: npm run pack:check
       - run: npm run release:sync-check
       - name: Publish with provenance (dependency order, idempotent)
+        id: publish
         run: npm run release:publish
         env:
           RELEASE_CONFIRM: publish
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+      # Which auth path did each package ACTUALLY publish with (#460)? npm falls back from OIDC to
+      # the token silently (verbose log only), so a green publish proves nothing. The registry
+      # records it: a trusted publish stores `_npmUser.trustedPublisher.id` ("github"); a token
+      # publish has no trustedPublisher. Key on that id, never on a display name. Annotate-only:
+      # it never fails the job. Runs after a failed publish too (partial lines), but not when the
+      # gate failed and the publish step was skipped (nothing new to report).
+      - name: Report publish auth path per package (trusted publishing vs token)
+        if: ${{ !cancelled() && steps.publish.outcome != 'skipped' }}
+        continue-on-error: true
+        run: |
+          # Lockstep: one version for all 14. Read it from the tree, NOT GITHUB_REF_NAME, which is
+          # "main" (not "vX.Y.Z") on workflow_dispatch.
+          ver="$(node -p "require('./packages/toolpath-core/package.json').version")"
+          budget=8 # retries (x15 s) shared across all packages, for registry propagation lag
+          trusted=0; total=0; rows=""
+          for pj in packages/*/package.json; do
+            name="$(node -p "require('./$pj').name")"
+            total=$((total + 1)); state=unreadable; id=""
+            while :; do
+              # exit 0 + "github" = trusted; exit 0 + empty = token; non-zero (E404 while the
+              # version propagates, network) = retry while budget remains.
+              if id="$(npm view "$name@$ver" _npmUser.trustedPublisher.id 2>/dev/null)"; then
+                if [ -n "$id" ]; then state=trusted; else state=token; fi
+                break
+              fi
+              [ "$budget" -gt 0 ] || break
+              budget=$((budget - 1)); sleep 15
+            done
+            case "$state" in
+              trusted) trusted=$((trusted + 1)); how="trusted publishing (OIDC)"
+                echo "::notice title=npm publish auth::${name}: trusted publishing (OIDC) — ${name}@${ver} trustedPublisher.id=${id}" ;;
+              token) how="token fallback"
+                echo "::warning title=npm publish auth::${name}: token fallback — ${name}@${ver} has no trustedPublisher (check its trusted-publisher config on npmjs.com)" ;;
+              *) how="unreadable"
+                echo "::warning title=npm publish auth::${name}: publisher unreadable — npm view ${name}@${ver} failed after retries" ;;
+            esac
+            rows="${rows}| \`${name}\` | ${how} |"$'\n'
+          done
+          {
+            echo "### npm publish auth — v${ver}: ${trusted}/${total} trusted publishing (OIDC)"
+            echo
+            echo "| Package | Published via |"
+            echo "|---|---|"
+            printf '%s' "$rows"
+          } >> "$GITHUB_STEP_SUMMARY"
+          echo "${trusted}/${total} packages @ ${ver} published via trusted publishing (OIDC)"
       # DD-008 §15 release gate: verify the JUST-PUBLISHED versions install from the
       # registry and pass the contract tests. The packages are already live at this
       # point, so registry read-API propagation lag (esp. on a first publish) must not
@@ -77,10 +149,12 @@ jobs:
       - name: Registry-mode consumer verification
         continue-on-error: true
         run: |
+          # Lockstep version from the tree, not GITHUB_REF_NAME ("main" on workflow_dispatch).
+          ver="$(node -p "require('./packages/toolpath-core/package.json').version")"
           for attempt in $(seq 1 15); do
-            if npm run verify:registry -- "${GITHUB_REF_NAME#v}"; then exit 0; fi
+            if npm run verify:registry -- "$ver"; then exit 0; fi
             echo "registry not yet consistent (attempt $attempt/15) — waiting…"
             sleep 60
           done
-          echo "::warning::registry-mode verification did not pass within the propagation window; the packages ARE published — re-run 'npm run verify:registry -- ${GITHUB_REF_NAME#v}' locally to confirm."
+          echo "::warning::registry-mode verification did not pass within the propagation window; the packages ARE published — re-run 'npm run verify:registry -- ${ver}' locally to confirm."
           exit 1

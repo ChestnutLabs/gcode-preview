@@ -1,5 +1,55 @@
 # @chestnutlabs/gcode-parser
 
+## 0.22.0
+
+### Patch Changes
+
+- [#489](https://github.com/ChestnutLabs/gcode-preview/pull/489) [`f805747`](https://github.com/ChestnutLabs/gcode-preview/commit/f8057473fdd72b906562ffe4c19f838e864a3a82) Thanks [@sobechestnut-dev](https://github.com/sobechestnut-dev)! - `.gcode.3mf` plate thumbnails now reach the parse result. Bambu Studio and OrcaSlicer store each plate's
+  preview as a PNG next to its G-code, and the parser ignored them. Parsing a `.gcode.3mf` now fills
+  `metadata.thumbnails` with `{ width, height, mime: 'image/png', bytes }` for the plate you parse:
+  - Included: `Metadata/plate_N.png`, then `Metadata/plate_N_small.png`, where the file has them.
+    `top_N.png` and `pick_N.png` are not included (`pick_` is an object-id colour map, not a preview).
+  - It follows `parseOptions.plate`. With no plate selected you get the first plate's images.
+  - Width and height come from the PNG header. An image that is not a PNG, is over `maxMetadataBytes`
+    (8 MiB), fails its CRC, or does not fit in what is left of the archive's expanded-size budget is
+    dropped with a warning. The plate's G-code always loads first and is never affected.
+  - New warning code `container-thumbnail-invalid` (a plain string code; existing codes are unchanged),
+    used only when the image itself is bad: not a PNG, corrupt, or failing its CRC. An image dropped for
+    size reuses `metadata-truncated`, whether it was over `maxMetadataBytes` or the archive's expanded-size
+    budget had run out.
+  - `@chestnutlabs/gcode-containers`: `OpenedContainer` gains `thumbnailsFor(plate)`, and the types
+    `PlateThumbnail` / `PlateThumbnails` are exported. `plate` is the index into `plates`, not the number
+    in the file name.
+
+- [#482](https://github.com/ChestnutLabs/gcode-preview/pull/482) [`3a76509`](https://github.com/ChestnutLabs/gcode-preview/commit/3a7650900ed1c07c065f614c087777e09cd07ca2) Thanks [@sobechestnut-dev](https://github.com/sobechestnut-dev)! - Prusa `.bgcode` thumbnails now reach the parse result. A `.bgcode` file stores its preview images as
+  binary blocks, not as `; thumbnail` comments. They were decoded, then dropped before the result reached
+  you. Parsing a `.bgcode` now fills `metadata.thumbnails` with the same `{ width, height, mime, bytes }`
+  entries a plain `.gcode` gets from its comments:
+  - `mime` is `image/png`, `image/jpeg` or `image/qoi`, from the block's format. A format id outside the
+    spec is kept as `application/octet-stream`.
+  - Up to 8 of the file's binary thumbnails are kept, in file order. Empty thumbnail blocks are skipped.
+  - If the decoded G-code also carries `; thumbnail` comments, those are kept and follow the container's
+    thumbnails in the list.
+  - The 32 MiB budget for `.bgcode` metadata and thumbnails still applies. A file over it fails with
+    `E_BGCODE_BOMB`.
+
+  PrusaSlicer's own `.bgcode` files carry several thumbnails, often QOI first and PNG last. To show one
+  in an `<img>`, choose by `mime` instead of taking the first entry.
+
+- [#506](https://github.com/ChestnutLabs/gcode-preview/pull/506) [`33a6e9d`](https://github.com/ChestnutLabs/gcode-preview/commit/33a6e9d1075b97765cece7734a72bcf1c0aceb25) Thanks [@sobechestnut-dev](https://github.com/sobechestnut-dev)! - Toolpath and metadata fixes found by a mutation-testing sweep:
+  - **Helical arcs** (a `G2`/`G3` that also moves the third axis, e.g. `G2 X10 Y0 Z5 I5 J0`) now ramp from the start height toward the target. They used to ramp the other way and jump back to the target on the last segment. Flat arcs are unchanged.
+  - **Negative-radius arcs** (`G2 X10 Y0 R-8`) now take the long way round (more than 180°), as the G-code standard specifies. They used to be drawn as a half circle.
+  - A parse limit passed as `undefined` (for example `limits: { maxProgramIterations: undefined }`) now keeps its default. It used to switch that limit off, so a looping RS274NGC program could run forever.
+  - A single coordinate, `E`, `F` or `S` word that is a valid number but too large for the toolpath to store (for example 40 nines) is now dropped with a `number-out-of-range` warning. It used to become Infinity in the segments and the bounds, with no warning.
+  - A line with many malformed `[...]` expressions no longer makes the valid expressions after it on that line fail.
+  - **Print-time estimates**: Bambu Studio files, and OrcaSlicer files for any printer profile, now report their estimate. Bambu Studio, and OrcaSlicer with Bambu printer profiles, put both times on one header line (`; model printing time: …; total estimated time: …`), and that line was skipped. OrcaSlicer with other printers writes `; estimated printing time (normal mode) = …`, which was not read for Orca files. Estimates of a day or more (`1d 2h 3m 4s`) are now read for PrusaSlicer and OrcaSlicer too; they used to be dropped.
+
+- Updated dependencies [[`f805747`](https://github.com/ChestnutLabs/gcode-preview/commit/f8057473fdd72b906562ffe4c19f838e864a3a82), [`3a76509`](https://github.com/ChestnutLabs/gcode-preview/commit/3a7650900ed1c07c065f614c087777e09cd07ca2), [`3fe25f4`](https://github.com/ChestnutLabs/gcode-preview/commit/3fe25f4d8d66ab1f37d23892365fb33d2c813ff6), [`33a6e9d`](https://github.com/ChestnutLabs/gcode-preview/commit/33a6e9d1075b97765cece7734a72bcf1c0aceb25), [`fd3ddaa`](https://github.com/ChestnutLabs/gcode-preview/commit/fd3ddaa151a311e779b1a6652bc468ea0d980d70)]:
+  - @chestnutlabs/gcode-containers@0.22.0
+  - @chestnutlabs/gcode-bgcode@0.22.0
+  - @chestnutlabs/toolpath-core@0.22.0
+  - @chestnutlabs/gcode-dialects@0.22.0
+
 ## 0.21.2
 
 ### Patch Changes

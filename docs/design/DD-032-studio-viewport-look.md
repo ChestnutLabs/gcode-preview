@@ -140,8 +140,9 @@ Rules:
   - At build time the major step is `k = max(1, round(every / pitch))` minor lines. Majors are every k-th minor
     index counted from the bed minimum. A non-multiple `every` snaps to the nearest multiple of the pitch
     (documented). Dedupe is by **integer index**, never by float equality, so pitches like 0.1 behave.
-  - A minor line at a major index is **not** drawn, so alphas never double-blend. The Round-2 numbers assume a
-    single blend per line.
+  - A minor line at a major index is **not** drawn, so alphas never double-blend. Round 2 solved the major
+    alpha on a **stacked** minor + major blend, so the preset ships its single-blend equivalent
+    1 − (1 − aMin)(1 − aMaj) ≈ 0.386 dark / 0.555 light, as 0.39 / 0.55 (§4.4).
 - **Outline.**
   - `bedOutline` draws the printable boundary loop for **every** shape, rectangular included.
   - Its material is always `transparent: true`, even at opacity 1. Its `renderOrder` is above the grid lines',
@@ -225,14 +226,22 @@ Rules:
     With it, 120° sits at 1.31 r against a 1.155 r minimum.
   - **The two are equal at 50°**, so the rule is continuous.
 
-  The orthographic `viewHalfHeight` stays 1.25 r, so toggling projection still keeps apparent size. The live
-  lens setter keeps the pure tan dolly, because its job is to keep the user's current apparent size, not to
-  re-fit.
+  The orthographic `viewHalfHeight` stays 1.25 r, so toggling projection keeps apparent size at ≤50°. Above
+  50° the sin term moves the perspective camera back, so the perspective view shows a half-height of
+  1.25 r · cos 25° / cos(fov/2). The part's perspective size relative to orthographic is therefore
+  cos(fov/2) / cos 25°: 0.95 at 60°, 0.88 at 74°, 0.78 at 90°, and **0.55 at 120°**, where the part looks
+  about half the size in perspective. This is accepted for now, because the camera stays outside the bounding
+  sphere. Sizing the orthographic half-height from the perspective pose (d · tan(fov/2)) would make the
+  toggle exact at every lens; that is an open item (§8).
 - **Distance limits scale with the lens.** `frameTo` sets the orbit controls' `minDistance` = max(1, 0.15 r)
-  and `maxDistance` = 30 r, then clamps. Both limits are scaled by the same tan 25° / tan(fov/2) factor (an
+  and `maxDistance` = 30 r, then clamps. Both limits are scaled by the same `framingLensScale(fov)` factor (an
   exact no-op at 50), so a lens-aware frame is never clamped into a crop.
 - **Changing the lens live** dolly-compensates: the target is kept and the camera distance and limits are
-  scaled by tan(old/2) / tan(new/2), so the part keeps its apparent size without a re-fit. This is an
+  scaled by `framingLensScale(new) / framingLensScale(old)`, the factor framing itself uses. A framed view
+  after `setFov(f)` therefore equals a fresh frame at `f`. When both the old and the new lens are ≤50°, this is
+  exactly the tan ratio, so the part
+  keeps its apparent size without a re-fit. Above 50° it keeps the frame margin instead, so a wide lens can't
+  put the camera inside the model (a pure tan dolly from 50° to 120° would sit at 0.72 r). This is an
   `InteractiveStage` primitive (Lane A), so both viewers share it.
   - It emits **no** `camera-changed`, which stays user-only (v0.21.0).
   - While the model viewer is auto-framing, it re-fits through `fitBox` (exact) instead of dollying, and
@@ -271,8 +280,11 @@ Rules:
   | `null` | No plate is drawn: no `buildVolume`, or the render scope spans **more than one** declared plate | No plate. One bed under a multi-plate layout would misrepresent it |
 
   Notes:
-  - **"The bed"** for these checks is the file's `printable_area` when the project carries one, otherwise the
-    consumer's `buildVolume`.
+  - **"The bed"** for these checks, for the workspace cell and for `approximated` centring is always the
+    consumer's `buildVolume`, the bed that is drawn. The file's `printable_area` is trusted only when it
+    matches that bed within 1 mm on every edge. A project whose `printable_area` does not match (made for a
+    different printer's bed, or hostile) skips the `known` and `inferred` checks and is `approximated`, centred
+    on the drawn bed. With no `printable_area`, the checks run against the drawn bed.
   - **Workspace cell.** The cell is the bed size × (1 + 1/5), with rows stepping −Y. This is **observed
     behaviour, pending the §8 two-plate fixture**: clean-room, from exported files, never from slicer source.
     If the fixture contradicts it, the inferred path changes; `approximated` remains the honest fallback.
@@ -311,15 +323,15 @@ Rules:
 
 `studioTheme(mode: 'dark' | 'light'): Theme` and `STUDIO_CAMERA_FOV = 32` are exported from
 `gcode-renderer-three` and re-exported by `gcode-preview-core` and `gcode-model-renderer`. Values are from
-Round 2:
+Round 2, except `gridMajor.opacity` and `bedOutline.opacity`, which the §6 validation re-render retuned:
 
 | Field | dark | light |
 |---|---|---|
 | `background` | `{ top:'#23272e', bottom:'#2b3038' }` | `{ top:'#dfe3e8', bottom:'#c9ced5' }` |
 | `bedSurface` | `{ mode:'solid', color:'#7c8086', thickness:4, edgeColor:'#585c61' }` | same |
 | `gridColor` / `gridOpacity` (10 mm) | `#ffffff` / 0.11 | `#1b2430` / 0.16 |
-| `gridMajor` | `{ every:50, opacity:0.31 }` | `{ every:50, opacity:0.47 }` |
-| `bedOutline` | `{ color:'#ffffff', opacity:0.76 }` | `{ color:'#1b2430', opacity:0.80 }` |
+| `gridMajor` | `{ every:50, opacity:0.39 }` | `{ every:50, opacity:0.55 }` |
+| `bedOutline` | `{ color:'#ffffff', opacity:0.83 }` | `{ color:'#1b2430', opacity:0.87 }` |
 | `contactShadow` | `{ opacity:0.4 }` | `{ opacity:0.3 }` |
 | lights, `materialPreset`, `bedColor` (cage) | defaults | defaults |
 
@@ -395,14 +407,28 @@ Notes:
 - **Regression gate:** existing visual baselines + all current renderer/model tests unmodified-green with no
   theme set.
 - **Validation re-render (release gate).** Re-run the Round-2 measurement harness against the shipped `studioTheme('dark'|'light')`. Gates:
-  - **Contrast:** must reproduce Round 2 within ±0.05 contrast ratio per tier. The boundary is re-measured as
-    **outline-only** (edge grid lines and cage floor now omitted), so its target is Round 2's loop-only
-    edges: 3.03 dark, 3.07 light. It must stay ≥ 3:1.
+  - **Contrast:** the minor and major tiers must reproduce Round 2 within ±0.05 contrast ratio per tier. The
+    boundary is re-measured as **outline-only** (edge grid lines and cage floor now omitted) and must be
+    **≥ 3:1 at each bed edge, measured on the plate side as rendered**. It has no fixed ±0.05 target: the 1 px
+    loop straddles the plate edge and the backdrop under MSAA, and the backdrop changes with position along the
+    edge, so one number cannot hold on every edge. The plate side is the worst case in both themes: the
+    straddling pixel is pulled toward the backdrop, which is darker than the plate in dark (dimming the white
+    line) and lighter in light (washing out the navy line), so measuring there is conservative. (The earlier
+    3.03 / 3.07 came from an ideal full-coverage model and were never measured.)
   - **Shadow:** the grid inside the shadow is re-measured, now that the shadow sits below the grid.
   - **Top face:** must still render exactly `#7c8086` with thickness 4.
   - **Grid:** must read in all 8 filament × theme cells.
   - **Black/white separation:** ≥ 2.9:1.
   - **If it misses:** adjust the preset values (not the decisions) and record them here.
+  - **Retune (2026-11-11, on dev `7469a64`).** The first re-render missed major (1.649 / 1.899) and outline
+    (2.757 / 2.689). Two causes: Round 2 solved the major alpha on a stacked minor + major blend while the
+    renderer draws one blend per line (§4.1), and the outline targets were never measured. `gridMajor.opacity`
+    0.31 → 0.39 dark, 0.47 → 0.55 light; `bedOutline.opacity` 0.76 → 0.83 dark, 0.80 → 0.87 light. Re-measured
+    (software GL, three r178, orthographic 4 px/mm): minor 1.205 / 1.238, major 1.864 / 2.144, outline plate
+    side, all four edges: dark 3.090 (x = 0, y = 0, x = 256) / 3.067 (y = 256), light 3.116 / 3.037. The
+    per-edge minimum is light y = 256 at 3.037, about 0.007 alpha above 3:1. That is software GL, so a hardware
+    human pass re-checks the outline at all four edges. All gates pass. The perspective
+    in-shot major is the same in all eight filament × theme cells. No decision changed.
 
 ## 7. Delivery plan
 
@@ -427,6 +453,8 @@ Release v0.22.0 per `docs/reference/release-process.md` after D, with the owner'
   another. It touches every persisted state, and AnyBridge restores under the same preset lens.
 - **P2:** a real Bambu/Orca 2-plate project 3MF in the corpus, minimised and with redistribution cleared, to
   back the synthetic `inferred` fixture.
+- **P3:** size the orthographic `viewHalfHeight` from the perspective pose (d · tan(fov/2)) so the
+  perspective↔orthographic toggle keeps apparent size exactly at every lens (today 0.55× at 120°, §4.2).
 - **P3:** resolve the model viewer's lights against its own rig if a consumer wants themed model lighting.
 - **P3:** backfill the `docs/design/README.md` index for DD-023…DD-031 (rows missing).
 - Flip the default to Studio: a separate owner decision in a later minor.
@@ -464,3 +492,28 @@ Release v0.22.0 per `docs/reference/release-process.md` after D, with the owner'
     before Lane C touches `three-mf.ts`.
 - 2026-11-11: Lane A (PR #470) found the pure tan framing rule puts the camera inside the bounding sphere
   above ~74°. The framing scale is now max(tan rule, sin rule), identical at 50° and below. No decision changed.
+- 2026-11-11: Lane A review round 1 (PR #470). The live lens dolly and the distance limits now use the same
+  `framingLensScale` ratio as framing, not the pure tan ratio: a frame at 50° then `setFov(120)` would
+  otherwise put the camera inside the model. Identical when both lenses are ≤50°. Above 50°, the
+  perspective↔orthographic toggle changes apparent size by cos(fov/2) / cos 25° (0.55 at 120°). §4.2 now
+  matches PR #470 as merged (84e664a). An exact toggle (ortho half-height from the perspective pose) is
+  recorded in §8. No decision changed.
+- 2026-11-11: Lane C review round 1 (PR #484). Placement judged `known` against the file's `printable_area`
+  but drew on the consumer's bed, so a 350 mm project (or a hostile ±1e308 area) read `known` while drawn off
+  the plate, and `approximated` centred on the file bed. §4.3 now uses the drawn bed for every check, the cell
+  and the centring, and trusts `printable_area` only when it matches the drawn bed within 1 mm per edge
+  (otherwise `approximated`). `printable_area` points over 64 characters are rejected. No tier or field
+  renamed.
+- 2026-11-11: Lane D validation re-render of the shipped preset (dev `7469a64`, software GL, 32°, shipped
+  `resolveTheme` + `createBackdrop` + `createBuildVolume` + `createContactShadow`). Top face is exactly `#7c8086`
+  at thickness 4. Minor contrast 1.205 dark / 1.238 light (Round 2: 1.21 / 1.24). **Major lines 1.649 / 1.899
+  against Round-2 1.84 / 2.15, and outline-only edges 2.757 / 2.689 against 3.03 / 3.07 (below 3:1): both miss.**
+  Black body against plate is 4.02; white is 2.92 (white base against shadow 2.61). The grid stays visible inside
+  the contact shadow and is identical across all eight filament × theme cells. Preset values were not changed;
+  the shipped preset measured below target; cause under investigation. Data kept outside the repo.
+- 2026-11-11: Studio contrast cause found and the preset retuned (PR #493). Neither tone mapping nor the lens is
+  the cause. Round 2 solved the major alpha on a stacked minor-under-major blend, while the renderer draws one
+  blend per line as decided. The outline targets came from an ideal full-coverage model, not a measurement: the
+  1 px loop straddles the plate edge and the backdrop. Major is now 0.39 dark / 0.55 light and the outline
+  0.83 / 0.87; measured major 1.864 / 2.144, outline ≥3:1 on both edges (§6). The outline gate now reads "≥3:1
+  at each bed edge, measured on the plate side as rendered". Preset values only; no decision changed.

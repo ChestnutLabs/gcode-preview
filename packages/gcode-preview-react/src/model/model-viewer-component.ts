@@ -16,12 +16,15 @@ import {
   type ReactElement
 } from 'react';
 import type {
+  BuildVolumeDef,
+  Theme,
   CameraMode,
   CameraState,
   CameraView,
   GLRendererLike,
   InteractiveStageOptions,
   LoadProgress,
+  PixelRatioOption,
   RenderTargetCanvas
 } from '@chestnutlabs/gcode-renderer-three';
 import type {
@@ -59,6 +62,16 @@ export interface ModelViewerProps {
   filamentPalette?: readonly (string | undefined)[];
   /** Loader registry (open `kind`). Default: STL + 3MF. */
   loaders?: readonly ModelLoader[];
+  /** Build plate under the model (DD-032): the full `BuildVolumeDef`; `null`/omitted = no plate. */
+  buildVolume?: BuildVolumeDef | null;
+  /** Show the build-volume wireframe cage over the plate (the plate, grid and shadow stay). Default true. */
+  showVolumeCage?: boolean;
+  /** Plate/backdrop look, e.g. `studioTheme('dark')`; lights are deliberately not themed. Beats `background`. */
+  theme?: Theme;
+  /** Perspective lens in degrees, [10, 120] (default 50). Out of range throws `RangeError`. */
+  cameraFov?: number;
+  /** Resting pixel ratio: (0, 4] or 'device' (DPR capped at 2, followed live). Unset keeps 1. Out of range throws `RangeError`. */
+  pixelRatio?: PixelRatioOption;
   /** Advanced/test: inject GL / orbit controls. */
   createRenderer?: (canvas: RenderTargetCanvas) => GLRendererLike;
   createControls?: NonNullable<InteractiveStageOptions['createControls']>;
@@ -83,6 +96,11 @@ function ModelViewerImpl(props: ModelViewerProps, ref: ForwardedRef<ModelViewerH
     limits,
     filamentPalette,
     loaders,
+    buildVolume,
+    showVolumeCage,
+    theme,
+    cameraFov,
+    pixelRatio,
     createRenderer,
     createControls
   } = props;
@@ -96,6 +114,10 @@ function ModelViewerImpl(props: ModelViewerProps, ref: ForwardedRef<ModelViewerH
     ...(filamentPalette !== undefined ? { filamentPalette } : {}),
     ...(loaders !== undefined ? { loaders } : {}),
     ...(renderScope != null ? { renderScope } : {}),
+    ...(buildVolume != null ? { buildVolume } : {}),
+    ...(theme !== undefined ? { theme } : {}),
+    ...(cameraFov !== undefined ? { cameraFov } : {}),
+    ...(pixelRatio !== undefined ? { pixelRatio } : {}),
     ...(createRenderer !== undefined ? { createRenderer } : {}),
     ...(createControls !== undefined ? { createControls } : {}),
     onProgress: (p) => cbRef.current.onProgress?.(p)
@@ -154,6 +176,23 @@ function ModelViewerImpl(props: ModelViewerProps, ref: ForwardedRef<ModelViewerH
   useEffect(() => {
     if (renderScope !== undefined) viewer.controls.setRenderScope(renderScope);
   }, [viewer, renderScope]);
+  // DD-032: look + lens — each prop one controls call (the controller remembers them across rebinds).
+  useEffect(() => {
+    if (buildVolume !== undefined) viewer.controls.setBuildVolume(buildVolume);
+  }, [viewer, buildVolume]);
+  // Effect only (no construction option): it runs before the first frame, which the controller queues.
+  useEffect(() => {
+    viewer.controls.setBuildVolumeCage(showVolumeCage ?? true);
+  }, [viewer, showVolumeCage]);
+  useEffect(() => {
+    if (theme !== undefined) viewer.controls.setTheme(theme);
+  }, [viewer, theme]);
+  useEffect(() => {
+    if (cameraFov !== undefined) viewer.controls.setCameraFov(cameraFov);
+  }, [viewer, cameraFov]);
+  useEffect(() => {
+    if (pixelRatio !== undefined) viewer.controls.setPixelRatio(pixelRatio);
+  }, [viewer, pixelRatio]);
 
   return createElement('canvas', {
     ref: viewer.canvasRef,
