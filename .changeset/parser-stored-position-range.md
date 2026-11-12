@@ -12,3 +12,7 @@ bounding box, with no warning.
 Now a segment whose start, end or extrusion amount is outside float32 range is dropped and reported with the
 same `number-out-of-range` warning (counted once per file, not once per segment). The machine position keeps
 advancing, so later moves that come back into range are still drawn. Ordinary files are unaffected.
+
+The same applies to retraction and colour-change (`M600`) markers: one at a position that overflows float32
+is dropped and reported with the same warning. The `retractions` / `colorChanges` arrays can therefore be
+shorter than before, and the `retractions` / `colorChanges` capability becomes `unavailable` if none remain.

@@ -1219,12 +1219,12 @@ export function createEngine(input: string | Uint8Array, opts: ParseOptions): En
 
     // Event positions are stored rebased on the origin too, so a G91 / far-G92 accumulation can overflow
     // float32 for a marker exactly as for a segment: drop those with the same deduped warning (#510).
-    const markerInRange = (m: { x: number; y: number; z: number }): boolean => {
+    const markerInRange = (m: { x: number; y: number; z: number; srcByte: number }): boolean => {
       if (storedInRange(m.x - ox, m.y - oy, m.z - oz)) return true;
       warn(
         NUMBER_OUT_OF_RANGE_WARN,
         'a stored position is beyond the float32 range the toolpath stores; marker dropped',
-        currentSrcByte
+        m.srcByte
       );
       return false;
     };

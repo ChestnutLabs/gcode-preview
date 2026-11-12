@@ -142,6 +142,21 @@ describe('stored positions beyond float32 (#510)', () => {
     expect(ir.header.warnings.some((x) => x.code === 'number-out-of-range')).toBe(true);
   });
 
+  it('a marker-only overflow warns at the marker line, not at the end of the file', () => {
+    // after a probe, G10 + G92 resync put the position at 6e38 with no segment; the retract and M600 that
+    // follow are the file's only overflows (no segment is dropped)
+    const src = `G90\nG1 X1 E1\nG31 X1 F100\nG10 L2 P1 X${BIG}\nG92 X${BIG}\nG1 E-1\nM600\n`;
+    const { ir } = parseGcodeToIR(src);
+    expect(ir.segments.count).toBe(1);
+    expect(ir.retractions).toEqual([]);
+    expect(ir.colorChanges).toEqual([]);
+    const w = ir.header.warnings.filter((x) => x.code === 'number-out-of-range');
+    expect(w).toHaveLength(1);
+    expect(w[0].count).toBe(2);
+    expect(w[0].srcByte).toBe(src.indexOf('G1 E-1'));
+    expect(w[0].srcByte).toBe(121);
+  });
+
   it('in-range retraction and M600 markers are kept, with no warning', () => {
     const { ir } = parseGcodeToIR('G90\nG1 X10 Y5 E1\nG1 E0\nM600\n');
     expect(ir.retractions).toHaveLength(1);
