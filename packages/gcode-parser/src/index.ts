@@ -6,7 +6,7 @@
  * full limit wiring land in phase 3 (#46). Depends only on
  * @chestnutlabs/toolpath-core.
  */
-export { parseGcodeToIR, parseGcodeToIRAsync, DEFAULT_LIMITS } from './parse.js';
+export { parseGcodeToIR, parseGcodeToIRAsync, DEFAULT_LIMITS, ParseOptionError } from './parse.js';
 export type {
   AsyncParseHooks,
   AsyncParseResult,

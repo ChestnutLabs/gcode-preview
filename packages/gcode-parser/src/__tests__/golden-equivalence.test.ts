@@ -56,6 +56,15 @@ const equivalenceFixtures = manifest.fixtures.filter((f) => f.sizeTier !== 'adve
 // pinned by its native golden, like the CNC motion corrections above.
 const INTENTIONAL_MOTION_CORRECTION = new Set(['demo-mach3', 'demo-easel', 'container-adv-traversal-names']);
 
+/**
+ * #507: a G2/G3 arc with a NEGATIVE E (a retract during the arc) is no longer an extrusion — it takes the
+ * same rule as a linear move. The inherited adapter golden still has those arc segments as Extrude, so
+ * only the masked-kind digest differs for these two fixtures (positions, tool and layer are unchanged
+ * and still compared). 689 segments in demo-plant-sign and 2022 in demo-screw (kind 33 -> 34, Extrude ->
+ * Travel, ARC_SEGMENT kept); their native goldens are regenerated.
+ */
+const ARC_RETRACT_KIND_CORRECTION = new Set(['demo-plant-sign', 'demo-screw']);
+
 function fnv1a(view: ArrayBufferView): string {
   const bytes = new Uint8Array(view.buffer, view.byteOffset, view.byteLength);
   let h = 0x811c9dc5;
@@ -88,7 +97,7 @@ describe('native parser vs adapter goldens (#28 gate)', () => {
       const masked = new Uint8Array(s.count);
       const mask = MoveKind.Extrude | MoveKind.Travel;
       for (let i = 0; i < s.count; i++) masked[i] = s.kind[i] & mask;
-      expect(fnv1a(masked)).toBe(golden.bufferDigests.kind);
+      if (!ARC_RETRACT_KIND_CORRECTION.has(fixture.id)) expect(fnv1a(masked)).toBe(golden.bufferDigests.kind);
       // Same floating origin.
       expect(ir.header.originOffset.x).toBeCloseTo(golden.originOffset.x, 3);
       expect(ir.header.originOffset.y).toBeCloseTo(golden.originOffset.y, 3);

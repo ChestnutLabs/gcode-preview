@@ -9,6 +9,7 @@
 import type { DialectMetadata, ThumbnailData, ToolpathIR, Warning } from '@chestnutlabs/toolpath-core';
 import {
   parseGcodeToIRAsync,
+  resolveParseLimits,
   type AsyncParseHooks,
   type AsyncParseResult,
   type CommandEvent,
@@ -217,6 +218,8 @@ export function createWorkerHandler(
         };
       }
       void (async () => {
+        // Invalid limits fail before any container work (#508); the typed code reaches the caller.
+        resolveParseLimits(parseOpts.limits);
         // Container resolution (DD-005 §4.4): sniff sliceable inputs; on a
         // match the selected plate's stream becomes the parse input and the
         // container's metadata rides beside the IR.

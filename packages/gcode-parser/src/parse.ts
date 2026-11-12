@@ -77,6 +77,39 @@ export const DEFAULT_LIMITS: ParseLimits = {
 };
 
 /**
+ * Thrown before parsing when a caller's option is invalid (#508). `code` is `E_PARSE_OPTION`; through a
+ * parse session it arrives as a `ParseSessionError`-style rejection carrying the same code.
+ */
+export class ParseOptionError extends Error {
+  readonly code = 'E_PARSE_OPTION';
+  constructor(message: string) {
+    super(message);
+    this.name = 'ParseOptionError';
+  }
+}
+
+/**
+ * Validate a caller's limits: a PRESENT field must be a non-negative integer, else {@link ParseOptionError}.
+ * `NaN`, `null` and a string would switch the bound off (`x > NaN` and `x > 'a'` are never true, `x > null`
+ * compares against 0), and `Infinity` means "no bound" for a hostile input; reject, never clamp. A field
+ * that is absent or `undefined` keeps its default (an optional setting forwarded as-is).
+ */
+export function resolveParseLimits(limits?: Partial<ParseLimits>): ParseLimits {
+  const out: ParseLimits = { ...DEFAULT_LIMITS };
+  if (limits === undefined || limits === null) return out;
+  for (const key of Object.keys(DEFAULT_LIMITS) as (keyof ParseLimits)[]) {
+    const value: unknown = limits[key];
+    if (value === undefined) continue;
+    // isSafeInteger is false for NaN, Infinity, fractions, null, strings and objects
+    if (!(Number.isSafeInteger(value) && (value as number) >= 0)) {
+      throw new ParseOptionError(`limits.${key} must be a non-negative integer (got ${String(value)})`);
+    }
+    out[key] = value as number;
+  }
+  return out;
+}
+
+/**
  * Read-only normalized command event (DD-005 §4.3, amendment 1): observers see
  * each lexed command BEFORE dispatch and cannot alter parsing.
  */
@@ -179,6 +212,16 @@ export interface AsyncParseHooks {
 
 export interface AsyncParseResult extends ParseResult {
   cancelled: boolean;
+}
+
+/**
+ * True when an origin-relative position can be stored as float32 (|v| <= FLOAT32_MAX on every axis);
+ * `Math.fround` turns anything larger into Infinity (#510). One rule for everything the IR stores a
+ * position for (segments AND retraction / colour-change markers), so a new marker type cannot miss it.
+ * A magnitude test only: NaN is not out of range here and passes.
+ */
+function storedInRange(x: number, y: number, z: number): boolean {
+  return !(Math.abs(x) > FLOAT32_MAX) && !(Math.abs(y) > FLOAT32_MAX) && !(Math.abs(z) > FLOAT32_MAX);
 }
 
 const LAYER_TOLERANCE = 0.05;
@@ -301,12 +344,7 @@ export interface Engine {
 
 /** Internal: build an engine over decoded text (streaming passes '' and feeds lines itself). */
 export function createEngine(input: string | Uint8Array, opts: ParseOptions): Engine {
-  // A key passed as `undefined` (an optional setting forwarded as-is) keeps its default. A plain spread
-  // would copy the `undefined`, and every `x > undefined` check is false, so the bound would be OFF.
-  const limits: ParseLimits = { ...DEFAULT_LIMITS };
-  for (const [key, value] of Object.entries(opts.limits ?? {}) as [keyof ParseLimits, number | undefined][]) {
-    if (value !== undefined) limits[key] = value;
-  }
+  const limits = resolveParseLimits(opts.limits);
   const tolerance = opts.minLayerThreshold ?? LAYER_TOLERANCE;
   const text = typeof input === 'string' ? input : new TextDecoder().decode(input);
   let byteLength = typeof input === 'string' ? text.length : input.byteLength;
@@ -504,14 +542,36 @@ export function createEngine(input: string | Uint8Array, opts: ParseOptions): En
       oy = prevY;
       oz = prevZ;
     }
+    // Each word was range-checked on its own, but an in-range word can still overflow once it is stored as
+    // an origin-relative position (G91 accumulation, or a far G92 origin plus a far move). float32 would
+    // store Infinity, so the segment is dropped with the same warning as an out-of-range word (#510). The
+    // machine position still advances, so later moves stay consistent. Only a magnitude test (see
+    // `storedInRange`): NaN is not this check's concern, so it passes through.
+    const sx0 = prevX - ox;
+    const sy0 = prevY - oy;
+    const sz0 = prevZ - oz;
+    const sx1 = x - ox;
+    const sy1 = y - oy;
+    const sz1 = z - oz;
+    if (!storedInRange(sx0, sy0, sz0) || !storedInRange(sx1, sy1, sz1) || Math.abs(eDelta) > FLOAT32_MAX) {
+      warn(
+        NUMBER_OUT_OF_RANGE_WARN,
+        'a stored position is beyond the float32 range the toolpath stores; segment dropped',
+        currentSrcByte
+      );
+      prevX = x;
+      prevY = y;
+      prevZ = z;
+      return true;
+    }
     try {
       writer.push({
-        x0: prevX - ox,
-        y0: prevY - oy,
-        z0: prevZ - oz,
-        x1: x - ox,
-        y1: y - oy,
-        z1: z - oz,
+        x0: sx0,
+        y0: sy0,
+        z0: sz0,
+        x1: sx1,
+        y1: sy1,
+        z1: sz1,
         e: eDelta,
         feedrate: modalFeed,
         kind,
@@ -667,7 +727,9 @@ export function createEngine(input: string | Uint8Array, opts: ParseOptions): En
     if (f !== undefined) modalFeed = f;
     // E is delta-based (DD-010 D1) so M82 arcs classify correctly and `lastE` stays consistent with g0.
     const eDelta = resolveEDelta(e);
-    const pathType = eDelta ? 'extrusion' : toolEngaged ? 'cut' : 'travel';
+    // Same rule as a linear move (g0): only a POSITIVE delta extrudes. A negative one (a retract during
+    // the arc) is not an extrusion, so it is a Cut with the tool engaged and a Travel otherwise (#507).
+    const pathType = eDelta > 0 ? 'extrusion' : toolEngaged ? 'cut' : 'travel';
     if (path === null || path.type !== pathType) {
       breakPath(pathType);
     }
@@ -1155,6 +1217,20 @@ export function createEngine(input: string | Uint8Array, opts: ParseOptions): En
     const layersCapability: Confidence =
       layersCleared || layers.length === 0 ? 'unavailable' : unindexedPaths > 0 ? 'inferred' : 'known';
 
+    // Event positions are stored rebased on the origin too, so a G91 / far-G92 accumulation can overflow
+    // float32 for a marker exactly as for a segment: drop those with the same deduped warning (#510).
+    const markerInRange = (m: { x: number; y: number; z: number; srcByte: number }): boolean => {
+      if (storedInRange(m.x - ox, m.y - oy, m.z - oz)) return true;
+      warn(
+        NUMBER_OUT_OF_RANGE_WARN,
+        'a stored position is beyond the float32 range the toolpath stores; marker dropped',
+        m.srcByte
+      );
+      return false;
+    };
+    const keptRetractions = retractionEvents.filter(markerInRange);
+    const keptColorChanges = colorChangeEvents.filter(markerInRange);
+
     const capabilities: Record<string, Confidence> = {
       geometry: 'known',
       moveKind: 'known',
@@ -1169,8 +1245,8 @@ export function createEngine(input: string | Uint8Array, opts: ParseOptions): En
       // are usually empty, so this is 'unavailable' until a dialect adapter annotates them and the
       // runner refreshes it (gcode-dialects finalize). Honest either way — never a guess.
       nonModelClassification,
-      retractions: retractionEvents.length > 0 ? 'known' : 'unavailable',
-      colorChanges: colorChangeEvents.length > 0 ? 'known' : 'unavailable',
+      retractions: keptRetractions.length > 0 ? 'known' : 'unavailable',
+      colorChanges: keptColorChanges.length > 0 ? 'known' : 'unavailable',
       // Annotation-derived move kinds (DD-016, #182). The parser never sets these — they come from a
       // slicer adapter's WIPE_START/END brackets (upgraded to 'known' via the sink). Seam has no
       // per-move G-code signal and stays 'unavailable' (a future geometry-heuristic DD may change it).
@@ -1229,7 +1305,7 @@ export function createEngine(input: string | Uint8Array, opts: ParseOptions): En
       layers: irLayers,
       tools,
       objects: [],
-      retractions: retractionEvents.map((r) => ({
+      retractions: keptRetractions.map((r) => ({
         x: r.x - ox,
         y: r.y - oy,
         z: r.z - oz,
@@ -1237,7 +1313,7 @@ export function createEngine(input: string | Uint8Array, opts: ParseOptions): En
         srcByte: r.srcByte,
         segIndex: r.segIndex
       })),
-      colorChanges: colorChangeEvents.map((c) => ({
+      colorChanges: keptColorChanges.map((c) => ({
         x: c.x - ox,
         y: c.y - oy,
         z: c.z - oz,
