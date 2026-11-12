@@ -507,6 +507,8 @@ export interface ComponentHarness {
    */
   mount(
     callbacks: {
+      /** The component's parse-complete callback (`onReady` / `ready`), with its `segments`. */
+      onReady: (segments: number) => void;
       onBuildComplete: (segments: number) => void;
       onDisclosure: (text: string) => void;
     },
@@ -553,6 +555,7 @@ export function runComponentConformanceSuite(name: string, api: TestApi, harness
     it('the disclosure callback reports the CURRENT build, after build-complete (#430)', async () => {
       const log: string[] = [];
       const m = await harness.mount({
+        onReady: (segments) => log.push(`ready ${segments}`),
         onBuildComplete: (segments) => log.push(`build ${segments}`),
         onDisclosure: (text) => log.push(`disclosure ${text}`)
       });
@@ -591,6 +594,7 @@ export function runComponentConformanceSuite(name: string, api: TestApi, harness
       const log: string[] = [];
       const m = await harness.mount(
         {
+          onReady: (segments) => log.push(`ready ${segments}`),
           onBuildComplete: (segments) => log.push(`build ${segments}`),
           onDisclosure: (text) => log.push(`disclosure ${text}`)
         },
@@ -598,7 +602,9 @@ export function runComponentConformanceSuite(name: string, api: TestApi, harness
       );
       await m.settle();
       expect(JSON.stringify(log)).toBe('[]');
+      // ready (parse-complete) first, then build-complete, as in 3D: a build-complete handler sees the new file.
       const expected = JSON.stringify([
+        'ready 13',
         'build 10',
         'disclosure 3 segments with a non-finite coordinate were not drawn.'
       ]);
@@ -610,7 +616,7 @@ export function runComponentConformanceSuite(name: string, api: TestApi, harness
       // A second parse is a second setIR: exactly one more build, not zero and not two.
       await m.parse(new Uint8Array(1_000));
       await m.settle();
-      expect(JSON.stringify(log.slice(2))).toBe(expected);
+      expect(JSON.stringify(log.slice(3))).toBe(expected);
 
       await m.unmount();
     });
@@ -619,6 +625,7 @@ export function runComponentConformanceSuite(name: string, api: TestApi, harness
       const log: string[] = [];
       const m = await harness.mount(
         {
+          onReady: (segments) => log.push(`ready ${segments}`),
           onBuildComplete: (segments) => log.push(`build ${segments}`),
           onDisclosure: (text) => log.push(`disclosure ${text}`)
         },
@@ -627,9 +634,12 @@ export function runComponentConformanceSuite(name: string, api: TestApi, harness
       await m.settle();
       await m.parse(new Uint8Array(1_000));
       await m.settle();
-      expect(JSON.stringify(log)).toBe(
+      // The order is not pinned here: harnesses pass a synchronous scheduleFrame, so the stubbed 3D build
+      // completes inside setIR, before parse-complete. In production it runs on later frames, after it.
+      expect(JSON.stringify(log.filter((l) => !l.startsWith('ready ')))).toBe(
         JSON.stringify(['build 9', 'disclosure 4 segments with a non-finite coordinate were not drawn.'])
       );
+      expect(JSON.stringify(log.filter((l) => l.startsWith('ready ')))).toBe('["ready 13"]');
       await m.unmount();
     });
   });

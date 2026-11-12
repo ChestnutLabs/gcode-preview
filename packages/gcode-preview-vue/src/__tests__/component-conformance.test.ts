@@ -38,6 +38,7 @@ runComponentConformanceSuite(
                 scheduleFrame: (f: () => void) => f(),
                 chunksPerTick: 8
               },
+              onReady: (e: { segments: number }) => cb.onReady(e.segments),
               onBuildComplete: (e: { segments: number }) => cb.onBuildComplete(e.segments),
               onDisclosure: (text: string) => cb.onDisclosure(text)
             })

@@ -176,6 +176,7 @@ export function registerCompat({ describe, it, expect, svelte, compiler, expecte
             }
           },
           events: {
+            ready: (e) => cb.onReady(e.detail.segments),
             buildcomplete: (e) => cb.onBuildComplete(e.detail.segments),
             disclosure: (e) => cb.onDisclosure(e.detail)
           }

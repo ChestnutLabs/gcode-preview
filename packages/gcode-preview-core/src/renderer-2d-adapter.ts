@@ -94,14 +94,20 @@ export class LayerView2DRenderer implements PreviewRenderer {
     // per setIR, with values that are true for 2D (#518): every drawable segment, no decimation, no travel
     // omitted for decimation, flat line geometry, and the segments skipped for a non-finite x/y. Core turns
     // that count into its `disclosure` text, which every framework adapter forwards on build-complete.
+    // Deferred one microtask so it lands AFTER core's parse-complete and state update, the order 3D gives
+    // (its build runs on later frames). A superseding setIR or dispose() changes `this.ir`, so a stale
+    // build never reports.
     const { drawable, skippedNonFinite } = summarize2DDrawable(ir);
-    this.emit({
-      type: 'buildComplete',
-      segments: drawable,
-      decimationApplied: 1,
-      travelHidden: false,
-      quality: 'lines',
-      skippedNonFinite
+    queueMicrotask(() => {
+      if (this.ir !== ir) return;
+      this.emit({
+        type: 'buildComplete',
+        segments: drawable,
+        decimationApplied: 1,
+        travelHidden: false,
+        quality: 'lines',
+        skippedNonFinite
+      });
     });
   }
 

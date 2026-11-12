@@ -15,12 +15,14 @@ Segments skipped for an `Infinity` or `NaN` coordinate are now disclosed, in 2D 
   whole toolpath, travel included whether or not it is shown.
 - **2D mode now fires `build-complete`.** With `renderer: '2d'`, the 2D view emits `buildComplete` once
   each time a toolpath loads: the number of drawable segments, `decimationApplied: 1`,
-  `travelHidden: false`, `quality: 'lines'`. Before, it never fired in 2D, so `onBuildComplete` and
+  `travelHidden: false`, `quality: 'lines'`. It fires after parse-complete, as in 3D, so a
+  build-complete handler reads the new file's `layerCount` and `segmentCount`. Before, it never fired in 2D, so `onBuildComplete` and
   `onDisclosure` (and their Vue, Svelte and Web Component equivalents) stayed silent. `activeQuality`
   now reads `'lines'` after a 2D load instead of `null`.
 - **`gcode-renderer-three`:** the `buildComplete` event carries an optional `skippedNonFinite` count.
 - **`gcode-renderer-2d`:** new `summarize2DDrawable(ir)` returns `{ drawable, skippedNonFinite }` for
   the whole toolpath.
 - **`gcode-preview-core/testing`:** `SuiteStubWorker` takes an optional IR factory, `makeNonFiniteTestIR()`
-  is exported, and `ComponentHarness.mount` takes `{ renderer, ir }`. `MountedComponent` gains `parse()`.
+  is exported, and `ComponentHarness.mount` takes `{ renderer, ir }` and an `onReady` callback.
+  `MountedComponent` gains `parse()`.
   The component conformance suite adds a 2D case and a 3D case.

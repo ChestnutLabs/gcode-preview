@@ -29,6 +29,7 @@ runComponentConformanceSuite(
         scheduleFrame: (f) => f(),
         chunksPerTick: 8
       };
+      el.addEventListener('ready', (e) => cb.onReady((e as CustomEvent<{ segments: number }>).detail.segments));
       el.addEventListener('build-complete', (e) =>
         cb.onBuildComplete((e as CustomEvent<{ segments: number }>).detail.segments)
       );
