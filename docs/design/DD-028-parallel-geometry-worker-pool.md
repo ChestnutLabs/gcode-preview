@@ -156,6 +156,24 @@ RenderStats (DD-027) gains: `buildParallelism: 'main' | 'pool'`, `workerCount`, 
 `memoryBudget` (bytes), and (coordinated with DD-027) `uploadMs`. A consumer panel then reads a machine
 as CPU-bound / memory-bound / GPU-bound. Pool fallbacks/disclosures surface as `disclosures[]`.
 
+**Delivery status as of 2026-11-12 (#435).** Delivered: `buildParallelism`, `workerCount`, and the pool
+fallback disclosure. Not delivered, deliberately:
+
+- **`uploadMs` — rejected, not deferred.** WebGL buffer uploads are lazy and asynchronous: `bufferData`
+  returns once the data is queued, and the driver transfers it at or after the first draw that uses the
+  buffer. A `performance.now()` pair around the upload measures command submission, not transfer, which is
+  the same defect that made the DD-020 `Date.now()`-around-`render()` sample read fast (#486). The honest
+  signal is `firstRenderMs` (build start → first frame), already in RenderStats, together with
+  `geometryBuildMs`. A true upload time would need `EXT_disjoint_timer_query_webgl2` (absent or
+  coarsened on many browsers and always on SwiftShader) and is not pursued.
+- **`computeBudget` and `memoryBudget` — deferred until a consumer asks.** `computeBudget` is the
+  `coreBudget` input of D3 (`navigator.hardwareConcurrency` in a browser) and `memoryBudget` is the
+  `geometryMemoryBudgetBytes` option; both are values the consumer or the environment already holds, and
+  `workerCount` already reports their combined effect. Each RenderStats field is public API that flows
+  through core and all four adapters (DD-031 parity), so the two fields are not added without a consumer
+  need. The CPU-bound / memory-bound / GPU-bound reading above is therefore approximate today: it is
+  `buildParallelism` + `workerCount` + `geometryBuildMs` vs `firstRenderMs`.
+
 ## 12. Alternatives considered
 
 - **OffscreenCanvas full-renderer-in-worker** — rejected as the first step (largest rewrite; RR-008

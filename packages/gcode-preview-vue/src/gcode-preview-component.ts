@@ -36,6 +36,9 @@ import {
 
 export type GcodePreviewSource = Uint8Array | ArrayBuffer | File | null;
 
+/** The perspective lens every renderer starts with, in degrees (#520: a mount value of 50 asks for nothing). */
+const DEFAULT_LENS = 50;
+
 export const GcodePreview = defineComponent({
   name: 'GcodePreview',
   props: {
@@ -139,6 +142,8 @@ export const GcodePreview = defineComponent({
     'machine-geometry-discovered': (_machine: MachineGeometry) => true,
     'progress-presentation-changed': (_e: { mode: string; reason?: string }) => true,
     disclosure: (_text: string) => true,
+    /** #520: the renderer cannot honour a requested setting (e.g. a lens on the 2D renderer); once per request. */
+    'renderer-unsupported': (_e: { feature: string; message: string }) => true,
     error: (_e: { code: string; message: string }) => true
   },
   setup(props, { emit, expose }) {
@@ -218,10 +223,25 @@ export const GcodePreview = defineComponent({
           if (e.code === 'machine-geometry-mismatch') emit('machine-geometry-mismatch', e.message);
           else emit('error', { code: e.code, message: e.message });
           break;
+        case 'renderer-unsupported':
+          emit('renderer-unsupported', { feature: e.feature, message: e.message });
+          break;
         default:
           break;
       }
     });
+
+    // #520: the 2D renderer cannot honour these four 3D-only construction props, so one set to a non-default
+    // value at mount is also applied through controls, and 2D reports `renderer-unsupported` once. 3D was
+    // built with them, so it skips this (a re-applied quality would rebuild). Subscribed above first.
+    if (props.renderer === '2d') {
+      if (props.quality !== 'auto') preview.controls.setQuality(props.quality);
+      if (props.cameraMode !== 'perspective') preview.controls.setCameraMode(props.cameraMode);
+      if (props.cameraFov !== undefined && props.cameraFov !== DEFAULT_LENS) {
+        preview.controls.setCameraFov(props.cameraFov);
+      }
+      if (props.pixelRatio !== undefined) preview.controls.setPixelRatio(props.pixelRatio);
+    }
 
     // ---- prop wiring: each prop is a thin call into the composable (D1 shell rule) ----
     //
@@ -235,6 +255,7 @@ export const GcodePreview = defineComponent({
     // The CONSTRUCTION-covered props (`colorMode`, `quality`, `cameraMode`, `cameraFov`, `pixelRatio`, `theme`, and a plain
     // `buildVolume`) are already applied as renderer options at controller creation above, so their
     // watchers stay change-only — making them immediate would just re-apply the same value redundantly.
+    // (On the 2D renderer the four 3D-only ones are also applied once at mount when non-default; see #520.)
     watch(
       () => props.source,
       (source) => {

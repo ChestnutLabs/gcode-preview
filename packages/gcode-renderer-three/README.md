@@ -72,7 +72,12 @@ count. `GcodePreview` and the framework adapters report it in their `disclosure`
 pitch that is not a positive number, more than 10 000 grid lines on one axis, or an origin so large that the pitch
 no longer advances. A bed discovered in the file (a `MachineGeometry`) never throws: `setBuildVolume` keeps the
 current volume and emits an `error` event with code `machine-geometry-invalid`. A `decimation` option must be a
-whole number of at least 1, or `'auto'`; anything else throws `RangeError`.
+whole number of at least 1, or `'auto'`; anything else throws `RangeError`. The tube and budget options
+are checked the same way, and `undefined` keeps the default: `tube.radialSegments` is a whole number from 3
+to 64, `tube.lineWidth` and `tube.lineHeight` are finite and above 0, `tube.maxVertices` is a whole number of
+at least 1, `tubeByteBudget` and `geometryMemoryBudgetBytes` are finite and above 0, `geometryConcurrency` is
+`'auto'`, `'off'` or a whole number of at least 1, and `qualityMode` (and `setQualityMode()`) takes `'full'`,
+`'adaptive'` or `'fast'`.
 
 ## Tighter limits on software GL
 

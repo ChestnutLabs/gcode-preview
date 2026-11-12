@@ -53,9 +53,9 @@ frequently reached-for ones:
 | `progress` | a DD-006 `ProgressObservation` — drives the honest live-progress overlay (marker for byte-exact, uncertainty band for approximate, gray when stale) |
 | `create-worker` | worker factory escape hatch (see below) |
 
-Emits (13): `ready`, `camera-change`, `parse-error`, `parse-cancelled`, `parse-progress`, `stage`,
+Emits (14): `ready`, `camera-change`, `parse-error`, `parse-cancelled`, `parse-progress`, `stage`,
 `build-complete`, `quality-fallback`, `machine-geometry-mismatch`, `machine-geometry-discovered`,
-`progress-presentation-changed`, `disclosure`, `error`. The underlying handle is exposed for
+`progress-presentation-changed`, `disclosure`, `renderer-unsupported`, `error`. The underlying handle is exposed for
 template refs (`ref.preview`); its `controls` reach the imperative surface — `getRenderStats()`
 (render diagnostics), `pickSegment(ndcX, ndcY, threshold?)` (source-mapping / picking),
 `isColorModeAvailable(mode)`, and `capture(opts?)` (image `Blob`, also `handle.capture`). The handle
@@ -154,7 +154,7 @@ grid and shadow), and `controls.setBuildVolumeCage(visible)` changes it live.
 `:camera-fov` takes 10-120 degrees (the default is 50) and throws `RangeError` outside it. The model viewer reports
 `placement` (`known` / `inferred` / `approximated`, or `null` with no plate) and `placementOffset` on `@ready` and in its state.
 Define the theme once (a `computed` or a constant) so it is not re-applied on every render. The 2D renderer ignores
-`theme`; a lens call records a `renderer-unsupported` disclosure. See the [Studio look and build plate guide](https://github.com/ChestnutLabs/gcode-preview/blob/dev/docs/manual/guide-looks-lens-plate.md).
+`theme`; a lens, as a prop or a call, emits `renderer-unsupported` once. See the [Studio look and build plate guide](https://github.com/ChestnutLabs/gcode-preview/blob/dev/docs/manual/guide-looks-lens-plate.md).
 
 ### Pixel ratio
 
@@ -169,7 +169,7 @@ fragments of ratio 1, so prefer `'device'` on pages with one viewer. Imperativel
 
 An unsized `controls.capture()` is the resting drawing-buffer size when unset and the CSS size when set; with the
 built-in renderer a ratio never changes the default capture size, so pass `width`/`height` for a crisper image. The 2D
-renderer ignores it and records a `renderer-unsupported` disclosure.
+renderer ignores it and emits `renderer-unsupported` once.
 
 ## Examples
 

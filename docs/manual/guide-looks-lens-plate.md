@@ -48,8 +48,10 @@ camera is orthographic is remembered and applied when you return to perspective.
 
 Imperatively: `controls.setCameraFov(deg)`. On the Web Component the lens is the `camera-fov` attribute: an invalid
 value is ignored and the last valid lens is kept, while setting the `cameraFov` **property** to an invalid value
-throws. The 2D renderer is a flat top-down view, so the `theme` and the cage are ignored, and a lens call records a
-`renderer-unsupported` disclosure instead of changing anything (a deliberate difference between the renderers, not a gap).
+throws. The 2D renderer is a flat top-down view, so the `theme` and the cage are ignored. A lens, as a prop or a call,
+changes nothing and fires the `renderer-unsupported` event once, so you can tell your users (React
+`onRendererUnsupported`, Svelte `on:rendererunsupported`). This is a deliberate difference between the renderers, not a
+gap. The [events table](adapters.md#the-shared-surface) compares it with `disclosure`.
 
 ## Sharpness on high-DPI screens
 
@@ -65,8 +67,8 @@ The drawing buffer has ratio² times the pixels (4× at ratio 2, 2.25× at 1.5; 
 (or pick a number) when many viewers share a page or the GPU is weak. With `interactionQuality: 'auto'` the ratio
 still drops while you orbit and settles back on yours. Imperatively: `controls.setPixelRatio(ratio)`; on the Web
 Component it is the `pixel-ratio` attribute (an invalid value is ignored) and the `pixelRatio` property (an invalid
-value throws). Anything else throws `RangeError` and is never clamped; the 2D renderer records a
-`renderer-unsupported` disclosure.
+value throws). Anything else throws `RangeError` and is never clamped; the 2D renderer fires the
+`renderer-unsupported` event once.
 
 An unsized `controls.capture()` is the resting drawing-buffer size when unset and the canvas's CSS size when set. With
 the built-in renderer, setting a ratio never changes the default capture size; pass `width`/`height` for a crisper

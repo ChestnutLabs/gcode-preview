@@ -62,6 +62,11 @@ A parse failure on G-code bytes rejects with the parser's `ParseSessionError`, w
 `code` / `message` shape. Before v0.22.0 a failed build left the promise pending forever, so add a
 `catch` to any still job that awaited without one.
 
+Options that would only produce a blank or broken still reject with a `RangeError` before any parse
+or GL work starts: an output size (`width` / `height`, or the canvas size) that is not a finite
+number greater than 0, a `cameraFov` or `camera.fov` outside [10, 120], a `camera.position` or
+`camera.target` that is not three finite numbers, and a `NaN` `scrub` or `layerRange` bound.
+
 ```ts
 try {
   await renderStill(gcodeBytes, { canvas });
