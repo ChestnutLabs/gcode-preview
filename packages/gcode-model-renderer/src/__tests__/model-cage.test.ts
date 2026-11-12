@@ -185,6 +185,23 @@ describe('model viewer — setBuildVolumeCage', () => {
     expect(cageOf(r.scene())!.visible).toBe(false);
   });
 
+  it('includeBuildVolume:false hides the plate only for the synchronous render, not across the encode await', async () => {
+    const r = rig({ buildVolume: BED }, { capture: true });
+    r.viewer.resize(400, 300);
+    await r.viewer.setSource(twoObjects());
+    const before = r.frames.length;
+    // No await: capture() runs synchronously up to the first await, i.e. render + readback, then the encode.
+    const first = r.viewer.capture({ includeBuildVolume: false }).catch(() => undefined); // encoding needs a real 2D canvas
+    // During the encode a live frame and an overlapping default capture must both see the plate.
+    expect(plateOf(r.scene())!.visible).toBe(true);
+    const second = r.viewer.capture().catch(() => undefined);
+    const frames = r.frames.slice(before).filter((f) => f.target !== null);
+    expect(frames.map((f) => f.plate)).toEqual([false, true]);
+    expect(plateOf(r.scene())!.visible).toBe(true);
+    await Promise.all([first, second]);
+    expect(plateOf(r.scene())!.visible).toBe(true);
+  });
+
   it('a default capture keeps the cage off too', async () => {
     const r = rig({ buildVolume: BED }, { capture: true });
     r.viewer.resize(400, 300);
