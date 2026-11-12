@@ -48,7 +48,7 @@ Scalar options are **attributes** (also settable as properties); rich options ar
 | `camera-mode` | `cameraMode` | `'perspective' \| 'orthographic'` | `'perspective'` |
 | `show-travel` | `showTravel` | `"true" \| "false"` | `true` |
 | `show-retractions` | `showRetractions` | `"true" \| "false"` | `false` |
-| `scrub` | `scrub` | integer | — (all) |
+| `scrub` | `scrub` | integer; a non-numeric value is ignored and `scrub="5"` keeps its cut | — (all) |
 | `layer-range` | `layerRange` | `"start,end"` / `[number, number]` | — (all) |
 | `hidden-feature-roles` | `hiddenFeatureRoles` | `"6,7"` / `number[]` — hide roles (Skirt, Brim…) | — |
 | — | `source` | `Uint8Array \| ArrayBuffer \| File` | `null` |
@@ -176,6 +176,8 @@ driving this published element (no raw renderer or parser imports):
 
 Run it with `npm install --prefix tools/example-webcomponent && npm run dev --prefix
 tools/example-webcomponent` (port 5204).
+
+Invalid numbers throw a `RangeError`, and a control the renderer rejects surfaces as an `error` with code `E_CONTROL_REJECTED`; both are described in [Adapters](../../docs/manual/adapters.md).
 
 ## Workers
 
