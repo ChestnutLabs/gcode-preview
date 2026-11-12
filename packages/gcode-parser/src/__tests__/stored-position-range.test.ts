@@ -114,4 +114,42 @@ describe('stored positions beyond float32 (#510)', () => {
     expect(r.warning).toBeUndefined();
     expect(r.nonFinite).toEqual([]);
   });
+
+  it('a retraction after a G91 overflow is dropped, not stored as Infinity', () => {
+    const { ir } = parseGcodeToIR(`G91\nG1 X${BIG} E1\nG1 X${BIG} E1\nG1 E-1\n`);
+    expect(ir.retractions).toEqual([]);
+    expect(ir.header.capabilities.retractions).toBe('unavailable');
+    const w = ir.header.warnings.filter((x) => x.code === 'number-out-of-range');
+    expect(w).toHaveLength(1);
+    // one dropped segment (the 2nd G1 X) plus the dropped marker, deduped into one entry
+    expect(w[0].count).toBe(2);
+  });
+
+  it('an M600 colour change after a G91 overflow is dropped, not stored as Infinity', () => {
+    const { ir } = parseGcodeToIR(`G91\nG1 X${BIG} E1\nG1 X${BIG} E1\nM600\n`);
+    expect(ir.colorChanges).toEqual([]);
+    expect(ir.header.capabilities.colorChanges).toBe('unavailable');
+    expect(ir.header.warnings.filter((x) => x.code === 'number-out-of-range')).toHaveLength(1);
+  });
+
+  it('a marker is range-checked after rebasing on the origin (far start, in-range raw position)', () => {
+    // after a probe (G31) a G92 resync moves the start to -3e38 with no segment, so the origin is -3e38;
+    // the marker at raw x=3e38 is in range on its own but rebases to 6e38
+    const { ir } = parseGcodeToIR(`G90\nG31 X1 F100\nG92 X${NEG_BIG}\nG1 X${BIG} E1\nG1 E-1\nM600\n`);
+    expect(ir.header.originOffset.x).toBe(-3e38);
+    expect(ir.retractions).toEqual([]);
+    expect(ir.colorChanges).toEqual([]);
+    expect(ir.header.warnings.some((x) => x.code === 'number-out-of-range')).toBe(true);
+  });
+
+  it('in-range retraction and M600 markers are kept, with no warning', () => {
+    const { ir } = parseGcodeToIR('G90\nG1 X10 Y5 E1\nG1 E0\nM600\n');
+    expect(ir.retractions).toHaveLength(1);
+    expect(ir.retractions[0].x).toBe(10);
+    expect(ir.retractions[0].y).toBe(5);
+    expect(ir.colorChanges).toHaveLength(1);
+    expect(ir.colorChanges[0].x).toBe(10);
+    expect(ir.header.capabilities.retractions).toBe('known');
+    expect(ir.header.warnings.some((x) => x.code === 'number-out-of-range')).toBe(false);
+  });
 });
