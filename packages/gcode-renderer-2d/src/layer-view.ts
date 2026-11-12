@@ -82,13 +82,22 @@ export interface DrawLayerResult {
   layerCount: number;
   extrudeDrawn: number;
   travelDrawn: number;
+  /**
+   * Segments in the layer that were NOT drawn because an XY endpoint is non-finite (`Infinity` /
+   * `NaN`, e.g. from a consumer-built IR). Skipped segments are excluded from the counts above and
+   * from the view frame; this count is the honest disclosure that something was left out (#501).
+   */
+  skippedNonFinite: number;
   /** False when the layer index is out of range or the IR has no layer table. */
   drawn: boolean;
 }
 
-/** Clamp a 0..1 float channel and scale to an 8-bit int. */
+/**
+ * Clamp a 0..1 float channel and scale to an 8-bit int. NaN maps to 0: `rgb(NaN, …)` is invalid CSS,
+ * which a canvas silently ignores — the stroke would inherit whatever color was set before.
+ */
 function chan(v: number): number {
-  const c = v < 0 ? 0 : v > 1 ? 1 : v;
+  const c = !(v > 0) ? 0 : v > 1 ? 1 : v;
   return Math.round(c * 255);
 }
 
@@ -97,7 +106,26 @@ export function rgbToCss(rgb: RGB): string {
   return `rgb(${chan(rgb[0])}, ${chan(rgb[1])}, ${chan(rgb[2])})`;
 }
 
-/** XY bounds of one layer's segments (both endpoints), in the origin-relative frame. */
+/**
+ * The half-open segment range `[start, end)` of a layer, clamped to the segment table — a consumer-built
+ * layer table with an overshooting `segEnd` or a negative `segStart` never reads (or loops) outside it.
+ */
+function layerRange(l: { segStart: number; segEnd: number }, count: number): [number, number] {
+  return [Math.max(0, l.segStart), Math.min(l.segEnd + 1, count)];
+}
+
+/** True when both XY endpoints of segment `i` are finite numbers (#501: Infinity/NaN are skipped). */
+function finiteXY(seg: ToolpathIR['segments'], i: number): boolean {
+  return (
+    Number.isFinite(seg.x0[i]) && Number.isFinite(seg.y0[i]) && Number.isFinite(seg.x1[i]) && Number.isFinite(seg.y1[i])
+  );
+}
+
+/**
+ * XY bounds of one layer's segments (both endpoints), in the origin-relative frame. Segments with a
+ * non-finite XY endpoint are ignored (they are not drawn either), so one bad coordinate cannot blow the
+ * frame up to ±Infinity.
+ */
 export function layerBounds2D(ir: ToolpathIR, layer: number): LayerBounds2D {
   const empty: LayerBounds2D = { minX: 0, minY: 0, maxX: 0, maxY: 0, hasContent: false };
   const l = ir.layers[layer];
@@ -107,7 +135,9 @@ export function layerBounds2D(ir: ToolpathIR, layer: number): LayerBounds2D {
   let minY = Infinity;
   let maxX = -Infinity;
   let maxY = -Infinity;
-  for (let i = l.segStart; i <= l.segEnd && i < seg.count; i++) {
+  const [start, end] = layerRange(l, seg.count);
+  for (let i = start; i < end; i++) {
+    if (!finiteXY(seg, i)) continue;
     const xs = [seg.x0[i], seg.x1[i]];
     const ys = [seg.y0[i], seg.y1[i]];
     for (const x of xs) {
@@ -126,22 +156,32 @@ export function layerBounds2D(ir: ToolpathIR, layer: number): LayerBounds2D {
 /**
  * Fit `bounds` into a `width`×`height` canvas with uniform scale, centered, `padding` px inset,
  * and the Y axis flipped so higher printer-Y draws higher on screen. Degenerate (zero-span or
- * empty) bounds fall back to scale 1 centered at the canvas middle.
+ * empty) bounds fall back to scale 1 centered at the canvas middle. Non-finite bounds (#501) are
+ * treated as empty (scale 1, origin at the canvas middle), and a non-finite `width`/`height`/`padding`
+ * as 0, so the projection is always finite for finite input — never a NaN transform (blank canvas).
  */
 export function computeLayerFit(bounds: LayerBounds2D, width: number, height: number, padding = 8): LayerFit {
-  const availW = Math.max(1, width - 2 * padding);
-  const availH = Math.max(1, height - 2 * padding);
-  const spanX = bounds.maxX - bounds.minX;
-  const spanY = bounds.maxY - bounds.minY;
+  const pad = Number.isFinite(padding) ? padding : 0;
+  const availW = Math.max(1, (Number.isFinite(width) ? width : 0) - 2 * pad);
+  const availH = Math.max(1, (Number.isFinite(height) ? height : 0) - 2 * pad);
+  const finite =
+    Number.isFinite(bounds.minX) &&
+    Number.isFinite(bounds.minY) &&
+    Number.isFinite(bounds.maxX) &&
+    Number.isFinite(bounds.maxY);
+  const minX = finite ? bounds.minX : 0;
+  const minY = finite ? bounds.minY : 0;
+  const spanX = finite ? bounds.maxX - minX : 0;
+  const spanY = finite ? bounds.maxY - minY : 0;
+  // Non-finite bounds already have zero spans, so they take the scale-1 branch below.
   const scale =
     !bounds.hasContent || (spanX <= 0 && spanY <= 0)
       ? 1
       : Math.min(spanX > 0 ? availW / spanX : Infinity, spanY > 0 ? availH / spanY : Infinity);
   const drawnW = spanX * scale;
   const drawnH = spanY * scale;
-  const offsetX = padding + (availW - drawnW) / 2;
-  const offsetYTop = padding + (availH - drawnH) / 2;
-  const { minX, minY } = bounds;
+  const offsetX = pad + (availW - drawnW) / 2;
+  const offsetYTop = pad + (availH - drawnH) / 2;
   return {
     scale,
     project(x: number, y: number): [number, number] {
@@ -167,6 +207,7 @@ export function drawLayer(ctx: CanvasContext2DLike, ir: ToolpathIR, opts: DrawLa
     layerCount,
     extrudeDrawn: 0,
     travelDrawn: 0,
+    skippedNonFinite: 0,
     drawn: false
   };
   if (!l) return base;
@@ -175,6 +216,8 @@ export function drawLayer(ctx: CanvasContext2DLike, ir: ToolpathIR, opts: DrawLa
   const colorOf = createSegmentColorer(ir, opts.colorMode);
   const extrudeWidth = opts.lineWidth ?? 1;
   const showTravel = opts.travel ? opts.travel : null;
+  const [start, end] = layerRange(l, seg.count);
+  let skippedNonFinite = 0;
 
   ctx.lineCap = 'round';
   ctx.lineJoin = 'round';
@@ -186,8 +229,12 @@ export function drawLayer(ctx: CanvasContext2DLike, ir: ToolpathIR, opts: DrawLa
   if (showTravel) {
     ctx.strokeStyle = showTravel.color;
     ctx.lineWidth = showTravel.lineWidth ?? 0.5;
-    for (let i = l.segStart; i <= l.segEnd && i < seg.count; i++) {
+    for (let i = start; i < end; i++) {
       if ((seg.kind[i] & MoveKind.Travel) === 0) continue;
+      if (!finiteXY(seg, i)) {
+        skippedNonFinite++;
+        continue;
+      }
       const [ax, ay] = opts.fit.project(seg.x0[i], seg.y0[i]);
       const [bx, by] = opts.fit.project(seg.x1[i], seg.y1[i]);
       ctx.beginPath();
@@ -205,8 +252,12 @@ export function drawLayer(ctx: CanvasContext2DLike, ir: ToolpathIR, opts: DrawLa
   const upcomingOpacity = baseOpacity * (opts.upcomingOpacity ?? 0.15);
   const cut = opts.progressCutSeg;
   let extrudeDrawn = 0;
-  for (let i = l.segStart; i <= l.segEnd && i < seg.count; i++) {
+  for (let i = start; i < end; i++) {
     if ((seg.kind[i] & MoveKind.Extrude) === 0) continue;
+    if (!finiteXY(seg, i)) {
+      skippedNonFinite++;
+      continue;
+    }
     ctx.globalAlpha = cut !== undefined && i > cut ? upcomingOpacity : baseOpacity;
     ctx.strokeStyle = rgbToCss(colorOf(i));
     const [ax, ay] = opts.fit.project(seg.x0[i], seg.y0[i]);
@@ -219,10 +270,13 @@ export function drawLayer(ctx: CanvasContext2DLike, ir: ToolpathIR, opts: DrawLa
   }
 
   ctx.globalAlpha = prevAlpha;
-  return { layer: opts.layer, layerCount, extrudeDrawn, travelDrawn, drawn: true };
+  return { layer: opts.layer, layerCount, extrudeDrawn, travelDrawn, skippedNonFinite, drawn: true };
 }
 
-/** XY bounds over ALL of the IR's segments — a stable frame for the layer view (not per-layer). */
+/**
+ * XY bounds over ALL of the IR's segments — a stable frame for the layer view (not per-layer). Segments
+ * with a non-finite XY endpoint are ignored, as in {@link layerBounds2D}.
+ */
 export function modelBounds2D(ir: ToolpathIR): LayerBounds2D {
   const seg = ir.segments;
   let minX = Infinity;
@@ -230,6 +284,7 @@ export function modelBounds2D(ir: ToolpathIR): LayerBounds2D {
   let maxX = -Infinity;
   let maxY = -Infinity;
   for (let i = 0; i < seg.count; i++) {
+    if (!finiteXY(seg, i)) continue;
     const x0 = seg.x0[i];
     const x1 = seg.x1[i];
     const y0 = seg.y0[i];
@@ -306,6 +361,8 @@ export interface DrawLayersResult {
   /** Extrusion segments drawn across the active layer + ghosts. */
   extrudeDrawn: number;
   travelDrawn: number;
+  /** Segments skipped for a non-finite XY endpoint, summed over the active layer + ghosts (#501). */
+  skippedNonFinite: number;
   drawn: boolean;
 }
 
@@ -323,6 +380,7 @@ export function drawLayers(ctx: CanvasContext2DLike, ir: ToolpathIR, opts: DrawL
     ghostLayers: [],
     extrudeDrawn: 0,
     travelDrawn: 0,
+    skippedNonFinite: 0,
     drawn: false
   };
   if (!ir.layers[opts.layer]) return base;
@@ -334,6 +392,7 @@ export function drawLayers(ctx: CanvasContext2DLike, ir: ToolpathIR, opts: DrawL
   const ghostLayers: number[] = [];
   let extrudeDrawn = 0;
   let travelDrawn = 0;
+  let skippedNonFinite = 0;
 
   // Ghosts first (oldest→newest), dimmed, extrusion only — a depth cue, not the focus.
   for (let li = firstGhost; li < opts.layer; li++) {
@@ -347,6 +406,7 @@ export function drawLayers(ctx: CanvasContext2DLike, ir: ToolpathIR, opts: DrawL
     if (r.drawn) {
       ghostLayers.push(li);
       extrudeDrawn += r.extrudeDrawn;
+      skippedNonFinite += r.skippedNonFinite;
     }
   }
 
@@ -364,8 +424,9 @@ export function drawLayers(ctx: CanvasContext2DLike, ir: ToolpathIR, opts: DrawL
   });
   extrudeDrawn += active.extrudeDrawn;
   travelDrawn += active.travelDrawn;
+  skippedNonFinite += active.skippedNonFinite;
 
-  return { layer: opts.layer, layerCount, ghostLayers, extrudeDrawn, travelDrawn, drawn: true };
+  return { layer: opts.layer, layerCount, ghostLayers, extrudeDrawn, travelDrawn, skippedNonFinite, drawn: true };
 }
 
 export interface LayerView2DOptions {
@@ -472,6 +533,7 @@ export class LayerView2D {
       ghostLayers: [],
       extrudeDrawn: 0,
       travelDrawn: 0,
+      skippedNonFinite: 0,
       drawn: false
     };
     if (!ctx) return empty;
