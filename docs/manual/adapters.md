@@ -103,7 +103,11 @@ Each fires the same events (naming follows each framework's idiom): parse lifecy
 `parse-error` or `parse-cancelled`; a parse replaced by a newer source reports `parse-cancelled`, and one
 replaced before it started emits nothing.
 
-Two of them tell your users what the view is not showing. They answer different questions:
+A control you call before the 3D renderer has loaded is queued and applied when it is ready. If the renderer
+rejects one of those calls, for example a theme opacity outside 0–1, you get an `error` event and `state.error`
+with code `E_CONTROL_REJECTED` and a message that names the control; the other queued controls still apply.
+
+Two of the events tell your users what the view is not showing. They answer different questions:
 
 | | `disclosure` | `renderer-unsupported` |
 | --- | --- | --- |
