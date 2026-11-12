@@ -4,14 +4,19 @@
  * the dropped segments did not count toward `maxSegments`, so neither the budget nor cancel() could stop it.
  *
  * Two fixes, each pinned here: dropped segments count toward the segment budget, and an O(1) pre-check
- * drops the whole arc when its target or its centre ± radius box is out of range. Every test passes
- * `maxSegments: 1000` and a short timeout, so a regression fails fast instead of hanging the worker.
+ * drops the whole arc when its start, its target or its centre ± radius box is out of range. Every test
+ * passes `maxSegments: 1000`, so reverting EITHER fix fails fast here (the other one still bounds the
+ * loop). Reverting BOTH makes the 3e38 cases spin synchronously, and a vitest timeout cannot interrupt a
+ * synchronous loop: arc-out-of-range-fast.test.ts holds a radius-100 twin that fails in milliseconds then.
  */
 import { describe, expect, it } from 'vitest';
 import { parseGcodeToIR } from '../index';
 
 const BIG = '3' + '0'.repeat(38); // 3e38, inside float32 (max 3.4028e38)
 const FAST = 5_000;
+const F32_MAX = '340282346638528859811704183484516925440'; // FLOAT32_MAX, exactly
+const P75 = '37778931862957161709568'; // 2^75: one double ulp at FLOAT32_MAX
+const P74 = '18889465931478580854784'; // 2^74
 
 function parse(src: string, maxSegments = 1000) {
   const t0 = Date.now();
@@ -108,6 +113,64 @@ describe('arcs beyond the float32 range (#525)', () => {
       expect(r.count).toBe(0);
       expect(r.stop).toBeUndefined();
       expect(r.oor[0].count).toBe(1);
+    },
+    FAST
+  );
+
+  it(
+    'G18: the box is checked on X/Z against the origin, which carries a Z offset',
+    () => {
+      // The probe + G92 resync puts the machine Z (and so the origin) at 3e38; the XZ arc's box reaches -3e38.
+      const r = parse(`G31 Z10
+G92 Z${BIG}
+G1 X1 E1
+G18
+G2 I0 K-${BIG} E1
+`);
+      expect(r.count).toBe(1);
+      expect(r.stop).toBeUndefined();
+      expect(r.oor).toHaveLength(1);
+      expect(r.oor[0].count).toBe(1);
+      expect(r.oor[0].message).toBe('a stored position is beyond the float32 range the toolpath stores; arc dropped');
+    },
+    FAST
+  );
+
+  it(
+    'G19: the box is checked on Y/Z against the origin, which carries a Z offset',
+    () => {
+      const r = parse(`G31 Z10
+G92 Z${BIG}
+G1 Y1 E1
+G19
+G2 J0 K-${BIG} E1
+`);
+      expect(r.count).toBe(1);
+      expect(r.stop).toBeUndefined();
+      expect(r.oor).toHaveLength(1);
+      expect(r.oor[0].count).toBe(1);
+      expect(r.oor[0].message).toBe('a stored position is beyond the float32 range the toolpath stores; arc dropped');
+    },
+    FAST
+  );
+
+  it(
+    'an out-of-range start is caught even when the rounded centre collapses the box onto an in-range value',
+    () => {
+      // The position ends one double ulp past FLOAT32_MAX (that move is dropped). With I = -2^74 the centre
+      // rounds to exactly FLOAT32_MAX, so the box is [F, F] on X and passes; only the start check drops it.
+      const src = `G91
+G1 X${F32_MAX} E1
+G1 X${P75} E1
+G90
+G2 X${F32_MAX} Y${P74} I-${P74} J0 E1
+G1 Y5 E1
+`;
+      const r = parse(src);
+      expect(r.count).toBe(2);
+      expect(r.stop).toBeUndefined();
+      expect(r.oor[0].count).toBe(2);
+      expect(r.ir.segments.y1[1]).toBe(5);
     },
     FAST
   );

@@ -831,14 +831,16 @@ export function createEngine(input: string | Uint8Array, opts: ParseOptions): En
     // O(1) range pre-check (#525): every interpolated point lies inside the centre ± radius box in the
     // plane, with its through-axis value between the start's and the target's. If the target or a corner of
     // that box cannot be stored as float32, drop the whole arc now (one dropped segment toward the budget)
-    // instead of interpolating up to ~1e39 points that would each be dropped. The start needs no check of
-    // its own: it lies on the circle (centre = start + offset), so the box at the start's through value
-    // covers it. The origin is the one emitSegment would fix on this arc's first point when none is set yet.
+    // instead of interpolating up to ~1e39 points that would each be dropped. The start is checked too: it
+    // lies on the circle in exact arithmetic, but the centre (start + offset) is rounded, so with a huge
+    // offset the box can collapse onto an in-range value while the start is out of range. The origin is the
+    // one emitSegment would fix on this arc's first point when none is set yet.
     const rx = originSet ? ox : prevX;
     const ry = originSet ? oy : prevY;
     const rz = originSet ? oz : prevZ;
     const inRange = ([px, py, pz]: [number, number, number]): boolean => storedInRange(px - rx, py - ry, pz - rz);
     if (
+      !inRange(toXYZ(sa, sb, sc)) ||
       !inRange(toXYZ(ta, tb, tc)) ||
       !inRange(toXYZ(centerA - arcRadius, centerB - arcRadius, sc)) ||
       !inRange(toXYZ(centerA + arcRadius, centerB + arcRadius, sc))
