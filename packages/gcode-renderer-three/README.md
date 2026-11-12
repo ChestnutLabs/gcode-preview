@@ -65,8 +65,9 @@ fragments of ratio 1.
 A segment with an `Infinity` or `NaN` endpoint coordinate is not drawn. The camera frame still comes from the IR's bounds, so with the default `frameContent: 'all'` the
 camera frames the build volume (or the preview bounds) instead of the remaining toolpath; under `'object'` it
 tries the model, then the object bounds, then the build volume. The 2D renderer skips on x/y only.
-`buildChunks` counts skipped segments in `skippedNonFinite`; core and the framework adapters do not surface that
-count yet (tracked with [#518](https://github.com/ChestnutLabs/gcode-preview/issues/518)). `createBuildVolume` and
+`buildChunks` counts skipped segments in `skippedNonFinite`, and the renderer's `buildComplete` event carries the
+count. `GcodePreview` and the framework adapters report it in their `disclosure` text, for example
+`4 segments with a non-finite coordinate were not drawn.` `createBuildVolume` and
 `setBuildVolume` throw `RangeError` for a volume that cannot be drawn: a non-finite size, origin or height, a grid
 pitch that is not a positive number, more than 10 000 grid lines on one axis, or an origin so large that the pitch
 no longer advances. A bed discovered in the file (a `MachineGeometry`) never throws: `setBuildVolume` keeps the

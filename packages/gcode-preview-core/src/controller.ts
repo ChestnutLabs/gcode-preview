@@ -179,7 +179,11 @@ export interface GcodePreviewState {
   presentation: ProgressPresentationMode;
   layerCount: number;
   segmentCount: number;
-  /** User-presentable decimation/travel disclosure (empty when rendering everything). */
+  /**
+   * User-presentable disclosure of what the current build leaves out (empty when it draws everything):
+   * decimation (3D), then the count of segments skipped for a non-finite coordinate (#518), e.g.
+   * `"3 segments with a non-finite coordinate were not drawn."`. Updated on every `buildComplete`.
+   */
   disclosure: string;
   /**
    * Estimated total print time in ms (#181), or null before a parse. `timeEstimateSource` says whether
@@ -410,13 +414,22 @@ export function createPreviewController(options: PreviewControllerOptions = {}):
 
   function onRendererEvent(e: PreviewRendererEvent): void {
     if (e.type === 'buildComplete') {
+      const decimated =
+        e.decimationApplied > 1
+          ? `Showing every ${ordinal(e.decimationApplied)} extrusion segment (layer boundaries kept); ` +
+            `travel hidden. ${e.segments.toLocaleString()} segments drawn.`
+          : '';
+      // #518: segments a renderer skipped for an Infinity/NaN coordinate (2D: x/y; 3D: x/y/z), named by count.
+      const skipped = e.skippedNonFinite ?? 0;
+      const nonFinite =
+        skipped > 0
+          ? skipped === 1
+            ? '1 segment with a non-finite coordinate was not drawn.'
+            : `${skipped.toLocaleString()} segments with a non-finite coordinate were not drawn.`
+          : '';
       mutate({
         activeQuality: e.quality,
-        disclosure:
-          e.decimationApplied > 1
-            ? `Showing every ${ordinal(e.decimationApplied)} extrusion segment (layer boundaries kept); ` +
-              `travel hidden. ${e.segments.toLocaleString()} segments drawn.`
-            : ''
+        disclosure: decimated !== '' && nonFinite !== '' ? `${decimated} ${nonFinite}` : decimated + nonFinite
       });
     } else if (e.type === 'qualityFallback') {
       mutate({ activeQuality: e.to });

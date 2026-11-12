@@ -161,13 +161,14 @@ export function registerCompat({ describe, it, expect, svelte, compiler, expecte
     `svelte ${expectedMajor} <GcodePreview>`,
     { describe, it, expect },
     {
-      mount(cb) {
+      mount(cb, opts = {}) {
         const target = document.body.appendChild(document.createElement('div'));
         const handle = mountComponent(svelte, GcodePreview, {
           target,
           props: {
+            renderer: opts.renderer,
             quality: 'lines',
-            createWorker: () => new SuiteStubWorker(),
+            createWorker: () => new SuiteStubWorker(undefined, opts.ir),
             rendererOptions: {
               createRenderer: (canvas) => makeSuiteStubGL(canvas),
               scheduleFrame: (f) => f(),
@@ -175,6 +176,7 @@ export function registerCompat({ describe, it, expect, svelte, compiler, expecte
             }
           },
           events: {
+            ready: (e) => cb.onReady(e.detail.segments),
             buildcomplete: (e) => cb.onBuildComplete(e.detail.segments),
             disclosure: (e) => cb.onDisclosure(e.detail)
           }
@@ -182,6 +184,7 @@ export function registerCompat({ describe, it, expect, svelte, compiler, expecte
         const preview = handle.instance.preview; // Svelte 4 clears the instance's exports on $destroy()
         return {
           emitBuild: (decimation, segments) => emitSuiteBuild(preview.raw.renderer(), decimation, segments),
+          parse: (bytes) => preview.parse(bytes),
           settle,
           unmount: () => {
             handle.destroy();

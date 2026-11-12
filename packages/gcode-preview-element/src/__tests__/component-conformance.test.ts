@@ -17,17 +17,19 @@ runComponentConformanceSuite(
   'element <gcode-preview>',
   { describe, it, expect },
   {
-    async mount(cb) {
+    async mount(cb, opts = {}) {
       defineGcodePreview();
       const canvas = document.createElement('canvas');
       const el = document.createElement('gcode-preview') as GcodePreviewElement;
-      el.createWorker = () => new SuiteStubWorker();
+      el.createWorker = () => new SuiteStubWorker(undefined, opts.ir);
+      if (opts.renderer !== undefined) el.renderer = opts.renderer;
       el.quality = 'lines';
       el.rendererOptions = {
         createRenderer: () => makeSuiteStubGL(canvas),
         scheduleFrame: (f) => f(),
         chunksPerTick: 8
       };
+      el.addEventListener('ready', (e) => cb.onReady((e as CustomEvent<{ segments: number }>).detail.segments));
       el.addEventListener('build-complete', (e) =>
         cb.onBuildComplete((e as CustomEvent<{ segments: number }>).detail.segments)
       );
@@ -36,6 +38,7 @@ runComponentConformanceSuite(
       await settle();
       return {
         emitBuild: (decimation, segments) => emitSuiteBuild(el.raw.renderer(), decimation, segments),
+        parse: (bytes) => el.parse(bytes),
         settle,
         unmount: () => el.remove()
       };

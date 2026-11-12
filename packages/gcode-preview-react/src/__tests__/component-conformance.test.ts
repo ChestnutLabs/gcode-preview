@@ -23,7 +23,7 @@ runComponentConformanceSuite(
   'react <GcodePreview>',
   { describe, it, expect },
   {
-    async mount(cb) {
+    async mount(cb, opts = {}) {
       const canvas = document.createElement('canvas');
       const ref = createRef<GcodePreviewHandle>();
       const host = document.body.appendChild(document.createElement('div'));
@@ -34,13 +34,15 @@ runComponentConformanceSuite(
           createElement(GcodePreview, {
             ref,
             source: null,
+            renderer: opts.renderer,
             quality: 'lines',
-            createWorker: () => new SuiteStubWorker(),
+            createWorker: () => new SuiteStubWorker(undefined, opts.ir),
             rendererOptions: {
               createRenderer: () => makeSuiteStubGL(canvas),
               scheduleFrame: (f: () => void) => f(),
               chunksPerTick: 8
             },
+            onReady: (e) => cb.onReady(e.segments),
             onBuildComplete: (e) => cb.onBuildComplete(e.segments),
             onDisclosure: (text) => cb.onDisclosure(text)
           })
@@ -50,6 +52,13 @@ runComponentConformanceSuite(
         emitBuild: async (decimation, segments) => {
           // Inside act, so React may re-render (and its render snapshot lag) around the callback.
           await act(async () => emitSuiteBuild(ref.current?.raw.renderer() ?? null, decimation, segments));
+        },
+        parse: async (bytes) => {
+          let out: unknown;
+          await act(async () => {
+            out = await ref.current?.parse(bytes);
+          });
+          return out;
         },
         settle,
         unmount: async () => {

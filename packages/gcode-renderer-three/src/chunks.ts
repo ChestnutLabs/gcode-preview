@@ -55,8 +55,8 @@ export interface ChunkBuildResult {
   /**
    * IR segments left out because an endpoint coordinate (x0..z1) is Infinity or NaN (a consumer-built IR,
    * or a float32 overflow). They are never uploaded: a non-finite position poisons the bounding sphere,
-   * so picking and frustum culling would break for the whole chunk. 0 for a well-formed IR. Core and the
-   * framework adapters do not surface this count yet (tracked with #518).
+   * so picking and frustum culling would break for the whole chunk. 0 for a well-formed IR. The renderer
+   * reports it on `buildComplete`, and core names it in its `disclosure` text (#518).
    */
   skippedNonFinite: number;
 }

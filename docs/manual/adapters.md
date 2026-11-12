@@ -101,6 +101,16 @@ Each fires the same events (naming follows each framework's idiom): parse lifecy
 (`machine-geometry-discovered` / `machine-geometry-mismatch`), `progress-presentation-changed`,
 `disclosure`, and `error`.
 
+The `disclosure` text says what the current build leaves out. It follows every `build-complete`, in both
+renderers, and is empty when the build draws everything. In 3D it names decimation (`Showing every 3rd
+extrusion segment …`). For a toolpath you build yourself, it also counts segments skipped for an `Infinity` or
+`NaN` coordinate: `3 segments with a non-finite coordinate were not drawn.` The two renderers count
+differently. The flat 2D view checks x and y, over extrusion and travel. The 3D renderer checks x, y and z, over
+every segment it builds: extrusion, travel and wipe. A segment with only a non-finite z is drawn in 2D and
+skipped in 3D. Both count every layer, not only the one on screen, and both count travel whether or not travel
+is shown, because a skipped segment is never drawn. In 2D, `build-complete` fires once each time a toolpath
+loads, with `quality: 'lines'`.
+
 Beyond the declarative props, the same **imperative surface** is reachable through the handle's
 `controls` in every adapter — including render diagnostics (`getRenderStats`), segment picking /
 source-mapping (`pickSegment`), the color-mode capability gate (`isColorModeAvailable`), and image

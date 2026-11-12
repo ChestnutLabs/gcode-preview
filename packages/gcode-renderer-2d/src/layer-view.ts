@@ -121,6 +121,31 @@ function finiteXY(seg: ToolpathIR['segments'], i: number): boolean {
   );
 }
 
+/** Whole-toolpath draw summary for the 2D view (#518): see {@link summarize2DDrawable}. */
+export interface Drawable2DSummary {
+  /** Extrusion and travel segments with finite x/y endpoints: what the view can draw. */
+  drawable: number;
+  /** Extrusion and travel segments the view never draws because an x/y endpoint is Infinity or NaN. */
+  skippedNonFinite: number;
+}
+
+/**
+ * Count, across the whole toolpath (every layer, travel included whether or not it is shown), the
+ * segments the 2D view can draw and the ones it skips for a non-finite x/y (#518). Only extrusion and
+ * travel are counted, the two kinds {@link drawLayer} draws. Z is ignored: the view is flat top-down.
+ */
+export function summarize2DDrawable(ir: ToolpathIR): Drawable2DSummary {
+  const seg = ir.segments;
+  let drawable = 0;
+  let skippedNonFinite = 0;
+  for (let i = 0; i < seg.count; i++) {
+    if ((seg.kind[i] & (MoveKind.Extrude | MoveKind.Travel)) === 0) continue;
+    if (finiteXY(seg, i)) drawable++;
+    else skippedNonFinite++;
+  }
+  return { drawable, skippedNonFinite };
+}
+
 /**
  * XY bounds of one layer's segments (both endpoints), in the origin-relative frame. Segments with a
  * non-finite XY endpoint are ignored (they are not drawn either), so one bad coordinate cannot blow the

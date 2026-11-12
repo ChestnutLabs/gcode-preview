@@ -46,6 +46,55 @@ export function makeTestIR(): ToolpathIR {
   return b.finalize();
 }
 
+/**
+ * {@link makeTestIR}'s 12 extrusion segments plus one travel, with non-finite coordinates (#518), for
+ * the renderers' skip-and-disclose path. Three segments have a non-finite x/y (layer 0 extrusion 1 with
+ * `x1: Infinity`, the travel with `y0: NaN`, layer 1 extrusion 2 with `x0: -Infinity`), so both renderers
+ * skip them. A fourth (layer 1 extrusion 4) has only `z1: Infinity`: the flat 2D view still draws it,
+ * the 3D renderer skips it. So 2D draws 10 of 13 and skips 3; 3D builds 9 and skips 4.
+ */
+export function makeNonFiniteTestIR(): ToolpathIR {
+  const b = new ToolpathIRBuilder({
+    parserVersion: 'behavioral-suite',
+    units: 'mm',
+    unitsSource: 'known',
+    source: { byteLength: 1_000 }
+  });
+  let src = 0;
+  for (let l = 0; l < 2; l++) {
+    const z = 0.2 * (l + 1);
+    for (let s = 0; s < 6; s++) {
+      b.addSegment({
+        x0: l === 1 && s === 2 ? -Infinity : 100 + s,
+        y0: 100,
+        z0: z,
+        x1: l === 0 && s === 1 ? Infinity : 101 + s,
+        y1: 100,
+        z1: l === 1 && s === 4 ? Infinity : z,
+        e: 1,
+        kind: MoveKind.Extrude,
+        layer: l,
+        srcByte: src++ * 10
+      });
+    }
+    if (l === 0) {
+      b.addSegment({
+        x0: 106,
+        y0: Number.NaN,
+        z0: z,
+        x1: 100,
+        y1: 110,
+        z1: z,
+        e: 0,
+        kind: MoveKind.Travel,
+        layer: 0,
+        srcByte: src++ * 10
+      });
+    }
+  }
+  return b.finalize();
+}
+
 export const TEST_MACHINE: MachineGeometry = {
   bed: { kind: 'rect', min: { x: 0, y: 0 }, max: { x: 256, y: 256 } },
   heightMm: 256,
@@ -60,7 +109,11 @@ export class SuiteStubWorker {
   static terminated = 0;
   onmessage: ((ev: { data: unknown }) => void) | null = null;
   onerror: ((err: unknown) => void) | null = null;
-  constructor(private readonly machine?: MachineGeometry) {
+  /** `ir` overrides the IR every parse returns (default {@link makeTestIR}). */
+  constructor(
+    private readonly machine?: MachineGeometry,
+    private readonly ir?: () => ToolpathIR
+  ) {
     SuiteStubWorker.created++;
   }
   postMessage(msg: { type: string; id: number }): void {
@@ -71,7 +124,7 @@ export class SuiteStubWorker {
             v: 1,
             type: 'done',
             id: msg.id,
-            ir: makeTestIR(),
+            ir: this.ir === undefined ? makeTestIR() : this.ir(),
             stats: { bytes: 1_000, wallMs: 1 },
             metadata: this.machine === undefined ? undefined : { machine: this.machine }
           }
@@ -447,11 +500,26 @@ export function runBehavioralSuite(name: string, api: TestApi, harness: AdapterH
  * event → callback wiring (props, emits, dispatched/DOM events) is covered on every adapter.
  */
 export interface ComponentHarness {
-  /** Mount the adapter's component, wired to a SuiteStubWorker + stub GL, with these callbacks bound in its own idiom. */
-  mount(callbacks: {
-    onBuildComplete: (segments: number) => void;
-    onDisclosure: (text: string) => void;
-  }): Promise<MountedComponent> | MountedComponent;
+  /**
+   * Mount the adapter's component, wired to a SuiteStubWorker + stub GL, with these callbacks bound in its
+   * own idiom. `opts.renderer` is the component's renderer prop/attribute (omitted = the 3D default), and
+   * `opts.ir` is passed to the SuiteStubWorker as the IR each parse returns.
+   */
+  mount(
+    callbacks: {
+      /** The component's parse-complete callback (`onReady` / `ready`), with its `segments`. */
+      onReady: (segments: number) => void;
+      onBuildComplete: (segments: number) => void;
+      onDisclosure: (text: string) => void;
+    },
+    opts?: ComponentMountOptions
+  ): Promise<MountedComponent> | MountedComponent;
+}
+
+/** What a {@link ComponentHarness} mount configures beyond the callbacks (#518). */
+export interface ComponentMountOptions {
+  renderer?: '2d';
+  ir?: () => ToolpathIR;
 }
 
 export interface MountedComponent {
@@ -461,6 +529,8 @@ export interface MountedComponent {
    * controller derives its disclosure from the event's `decimationApplied`.
    */
   emitBuild(decimationApplied: number, segments: number): Promise<void> | void;
+  /** Parse through the component's own preview handle (`parse(bytes)`), inside the framework's update scope. */
+  parse(bytes: Uint8Array): Promise<unknown>;
   /** Let microtask round-trips + framework effects settle. */
   settle(): Promise<void>;
   unmount(): Promise<void> | void;
@@ -485,6 +555,7 @@ export function runComponentConformanceSuite(name: string, api: TestApi, harness
     it('the disclosure callback reports the CURRENT build, after build-complete (#430)', async () => {
       const log: string[] = [];
       const m = await harness.mount({
+        onReady: (segments) => log.push(`ready ${segments}`),
         onBuildComplete: (segments) => log.push(`build ${segments}`),
         onDisclosure: (text) => log.push(`disclosure ${text}`)
       });
@@ -516,6 +587,59 @@ export function runComponentConformanceSuite(name: string, api: TestApi, harness
       await m.settle();
       expect(JSON.stringify(log.slice(4))).toBe(JSON.stringify(['build 12', 'disclosure ']));
 
+      await m.unmount();
+    });
+
+    it('2D: one build-complete per parse, and the disclosure names the non-finite count (#518)', async () => {
+      const log: string[] = [];
+      const m = await harness.mount(
+        {
+          onReady: (segments) => log.push(`ready ${segments}`),
+          onBuildComplete: (segments) => log.push(`build ${segments}`),
+          onDisclosure: (text) => log.push(`disclosure ${text}`)
+        },
+        { renderer: '2d', ir: makeNonFiniteTestIR }
+      );
+      await m.settle();
+      expect(JSON.stringify(log)).toBe('[]');
+      // ready (parse-complete) first, then build-complete, as in 3D: a build-complete handler sees the new file.
+      const expected = JSON.stringify([
+        'ready 13',
+        'build 10',
+        'disclosure 3 segments with a non-finite coordinate were not drawn.'
+      ]);
+
+      await m.parse(new Uint8Array(1_000));
+      await m.settle();
+      expect(JSON.stringify(log)).toBe(expected);
+
+      // A second parse is a second setIR: exactly one more build, not zero and not two.
+      await m.parse(new Uint8Array(1_000));
+      await m.settle();
+      expect(JSON.stringify(log.slice(3))).toBe(expected);
+
+      await m.unmount();
+    });
+
+    it('3D: the disclosure names the non-finite count, z included (#518)', async () => {
+      const log: string[] = [];
+      const m = await harness.mount(
+        {
+          onReady: (segments) => log.push(`ready ${segments}`),
+          onBuildComplete: (segments) => log.push(`build ${segments}`),
+          onDisclosure: (text) => log.push(`disclosure ${text}`)
+        },
+        { ir: makeNonFiniteTestIR }
+      );
+      await m.settle();
+      await m.parse(new Uint8Array(1_000));
+      await m.settle();
+      // The order is not pinned here: harnesses pass a synchronous scheduleFrame, so the stubbed 3D build
+      // completes inside setIR, before parse-complete. In production it runs on later frames, after it.
+      expect(JSON.stringify(log.filter((l) => !l.startsWith('ready ')))).toBe(
+        JSON.stringify(['build 9', 'disclosure 4 segments with a non-finite coordinate were not drawn.'])
+      );
+      expect(JSON.stringify(log.filter((l) => l.startsWith('ready ')))).toBe('["ready 13"]');
       await m.unmount();
     });
   });
