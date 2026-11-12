@@ -223,6 +223,40 @@ describe('camera — invalid consumer input throws RangeError and changes nothin
     ['bad mode', { ...good, cameraMode: 'isometric' }],
     ['null state', null]
   ];
+  // Each axis of each vector on its own, so dropping any one `Number.isFinite` check is caught.
+  const poseAxisVariants: [string, CameraState, string][] = [
+    [
+      'NaN position.z',
+      { ...good, position: { x: 0, y: 0, z: NaN } },
+      'camera state position must be {x, y, z} finite numbers'
+    ],
+    [
+      'NaN target.z',
+      { ...good, target: { x: 0, y: 0, z: NaN } },
+      'camera state target must be {x, y, z} finite numbers'
+    ],
+    [
+      'NaN position.x',
+      { ...good, position: { x: NaN, y: 0, z: 0 } },
+      'camera state position must be {x, y, z} finite numbers'
+    ],
+    [
+      'NaN target.y',
+      { ...good, target: { x: 0, y: NaN, z: 0 } },
+      'camera state target must be {x, y, z} finite numbers'
+    ]
+  ];
+  for (const [name, state, message] of poseAxisVariants) {
+    it(`setCameraState rejects ${name} with the literal message and keeps the pose`, () => {
+      const h = makeStage();
+      h.stage.setCameraState(good);
+      const before = JSON.stringify(h.stage.getCameraState());
+      expect(() => h.stage.setCameraState(state)).toThrow(RangeError);
+      expect(() => h.stage.setCameraState(state)).toThrow(message);
+      expect(JSON.stringify(h.stage.getCameraState())).toBe(before);
+    });
+  }
+
   for (const [name, state] of variants) {
     it(`setCameraState rejects ${name}`, () => {
       const h = makeStage();

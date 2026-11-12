@@ -682,6 +682,14 @@ export class InteractiveStage {
    * With no `width`/`height` and no `pixelRatio` set, the image is the resting drawing-buffer size, as
    * before (also mid-gesture). With a `pixelRatio` set it is the canvas's CSS size, so setting one never
    * changes it; pass `width`/`height` for a crisper image.
+   *
+   * @param opts - Capture size, background, and pixel-ratio options.
+   * @param borrow - Library-internal hook, not a supported consumer API: the library's own renderers use it
+   *   to change the scene for the capture only (e.g. `ToolpathRenderer` hides the build volume for
+   *   `includeBuildVolume: false`). It is called synchronously just before the off-screen render and must
+   *   return an undo function, which the stage calls right after the readback (before the first `await`),
+   *   also when the render throws, so the change never reaches a live frame or an overlapping capture.
+   *   Consumers should leave it unset.
    */
   async capture(opts: CaptureOptions = {}, borrow?: () => () => void): Promise<Blob> {
     checkCaptureSize(opts);

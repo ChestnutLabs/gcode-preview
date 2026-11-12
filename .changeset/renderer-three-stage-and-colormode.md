@@ -8,7 +8,7 @@ leaves it hidden.
 
 - **Invalid input is rejected up front and changes nothing.** `setCameraState` (non-finite position or
   target, a `zoom` that is not a finite number above 0, an unknown `cameraMode`), `setCameraMode` and the
-  `cameraMode` / `pixelRatio` options, capture `width` / `height` (non-finite, over 16384 px a side, or
+  `cameraMode` option, capture `width` / `height` (non-finite, over 16384 px a side, or
   over about 67 megapixels), the `colorMode` option and `setColorMode` (inverted or negative range, bad
   object index), and `progressivePreview` / `setProgressivePreview` all throw a `RangeError` before any
   state is touched. `setCameraState` previously accepted a NaN pose that blanked the view for good.
