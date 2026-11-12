@@ -69,7 +69,9 @@ completed or unavailable), `basis`, `confidence`, `band` (inclusive `[loSeg, hiS
 - **Regression** (§4.4.2): backward moves always re-sync (pause/replay, `M600`); jumps back more
   than 2 layers add `position-regressed`. Observations are never dropped for being out of order.
 - **Staleness**: `tick(now)` flips `stale` after `staleAfterMs` without a fresh observation; the
-  position holds, the presentation degrades.
+  position holds, the presentation degrades. `staleAfterMs` and `fileSizeBytes` are mapper options,
+  not observation content: a value that is NaN, ±Infinity or negative throws a `RangeError` when the
+  mapper is created (`undefined` keeps the default).
 
 ## Renderer presentation (`gcode-renderer-three`)
 

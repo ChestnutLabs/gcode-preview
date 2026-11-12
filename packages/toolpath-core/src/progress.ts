@@ -79,9 +79,9 @@ export interface MappedProgress {
 }
 
 export interface ProgressMapperOptions {
-  /** Staleness threshold in ms (default {@link DEFAULT_STALE_AFTER_MS}). */
+  /** Staleness threshold in ms (default {@link DEFAULT_STALE_AFTER_MS}); must be finite and ≥ 0, else `RangeError`. */
   staleAfterMs?: number;
-  /** Byte length of the parsed source; enables percent(bytes) promotion to the byte tier (D4). */
+  /** Byte length of the parsed source; enables percent(bytes) promotion to the byte tier (D4). Finite and ≥ 0, else `RangeError`. */
   fileSizeBytes?: number;
 }
 
@@ -131,7 +131,7 @@ function sanitizePosition(
   layer?: number;
   totalLayers?: number;
   percent?: number;
-  percentBasis: ProgressPercentBasis;
+  percentBasis: 'bytes' | 'unknown';
 } {
   const out: ReturnType<typeof sanitizePosition> = { percentBasis: 'unknown' };
   if (position === undefined || position === null || typeof position !== 'object') return out;
@@ -149,9 +149,8 @@ function sanitizePosition(
     pushNote(notes, { code: 'invalid-field', message: 'position.percent > 1 ignored' });
     out.percent = undefined;
   }
-  if (position.percentBasis === 'bytes' || position.percentBasis === 'job') {
-    out.percentBasis = position.percentBasis;
-  }
+  // Only 'bytes' changes the mapping (D4 promotion); 'job' and 'unknown' both map ordinally.
+  if (position.percentBasis === 'bytes') out.percentBasis = 'bytes';
   return out;
 }
 
@@ -163,9 +162,22 @@ function clampSeg(ir: ToolpathIR, seg: number): number {
   return Math.max(0, Math.min(ir.segments.count - 1, seg));
 }
 
-function layerOfSegment(ir: ToolpathIR, segIndex: number | null): number | null {
-  if (segIndex === null || ir.segments.count === 0) return null;
+/** Layer of a segment. Only called with a valid index: `map()` returns early on an empty IR. */
+function layerOfSegment(ir: ToolpathIR, segIndex: number): number {
   return ir.segments.layer[segIndex];
+}
+
+/**
+ * Validate a consumer option: `undefined` keeps the default; anything else must be a finite number ≥ 0,
+ * else `RangeError` (NaN/Infinity would make `staleAfterMs` never-stale, a negative one always-stale).
+ * Observation content is different — it is untrusted host data, noted and ignored, never thrown on.
+ */
+function checkOption(name: string, value: number | undefined): number | undefined {
+  if (value === undefined) return undefined;
+  if (finiteNonNegative(value) === undefined) {
+    throw new RangeError(`createProgressMapper: ${name} must be a finite number >= 0 (got ${String(value)})`);
+  }
+  return value;
 }
 
 /**
@@ -173,8 +185,8 @@ function layerOfSegment(ir: ToolpathIR, segIndex: number | null): number | null 
  * timestamp/result (for `tick`); it never mutates the IR.
  */
 export function createProgressMapper(ir: ToolpathIR, opts?: ProgressMapperOptions): ProgressMapper {
-  const staleAfterMs = opts?.staleAfterMs ?? DEFAULT_STALE_AFTER_MS;
-  const fileSizeBytes = finiteNonNegative(opts?.fileSizeBytes);
+  const staleAfterMs = checkOption('staleAfterMs', opts?.staleAfterMs) ?? DEFAULT_STALE_AFTER_MS;
+  const fileSizeBytes = checkOption('fileSizeBytes', opts?.fileSizeBytes);
   let lastTimestampMs: number | null = null;
   let lastResult: MappedProgress = UNAVAILABLE;
 

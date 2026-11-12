@@ -87,7 +87,18 @@ export class ToolpathIRBuilder {
     this.originOffset = opts.originOffset ?? null;
   }
 
+  /**
+   * Append one segment. Integer channels are validated against their typed-array range and throw a
+   * `RangeError` naming the field, rather than wrapping silently on {@link ToolpathIRBuilder.finalize}:
+   * `kind`/`feature` 0..255, `tool` 0..65535, `layer`/`object`/`srcByte` 0..4294967295.
+   */
   addSegment(s: SegmentInput): void {
+    checkChannel('kind', s.kind, MAX_U8);
+    if (s.tool !== undefined) checkChannel('tool', s.tool, MAX_U16);
+    checkChannel('layer', s.layer, MAX_U32);
+    if (s.feature !== undefined) checkChannel('feature', s.feature, MAX_U8);
+    if (s.object !== undefined) checkChannel('object', s.object, MAX_U32);
+    checkChannel('srcByte', s.srcByte, MAX_U32);
     if (this.originOffset === null) {
       this.originOffset = { x: s.x0, y: s.y0, z: s.z0 };
     }
@@ -141,6 +152,7 @@ export class ToolpathIRBuilder {
   }
 
   setTool(info: ToolInfo): void {
+    checkChannel('tool', info.id, MAX_U16);
     this.toolsMap.set(info.id, info);
   }
 
@@ -170,13 +182,23 @@ export class ToolpathIRBuilder {
       srcByte: Uint32Array.from(this.srcByte)
     };
     const origin = this.originOffset ?? { x: 0, y: 0, z: 0 };
-    const layers = deriveLayers(segments, origin.z);
+    const { layers, densified } = deriveLayers(segments, origin.z);
+    // Each IR gets its own warnings array and capabilities record: a later finalize() on the same builder must
+    // never mutate an IR already handed out.
+    const warnings: Warning[] = [...this.warnings];
+    if (densified) {
+      warnings.push({
+        code: 'layer-indices-densified',
+        message: `segment layer indices were not dense; renumbered to 0..${layers.length - 1} in ascending order`,
+        severity: 'info'
+      });
+    }
     const { bounds, boundsWithTravel, objectBounds } = computeSegmentBounds(segments, origin);
     const { modelBounds, classification } = classifyModelBounds(segments, origin);
     const sourceIndex = buildSourceIndex(segments.srcByte, count);
     // Honest at build time from whatever channels exist; the dialect runner refreshes both after
     // annotation settles the object/feature channels (DD-026 D5, lifecycle §5).
-    this.capabilities.nonModelClassification = classification;
+    const capabilities: Record<string, Confidence> = { ...this.capabilities, nonModelClassification: classification };
 
     const header: ToolpathIRHeader = {
       irSchemaVersion: IR_SCHEMA_VERSION,
@@ -191,8 +213,8 @@ export class ToolpathIRBuilder {
       originOffset: origin,
       complete: true,
       dialects: [],
-      warnings: this.warnings,
-      capabilities: this.capabilities
+      warnings,
+      capabilities
     };
 
     const tools = [...this.toolsMap.values()].sort((a, b) => a.id - b.id);
@@ -218,8 +240,24 @@ export class ToolpathIRBuilder {
   }
 }
 
-/** Group segments into layers by their `layer` index; layer Z is absolute. Assumes dense layer indices. */
-function deriveLayers(seg: ToolpathSegments, originZ: number): ToolpathLayer[] {
+const MAX_U8 = 0xff;
+const MAX_U16 = 0xffff;
+const MAX_U32 = 0xffffffff;
+
+/** Throw a `RangeError` unless `value` is an integer in `[0, max]` (the channel's typed-array range). */
+function checkChannel(field: string, value: number, max: number): void {
+  if (!(Number.isInteger(value) && value >= 0 && value <= max)) {
+    throw new RangeError(`ToolpathIRBuilder: ${field} must be an integer in [0, ${max}] (got ${String(value)})`);
+  }
+}
+
+/**
+ * Group segments into layers by their `layer` index; layer Z is absolute. `segments.layer` is the index
+ * into the returned array, so sparse input (e.g. 0, 5, 9 — a caller that skipped empty layers) is
+ * renumbered densely in ascending order and the channel rewritten in place; otherwise `layers[5]` would
+ * not be layer 5. A layer's range is its first..last segment (inclusive).
+ */
+function deriveLayers(seg: ToolpathSegments, originZ: number): { layers: ToolpathLayer[]; densified: boolean } {
   const byIndex = new Map<number, ToolpathLayer>();
   for (let i = 0; i < seg.count; i++) {
     const li = seg.layer[i];
@@ -230,5 +268,12 @@ function deriveLayers(seg: ToolpathSegments, originZ: number): ToolpathLayer[] {
       existing.segEnd = i;
     }
   }
-  return [...byIndex.keys()].sort((a, b) => a - b).map((k) => byIndex.get(k) as ToolpathLayer);
+  const keys = [...byIndex.keys()].sort((a, b) => a - b);
+  // Keys are distinct non-negative integers, so they are dense exactly when the largest is count - 1.
+  const densified = keys.length > 0 && keys[keys.length - 1] !== keys.length - 1;
+  if (densified) {
+    const dense = new Map<number, number>(keys.map((k, rank) => [k, rank]));
+    for (let i = 0; i < seg.count; i++) seg.layer[i] = dense.get(seg.layer[i]) as number;
+  }
+  return { layers: keys.map((k) => byIndex.get(k) as ToolpathLayer), densified };
 }

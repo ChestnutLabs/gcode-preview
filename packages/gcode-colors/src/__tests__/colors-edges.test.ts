@@ -175,11 +175,13 @@ describe('non-finite channel values never throw', () => {
   });
 
   it('a segment whose layer index has no layer entry is fallback', () => {
-    // Sparse layer indices (0, 2) → two layer entries; layer index 2 has no height slot.
+    // A hand-built (hostile) IR: two layer entries, but segment 1 claims layer 2, which has no height
+    // slot. The builder can't produce this any more (it densifies sparse indices), so write the channel.
     const ir = makeIR([
       { layer: 0, z: 0.2 },
-      { layer: 2, z: 0.4 }
+      { layer: 1, z: 0.4 }
     ]);
+    ir.segments.layer[1] = 2;
     const c = createSegmentColorer(ir, { mode: 'layerHeight', ramp: [A, B], fallback: F });
     expect(c(1)).toEqual([0.5, 0.5, 0.5]);
   });
