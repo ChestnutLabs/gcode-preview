@@ -169,12 +169,40 @@ describe('3D: calls made before the first file is shown', () => {
   });
 
   it('also applies when the renderer binds only after the parse completes (the queued path)', async () => {
-    const c = make3D({ ir: timedIR });
-    c.controls.setScrubTime(250);
-    c.controls.setLayerRange(0, 1);
-    await load(c);
-    expect(drawCount(c)).toBe(4);
-    c.dispose();
+    // Each half on its own controller: a range and a cut together draw only the smaller of the two.
+    const range = make3D({ ir: timedIR });
+    range.controls.setLayerRange(0, 0);
+    await load(range);
+    expect(drawCount(range)).toBe(12);
+    range.dispose();
+    const scrub = make3D({ ir: timedIR });
+    scrub.controls.setScrubTime(250);
+    await load(scrub);
+    expect(drawCount(scrub)).toBe(4);
+    scrub.dispose();
+  });
+
+  it('also applies when the canvas is rebound while the file loads (the re-apply waits for the new renderer)', async () => {
+    // A call made on the old renderer is not queued for the new one; only the re-apply carries it over.
+    const rebound = async (call: (c: ReturnType<typeof make3D>) => void): Promise<number> => {
+      const c = await bound3D({ ir: timedIR });
+      call(c);
+      let boundAtComplete: unknown = 'unseen';
+      c.onEvent((e) => {
+        if (e.type === 'parse-complete') boundAtComplete = c.raw.renderer();
+      });
+      const run = c.parse(new Uint8Array(1_000));
+      c.bindCanvas(document.createElement('canvas'));
+      await run;
+      await settle();
+      expect(boundAtComplete).toBeNull();
+      const n = drawCount(c);
+      c.dispose();
+      return n;
+    };
+    expect(await rebound((c) => c.controls.setLayerRange(0, 0))).toBe(12);
+    expect(await rebound((c) => c.controls.setScrubPosition(5))).toBe(12);
+    expect(await rebound((c) => c.controls.setScrubTime(250))).toBe(4);
   });
 });
 
@@ -283,6 +311,86 @@ describe('3D: calls made once a file is shown', () => {
     c.controls.setLayerRange(1, 1);
     await load(c);
     expect(drawCount(c)).toBe(24);
+    c.dispose();
+  });
+
+  it('a call made after a cancelled reload applies to the shown file only', async () => {
+    const c = await bound3D({ hanging: [1] });
+    await load(c);
+    const run = c.parse(new Uint8Array(1_000));
+    await settle();
+    c.cancel();
+    expect(await run).toEqual({ ok: false, cancelled: true });
+    c.controls.setLayerRange(0, 0);
+    expect(drawCount(c)).toBe(12);
+    await load(c);
+    expect(drawCount(c)).toBe(24);
+    c.dispose();
+  });
+
+  it.each([
+    ['setScrubPosition(5)', (c: ReturnType<typeof make3D>) => c.controls.setScrubPosition(5)],
+    ['setLayerRange(0, 0)', (c: ReturnType<typeof make3D>) => c.controls.setLayerRange(0, 0)]
+  ])('a parse-complete handler’s %s applies to that file only: the next file shows everything', async (_, call) => {
+    const c = await bound3D();
+    await load(c);
+    let armed = true;
+    c.onEvent((e) => {
+      if (e.type === 'parse-complete' && armed) {
+        armed = false;
+        call(c);
+      }
+    });
+    await load(c);
+    expect(armed).toBe(false);
+    expect(drawCount(c)).toBe(12);
+    await load(c);
+    expect(drawCount(c)).toBe(24);
+    c.dispose();
+  });
+
+  it.each([
+    ['setScrubPosition(5)', (c: ReturnType<typeof make3D>) => c.controls.setScrubPosition(5)],
+    ['setLayerRange(0, 0)', (c: ReturnType<typeof make3D>) => c.controls.setLayerRange(0, 0)]
+  ])('a state listener’s %s on the new file’s summary applies to that file only', async (_, call) => {
+    const c = await bound3D();
+    await load(c);
+    const shown = c.getState().summary;
+    let parsingThen: boolean | null = null;
+    c.onStateChange((s) => {
+      if (parsingThen === null && s.summary !== shown) {
+        // The new file's summary arrives while `parsing` is still true: the window this guards.
+        parsingThen = s.parsing;
+        call(c);
+      }
+    });
+    await load(c);
+    expect(parsingThen).toBe(true);
+    expect(drawCount(c)).toBe(12);
+    await load(c);
+    expect(drawCount(c)).toBe(24);
+    c.dispose();
+  });
+
+  it('a call made as a superseded parse settles applies to the newer file that is still loading (#531)', async () => {
+    const c = await bound3D({ hanging: [1] });
+    await load(c);
+    const stale = c.parse(new Uint8Array(1_000));
+    await settle();
+    let called = false;
+    c.onStateChange((s) => {
+      // The superseded parse's own `parsing: false`; the newer parse has not started its run yet.
+      if (!called && !s.parsing) {
+        called = true;
+        c.controls.setLayerRange(0, 0);
+      }
+    });
+    const fresh = c.parse(new Uint8Array(1_000));
+    expect(await stale).toEqual({ ok: false, cancelled: true });
+    expect((await fresh).ok).toBe(true);
+    await settle();
+    expect(called).toBe(true);
+    expect(drawCount(c)).toBe(12);
     c.dispose();
   });
 

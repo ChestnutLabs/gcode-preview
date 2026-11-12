@@ -491,8 +491,12 @@ export function createPreviewController(options: PreviewControllerOptions = {}):
   // applies consumes them. A failed, cancelled or superseded parse leaves them for the next one.
   let requestedRange: { start: number; end: number } | null = null;
   let requestedScrub: { kind: 'segment'; seg: number | null } | { kind: 'time'; ms: number } | null = null;
+  // True from a parse's start until its file takes the requests above (or it fails or is cancelled). Not
+  // `snapshot.parsing`: that stays true through the parse-complete emit and its state changes, so a call a
+  // listener makes there would be kept for the NEXT file too.
+  let awaitingFile = false;
   /** A call made now is for the incoming file: there is no file yet, or one is loading. */
-  const forIncomingFile = (): boolean => lastIR === null || snapshot.parsing;
+  const forIncomingFile = (): boolean => lastIR === null || awaitingFile;
   const withRenderer = (control: string, fn: (r: PreviewRenderer) => void): void => {
     if (renderer !== null) fn(renderer);
     else pendingOps.push({ control, run: fn });
@@ -683,6 +687,7 @@ export function createPreviewController(options: PreviewControllerOptions = {}):
       // start; an older one was superseded before it began, so it reports cancelled (no event: it never ran).
       if (gen !== parseGen || disposed) return { ok: false, cancelled: true };
     }
+    awaitingFile = true;
     mutate({ parsing: true, parseProgress: null, error: null });
     const bytes =
       typeof File !== 'undefined' && input instanceof File
@@ -727,6 +732,8 @@ export function createPreviewController(options: PreviewControllerOptions = {}):
       const scrub = requestedScrub;
       requestedRange = null;
       requestedScrub = null;
+      // This file is shown from here on: a call a parse-complete or state listener makes is for it only.
+      awaitingFile = false;
       if (range !== null) withRenderer('setLayerRange', (r) => r.setLayerRange(range.start, range.end));
       if (scrub !== null) {
         const cut = scrub.kind === 'segment' ? scrub.seg : scrubCutAt(axis, scrub.ms);
@@ -779,6 +786,9 @@ export function createPreviewController(options: PreviewControllerOptions = {}):
       emit({ type: 'parse-error', code, message });
       return { ok: false, error: { code, message } };
     } finally {
+      // A failed or cancelled parse brings no file. A superseded one leaves the flag to the newer parse
+      // (#531), which is still loading; a state listener below may also have started one.
+      if (gen === parseGen) awaitingFile = false;
       mutate({ parsing: false, parseProgress: null });
       if (activeParse === run) activeParse = null;
     }

@@ -14,5 +14,6 @@ Web Component inherit the fix.
   loads, so the call used to do nothing. It is now resolved on the loaded file's own time axis.
 - **The latest call wins, and a clear counts.** `setScrubPosition(5)` then `setScrubPosition(null)` before
   the load leaves no cut. A failed or cancelled load keeps the request for the next file that loads.
-- **Unchanged:** a call made once a file is shown applies to that file only. The next file you load still
-  starts with the whole toolpath visible.
+- **Unchanged:** a call made once a file is shown applies to that file only, including one made from a
+  `parse-complete` (Web Component `ready`) handler or a state listener. The next file you load still starts
+  with the whole toolpath visible.

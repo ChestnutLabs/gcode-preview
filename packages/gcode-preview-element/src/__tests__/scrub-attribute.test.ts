@@ -163,8 +163,8 @@ describe('<gcode-preview> non-numeric scrub / scrub-time', () => {
     expect(el.scrubTime).toBeNull();
   });
 
-  // On (re)connect the element applies scrub, then scrub-time only if it has a number; a numeric scrub-time
-  // before a parse is a controller no-op, so the scrub cut survives and is visible once the new source parses.
+  // On (re)connect the element applies scrub, then scrub-time only if it has a number (here it has none). A
+  // scrub call made before a parse waits for the file that parse loads, so the cut is visible once it parses.
   it('a reconnect applies the last numeric scrub over a non-numeric attribute', async () => {
     const el = await parsed();
     el.setAttribute('scrub', '5');
@@ -191,6 +191,27 @@ describe('<gcode-preview> non-numeric scrub / scrub-time', () => {
     // Connect applies scrub (2), then scrub-time (5 ms) last. Made before the parse, the scrub-time waits for
     // the file and resolves on its axis: 5 segments done, cut after segment 4, 10 vertices.
     expect(drawCount(el)).toBe(10);
+    el.remove();
+  });
+});
+
+describe('<gcode-preview> a cut set from a ready listener', () => {
+  it('applies to the file that is ready only: the next source shows everything', async () => {
+    // The element re-emits parse-complete as `ready` synchronously, inside the controller's parse.
+    const el = await parsed();
+    let armed = true;
+    el.addEventListener('ready', () => {
+      if (!armed) return;
+      armed = false;
+      el.controls.setScrubPosition(5);
+    });
+    await el.parse(new Uint8Array(1000));
+    await settle();
+    expect(armed).toBe(false);
+    expect(drawCount(el)).toBe(12);
+    await el.parse(new Uint8Array(1000));
+    await settle();
+    expect(drawCount(el)).toBe(24);
     el.remove();
   });
 });
