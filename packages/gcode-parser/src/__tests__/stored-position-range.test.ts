@@ -93,6 +93,22 @@ describe('stored positions beyond float32 (#510)', () => {
     expect(r.ir.bounds.max.x).toBe(Math.fround(2e30));
   });
 
+  it('a dropped segment does not end the line: a second move on the same line is still handled', () => {
+    const r = parse(`G91\nG1 X${BIG} E1\nG1 X${BIG} G1 X${BIG}\n`);
+    expect(r.nonFinite).toEqual([]);
+    expect(r.count).toBe(1);
+    expect(r.warning?.count).toBe(2);
+    expect(r.ir.header.truncatedAtByte).toBeUndefined();
+  });
+
+  it('a position exactly at the float32 maximum is still stored', () => {
+    const max = '340282346638528859811704183484516925440'; // float32 max, written out
+    const r = parse(`G1 X${max} E1\n`);
+    expect(r.warning).toBeUndefined();
+    expect(r.count).toBe(1);
+    expect(r.ir.segments.x1[0]).toBe(3.4028234663852886e38);
+  });
+
   it('ordinary programs raise no range warning', () => {
     const r = parse('G90\nG92 X10 Y10\nG1 X20 Y20 E1\nG2 X30 Y20 I5 J0 E1\n');
     expect(r.warning).toBeUndefined();

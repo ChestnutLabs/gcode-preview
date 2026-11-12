@@ -9,6 +9,8 @@ Each `limits` field (`maxInputBytes`, `maxSegments`, `maxBufferBytes`, `maxLineL
 off, so a looping RS274NGC program such as `o1 while [1]` / `o1 endwhile` never returned. `Infinity`, a
 negative number, a fraction, `null` and a string were accepted too and gave no real bound.
 
+- **`Infinity` is no longer accepted as "unlimited".** It now throws like any other invalid value, the same
+  break as the container caps in v0.21.1. If you passed `Infinity` to lift a bound, pass a large integer instead.
 - **What changes for you:** a bad value now throws a `ParseOptionError` with `code: 'E_PARSE_OPTION'` before
   any parsing starts. Through a parse session (the worker) the same code arrives on the rejection, and the
   session stays usable. There is no "unlimited" value; pass a large integer such as `Number.MAX_SAFE_INTEGER`

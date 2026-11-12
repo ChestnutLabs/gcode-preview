@@ -14,8 +14,12 @@ import {
   type ParseLimits,
   type WorkerLike
 } from '../index';
-import { createWorkerHandler } from '../worker-core';
-import type { WorkerRequest } from '../protocol';
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { openGcode3mf, sniffGcode3mf } from '@chestnutlabs/gcode-containers';
+import { createWorkerHandler, type WorkerHandlerOptions } from '../worker-core';
+import { PROTOCOL_VERSION, type WorkerRequest } from '../protocol';
 
 const FIELDS: (keyof ParseLimits)[] = [
   'maxInputBytes',
@@ -70,6 +74,71 @@ describe('ParseLimits validation (#508)', () => {
     expect(() => parseGcodeToIR(PROGRAM, { limits: { maxProgramIterations: 0, maxCallDepth: 0 } })).not.toThrow();
     expect(() => parseGcodeToIR(PROGRAM, { limits: {} })).not.toThrow();
     expect(() => parseGcodeToIR(PROGRAM, { limits: undefined })).not.toThrow();
+  });
+
+  it('a null limits object (untyped caller) behaves like no limits', () => {
+    expect(() => parseGcodeToIR(PROGRAM, { limits: null as unknown as undefined })).not.toThrow();
+  });
+
+  it('a bad limit fails before any container sniffing in the worker', async () => {
+    let sniffed = 0;
+    const handlerCalls: unknown[] = [];
+    const handler = createWorkerHandler((msg) => handlerCalls.push(msg), {
+      containers: [
+        {
+          id: 'probe',
+          sniff: () => {
+            sniffed++;
+            return false;
+          },
+          open: () => Promise.reject(new Error('unreachable'))
+        }
+      ]
+    });
+    handler({
+      v: PROTOCOL_VERSION,
+      type: 'parse',
+      id: 1,
+      input: new Uint8Array([1, 2, 3, 4, 5, 6, 7, 8]),
+      opts: { limits: { maxLineLength: -1 } }
+    } as WorkerRequest);
+    await new Promise((r) => setTimeout(r, 20));
+    expect(sniffed).toBe(0);
+    expect(handlerCalls).toMatchObject([{ type: 'error', id: 1, error: { code: 'E_PARSE_OPTION' } }]);
+  });
+
+  it('a .gcode.3mf with a bad limit is rejected before the archive is opened or extracted', async () => {
+    const dir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../../test-data/fixtures/containers');
+    const bytes = () => new Uint8Array(fs.readFileSync(path.join(dir, 'mini-project.gcode.3mf')));
+    let opens = 0;
+    const containers: WorkerHandlerOptions['containers'] = [
+      {
+        id: 'gcode-3mf',
+        sniff: sniffGcode3mf,
+        open: (b) => {
+          opens++;
+          return openGcode3mf(b);
+        }
+      }
+    ];
+    const w: WorkerLike = { onmessage: null, onerror: null, postMessage: () => undefined, terminate: () => undefined };
+    const handler = createWorkerHandler(
+      (msg) => {
+        void Promise.resolve().then(() => w.onmessage?.({ data: msg }));
+      },
+      { containers }
+    );
+    w.postMessage = (m: unknown) => handler(m as WorkerRequest);
+    const session = new GcodeParseSession({ worker: w });
+    await expect(session.parse(bytes(), { limits: { maxProgramIterations: NaN } })).rejects.toMatchObject({
+      code: 'E_PARSE_OPTION'
+    });
+    expect(opens).toBe(0);
+    // control: the same file with a valid limit does open the archive and parse
+    const ok = await session.parse(bytes(), { limits: { maxProgramIterations: 100 } });
+    expect(opens).toBe(1);
+    expect(ok.ir.segments.count).toBe(401);
+    session.dispose();
   });
 
   it('a looping program with a valid small bound still stops with the disclosure', () => {

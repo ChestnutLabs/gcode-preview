@@ -100,10 +100,11 @@ export function resolveParseLimits(limits?: Partial<ParseLimits>): ParseLimits {
   for (const key of Object.keys(DEFAULT_LIMITS) as (keyof ParseLimits)[]) {
     const value: unknown = limits[key];
     if (value === undefined) continue;
-    if (!(typeof value === 'number' && Number.isSafeInteger(value) && value >= 0)) {
+    // isSafeInteger is false for NaN, Infinity, fractions, null, strings and objects
+    if (!(Number.isSafeInteger(value) && (value as number) >= 0)) {
       throw new ParseOptionError(`limits.${key} must be a non-negative integer (got ${String(value)})`);
     }
-    out[key] = value;
+    out[key] = value as number;
   }
   return out;
 }
