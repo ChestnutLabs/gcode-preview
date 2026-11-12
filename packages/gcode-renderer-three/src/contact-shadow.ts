@@ -53,15 +53,23 @@ function radialAlpha(): DataTexture {
 
 /**
  * The shadow decal for a footprint, or `null` when there is no content (no footprint, or a footprint
- * with no positive area). Named 'contactShadow'.
+ * with no positive, finite area — a footprint comes from file data, so a non-finite one draws nothing).
+ * Named 'contactShadow'. Throws `RangeError` for an `opacity` outside [0,1] (or NaN): that is an option.
  */
 export function createContactShadow(footprint: ShadowFootprint | null, opacity: number): Mesh | null {
+  if (!(opacity >= 0 && opacity <= 1)) {
+    throw new RangeError(`contactShadow opacity must be a number in [0,1] (got ${String(opacity)})`);
+  }
   if (footprint === null) return null;
   const w = footprint.max.x - footprint.min.x;
   const h = footprint.max.y - footprint.min.y;
-  if (!(w > 0 && h > 0)) return null;
+  // A finite w (or h) implies finite min and max (an infinite end makes the difference ±Infinity or NaN),
+  // so checking the extent alone also bounds the centre.
+  if (!(w > 0 && h > 0 && w < Infinity && h < Infinity)) return null;
+  const cx = footprint.min.x + w / 2;
+  const cy = footprint.min.y + h / 2;
   const geom = new PlaneGeometry(w * SHADOW_SPREAD, h * SHADOW_SPREAD);
-  geom.translate(footprint.min.x + w / 2, footprint.min.y + h / 2, CONTACT_SHADOW_Z);
+  geom.translate(cx, cy, CONTACT_SHADOW_Z);
   const material = new MeshBasicMaterial({
     color: 0x000000,
     map: radialAlpha(),

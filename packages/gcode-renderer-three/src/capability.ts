@@ -63,8 +63,7 @@ const HARDWARE_MARKERS = [
   'nvidia',
   'geforce',
   'quadro',
-  'radeon',
-  'radeonsi',
+  'radeon', // also covers 'radeonsi' (a substring match), so that needs no entry of its own
   'amd ',
   'intel', // "Mesa Intel(R) ...", "Intel(R) UHD ..." — Intel iGPUs are hardware
   'apple', // Apple M-series / Apple GPU
@@ -90,8 +89,10 @@ const HARDWARE_MARKERS = [
  */
 export function classifyRenderer(rendererString: string | null | undefined): RenderCapability {
   if (rendererString === null || rendererString === undefined) return 'unknown';
-  const s = rendererString.toLowerCase().trim();
-  if (s.length === 0) return 'unknown';
+  // No trim and no empty check: an empty / whitespace-only string matches no marker (none is empty or
+  // all-space), so it falls through to 'unknown'; and trimming dropped the space the 'amd ' marker needs
+  // when the string ends in "AMD ".
+  const s = rendererString.toLowerCase();
   for (const m of SOFTWARE_MARKERS) {
     if (s.includes(m)) return 'software';
   }
@@ -123,7 +124,8 @@ export interface DetectedCapability {
 export function detectRenderCapability(gl: RendererInfoContext): DetectedCapability {
   try {
     const ext = gl.getExtension('WEBGL_debug_renderer_info') as { UNMASKED_RENDERER_WEBGL: number } | null;
-    if (ext === null || ext === undefined) return { capability: 'unknown', rawRenderer: null };
+    // An `undefined` extension throws on the next line, and the catch returns this same result.
+    if (ext === null) return { capability: 'unknown', rawRenderer: null };
     const raw = gl.getParameter(ext.UNMASKED_RENDERER_WEBGL);
     if (typeof raw !== 'string' || raw.length === 0) return { capability: 'unknown', rawRenderer: null };
     return { capability: classifyRenderer(raw), rawRenderer: raw };

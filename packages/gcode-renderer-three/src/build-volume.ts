@@ -214,7 +214,8 @@ export function createBuildVolume(def: BuildVolumeDef, style?: BuildVolumeStyle)
     }
     majorStep = Math.max(1, Math.round(major.every / pitch));
   }
-  const tierOf = (k: number): 'major' | 'minor' => (majorStep > 0 && k % majorStep === 0 ? 'major' : 'minor');
+  // No major tier ⇒ majorStep 0 ⇒ `k % 0` is NaN, never === 0, so every line is minor without a guard.
+  const tierOf = (k: number): 'major' | 'minor' => (k % majorStep === 0 ? 'major' : 'minor');
   // With an outline set, a rect grid line ON the bed edge is left to the outline (no double blend).
   const onEdge = (v: number, lo: number, hi: number): boolean =>
     edged && (Math.abs(v - lo) < 1e-6 || Math.abs(v - hi) < 1e-6);
@@ -417,7 +418,8 @@ function onPolygonEdge(x: number, y: number, poly: Point2[]): boolean {
     const dx = poly[i].x - ax;
     const dy = poly[i].y - ay;
     const len2 = dx * dx + dy * dy;
-    if (len2 === 0) continue;
+    // A zero-length edge (a repeated point) needs no skip: 0 / 0 is NaN, so the distance below is NaN and
+    // `NaN < 1e-6` is false (x, y are finite grid midpoints).
     const t = Math.max(0, Math.min(1, ((x - ax) * dx + (y - ay) * dy) / len2));
     if (Math.hypot(x - (ax + dx * t), y - (ay + dy * t)) < 1e-6) return true;
   }

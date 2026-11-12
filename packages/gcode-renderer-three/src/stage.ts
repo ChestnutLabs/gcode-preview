@@ -104,10 +104,8 @@ export function framingFromCenterRadius(center: Vector3, radius: number, fov = 5
   checkFov(fov);
   const target = new Vector3(center.x, center.z, -center.y);
   const viewHalfHeight = radius * 1.25;
-  if (fov === 50) {
-    const position = new Vector3(target.x - radius * 1.2, target.y + radius * 1.6, target.z + radius * 1.8);
-    return { target, position, viewHalfHeight };
-  }
+  // At fov 50 the scale is exactly 1 (see framingLensScale) and `x * 1 === x`, so the 50° pose is
+  // byte-identical to the original fixed offset without a special case.
   const k = framingLensScale(fov);
   const position = new Vector3(target.x - radius * 1.2 * k, target.y + radius * 1.6 * k, target.z + radius * 1.8 * k);
   return { target, position, viewHalfHeight };
@@ -147,13 +145,19 @@ export function checkPixelRatio(ratio: PixelRatioOption): void {
  * (at 120° it lands at 0.72·r), so the sphere rule takes over. Exactly 1 at 50.
  */
 export function framingLensScale(fov: number): number {
-  if (fov === 50) return 1;
+  // No fov === 50 shortcut needed: at 50, `half` is computed by the same expression as `half50`
+  // ((50 / 2) is exactly 25), so both ratios are exactly 1.
   const half = ((fov / 2) * Math.PI) / 180;
   const half50 = (25 * Math.PI) / 180;
   return Math.max(Math.tan(half50) / Math.tan(half), Math.sin(half50) / Math.sin(half));
 }
 
-/** Camera-distance factor that keeps apparent size when the vertical fov changes `from` → `to` degrees. */
+/**
+ * Camera-distance factor that keeps apparent size when the vertical fov changes `from` → `to` degrees.
+ * Throws `RangeError` when either fov is outside [10, 120] (as {@link checkFov}).
+ */
 export function lensScale(from: number, to: number): number {
+  checkFov(from);
+  checkFov(to);
   return Math.tan(((from / 2) * Math.PI) / 180) / Math.tan(((to / 2) * Math.PI) / 180);
 }

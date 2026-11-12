@@ -106,8 +106,9 @@ interface ProbeableRenderer {
 export function probeGpuInfo(renderer: unknown): GpuInfo {
   try {
     const r = renderer as ProbeableRenderer;
-    const gl = typeof r.getContext === 'function' ? r.getContext() : null;
-    if (gl === null || gl === undefined) return UNKNOWN_GPU_INFO;
+    // No explicit null check: a missing or non-function `getContext`, or a null / undefined context, throws
+    // on the first context call below, and the catch returns UNKNOWN_GPU_INFO, the same result.
+    const gl = r.getContext?.() as WebGLContextLike;
     const webglVersion: 1 | 2 | null =
       r.capabilities?.isWebGL2 === true ? 2 : r.capabilities?.isWebGL2 === false ? 1 : null;
     const ext = gl.getExtension('WEBGL_debug_renderer_info') as {
