@@ -145,6 +145,14 @@ The two contract types are `ModelPreviewControls` (`setSource` / `setView` / `ge
 `capture`) and the `ModelPreviewState` snapshot above; `materials` in that snapshot is the same honest
 tier the still and viewer report (`'known'` / `'approximated'` / `'unavailable'`, never invented).
 
+The controller keeps the latest `setRenderScope`, `setBackground` and `setInteractionQuality` values,
+so a canvas rebind (a StrictMode remount, a replaced canvas) keeps them. `setSource` after `dispose()`
+rejects with `E_MODEL_PREVIEW_DISPOSED`, and `capture()` before a canvas is bound rejects with
+`CaptureUnsupportedError` (`code: 'E_CAPTURE_UNSUPPORTED'`). A `setSource` that a newer one replaced
+rejects its own promise but emits no `error` event. A render scope must set exactly one of `objectIds`
+(a string array), `plateId` (an integer) or `instanceFilter` (a function); anything else throws
+`RangeError`, in `setRenderScope`, the controller options and `renderModelStill`.
+
 A portable behavioral suite ships at the `/testing` subpath: `runModelBehavioralSuite(name, api,
 harness)` runs one shared set of assertions against any adapter, so every framework's `<ModelViewer>`
 is verified against the same contract as the core controller.
@@ -157,6 +165,8 @@ See [`docs/manual/adapters.md`](../../docs/manual/adapters.md) "Two viewers: Pre
 the cross-adapter tour of the four framework wrappers.
 
 Determinism (stills): same input + same environment ⇒ identical output. Cross-GPU/driver pixel identity
-is not promised — cache by the returned `cacheKey`.
+is not promised — cache by the returned `cacheKey`. For a pre-built `ModelScene` input the key covers
+the geometry, transforms, instances, plates and materials; keys stored by v0.23.0 or
+earlier will not match, so regenerate them. Keys for STL and 3MF byte sources did not change.
 
 Part of [Chestnut Labs G-code Preview](../../README.md) · MIT

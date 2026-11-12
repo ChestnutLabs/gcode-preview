@@ -4,6 +4,10 @@
 [xyz-tools/gcode-preview#179](https://github.com/xyz-tools/gcode-preview/issues/179), 2026-07-23).
 **Updated 2026-07-25** for **E10 phase 1** (DD-010): `M82`/`M83`, `G90`/`G91`, and the `G92`
 E-datum are now modeled.
+**Updated 2026-11-12** (post-v0.23.0, #544 / #553): `( … )` comments on plain lines are ignored;
+arcs and canned cycles that cannot be drawn exactly as written now carry a warning; under `G91` a
+canned-cycle `Z` is measured from the `R` plane. See
+[Moves drawn differently from what was written](#moves-drawn-differently-from-what-was-written).
 
 This page records which **position-affecting** G/M-codes the parser/interpreter
 (`@chestnutlabs/gcode-parser`) honors. The interpreter began as a **byte-exact port of the
@@ -17,7 +21,8 @@ remaining gaps plainly — and disclosing them at runtime via the `extrusionMode
 | Code(s) | Effect on position | Status | Evidence |
 |---|---|---|---|
 | `G0` / `G1` | linear move | **honored** | core motion |
-| `G2` / `G3` | arc move (I/J/K center or R) incl. full circles, all planes | **honored** | E2/E3, #157 |
+| `G2` / `G3` | arc move (I/J/K center or R) incl. full circles, all planes | **honored** — an arc that cannot be drawn as written is drawn the nearest way and warned (see below); `P` turn counts other than 1 are not applied (`arc-turns-ignored`) | E2/E3, #157, #553 |
+| `G81` / `G82` / `G83` | canned drilling cycles (+ `G80`, `G98`/`G99`, modal bare-`X`/`Y` repeat) | **honored** (DD-012 D5) — under `G91`, `Z` is incremental from the `R` plane, as in LinuxCNC (#553); `G84`–`G89` `unavailable` | `arc-cycle-disclosure.test.ts` |
 | `G20` / `G21` | units inch / mm | **honored** | `units` channel |
 | `G28` | homing (position reset to origin) | **honored** | interpreter |
 | `T0`–`T7` | tool select | **honored** | `tool` channel |
@@ -27,6 +32,27 @@ remaining gaps plainly — and disclosing them at runtime via the `extrusionMode
 | **`G53` / `G54`–`G59`** | **machine / work coordinate systems** | **honored** (E10 phase 3, #158) — active WCS + offsets (`G10 L2/L20`), `G53` one-shot machine-coord bypass, `coordinateSystem` capability | `motion-model.test.ts` |
 | **`G31`** | **probe toward a target** | **honored** (E10 phase 3, #158) — endpoint is runtime-dependent; the probed axis is marked uncertain and disclosed (`probe-position-runtime-dependent`), never advanced to the un-reached commanded value | `motion-model.test.ts` |
 | `G4` | dwell | n/a (not position-affecting) | — |
+| `( … )` comments | text in parentheses on any line | **ignored**, as on `#`/`[ ]` lines (#544): `G1 X1 (then G1 X99)` moves to X1 only; an unclosed `(` comments out the rest of the line; a `;` inside the parentheses does not cut the line | `lexer-paren-comments.test.ts` |
+
+## Moves drawn differently from what was written
+
+Some arcs and cycles cannot be drawn exactly as written: a controller such as LinuxCNC would reject
+them, while Marlin-style firmware draws them anyway. The parser draws them the nearest way and records a
+warning in `ir.header.warnings` (also delivered with the `ready` event), so a viewer can say the
+drawing is approximate. These codes are new after v0.23.0 (#553):
+
+| Warning code | Raised when | What is drawn |
+|---|---|---|
+| `arc-radius-too-small` | a `G2`/`G3` `R` is smaller than half the chord | a half circle (the radius is raised to half the chord) |
+| `arc-radius-degenerate` | an `R` arc's start and target are the same point | no arc (the centre is undefined); use I/J for a full circle |
+| `arc-end-off-circle` | an I/J/K arc's target is not on the circle through its start | a spiral; the last segment jumps to the target |
+| `arc-turns-ignored` | a `P` turn count other than 1 | a single sweep |
+| `canned-cycle-missing-word` | a `G81`/`G82`/`G83` with no `Z` or `R`, and none set earlier | the cycle, with 0 for the missing word |
+| `canned-cycle-plane` | a canned cycle while `G18`/`G19` is active | the cycle, still drilling along Z in the XY plane |
+
+The existing `arc-missing-center` warning (no I/J/K and no R: drawn as a straight move) is unchanged.
+The bundled `mach3` demo file raises `arc-radius-too-small` for its `G02 … R0.255` arcs; its geometry
+is unchanged.
 
 ## Firmware conditioning (DD-010)
 

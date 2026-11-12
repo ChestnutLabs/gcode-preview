@@ -85,7 +85,9 @@ The `ready` event (React `onReady`, Vue `@ready`, Svelte `on:ready`, element `re
 `capabilities` (the per-field `known | inferred | approximated | unavailable` map) and `warnings`
 alongside `{ segments, layers, complete }` — so a consumer can gate its own UI (e.g. only offer a
 color-by-power control when `capabilities.toolPower !== 'unavailable'`) without reaching for the raw
-handle.
+handle. A warning means part of the file was drawn differently from what it says, for example an arc
+whose radius is too small for its endpoints; the arc and canned-cycle codes are listed in the
+[motion coverage reference](../compatibility/gcode-motion-coverage.md#moves-drawn-differently-from-what-was-written).
 
 ## `.gcode.3mf` multi-plate
 

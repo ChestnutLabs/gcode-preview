@@ -38,6 +38,12 @@ directly.
 
 Resource limits are validated: a limit that is not a non-negative safe integer throws a `ParseOptionError`
 (`code: 'E_PARSE_OPTION'`) instead of silently disabling the bound. There is no `Infinity` for "unlimited";
-pass a large integer.
+pass a large integer. `limits.maxInputBytes` has a ceiling of 4 294 967 295 bytes (2^32 - 1), because
+source byte offsets are stored in 32 bits; a larger value also throws `E_PARSE_OPTION`.
+
+A `( … )` comment is ignored on every line, so `G1 X1 Y1 (then G1 X99)` moves to X1 Y1 only. Arcs and
+canned cycles that cannot be drawn exactly as written are drawn the nearest way and reported in
+`ir.header.warnings`; the codes are listed in the
+[motion coverage reference](../../docs/compatibility/gcode-motion-coverage.md#moves-drawn-differently-from-what-was-written).
 
 Part of [Chestnut Labs G-code Preview](../../README.md) · MIT

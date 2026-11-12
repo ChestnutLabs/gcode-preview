@@ -25,7 +25,9 @@ never fails the parse. Filament colours may be `#RRGGBB` or `#RRGGBBAA`; the alp
 A custom adapter gets the same treatment. Sink input that cannot be used (an object value outside
 1..10,000, a tool id that is not a whole number, a colour that is not a string) is dropped with a
 `dialect-metadata-invalid` warning. If an adapter's annotations still fail to apply, none of them are
-kept, and the parse records `adapter-failed`.
+kept, and the parse records `adapter-failed`. An adapter that reads comment thumbnails with
+`ThumbnailCollector` should call `collector.close(sink)` in `finalize`, so a block left open at the end of
+the file is reported instead of dropped silently.
 
 This package is bundled into the parser's default *batteries* worker — most applications never
 import it directly. Import it to build a **custom worker** with a chosen adapter subset, or to
