@@ -36,6 +36,8 @@ runComponentConformanceSuite(
             source: null,
             renderer: opts.renderer,
             quality: 'lines',
+            cameraFov: opts.cameraFov,
+            pixelRatio: opts.pixelRatio,
             createWorker: () => new SuiteStubWorker(undefined, opts.ir),
             rendererOptions: {
               createRenderer: () => makeSuiteStubGL(canvas),
@@ -44,7 +46,8 @@ runComponentConformanceSuite(
             },
             onReady: (e) => cb.onReady(e.segments),
             onBuildComplete: (e) => cb.onBuildComplete(e.segments),
-            onDisclosure: (text) => cb.onDisclosure(text)
+            onDisclosure: (text) => cb.onDisclosure(text),
+            onRendererUnsupported: (e) => cb.onRendererUnsupported?.(e.feature, e.message)
           })
         );
       });
@@ -59,6 +62,9 @@ runComponentConformanceSuite(
             out = await ref.current?.parse(bytes);
           });
           return out;
+        },
+        setCameraMode: async (mode) => {
+          await act(async () => ref.current?.controls.setCameraMode(mode));
         },
         settle,
         unmount: async () => {

@@ -60,7 +60,7 @@ describe('<GcodePreview> pixelRatio (react)', () => {
       });
     const done = await run(el, [2]);
     expect(ratios).toEqual([2]);
-    expect(log[0]).toBe('ratio 2'); // the mount effect queues it before the 3D load: set before the first frame
+    expect(log[0]).toBe('ratio 2'); // built with it (a construction option): set before the first frame
     await done();
     const ratios2: number[] = [];
     const el2 = (pixelRatio: PixelRatioOption | undefined) =>

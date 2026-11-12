@@ -43,6 +43,9 @@ import {
 } from './use-gcode-preview.js';
 import { readLiveState } from './live-state.js';
 
+/** The perspective lens every renderer starts with, in degrees (#520: a mount value of 50 asks for nothing). */
+const DEFAULT_LENS = 50;
+
 export type GcodePreviewSource = Uint8Array | ArrayBuffer | File | null;
 
 export interface GcodePreviewProps {
@@ -141,6 +144,12 @@ export interface GcodePreviewProps {
   onMachineGeometryDiscovered?: (machine: MachineGeometry) => void;
   onProgressPresentationChanged?: (e: { mode: string; reason?: string }) => void;
   onDisclosure?: (text: string) => void;
+  /**
+   * #520: the renderer cannot honour a setting you asked for, e.g. a camera lens or pixel ratio on the 2D
+   * renderer. Fires once per request (no dedupe), including for a non-default value set at mount.
+   * `feature` groups it (`camera`, `quality`, `layers`, `retractions`); `message` is user-presentable.
+   */
+  onRendererUnsupported?: (e: { feature: string; message: string }) => void;
   onError?: (e: { code: string; message: string }) => void;
 }
 
@@ -156,6 +165,7 @@ function GcodePreviewImpl(props: GcodePreviewProps, ref: ForwardedRef<GcodePrevi
       progressivePreview: props.progressivePreview,
       cameraMode: props.cameraMode ?? 'perspective',
       cameraFov: props.cameraFov,
+      pixelRatio: props.pixelRatio,
       frameContent: props.frameContent ?? 'all',
       interactionQuality: props.interactionQuality ?? 'off',
       theme: props.theme,
@@ -171,6 +181,23 @@ function GcodePreviewImpl(props: GcodePreviewProps, ref: ForwardedRef<GcodePrevi
   // Callbacks live in a ref so the event subscription is stable across renders.
   const cbRef = useRef(props);
   cbRef.current = props;
+  // #520: what the controls last received for the four 3D-only construction props. 3D was built with the
+  // construction values, so the mount pass is a no-op there (no extra build). 2D starts from the documented
+  // defaults, so only a non-default mount value is applied, and the 2D renderer reports it once. Later
+  // changes apply in both modes. This ref outlives StrictMode's dispose/recreate of the controller, which
+  // is safe because the recreated 3D controller is built from the same construction values.
+  const is2D = props.renderer === '2d';
+  const appliedRef = useRef<{
+    quality: QualityMode | 'auto';
+    cameraMode: CameraMode;
+    cameraFov: number | undefined;
+    pixelRatio: PixelRatioOption | undefined;
+  }>({
+    quality: is2D ? 'auto' : (props.quality ?? 'auto'),
+    cameraMode: is2D ? 'perspective' : (props.cameraMode ?? 'perspective'),
+    cameraFov: is2D ? DEFAULT_LENS : props.cameraFov,
+    pixelRatio: is2D ? undefined : props.pixelRatio
+  });
   // Tracks which roles THIS prop last hid, so we diff prev→next and don't disturb roles hidden elsewhere.
   const prevHiddenRef = useRef<FeatureRoleValue[]>([]);
   useEffect(() => {
@@ -221,6 +248,9 @@ function GcodePreviewImpl(props: GcodePreviewProps, ref: ForwardedRef<GcodePrevi
         case 'error':
           if (e.code === 'machine-geometry-mismatch') p.onMachineGeometryMismatch?.(e.message);
           else p.onError?.({ code: e.code, message: e.message });
+          break;
+        case 'renderer-unsupported':
+          p.onRendererUnsupported?.({ feature: e.feature, message: e.message });
           break;
         default:
           break;
@@ -283,7 +313,9 @@ function GcodePreviewImpl(props: GcodePreviewProps, ref: ForwardedRef<GcodePrevi
     if (colorMode !== undefined) preview.controls.setColorMode(colorMode);
   }, [colorMode]);
   useEffect(() => {
-    if (quality !== undefined) preview.controls.setQuality(quality);
+    if (quality === undefined || quality === appliedRef.current.quality) return;
+    appliedRef.current.quality = quality;
+    preview.controls.setQuality(quality);
   }, [quality]);
   useEffect(() => {
     if (qualityMode !== undefined) preview.controls.setQualityMode(qualityMode);
@@ -292,15 +324,19 @@ function GcodePreviewImpl(props: GcodePreviewProps, ref: ForwardedRef<GcodePrevi
     if (progressivePreview !== undefined) preview.controls.setProgressivePreview(progressivePreview);
   }, [progressivePreview]);
   useEffect(() => {
-    if (cameraMode !== undefined) preview.controls.setCameraMode(cameraMode);
+    if (cameraMode === undefined || cameraMode === appliedRef.current.cameraMode) return;
+    appliedRef.current.cameraMode = cameraMode;
+    preview.controls.setCameraMode(cameraMode);
   }, [cameraMode]);
   useEffect(() => {
-    if (cameraFov !== undefined) preview.controls.setCameraFov(cameraFov);
+    if (cameraFov === undefined || cameraFov === appliedRef.current.cameraFov) return;
+    appliedRef.current.cameraFov = cameraFov;
+    preview.controls.setCameraFov(cameraFov);
   }, [cameraFov]);
-  // Also the mount value: the call queues before the async 3D load and replays before the first frame,
-  // so (unlike the lens) the ratio needs no construction option.
   useEffect(() => {
-    if (pixelRatio !== undefined) preview.controls.setPixelRatio(pixelRatio);
+    if (pixelRatio === undefined || pixelRatio === appliedRef.current.pixelRatio) return;
+    appliedRef.current.pixelRatio = pixelRatio;
+    preview.controls.setPixelRatio(pixelRatio);
   }, [pixelRatio]);
   useEffect(() => {
     if (frameContent !== undefined) preview.controls.setFrameContent(frameContent);

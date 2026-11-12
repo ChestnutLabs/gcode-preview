@@ -71,7 +71,10 @@ Scalar options are **attributes** (also settable as properties); rich options ar
 
 `ready` · `camerachange` · `parse-error` · `parse-cancelled` · `parse-progress` · `stage` ·
 `build-complete` · `disclosure` · `quality-fallback` · `progress-presentation-changed` ·
-`machine-geometry-discovered` · `machine-geometry-mismatch` · `error`.
+`machine-geometry-discovered` · `machine-geometry-mismatch` · `renderer-unsupported` · `error`.
+
+A `renderer-unsupported` notice for an attribute set at mount fires inside `connectedCallback`, so add the
+listener before `appendChild`; a listener added just after it misses the notice.
 
 A few event `detail`s are DOM-wrapped, an accepted custom-element idiom: `disclosure` detail is
 `{ text }`, `machine-geometry-discovered` is `{ machine }`, and `machine-geometry-mismatch` is
@@ -137,8 +140,8 @@ grid and shadow stay.
 `camera-fov` takes 10-120 degrees (the default is 50). **An invalid attribute value (non-numeric or outside that
 range) is ignored and the last valid lens is kept; setting the `cameraFov` property to an invalid value throws
 `RangeError`.** `<gcode-model-viewer>` reports `placement` (`known` / `inferred` / `approximated`, or `null` with no plate)
-and `placementOffset` in the `ready` event detail and its state. The 2D renderer ignores `theme`; a lens call records a
-`renderer-unsupported` disclosure.
+and `placementOffset` in the `ready` event detail and its state. The 2D renderer ignores `theme`; a lens, as an attribute or a call,
+fires `renderer-unsupported` once.
 See the [Studio look and build plate guide](https://github.com/ChestnutLabs/gcode-preview/blob/dev/docs/manual/guide-looks-lens-plate.md).
 
 ### Pixel ratio
@@ -157,7 +160,7 @@ value throws `RangeError`.** The property getter returns the last valid ratio (`
 or `null` if none was set; `<gcode-model-viewer>`: `undefined` if none). Imperatively: `controls.setPixelRatio(ratio)`.
 An unsized `controls.capture()` is the resting drawing-buffer size when unset and the CSS size when set; with the
 built-in renderer a ratio never changes the default capture size, so pass `width`/`height` for a crisper image. The 2D
-renderer ignores it and records a `renderer-unsupported` disclosure.
+renderer ignores it and fires `renderer-unsupported` once.
 
 ## Examples
 

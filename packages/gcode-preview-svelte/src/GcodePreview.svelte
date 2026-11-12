@@ -146,6 +146,10 @@
         if (e.code === 'machine-geometry-mismatch') dispatch('machinegeometrymismatch', e.message);
         else dispatch('error', { code: e.code, message: e.message });
         break;
+      case 'renderer-unsupported':
+        // #520: the renderer cannot honour a requested setting (e.g. a lens on the 2D renderer); once per request.
+        dispatch('rendererunsupported', { feature: e.feature, message: e.message });
+        break;
       default:
         break;
     }
@@ -166,12 +170,41 @@
   $: preview.controls.setShowRetractions(showRetractions);
   $: preview.controls.setBuildVolumeCage(showVolumeCage);
   $: if (colorMode !== undefined) preview.controls.setColorMode(colorMode);
-  $: preview.controls.setQuality(quality);
+  // #520: what the controls last received for the four 3D-only construction props; each applies only when
+  // its value differs. 3D was built with the construction values, so mount is a no-op there (a re-applied
+  // quality would rebuild). 2D starts from the documented defaults, so only a non-default mount value is
+  // applied, and the 2D renderer reports it once.
+  const is2D = renderer === '2d';
+  let appliedQuality = is2D ? 'auto' : quality;
+  function applyQuality(q) {
+    if (q === appliedQuality) return;
+    appliedQuality = q;
+    preview.controls.setQuality(q);
+  }
+  let appliedCameraMode = is2D ? 'perspective' : cameraMode;
+  function applyCameraMode(mode) {
+    if (mode === appliedCameraMode) return;
+    appliedCameraMode = mode;
+    preview.controls.setCameraMode(mode);
+  }
+  let appliedCameraFov = is2D ? 50 : cameraFov; // 50: the default lens
+  function applyCameraFov(fov) {
+    if (fov === undefined || fov === appliedCameraFov) return;
+    appliedCameraFov = fov;
+    preview.controls.setCameraFov(fov);
+  }
+  let appliedPixelRatio = is2D ? undefined : pixelRatio;
+  function applyPixelRatio(ratio) {
+    if (ratio === undefined || ratio === appliedPixelRatio) return;
+    appliedPixelRatio = ratio;
+    preview.controls.setPixelRatio(ratio);
+  }
+  $: applyQuality(quality);
   $: if (qualityMode) preview.controls.setQualityMode(qualityMode);
   $: if (progressivePreview) preview.controls.setProgressivePreview(progressivePreview);
-  $: preview.controls.setCameraMode(cameraMode);
-  $: if (cameraFov !== undefined) preview.controls.setCameraFov(cameraFov);
-  $: if (pixelRatio !== undefined) preview.controls.setPixelRatio(pixelRatio);
+  $: applyCameraMode(cameraMode);
+  $: applyCameraFov(cameraFov);
+  $: applyPixelRatio(pixelRatio);
   $: preview.controls.setFrameContent(frameContent);
   $: preview.controls.setInteractionQuality(interactionQuality);
   $: if (view !== undefined) preview.controls.setView(view);

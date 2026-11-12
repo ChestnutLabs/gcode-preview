@@ -99,9 +99,42 @@ Each fires the same events (naming follows each framework's idiom): parse lifecy
 (`ready` / `parse-error` / `parse-cancelled` / `parse-progress`), staged preparation (`stage`),
 `build-complete`, `quality-fallback`, camera settle (`camera-change`), machine geometry
 (`machine-geometry-discovered` / `machine-geometry-mismatch`), `progress-presentation-changed`,
-`disclosure`, and `error`. Every parse that starts ends with exactly one of `ready`, `parse-error` or
-`parse-cancelled`; a parse replaced by a newer source reports `parse-cancelled`, and one replaced before it
-started emits nothing.
+`disclosure`, `renderer-unsupported`, and `error`. Every parse that starts ends with exactly one of `ready`,
+`parse-error` or `parse-cancelled`; a parse replaced by a newer source reports `parse-cancelled`, and one
+replaced before it started emits nothing.
+
+Two of them tell your users what the view is not showing. They answer different questions:
+
+| | `disclosure` | `renderer-unsupported` |
+| --- | --- | --- |
+| Tells you | what the current build leaves out | that the renderer can't honour a setting you asked for |
+| When | after every `build-complete` | once per request (no dedupe), including some props set at mount |
+| Payload | the text, `''` when nothing is left out | `{ feature, message }`; `feature` is `camera`, `quality`, `layers` or `retractions` |
+| Also in state | yes, `state.disclosure` | no, event only |
+| Vue | `@disclosure` | `@renderer-unsupported` |
+| React | `onDisclosure` | `onRendererUnsupported` |
+| Svelte | `on:disclosure` | `on:rendererunsupported` |
+| Web Component | `disclosure` (`detail.text`) | `renderer-unsupported` (`detail`) |
+
+In practice `renderer-unsupported` comes from the flat 2D renderer (`renderer="2d"`). It fires when you set a
+3D-only option: `quality`, `cameraMode`, `cameraFov`, `pixelRatio`, `view`, `cameraState`, or `showRetractions`.
+It also fires when a toolpath isn't planar. Setting the same option twice fires twice, so show the latest
+message instead of a list.
+
+At mount, every adapter follows one rule for `quality`, `cameraMode`, `cameraFov` and `pixelRatio`: a value that
+differs from the default fires once, and a default fires nothing, whether you wrote it out or left it off. The
+defaults are `quality="auto"`, `camera-mode="perspective"`, a lens of 50 degrees, and no pixel ratio. The 3D
+renderer is built with these values, so the rule never rebuilds a 3D view. The model viewer (`/model`) uses the
+same event names.
+
+These mount-time notices fire while the component mounts, so the listener has to be in place first. On
+`<gcode-preview>` they fire in `connectedCallback`: add the listener before `appendChild`, because one added just
+after it misses them. In Svelte, listen with an `on:rendererunsupported` directive in the parent template; a `$on`
+attached after `new GcodePreview({ target })` misses them.
+
+The lower-level APIs (`useGcodePreview`, `createGcodePreview`, `createPreviewController`) deliver the same event
+through `onEvent`, once per `controls.set*` call. They don't report options passed at construction to a 2D
+renderer. To get the notice, call the control after creating the preview.
 
 The `disclosure` text says what the current build leaves out. It follows every `build-complete`, in both
 renderers, and is empty when the build draws everything. In 3D it names decimation (`Showing every 3rd
@@ -143,8 +176,9 @@ Deliberate differences, not drift:
   `show-volume-cage` is an attribute too: absent or anything but `"false"` means the cage is on.
 - **Model viewer themes.** Only `background`, the grid and outline fields, `bedSurface` and `contactShadow` apply.
   `theme.background` beats the `background` prop, which is the fallback tier.
-- **2D renderer** (`renderer="2d"`). A flat top-down view: `theme` and the cage are ignored (no-ops); a lens or
-  pixel-ratio call records a `renderer-unsupported` disclosure. The 2D renderer has no 3D look to preset.
+- **2D renderer** (`renderer="2d"`). A flat top-down view: `theme` and the cage are ignored (no-ops). A lens, as a
+  prop at mount or a later `setCameraFov`, fires the `renderer-unsupported` event once (feature `camera`). The 2D
+  renderer has no 3D look to preset.
 
 ## Pixel ratio (opt-in)
 
@@ -165,7 +199,8 @@ clamped. Left unset, the renderer keeps its own ratio and nothing changes.
 - **Web Component.** `pixel-ratio` is an attribute and `pixelRatio` a property on `<gcode-preview>` and
   `<gcode-model-viewer>`. An invalid attribute is ignored and the last valid ratio kept; an invalid property value
   throws `RangeError`.
-- **2D renderer.** A no-op that records a `renderer-unsupported` disclosure (feature `quality`). Stills
+- **2D renderer.** A no-op. The prop at mount, or a later `setPixelRatio`, fires the `renderer-unsupported` event once
+  (feature `quality`). Stills
   (`renderStill`, `renderModelStill`) have no pixel-ratio option; size them with `width`/`height`.
 
 ## Vue
