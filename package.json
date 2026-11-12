@@ -57,6 +57,7 @@
     "test:packages": "npm test --workspaces --if-present",
     "license:check": "node tools/license-report.mjs --check",
     "test:watch": "vitest --watch",
+    "gate": "node tools/gate.mjs",
     "check": "npm run test && npm run typeCheck && npm run lint && echo '😅 All checks passed!'",
     "test:consumer-vue": "node tools/consumer-vue/run.mjs",
     "verify:registry": "node tools/consumer-vue/run-registry.mjs",

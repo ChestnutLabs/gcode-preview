@@ -62,6 +62,11 @@ npm run pack:check       # packaged-artifact gate (pack snapshots + publint + at
 npm run check
 ```
 
+Or run them all in CI order, stopping at the first failure, with `npm run gate`. It builds the
+package dists in dependency order and caps test workers at 8 (`GATE_MAX_WORKERS` overrides).
+Add `-- --ci` for the license, consumer-fixture and pack gates too, and `-- --install` to run
+`npm ci` first.
+
 Line endings are normalized to **LF** via `.gitattributes`; keep `core.autocrlf=false` locally so
 `prettier --check` stays green on Windows.
 
