@@ -147,7 +147,7 @@ is approximate, and user scrub always winning. See
 
 ## Headless still image (server-side thumbnails)
 
-`renderStill` from `@chestnutlabs/gcode-renderer-three` produces a single non-interactive image from
+`renderStill` from `@chestnutlabs/gcode-preview-core` produces a single non-interactive image from
 a Worker `OffscreenCanvas`, an Electron hidden window, or headless Chromium — no interactive viewer
 required. See the
 [still-render reference](https://github.com/ChestnutLabs/gcode-preview/blob/dev/docs/reference/still-render.md).

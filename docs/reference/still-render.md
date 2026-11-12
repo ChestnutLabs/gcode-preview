@@ -51,6 +51,24 @@ Returns `{ canvas, width, height, layerCount, segmentCount, quality, parsed }`. 
 completion before a single render; the caller reads pixels from `canvas` in its own environment
 (`convertToBlob`, `toDataURL`, or a WebGL `readPixels`).
 
+## Errors
+
+If the toolpath geometry fails to build, `renderStill` rejects with a `RenderStillError` (exported
+from `@chestnutlabs/gcode-preview-core`). Its `code` is `'E_GEOMETRY_BUILD'` and its `message` is
+the renderer's description. The internal renderer is already disposed when the rejection arrives.
+A parse failure on G-code bytes rejects with the parser's `ParseSessionError`, which has the same
+`code` / `message` shape. Before v0.22.0 a failed build left the promise pending forever, so add a
+`catch` to any still job that awaited without one.
+
+```ts
+try {
+  await renderStill(gcodeBytes, { canvas });
+} catch (err) {
+  // err.code: 'E_GEOMETRY_BUILD' for a build failure, or a parser code for a parse failure
+  showError(err.code, err.message);
+}
+```
+
 ## Determinism
 
 **Same environment ⇒ identical output.** Framing is computed purely from model bounds, the build
