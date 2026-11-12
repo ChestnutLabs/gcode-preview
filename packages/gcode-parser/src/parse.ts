@@ -753,7 +753,7 @@ export function createEngine(input: string | Uint8Array, opts: ParseOptions): En
           : [sx, sy, sz, tx, ty, tz, p.i, p.j];
 
     // An omitted centre offset is 0 (RS274NGC / Marlin), but only when R is absent. Reading it straight
-    // from the word gave `sa + undefined = NaN` coordinates that the renderers then skip (#522).
+    // from the word made the segment count NaN, so the arc collapsed to a single chord (#522).
     let ia = oa ?? 0;
     let ib = ob ?? 0;
     if (r) {

@@ -58,10 +58,10 @@ const INTENTIONAL_MOTION_CORRECTION = new Set(['demo-mach3', 'demo-easel', 'cont
 
 /**
  * #522: demo-3dbenchy has G2/G3 arcs that omit I or J. The inherited engine read the missing word as
- * `undefined` and stored NaN coordinates (the renderers then skipped them, so the arcs vanished); the adapter
- * golden's digests pin that NaN. An omitted centre offset is now 0, so those arcs are real geometry: 3
- * extra segments and different position digests. Excluded from strict adapter-equivalence (like the CNC
- * corrections above), pinned by the regenerated native golden, and asserted NaN-free below.
+ * `undefined`, which made the segment count NaN, so each such arc collapsed to ONE chord; the adapter golden's
+ * digests pin those chords. An omitted centre offset is now 0, so they are real multi-segment arcs: 3 extra
+ * segments and different position digests. Excluded from strict adapter-equivalence (like the CNC
+ * corrections above), pinned by the regenerated native golden, and asserted finite below.
  */
 const ARC_MISSING_OFFSET_CORRECTION = new Set(['demo-3dbenchy']);
 

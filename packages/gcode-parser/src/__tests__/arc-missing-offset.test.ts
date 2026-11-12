@@ -1,7 +1,7 @@
 /**
- * #522: a G2/G3 arc that omits I or J (K in G18/G19) stored NaN coordinates (`sa + undefined`), which the
- * renderers then skipped, so the arc silently vanished (the bundled demo-3dbenchy has such arcs). An
- * omitted centre offset is now 0 (RS274NGC / Marlin) when R is absent. With no offset and no R nothing
+ * #522: a G2/G3 arc that omits I or J (K in G18/G19) read the missing word as undefined, which made the
+ * segment count non-finite, so the whole arc collapsed to ONE straight chord (the bundled demo-3dbenchy has
+ * such arcs). An omitted centre offset is now 0 (RS274NGC / Marlin) when R is absent. With no offset and no R nothing
  * defines the arc: it is drawn as a straight move to the target and `arc-missing-center` is raised.
  */
 import { describe, expect, it } from 'vitest';
@@ -29,6 +29,38 @@ function run(src: string) {
 }
 
 describe('arc with an omitted centre offset (#522)', () => {
+  it('a missing J is a real arc, not the single chord it collapsed to (G2 X21 Y11 I-0.9 from 20,10)', () => {
+    const missing = run('G1 X20 Y10\nG2 X21 Y11 I-0.9 E1');
+    const explicit = run('G1 X20 Y10\nG2 X21 Y11 I-0.9 J0 E1');
+    // segments 0 (G1 to origin) and 1 (G1 X20 Y10) precede the arc; the arc is 11 segments, as with J0
+    expect(missing.s.count).toBe(13);
+    expect(explicit.s.count).toBe(13);
+    expect(missing.s.x1[2]).toBeCloseTo(19.8646, 3);
+    expect(missing.s.y1[2]).toBeCloseTo(9.5253, 3);
+    expect(missing.s.x1[7]).toBeCloseTo(18.2165, 3);
+    expect(missing.s.y1[7]).toBeCloseTo(10.1715, 3);
+    expect(missing.s.x1[12]).toBe(21);
+    expect(missing.s.y1[12]).toBe(11);
+    for (let i = 0; i < 13; i++) {
+      expect(missing.s.x1[i]).toBe(explicit.s.x1[i]);
+      expect(missing.s.y1[i]).toBe(explicit.s.y1[i]);
+    }
+    expect(missing.warn).toHaveLength(0);
+  });
+
+  it('no offsets and start == target (wholeCircle with radius 0): one finite point segment, no hang, warns', () => {
+    const r = run('G1 X0 Y0\nG2 X0 Y0');
+    expect(r.s.count).toBe(3);
+    expect(r.s.x0[2]).toBe(0);
+    expect(r.s.y0[2]).toBe(0);
+    expect(r.s.x1[2]).toBe(0);
+    expect(r.s.y1[2]).toBe(0);
+    expect(r.warn).toHaveLength(1);
+    const g3 = run('G3 X0 Y0');
+    expect(g3.s.count).toBe(2);
+    expect(g3.warn).toHaveLength(1);
+  });
+
   it('a missing I is 0: G3 X0 Y10 J5 is a half circle bulging to +X', () => {
     const r = run('G3 X0 Y10 J5');
     expect(r.s.count).toBeGreaterThan(10);
