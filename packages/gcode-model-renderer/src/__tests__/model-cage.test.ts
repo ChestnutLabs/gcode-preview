@@ -35,6 +35,7 @@ const plateOf = (s: Scene): Object3D | undefined => s.getObjectByName('buildVolu
 function rig(options: ModelViewerOptions = {}, opts: { capture?: boolean } = {}) {
   const canvas = document.createElement('canvas');
   const frames: Frame[] = [];
+  const reads: Array<[number, number]> = [];
   let scene: Scene | null = null;
   let target: unknown = null;
   const gl: GLRendererLike = {
@@ -50,7 +51,9 @@ function rig(options: ModelViewerOptions = {}, opts: { capture?: boolean } = {})
           setRenderTarget: (t: unknown) => {
             target = t;
           },
-          readRenderTargetPixels: () => undefined
+          readRenderTargetPixels: (_t: unknown, _x: number, _y: number, w: number, h: number) => {
+            reads.push([w, h]);
+          }
         }
       : {})
   };
@@ -59,7 +62,7 @@ function rig(options: ModelViewerOptions = {}, opts: { capture?: boolean } = {})
     createControls: (cam) => stubControls(cam as PerspectiveCamera),
     ...options
   });
-  return { viewer, canvas, frames, scene: () => scene! };
+  return { viewer, canvas, frames, reads, scene: () => scene! };
 }
 
 /** Two 10 mm objects so an `{ objectIds }` scope is a real rebuild of a smaller scene. */
@@ -200,6 +203,14 @@ describe('model viewer — setBuildVolumeCage', () => {
     expect(plateOf(r.scene())!.visible).toBe(true);
     await Promise.all([first, second]);
     expect(plateOf(r.scene())!.visible).toBe(true);
+  });
+
+  it('capture({ includeBuildVolume: false, width, height }) still passes the size to the stage', async () => {
+    const r = rig({ buildVolume: BED }, { capture: true });
+    r.viewer.resize(400, 300);
+    await r.viewer.setSource(twoObjects());
+    await r.viewer.capture({ includeBuildVolume: false, width: 64, height: 32 }).catch(() => undefined);
+    expect(r.reads).toEqual([[64, 32]]);
   });
 
   it('a default capture keeps the cage off too', async () => {
