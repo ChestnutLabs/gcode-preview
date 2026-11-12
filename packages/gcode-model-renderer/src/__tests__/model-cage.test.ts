@@ -4,7 +4,7 @@
  * remembered across every plate rebuild (theme, bed, scope, context restore) and a capture cutout, the plate
  * itself unaffected, and the controller's pre-bind / option / rebind paths. Headless: stub GL + stub controls.
  */
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { Vector3, type Object3D, type PerspectiveCamera, type Scene } from 'three';
 import { studioTheme, type ControlsLike, type GLRendererLike } from '@chestnutlabs/gcode-renderer-three';
 import { createModelViewer, type ModelViewerOptions } from '../model-viewer.js';
@@ -203,6 +203,41 @@ describe('model viewer — setBuildVolumeCage', () => {
     expect(plateOf(r.scene())!.visible).toBe(true);
     await Promise.all([first, second]);
     expect(plateOf(r.scene())!.visible).toBe(true);
+  });
+
+  it('the plate is visible again after includeBuildVolume:false capture rejects', async () => {
+    const r = rig({ buildVolume: BED }, { capture: true });
+    r.viewer.resize(400, 300);
+    await r.viewer.setSource(twoObjects());
+    // No 2D canvas in happy-dom, so the encode rejects.
+    await expect(r.viewer.capture({ includeBuildVolume: false })).rejects.toThrow(/2D canvas/);
+    expect(plateOf(r.scene())!.visible).toBe(true);
+  });
+
+  it('the plate is visible again after includeBuildVolume:false capture resolves', async () => {
+    vi.stubGlobal(
+      'OffscreenCanvas',
+      class {
+        getContext() {
+          return { putImageData: () => undefined };
+        }
+        convertToBlob() {
+          return Promise.resolve(new Blob(['x'], { type: 'image/png' }));
+        }
+      }
+    );
+    vi.stubGlobal('ImageData', class {});
+    try {
+      const r = rig({ buildVolume: BED }, { capture: true });
+      r.viewer.resize(400, 300);
+      await r.viewer.setSource(twoObjects());
+      const blob = await r.viewer.capture({ includeBuildVolume: false });
+      expect(blob.size).toBe(1);
+      expect(r.frames.filter((f) => f.target !== null).map((f) => f.plate)).toEqual([false]);
+      expect(plateOf(r.scene())!.visible).toBe(true);
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 
   it('capture({ includeBuildVolume: false, width, height }) still passes the size to the stage', async () => {
