@@ -61,7 +61,7 @@ function parseBedShape(value: string): Point2[] | null {
 /**
  * Build a MachineGeometry from the decoded `.bgcode` settings (bed_shape + max_print_height + model).
  * File data is untrusted: an unreadable `bed_shape` gives no machine (plus a `bgcode-bed-unparsed`
- * warning), and a height that is not a finite positive number is left out.
+ * warning), and a height that is not a finite positive number is left out (plus a `bgcode-metadata-invalid` warning).
  */
 function machineFrom(
   settings: Record<string, string>,
@@ -82,11 +82,16 @@ function machineFrom(
   const max = { x: Math.max(...xs), y: Math.max(...ys) };
   const rect =
     points.length === 4 && points.every((p) => (p.x === min.x || p.x === max.x) && (p.y === min.y || p.y === max.y));
-  const h = parseFloat(settings.max_print_height ?? settings.printable_height ?? '');
+  const heightText = settings.max_print_height ?? settings.printable_height;
+  const h = parseFloat(heightText ?? '');
+  const heightMm = Number.isFinite(h) && h > 0 ? h : undefined;
+  if (heightText !== undefined && heightMm === undefined) {
+    warnings.push({ code: 'bgcode-metadata-invalid', message: 'print height is not a positive number; dropped' });
+  }
   return {
     bed: rect ? { kind: 'rect', min, max } : { kind: 'polygon', points },
     origin: { x: 0, y: 0 },
-    heightMm: Number.isFinite(h) && h > 0 ? h : undefined,
+    heightMm,
     printerName: settings.printer_model,
     confidence: 'inferred', // read from the slicer's embedded settings, not machine config
     source: { adapterId: 'bgcode', evidence: 'bgcode metadata (bed_shape)' }
@@ -111,11 +116,17 @@ function streamOf(bytes: Uint8Array): BgcodeStreamLike {
  * metadata + thumbnails. Errors are the structured `ContainerError`s from {@link openBgcode}.
  */
 export async function openBgcodeContainer(bytes: Uint8Array): Promise<OpenedBgcode> {
-  const { gcode, settings, thumbnails } = await openBgcode(bytes, { metadata: true });
+  const { gcode, settings, thumbnails, droppedThumbnails } = await openBgcode(bytes, { metadata: true });
   const raw: Record<string, string> = {};
   for (const key of RAW_WHITELIST) if (settings[key] !== undefined) raw[key] = settings[key];
   const warnings: { code: string; message: string }[] = [];
   const machine = machineFrom(settings, warnings);
+  if (droppedThumbnails > 0) {
+    warnings.push({
+      code: 'bgcode-metadata-invalid',
+      message: `${droppedThumbnails} thumbnail block(s) with a zero width or height; dropped`
+    });
+  }
   return {
     id: 'bgcode',
     plates: [{ index: 0, name: 'bgcode', estimatedBytes: gcode.length }],

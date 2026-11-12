@@ -64,4 +64,6 @@ Fixed limits:
 A MeatPack G-code block that ends mid-token throws `E_BGCODE_MEATPACK`. Values the file declares but
 that cannot be true are left out, not passed on. A `bed_shape` point that is not a finite number gives
 no machine geometry, with a `bgcode-bed-unparsed` container warning. A height that is not a positive
-number gives no `heightMm`. A thumbnail with a zero width or height is dropped.
+number gives no `heightMm`, with a `bgcode-metadata-invalid` warning. A thumbnail with a zero width or
+height is dropped: `openBgcode` counts these in `droppedThumbnails`, and the container adds one
+`bgcode-metadata-invalid` warning with the count.

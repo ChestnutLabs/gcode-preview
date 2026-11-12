@@ -128,17 +128,35 @@ describe('adapter: untrusted bed_shape / height (defect: infinite bed, negative 
   });
 
   for (const h of ['-5', '0', HUGE, 'abc']) {
-    it(`max_print_height = ${h.length > 8 ? 'an overflowing value' : h} → a bed with no height`, async () => {
+    it(`max_print_height = ${h.length > 8 ? 'an overflowing value' : h} → a bed with no height, one warning`, async () => {
       const md = await open(`${BED}max_print_height = ${h}\n`);
       expect(md.machine?.bed).toEqual({ kind: 'rect', min: { x: 0, y: 0 }, max: { x: 250, y: 210 } });
       expect(md.machine?.heightMm).toBeUndefined();
-      expect(md.warnings).toEqual([]);
+      expect(md.warnings).toEqual([
+        { code: 'bgcode-metadata-invalid', message: 'print height is not a positive number; dropped' }
+      ]);
     });
   }
 
-  it('a small positive height is kept (0.5), and printable_height is the fallback', async () => {
-    expect((await open(`${BED}max_print_height = 0.5\n`)).machine?.heightMm).toBe(0.5);
-    expect((await open(`${BED}printable_height = 180\n`)).machine?.heightMm).toBe(180);
+  it('a bad printable_height (the fallback key) warns too', async () => {
+    const md = await open(`${BED}printable_height = -1\n`);
+    expect(md.machine?.heightMm).toBeUndefined();
+    expect(md.warnings.map((w) => w.code)).toEqual(['bgcode-metadata-invalid']);
+  });
+
+  it('a small positive height is kept (0.5), and printable_height is the fallback; no warning', async () => {
+    const small = await open(`${BED}max_print_height = 0.5\n`);
+    expect(small.machine?.heightMm).toBe(0.5);
+    expect(small.warnings).toEqual([]);
+    const fallback = await open(`${BED}printable_height = 180\n`);
+    expect(fallback.machine?.heightMm).toBe(180);
+    expect(fallback.warnings).toEqual([]);
+  });
+
+  it('no height key at all → no height and no warning', async () => {
+    const md = await open(BED);
+    expect(md.machine?.heightMm).toBeUndefined();
+    expect(md.warnings).toEqual([]);
   });
 });
 
@@ -158,6 +176,37 @@ describe('Thumbnail blocks with a zero dimension are dropped', () => {
       ['png', 1, 1, [1, 2, 3]]
     ]);
     expect((await thumbs(65535, 65535)).map((t) => [t.width, t.height])).toEqual([[65535, 65535]]);
+  });
+
+  const mixed = () =>
+    assembleBgcode([
+      { type: 1, compression: 0, encoding: 0, data: enc('G1 X1\n') },
+      { type: 5, compression: 0, thumbnail: { format: 0, width: 0, height: 8 }, data: new Uint8Array([1]) },
+      { type: 5, compression: 0, thumbnail: { format: 0, width: 4, height: 4 }, data: new Uint8Array([2]) },
+      { type: 5, compression: 0, thumbnail: { format: 0, width: 8, height: 0 }, data: new Uint8Array([3]) }
+    ]);
+
+  it('openBgcode counts the dropped blocks in droppedThumbnails', async () => {
+    const r = await openBgcode(await mixed(), { metadata: true });
+    expect(r.thumbnails.map((t) => [t.width, t.height])).toEqual([[4, 4]]);
+    expect(r.droppedThumbnails).toBe(2);
+  });
+
+  it('the container reports the drops as ONE bgcode-metadata-invalid warning with the count', async () => {
+    const opened = await openBgcodeContainer(await mixed());
+    expect(opened.thumbnails.map((t) => [t.width, t.height])).toEqual([[4, 4]]);
+    expect(opened.metadata.warnings).toEqual([
+      { code: 'bgcode-metadata-invalid', message: '2 thumbnail block(s) with a zero width or height; dropped' }
+    ]);
+  });
+
+  it('no dropped block → droppedThumbnails 0 and no warning', async () => {
+    const f = await assembleBgcode([
+      { type: 1, compression: 0, encoding: 0, data: enc('G1 X1\n') },
+      { type: 5, compression: 0, thumbnail: { format: 0, width: 4, height: 4 }, data: new Uint8Array([2]) }
+    ]);
+    expect((await openBgcode(f, { metadata: true })).droppedThumbnails).toBe(0);
+    expect((await openBgcodeContainer(f)).metadata.warnings).toEqual([]);
   });
 });
 

@@ -5,7 +5,8 @@
 Slicer comments with impossible numbers no longer put `NaN` or `Infinity` into the parse metadata.
 
 The parse never fails because of these values. The value is left out, and the IR gets one deduped
-`dialect-metadata-invalid` warning (in `ir.header.warnings`) with a count. What comes back absent now:
+`dialect-metadata-invalid` warning (in `ir.header.warnings`) with a count. A bed is the exception:
+it keeps the existing `dialect-bed-unparsed` warning. What comes back absent now:
 
 - **Print time.** A PrusaSlicer or Orca/Bambu time whose digits overflow (for example 400 digits
   before `s`) gives no `metadata.printEstimate`. Before, it gave `seconds: Infinity`. On a Bambu

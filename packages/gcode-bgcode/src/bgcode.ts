@@ -78,6 +78,8 @@ export interface BgcodeDecodeResult {
   settings: Record<string, string>;
   /** Thumbnails from Thumbnail blocks (#188 phase 4c) — only when `metadata: true`. */
   thumbnails: BgcodeThumbnail[];
+  /** Thumbnail blocks left out of `thumbnails` because their width or height is 0 (only when `metadata: true`). */
+  droppedThumbnails: number;
 }
 
 export interface BgcodeDecodeOptions {
@@ -271,6 +273,7 @@ export async function openBgcode(bytes: Uint8Array, opts: BgcodeDecodeOptions = 
   const gcodeParts: Uint8Array[] = [];
   const settings: Record<string, string> = {};
   const thumbnails: BgcodeThumbnail[] = [];
+  let droppedThumbnails = 0;
   let totalOut = 0;
   let metaUsed = 0; // bytes decoded so far from metadata + thumbnail blocks, against META_BUDGET
   let off = 10;
@@ -342,7 +345,10 @@ export async function openBgcode(bytes: Uint8Array, opts: BgcodeDecodeOptions = 
       if (isThumb) {
         // Thumbnails are stored as image bytes (PrusaSlicer uses None compression); decompress if flagged.
         // A zero width or height is not a real image: drop it (its bytes still counted against the budget).
-        if (thumbWidth === 0 || thumbHeight === 0) continue;
+        if (thumbWidth === 0 || thumbHeight === 0) {
+          droppedThumbnails++;
+          continue;
+        }
         thumbnails.push({
           format: THUMB_FORMAT[thumbFormat] ?? 'unknown',
           width: thumbWidth,
@@ -362,5 +368,5 @@ export async function openBgcode(bytes: Uint8Array, opts: BgcodeDecodeOptions = 
     gcode.set(part, o);
     o += part.length;
   }
-  return { gcode, blocks, checksum: hasCrc ? 'crc32' : 'none', settings, thumbnails };
+  return { gcode, blocks, checksum: hasCrc ? 'crc32' : 'none', settings, thumbnails, droppedThumbnails };
 }

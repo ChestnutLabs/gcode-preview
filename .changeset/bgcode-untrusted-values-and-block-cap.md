@@ -20,8 +20,11 @@
   but unreadable, malformed points included. Before, the bed edge was `Infinity`, which drew an
   infinite build volume.
 - **Now absent: a height that is not a positive number.** A `max_print_height` /
-  `printable_height` of zero, below zero, `Infinity` or text leaves `machine.heightMm` undefined.
-  The bed itself is kept.
+  `printable_height` of zero, below zero, `Infinity` or text leaves `machine.heightMm` undefined,
+  and the container adds one `bgcode-metadata-invalid` warning
+  (`print height is not a positive number; dropped`). The bed itself is kept.
 - **Now dropped: a thumbnail block with zero width or height.** It no longer appears in
   `thumbnails` or `metadata.thumbnails`. Its bytes still count against the 32 MiB
-  metadata/thumbnail budget.
+  metadata/thumbnail budget. `openBgcode` returns the count as a new `droppedThumbnails` field, and
+  the container adds one `bgcode-metadata-invalid` warning
+  (`N thumbnail block(s) with a zero width or height; dropped`).

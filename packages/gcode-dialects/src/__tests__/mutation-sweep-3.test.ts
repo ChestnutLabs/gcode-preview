@@ -335,6 +335,33 @@ describe('BufferedAnnotationSink budgets (untrusted counts)', () => {
     expect(r.ir.tools.filter((t) => t.material === 'PLA').length).toBe(64);
   });
 
+  it('Orca caps the calls itself: a caller-supplied sink that bounds nothing gets 64 + 64, not 100 + 100', () => {
+    // orcaBambu and AnnotationSink are public; the sink contract does not promise to bound these calls.
+    const types = Array.from({ length: 100 }, () => 'PLA').join(';');
+    const text = [ORCA, `; filament_type = ${types}`, 'G1 X1 Y1 E1'].join('\n');
+    const inner = new BufferedAnnotationSink('orca');
+    const calls = { setFilament: 0, setToolInfo: 0 };
+    const sink: AnnotationSink = new Proxy(inner, {
+      get(t, k) {
+        if (k === 'setFilament' || k === 'setToolInfo') {
+          return (...args: unknown[]) => {
+            calls[k]++;
+            return (t[k] as (...a: unknown[]) => void)(...args);
+          };
+        }
+        const v = (t as unknown as Record<string | symbol, unknown>)[k];
+        return typeof v === 'function' ? (v as (...a: unknown[]) => unknown).bind(t) : v;
+      }
+    });
+    const a = orcaBambu();
+    const { ir } = parseGcodeToIR(text, {
+      onComment: (c: string, b: number) => a.onComment?.(c, b, sink),
+      onCommand: () => {}
+    });
+    a.finalize?.(ir, sink);
+    expect(calls).toEqual({ setFilament: 64, setToolInfo: 64 });
+  });
+
   it('a tool colour must be exactly six hex digits', () => {
     const { ir } = applied((s) => {
       s.setToolInfo(0, { colorHex: '#FF0000' });
