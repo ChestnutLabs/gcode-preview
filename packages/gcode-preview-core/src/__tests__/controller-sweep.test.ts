@@ -303,6 +303,64 @@ describe('queued control replay (E_CONTROL_REJECTED)', () => {
     controller.dispose();
   });
 
+  // Rebinds from INSIDE the bind's setIR, before the replay loop. A synchronous scheduleFrame (a public
+  // renderer option) runs the 3D build inside setIR, so its `stage` / `buildComplete` events are synchronous.
+  it('3D: a subscriber that rebinds during the bind’s setIR leaves the queued call to the live renderer', async () => {
+    const { controller } = make3d({ bind: false });
+    expect((await controller.parse(new Uint8Array(1_000))).ok).toBe(true);
+    // setLayerRange is not one of the SPIED (beforeEach-wrapped) setters, so this spy restores cleanly.
+    const range = vi.spyOn(ToolpathRenderer.prototype, 'setLayerRange');
+    const setIR = vi.spyOn(ToolpathRenderer.prototype, 'setIR');
+    controller.controls.setLayerRange(0, 5); // queued: the 3D renderer loads on demand
+    let trigger = '';
+    controller.onEvent((e) => {
+      if (trigger === '' && (e.type === 'stage' || e.type === 'buildComplete') && setIR.mock.calls.length === 1) {
+        trigger = e.type;
+        controller.bindCanvas(document.createElement('canvas'));
+      }
+    });
+    controller.bindCanvas(document.createElement('canvas'));
+    await settle();
+    expect(trigger).not.toBe('');
+    expect(setIR).toHaveBeenCalledTimes(2); // the first renderer's setIR emitted; the second renderer bound
+    const live = controller.raw.renderer();
+    expect(live).not.toBeNull();
+    expect(range.mock.contexts).toEqual([live]); // once, on the live renderer only
+    expect(range.mock.calls).toEqual([[0, 5]]);
+    const s = controller.getState();
+    expect({ layerCount: s.layerCount, segmentCount: s.segmentCount }).toEqual({ layerCount: 1, segmentCount: 12 });
+    controller.dispose();
+  });
+
+  it('2D: a subscriber that rebinds during the bind’s setIR keeps the live renderer’s counts', async () => {
+    // An inferred layer index makes the 2D setIR emit `renderer-unsupported` (feature `layers`) synchronously.
+    const inferred = (): ToolpathIR => {
+      const ir = timedIR();
+      return { ...ir, header: { ...ir.header, capabilities: { ...ir.header.capabilities, layers: 'inferred' } } };
+    };
+    const shown = vi.spyOn(LayerView2DRenderer.prototype, 'setShowRetractions');
+    const controller = createPreviewController({
+      createWorker: () => new SuiteStubWorker(undefined, inferred),
+      renderer: { mode: '2d' }
+    });
+    expect((await controller.parse(new Uint8Array(1_000))).ok).toBe(true);
+    controller.controls.setShowRetractions(true);
+    let rebinds = 0;
+    controller.onEvent((e) => {
+      if (e.type === 'renderer-unsupported' && e.feature === 'layers' && rebinds === 0) {
+        rebinds++;
+        controller.bindCanvas(document.createElement('canvas'));
+      }
+    });
+    controller.bindCanvas(document.createElement('canvas'));
+    expect(rebinds).toBe(1);
+    const live = controller.raw.renderer();
+    expect(shown.mock.contexts).toEqual([live]);
+    const s = controller.getState();
+    expect({ layerCount: s.layerCount, segmentCount: s.segmentCount }).toEqual({ layerCount: 1, segmentCount: 12 });
+    controller.dispose();
+  });
+
   it('a queued setColorMode is named too', () => {
     vi.spyOn(LayerView2DRenderer.prototype, 'setColorMode').mockImplementation(() => {
       throw new Error('color boom');

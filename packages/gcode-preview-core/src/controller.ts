@@ -543,6 +543,9 @@ export function createPreviewController(options: PreviewControllerOptions = {}):
       // DD-005 consumer-wins: only auto-apply file geometry when the consumer set no volume.
       if (lastMachine !== undefined && !consumerVolumeSet) r.setBuildVolume(lastMachine);
     }
+    // setIR can emit synchronously (2D `renderer-unsupported`, or a 3D build on a synchronous scheduleFrame),
+    // so a subscriber may already have rebound or disposed: then leave the queue to the new renderer.
+    if (renderer !== r) return;
     // Replay control calls made during the (async) load, in order. The queue is taken first, so a rebind
     // never replays a call twice. A call the renderer rejects (e.g. a theme opacity outside [0, 1]) is
     // reported as E_CONTROL_REJECTED and the rest still apply: the renderer IS bound, so it is neither
