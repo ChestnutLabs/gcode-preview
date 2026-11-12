@@ -1,5 +1,6 @@
 ---
 '@chestnutlabs/gcode-preview-core': patch
+'@chestnutlabs/gcode-preview-element': patch
 ---
 
 The preview controller no longer misreports a rejected control or a throwing subscriber, and it rejects
@@ -18,13 +19,18 @@ The preview controller no longer misreports a rejected control or a throwing sub
   callback threw during a parse, `parse()` resolved `{ ok: false, error: { code: 'E_UNKNOWN' } }` for a
   file that had loaded. `parse-complete` and the capability state (`availableColorModes`,
   `hasRetractions`, `hasColorChanges`) were also skipped, and a throw at the very end could reject
-  `parse()`. Now each subscriber runs on its own: the others still run, the parse outcome reflects only
-  the parse, and `parse()` never rejects. The subscriber's error is re-thrown from a microtask, so it
-  still shows up as an uncaught error.
+  `parse()`. Now each subscriber runs on its own: the others still run, and the parse outcome reflects
+  only the parse. A throwing listener no longer makes `parse()` reject or report `parse-error`. The
+  subscriber's error is re-thrown from a microtask, so it still shows up as an uncaught error.
+  If a subscriber disposes the preview or rebinds its canvas while queued calls are being replayed,
+  the rest of those calls are no longer run on the old renderer.
 - **These calls now throw `RangeError` for a value that is not a number, or is `NaN`:**
   `setLayerRange(startLayer, endLayer)` (either end), `setScrubPosition(segIndex)` and
   `setScrubTime(ms)`. They throw at once, before anything is queued, even before the renderer has loaded.
   `null` (clear) and `±Infinity` (an open end) are still accepted. Before, a `NaN` reached the 3D
   renderer's draw state, and `setScrubTime(NaN)` silently drew nothing.
+- **The Web Component ignores a non-numeric `scrub` or `scrub-time` attribute.** `scrub="abc"` (or
+  setting the `scrub` / `scrubTime` property to `NaN`) keeps the previous cut instead of throwing, so the
+  source still parses. A number, including `Infinity`, still applies, and removing the attribute clears.
 - **`setScrubTime(ms)` before a successful parse does nothing, as documented.** It used to clear an
   existing scrub cut. `setScrubTime(null)` still clears.

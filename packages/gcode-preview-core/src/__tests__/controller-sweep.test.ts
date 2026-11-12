@@ -173,6 +173,63 @@ describe('queued control replay (E_CONTROL_REJECTED)', () => {
     controller.dispose();
   });
 
+  it('a state subscriber that disposes during replay stops it: the next queued call never reaches the old renderer', async () => {
+    const { controller } = make3d();
+    controller.controls.setTheme({ gridOpacity: 2 }); // rejected on replay -> state.error -> subscriber disposes
+    controller.controls.setCameraMode('orthographic');
+    let disposals = 0;
+    controller.onStateChange((s) => {
+      if (s.error?.code === 'E_CONTROL_REJECTED') {
+        disposals++;
+        controller.dispose();
+      }
+    });
+    await settle();
+    expect(disposals).toBe(1);
+    expect(log).toEqual([]);
+    expect(controller.raw.renderer()).toBeNull();
+  });
+
+  it('a subscriber that rebinds during replay stops it on the old renderer', async () => {
+    const { controller } = make3d();
+    controller.controls.setTheme({ gridOpacity: 2 });
+    controller.controls.setCameraMode('orthographic');
+    let rebinds = 0;
+    controller.onEvent((e) => {
+      if (e.type === 'error' && rebinds === 0) {
+        rebinds++;
+        controller.bindCanvas(document.createElement('canvas'));
+      }
+    });
+    await settle();
+    expect(rebinds).toBe(1);
+    expect(log).toEqual([]);
+    expect(controller.raw.renderer()).not.toBeNull();
+    controller.dispose();
+  });
+
+  it('2D: a subscriber that rebinds synchronously during replay stops it on the old renderer', () => {
+    vi.spyOn(LayerView2DRenderer.prototype, 'setView').mockImplementation(() => {
+      throw new Error('view boom');
+    });
+    const shown = vi.spyOn(LayerView2DRenderer.prototype, 'setShowRetractions');
+    const controller = createPreviewController({ createWorker: () => new SuiteStubWorker(), renderer: { mode: '2d' } });
+    controller.controls.setView('iso');
+    controller.controls.setShowRetractions(true);
+    let rebinds = 0;
+    controller.onEvent((e) => {
+      if (e.type === 'error' && rebinds === 0) {
+        rebinds++;
+        controller.bindCanvas(document.createElement('canvas')); // a new 2D renderer binds at once
+      }
+    });
+    controller.bindCanvas(document.createElement('canvas'));
+    expect(rebinds).toBe(1);
+    expect(shown).toHaveBeenCalledTimes(0);
+    expect(controller.raw.renderer()).not.toBeNull();
+    controller.dispose();
+  });
+
   it('a queued setColorMode is named too', () => {
     vi.spyOn(LayerView2DRenderer.prototype, 'setColorMode').mockImplementation(() => {
       throw new Error('color boom');

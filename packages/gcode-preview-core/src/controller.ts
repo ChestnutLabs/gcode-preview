@@ -546,8 +546,12 @@ export function createPreviewController(options: PreviewControllerOptions = {}):
     // Replay control calls made during the (async) load, in order. The queue is taken first, so a rebind
     // never replays a call twice. A call the renderer rejects (e.g. a theme opacity outside [0, 1]) is
     // reported as E_CONTROL_REJECTED and the rest still apply: the renderer IS bound, so it is neither
-    // a load failure nor a reason to drop later calls.
+    // a load failure nor a reason to drop later calls. A subscriber may dispose or rebind mid-replay (an
+    // `error` listener, or a renderer event): then `r` is no longer the bound renderer, so stop rather
+    // than drive a disposed one (dispose() also unbinds, so this covers it). The new renderer, if any, does
+    // its own wiring.
     for (const op of pendingOps.splice(0)) {
+      if (renderer !== r) return;
       try {
         op.run(r);
       } catch (err) {
