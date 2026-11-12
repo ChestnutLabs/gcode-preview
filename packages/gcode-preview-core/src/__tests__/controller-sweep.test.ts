@@ -366,7 +366,7 @@ describe('queued control replay (E_CONTROL_REJECTED)', () => {
       throw new Error('color boom');
     });
     const controller = createPreviewController({ createWorker: () => new SuiteStubWorker(), renderer: { mode: '2d' } });
-    expect(controller.controls.setColorMode({ mode: 'tool' })).toBe(true);
+    expect(controller.controls.setColorMode({ mode: 'tool', palette: [] })).toBe(true);
     controller.bindCanvas(document.createElement('canvas'));
     expect(controller.getState().error).toEqual({
       code: 'E_CONTROL_REJECTED',

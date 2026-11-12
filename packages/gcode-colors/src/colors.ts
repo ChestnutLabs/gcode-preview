@@ -109,7 +109,6 @@ export function layerHeightRange(ir: ToolpathIR): [number, number] {
 /** Sample a color ramp at t∈[0,1] with linear interpolation between stops. `t` is clamped; NaN → the start. */
 export function rampColor(ramp: RGB[], t: number): RGB {
   if (ramp.length === 0) return DEFAULT_FALLBACK;
-  if (ramp.length === 1) return ramp[0];
   const clamped = t > 0 ? (t < 1 ? t : 1) : 0;
   const p = clamped * (ramp.length - 1);
   const lo = Math.floor(p);
@@ -154,13 +153,17 @@ function rampOrFallback(ramp: RGB[], v: number, lo: number, span: number, fallba
  * - an explicit `range` (feedrate, layerHeight, power) must be two finite numbers `>= 0` — speeds, powers
  *   and layer heights are never negative — in ascending order. For a reversed scale, reverse the `ramp`.
  *   `[v, v]` is a valid point range: every segment is the ramp start;
- * - object mode's `only` must be a 1-based integer object index (`>= 1`).
+ * - object mode's `only` must be a 1-based integer object index (`>= 1`);
+ * - every colour (`single.color`, each `palette`/`ramp` entry, `cut`/`travel`, and `fallback`) must be an
+ *   array-like of at least three finite numbers (extra entries are ignored). `fallback` may be omitted only
+ *   in `tool` and `filament` mode. An empty palette or ramp is valid (every segment is the fallback).
  *
  * {@link createSegmentColorer} calls this, so a direct renderer user gets it for free. A renderer that
  * stores a mode before colouring with it should call it first, so a bad mode throws at the call and is
  * never stored.
  */
 export function checkColorMode(mode: ColorMode): void {
+  checkModeColors(mode);
   if (mode.mode === 'feedrate' || mode.mode === 'layerHeight' || mode.mode === 'power') {
     if (mode.range === undefined) return;
     const [lo, hi] = mode.range;
@@ -181,6 +184,75 @@ export function checkColorMode(mode: ColorMode): void {
       throw new RangeError(`object color mode 'only' must be a 1-based integer object index, got ${String(only)}`);
     }
   }
+}
+
+/** Compact rendering of a bad colour for an error message (first four channels of an array-like). */
+function describeColor(c: unknown): string {
+  if (typeof c === 'object' && c !== null && typeof (c as ArrayLike<unknown>).length === 'number') {
+    const a = c as ArrayLike<unknown>;
+    const head = Array.prototype.slice.call(a, 0, 4).map(String).join(', ');
+    return `[${head}${a.length > 4 ? ', …' : ''}]`;
+  }
+  return String(c);
+}
+
+/**
+ * One colour: an array-like (plain array, readonly tuple, `Float32Array`) whose first three entries are
+ * finite numbers. Any finite value is accepted (a 0-255 value renders over-bright, which is defined); extra
+ * entries (an alpha) are ignored. NaN, ±Infinity, a short array (its missing entry reads `undefined`) or a
+ * non-array have no rendering.
+ */
+function checkColor(mode: string, field: string, c: unknown): void {
+  const a = c as ArrayLike<unknown> | null | undefined;
+  const ok =
+    typeof a === 'object' &&
+    a !== null &&
+    typeof a.length === 'number' &&
+    Number.isFinite(a[0]) &&
+    Number.isFinite(a[1]) &&
+    Number.isFinite(a[2]);
+  if (!ok) {
+    throw new RangeError(
+      `${mode} color mode ${field} must be [r, g, b] of three finite numbers, got ${describeColor(c)}`
+    );
+  }
+}
+
+function checkColorList(mode: string, field: string, list: unknown): void {
+  const a = list as ArrayLike<unknown> | null | undefined;
+  if (typeof a !== 'object' || a === null || typeof a.length !== 'number') {
+    throw new RangeError(`${mode} color mode ${field} must be an array of [r, g, b] colours, got ${String(list)}`);
+  }
+  for (let i = 0; i < a.length; i++) checkColor(mode, `${field}[${String(i)}]`, a[i]);
+}
+
+/** Validate every colour a mode carries. `tool` and `filament` may omit `fallback`; every other mode needs one. */
+function checkModeColors(mode: ColorMode): void {
+  const m = mode.mode;
+  switch (mode.mode) {
+    case 'single':
+      checkColor(m, 'color', mode.color);
+      return;
+    case 'tool':
+    case 'feature':
+    case 'colorChange':
+    case 'object':
+      checkColorList(m, 'palette', mode.palette);
+      break;
+    case 'feedrate':
+    case 'layerHeight':
+    case 'power':
+      checkColorList(m, 'ramp', mode.ramp);
+      break;
+    case 'moveKind':
+      checkColor(m, 'cut', mode.cut);
+      checkColor(m, 'travel', mode.travel);
+      break;
+    case 'filament':
+      break;
+  }
+  if ((mode.mode === 'tool' || mode.mode === 'filament') && mode.fallback === undefined) return;
+  checkColor(m, 'fallback', mode.fallback);
 }
 
 /** Per-segment RGB accessor — the loop-friendly form both renderers use. */
