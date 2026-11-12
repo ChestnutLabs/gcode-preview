@@ -87,13 +87,25 @@ describe('ToolpathIRBuilder sparse layer indices (sweep G2)', () => {
     expect(ir.header.warnings).toEqual([
       {
         code: 'layer-indices-densified',
-        message: 'segment layer indices were not dense (0..2); renumbered in ascending order',
+        message: 'segment layer indices were not dense; renumbered to 0..2 in ascending order',
         severity: 'info'
       }
     ]);
     // Progress now reports an in-range layer index (was 9 against a 3-entry layers[]).
     const m = createProgressMapper(ir);
     expect(m.observe({ v: 1, timestampMs: 0, position: { percent: 1 } }).layerIndex).toBe(2);
+  });
+
+  it('a second finalize() never mutates an IR already returned', () => {
+    const b = new ToolpathIRBuilder();
+    b.addSegment(seg(0, 0.2));
+    b.addSegment(seg(5, 0.4));
+    const first = b.finalize();
+    const second = b.finalize();
+    expect(first.header.warnings).toHaveLength(1);
+    expect(second.header.warnings).toHaveLength(1);
+    expect(first.header.warnings).not.toBe(second.header.warnings);
+    expect(first.header.capabilities).not.toBe(second.header.capabilities);
   });
 
   it('a layer list that starts above 0 is renumbered from 0', () => {

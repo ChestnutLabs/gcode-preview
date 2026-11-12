@@ -62,7 +62,7 @@ describe('SegmentWriter accounting', () => {
   });
 
   it('growth that would exceed the budget throws BudgetExceededError before allocating', () => {
-    // Initial 4096*40 fits; the grow needs another 8192*40 while the old set is still live.
+    // Initial 4096*48 fits; the grow needs another 8192*48 while the old set is still live.
     const w = new SegmentWriter(INITIAL * CORE + 2 * INITIAL * CORE - 1);
     for (let i = 0; i < INITIAL; i++) w.push(rec(i));
     expect(() => w.push(rec(INITIAL))).toThrow(BudgetExceededError);

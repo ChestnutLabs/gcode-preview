@@ -183,10 +183,13 @@ export class ToolpathIRBuilder {
     };
     const origin = this.originOffset ?? { x: 0, y: 0, z: 0 };
     const { layers, densified } = deriveLayers(segments, origin.z);
+    // Each IR gets its own warnings array and capabilities record: a later finalize() on the same builder must
+    // never mutate an IR already handed out.
+    const warnings: Warning[] = [...this.warnings];
     if (densified) {
-      this.warnings.push({
+      warnings.push({
         code: 'layer-indices-densified',
-        message: `segment layer indices were not dense (0..${layers.length - 1}); renumbered in ascending order`,
+        message: `segment layer indices were not dense; renumbered to 0..${layers.length - 1} in ascending order`,
         severity: 'info'
       });
     }
@@ -195,7 +198,7 @@ export class ToolpathIRBuilder {
     const sourceIndex = buildSourceIndex(segments.srcByte, count);
     // Honest at build time from whatever channels exist; the dialect runner refreshes both after
     // annotation settles the object/feature channels (DD-026 D5, lifecycle §5).
-    this.capabilities.nonModelClassification = classification;
+    const capabilities: Record<string, Confidence> = { ...this.capabilities, nonModelClassification: classification };
 
     const header: ToolpathIRHeader = {
       irSchemaVersion: IR_SCHEMA_VERSION,
@@ -210,8 +213,8 @@ export class ToolpathIRBuilder {
       originOffset: origin,
       complete: true,
       dialects: [],
-      warnings: this.warnings,
-      capabilities: this.capabilities
+      warnings,
+      capabilities
     };
 
     const tools = [...this.toolsMap.values()].sort((a, b) => a.id - b.id);
