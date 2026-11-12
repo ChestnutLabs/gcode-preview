@@ -38,6 +38,24 @@ describe('applyRenderScope / checkRenderScope', () => {
     expect(() => checkRenderScope({ plateId: 1, objectIds: [] } as never)).toThrow(/exactly one of/);
   });
 
+  it('a selector key present with an undefined value is not counted (scope built from optional fields)', () => {
+    const byIds = applyRenderScope(scene(), { objectIds: ['a'], plateId: undefined } as never);
+    expect(byIds.objects.map((o) => o.id)).toEqual(['a']);
+    expect(byIds.bounds).toEqual({ min: [0, 0, 0], max: [10, 10, 0] });
+    const byPlate = applyRenderScope(scene({ plateIds: [1] }), { plateId: 1, objectIds: undefined } as never);
+    expect(byPlate.objects.map((o) => o.id)).toEqual(['a']);
+    expect(byPlate.bounds).toEqual({ min: [0, 0, 0], max: [10, 10, 0] });
+    const byFilter = applyRenderScope(scene({ plateIds: [1] }), {
+      instanceFilter: () => true,
+      objectIds: undefined,
+      plateId: undefined
+    } as never);
+    expect(byFilter.objects.map((o) => o.id)).toEqual(['a']);
+    const msg = 'renderScope must have exactly one of objectIds, plateId, instanceFilter';
+    expect(() => checkRenderScope({ objectIds: undefined } as never)).toThrow(new RangeError(msg));
+    expect(() => checkRenderScope({ objectIds: undefined, plateId: undefined } as never)).toThrow(new RangeError(msg));
+  });
+
   it('a placement translation in z moves the bounds', () => {
     const t = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 7, 1];
     const s = applyRenderScope(scene({ transform: t }), { objectIds: ['a'] });

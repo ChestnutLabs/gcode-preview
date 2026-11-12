@@ -168,7 +168,9 @@ export type RenderScope =
 export function checkRenderScope(scope: RenderScope): void {
   const s = scope as unknown as Record<string, unknown> | null;
   if (typeof s !== 'object' || s === null) throw new RangeError('renderScope must be an object');
-  const keys = ['objectIds', 'plateId', 'instanceFilter'].filter((k) => k in s);
+  // A key present with an `undefined` value is not a selector (a scope built from optional fields,
+  // `{ objectIds: sel, plateId: undefined }`, is type-valid and selects by `objectIds`).
+  const keys = ['objectIds', 'plateId', 'instanceFilter'].filter((k) => s[k] !== undefined);
   if (keys.length !== 1) {
     throw new RangeError('renderScope must have exactly one of objectIds, plateId, instanceFilter');
   }
@@ -237,10 +239,16 @@ function accumulatePlacementBounds(geom: MeshGeometry, placements: readonly Mat4
  */
 export function applyRenderScope(scene: ModelScene, scope: RenderScope): ModelScene {
   checkRenderScope(scope);
+  // Same rule as checkRenderScope: a key with an `undefined` value is not the selector.
+  const sel = scope as Partial<{
+    objectIds: string[];
+    plateId: number;
+    instanceFilter: (objectId: string, placementIndex: number) => boolean;
+  }>;
   const matches = (o: ModelObject, i: number): boolean => {
-    if ('objectIds' in scope) return scope.objectIds.includes(o.id);
-    if ('plateId' in scope) return o.plateIds?.[i] === scope.plateId;
-    return scope.instanceFilter(o.id, i);
+    if (sel.objectIds !== undefined) return sel.objectIds.includes(o.id);
+    if (sel.plateId !== undefined) return o.plateIds?.[i] === sel.plateId;
+    return sel.instanceFilter!(o.id, i);
   };
   const objects: ModelObject[] = [];
   const bounds: ModelBounds = { min: [Infinity, Infinity, Infinity], max: [-Infinity, -Infinity, -Infinity] };
