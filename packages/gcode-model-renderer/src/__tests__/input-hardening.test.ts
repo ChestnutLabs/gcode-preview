@@ -191,4 +191,20 @@ describe('component graph: cycles and fan-out', () => {
       code: 'E_MODEL_TOO_MANY_INSTANCES'
     });
   });
+
+  it('the pre-walk charges a dangling id before the lookup, so it rejects as INSTANCES before the triangle estimate', async () => {
+    // Main part has no mesh, so the parse-time triangle count cannot fire. Object 1 = one external part
+    // (padded to 4 KiB, so the pre-walk estimates 4096 / 256 = 16 triangles) + 3 dangling ids.
+    // Pre-walk: visit(1) = 1, the external part = 1 placement, 90/91/92 = visits 2, 3, 4 > 3 -> INSTANCES.
+    // Charging the dangling ids only after the lookup lets the walk finish, and the estimate 16 > 1 -> TRIANGLES.
+    const main = modelXml(comps(1, [{ id: 5, path: EXT }, 90, 91, 92]));
+    const ext = `<?xml version="1.0"?><model unit="millimeter"><resources><object id="5"/></resources></model><!--${'x'.repeat(4096)}-->`;
+    const bytes = makeZip([
+      { name: '3D/3dmodel.model', data: enc(main) },
+      { name: '3D/Objects/a.model', data: enc(ext) }
+    ]);
+    await expect(parse3mf(bytes, { maxInstances: 3, maxTriangles: 1 })).rejects.toMatchObject({
+      code: 'E_MODEL_TOO_MANY_INSTANCES'
+    });
+  });
 });
