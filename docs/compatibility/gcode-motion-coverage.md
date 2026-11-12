@@ -84,8 +84,9 @@ and is **byte-identical**. Shipped in v0.18.0 (DD-017 phases 1–3). See the
 | External subprogram files (`M98 P…`, external `o<name> call`), persistent `.var` params, `return` values | **out of scope** | — |
 
 **Bounds & honesty.** Two `ParseLimits` fields bound execution: `maxProgramIterations` (default
-1,000,000) caps total loop work — charged per loop pass *and* per statement inside a loop or subroutine,
-so a large body or an exponential recursive fan-out cannot exceed it — and `maxCallDepth` (default 50)
+1,000,000) caps total loop work — charged per loop pass *and*, inside a loop or subroutine, per
+statement, condition test, `call` argument, entered loop and 256 characters of text, so a large body,
+a long `elseif` chain or an exponential recursive fan-out cannot exceed it — and `maxCallDepth` (default 50)
 caps subroutine recursion. There is no `eval` and no I/O. Clean execution reports the
 `parametricProgram` capability as `known`; any disclosure above drops it to `approximated`; a
 non-parametric file reports `unavailable` — never a fabricated value. FDM / non-parametric input is

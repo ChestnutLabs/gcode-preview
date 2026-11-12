@@ -38,7 +38,10 @@ quality.
 
 Untrusted input is treated as untrusted. The parser enforces **resource limits** — maximum input
 bytes, maximum segments, and a cumulative allocation budget — and returns a **structured, bounded
-partial result** when a limit is hit (with a `stopReason`) instead of hanging or crashing. An
+partial result** when a limit is hit (with a `stopReason`) instead of hanging or crashing. The
+limits you pass are checked too: each must be a non-negative integer, and anything else (`NaN`,
+`Infinity`, a negative number, a fraction) throws a `ParseOptionError` with `code: 'E_PARSE_OPTION'`
+before parsing starts. There is no "unlimited" value; pass a large integer instead. An
 adversarial-input corpus exercises these paths in CI. Container extraction (`.gcode.3mf`) is
 likewise hardened against zip-bombs and path traversal.
 

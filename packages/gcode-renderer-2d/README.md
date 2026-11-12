@@ -29,6 +29,11 @@ view.setLayer(12);
 view.render(); // clears + redraws the active layer
 ```
 
+The constructor and `setColorMode` throw a `RangeError` for a colour mode whose options have no
+meaning (for example an inverted `range`), and the previous mode stays in effect. To validate a mode
+built from user input first, call `checkColorMode(mode)`, re-exported here from
+[`@chestnutlabs/gcode-colors`](../gcode-colors/README.md).
+
 The drawing core is also exposed as pure functions — `drawLayer(ctx, ir, opts)`, `computeLayerFit`,
 `layerBounds2D`, `rgbToCss` — which take a minimal Canvas-2D-context interface and are fully
 testable in Node with a recording mock.

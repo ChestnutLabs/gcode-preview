@@ -45,7 +45,8 @@ controls.setColorMode({
 A `range` must be two finite numbers `>= 0` in ascending order. Anything else throws a `RangeError`
 when you set the mode, and the previous mode stays in effect. For a reversed scale, reverse the
 `ramp`. A point range such as `[1500, 1500]` is valid and draws every segment in the ramp's first
-color. Moves with no speed in the file, or a negative one, are drawn in `fallback`.
+color. Moves with no speed in the file, or a negative one, are drawn in `fallback`. To check a mode
+built from user input before you set it, call `checkColorMode(mode)` from `@chestnutlabs/gcode-colors`.
 
 ## Camera control: preset views & saved state
 
