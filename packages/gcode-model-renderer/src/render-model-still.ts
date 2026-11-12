@@ -14,6 +14,7 @@ import type { Confidence } from '@chestnutlabs/toolpath-core';
 import type { BuildVolumeDef, GLRendererLike, RenderTargetCanvas, Theme } from '@chestnutlabs/gcode-renderer-three';
 import { ModelRenderer, checkModelFov, type ModelBackground, type PresentationView } from './model-renderer.js';
 import { isModelScene, resolveModelScene } from './loaders.js';
+import { assertFiniteBounds } from './finite.js';
 import {
   applyRenderScope,
   sceneInstanceCount,
@@ -114,6 +115,7 @@ async function toScene(
   filamentPalette?: readonly (string | undefined)[]
 ): Promise<{ scene: ModelScene; sourceBytes: Uint8Array }> {
   if (isModelScene(source)) {
+    assertFiniteBounds(source.bounds, 'ModelScene');
     // No raw bytes for a pre-built scene: key off a stable structural summary instead.
     const summary = JSON.stringify({ n: source.objects.length, b: source.bounds, c: source.capabilities });
     return { scene: source, sourceBytes: new TextEncoder().encode(summary) };
