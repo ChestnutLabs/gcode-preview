@@ -312,6 +312,12 @@ export interface GcodePreviewControls {
 export interface PreviewController {
   /** Bind/rebind the renderer to a canvas (null unbinds). Rebinding disposes safely. */
   bindCanvas(canvas: HTMLCanvasElement | null): void;
+  /**
+   * Parse a file. Event contract: every `parse-started` is followed by exactly one terminal event
+   * (`parse-complete`, `parse-error` or `parse-cancelled`). A call superseded by a newer `parse()` is
+   * `parse-cancelled` (even if it failed or finished first) and resolves `{ ok: false, cancelled: true }`;
+   * a superseded call that never started (it was waiting on the running parse) emits no event.
+   */
   parse(input: Uint8Array | ArrayBuffer | File, opts?: WireParseOptions): Promise<ParseOutcome>;
   cancel(): void;
   /** DD-006: map one observation and drive the overlay. Null before a successful parse. */
@@ -650,7 +656,9 @@ export function createPreviewController(options: PreviewControllerOptions = {}):
       refreshCapabilityState();
       return { ok: true, result };
     } catch (err) {
-      if (err instanceof CancelledError) {
+      // #529: a superseded run is cancelled whatever way it settled (a worker error or crash that beat the
+      // cancel included): its failure belongs to a file the caller already replaced.
+      if (err instanceof CancelledError || gen !== parseGen) {
         emit({ type: 'parse-cancelled' });
         return { ok: false, cancelled: true };
       }

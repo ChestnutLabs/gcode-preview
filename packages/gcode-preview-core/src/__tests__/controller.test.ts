@@ -287,6 +287,68 @@ describe('parse supersession (#529)', () => {
     controller.dispose();
   });
 
+  it('a superseded parse that FAILS (worker error beats the cancel) reports cancelled, never parse-error', async () => {
+    // The first parse the worker sees replies `error`; every later one completes normally.
+    class FailFirstWorker extends SuiteStubWorker {
+      private seen = 0;
+      override postMessage(msg: { type: string; id: number }): void {
+        if (msg.type === 'parse' && this.seen++ === 0) {
+          queueMicrotask(() =>
+            this.onmessage?.({
+              data: { v: 1, type: 'error', id: msg.id, error: { code: 'E_PARSE', message: 'boom' } }
+            })
+          );
+          return;
+        }
+        super.postMessage(msg);
+      }
+    }
+    const canvas = document.createElement('canvas');
+    const controller = createPreviewController({
+      createWorker: () => new FailFirstWorker(undefined, () => sizedIR(10)),
+      renderer: {
+        quality: 'lines',
+        chunksPerTick: 8,
+        createRenderer: () => makeSuiteStubGL(canvas),
+        scheduleFrame: (cb) => cb()
+      }
+    });
+    controller.bindCanvas(canvas);
+    const events: PreviewEvent[] = [];
+    controller.onEvent((e) => events.push(e));
+    const a = controller.parse(new Uint8Array(1_000));
+    const b = controller.parse(new Uint8Array(1_001));
+    const [ra, rb] = await Promise.all([a, b]);
+    await settle();
+    expect(ra).toEqual({ ok: false, cancelled: true });
+    expect(rb.ok).toBe(true);
+    expect(types(events, 'parse-error')).toBe(0);
+    expect(types(events, 'parse-cancelled')).toBe(1);
+    expect(types(events, 'parse-started')).toBe(2);
+    expect(types(events, 'parse-complete')).toBe(1);
+    expect(controller.getState().error).toBeNull();
+    controller.dispose();
+  });
+
+  it('a lone parse that fails still reports parse-error (not superseded)', async () => {
+    class FailWorker extends SuiteStubWorker {
+      override postMessage(msg: { type: string; id: number }): void {
+        if (msg.type !== 'parse') return super.postMessage(msg);
+        queueMicrotask(() =>
+          this.onmessage?.({ data: { v: 1, type: 'error', id: msg.id, error: { code: 'E_PARSE', message: 'boom' } } })
+        );
+      }
+    }
+    const controller = createPreviewController({ createWorker: () => new FailWorker() });
+    const events: PreviewEvent[] = [];
+    controller.onEvent((e) => events.push(e));
+    const r = await controller.parse(new Uint8Array(1_000));
+    expect(r).toEqual({ ok: false, error: { code: 'E_PARSE', message: 'boom' } });
+    expect(types(events, 'parse-error')).toBe(1);
+    expect(types(events, 'parse-cancelled')).toBe(0);
+    controller.dispose();
+  });
+
   it('dispose while a superseded call waits: that call reports cancelled and starts nothing', async () => {
     const { controller } = make();
     const a = controller.parse(new Uint8Array(1_000));
@@ -363,6 +425,7 @@ describe('time estimate + time scrub (#181)', () => {
     expect(controller.getState().totalTimeMs).toBeCloseTo(12, 6);
     expect(draw()).toBe(24); // two vertices per segment, nothing cut
     const cases: Array<[number, number]> = [
+      [0, 0], // exactly 0 ms: the first segment has a duration, so nothing has finished
       [0.5, 0], // nothing has finished: nothing drawn
       [1, 2], // segment 0 ends at 1 ms
       [5, 10], // exactly 5 done: 5 segments, not 6

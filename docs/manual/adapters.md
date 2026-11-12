@@ -99,7 +99,9 @@ Each fires the same events (naming follows each framework's idiom): parse lifecy
 (`ready` / `parse-error` / `parse-cancelled` / `parse-progress`), staged preparation (`stage`),
 `build-complete`, `quality-fallback`, camera settle (`camera-change`), machine geometry
 (`machine-geometry-discovered` / `machine-geometry-mismatch`), `progress-presentation-changed`,
-`disclosure`, and `error`.
+`disclosure`, and `error`. Every parse that starts ends with exactly one of `ready`, `parse-error` or
+`parse-cancelled`; a parse replaced by a newer source reports `parse-cancelled`, and one replaced before it
+started emits nothing.
 
 The `disclosure` text says what the current build leaves out. It follows every `build-complete`, in both
 renderers, and is empty when the build draws everything. In 3D it names decimation (`Showing every 3rd
