@@ -10,6 +10,7 @@
 import { parseStl } from './stl.js';
 import { parse3mf } from './three-mf.js';
 import { ModelParseError, type ModelLimits } from './limits.js';
+import { assertFiniteBounds } from './finite.js';
 import type { ModelScene } from './scene-model.js';
 
 /**
@@ -69,11 +70,16 @@ export async function resolveModelScene(
   limits?: ModelLimits,
   opts?: ModelLoadOptions
 ): Promise<ModelScene> {
-  if (isModelScene(input)) return input;
+  if (isModelScene(input)) {
+    assertFiniteBounds(input.bounds, 'ModelScene');
+    return input;
+  }
   const loader = loaders.find((l) => l.kind === input.kind);
   if (loader === undefined) {
     throw new ModelParseError('E_MODEL_UNSUPPORTED_KIND', `no model loader registered for kind '${input.kind}'`);
   }
   const bytes = input.bytes instanceof Uint8Array ? input.bytes : new Uint8Array(input.bytes);
-  return loader.parse(bytes, limits, opts);
+  const scene = await loader.parse(bytes, limits, opts);
+  assertFiniteBounds(scene.bounds, `'${input.kind}' loader`);
+  return scene;
 }

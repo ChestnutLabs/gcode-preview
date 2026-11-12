@@ -33,6 +33,7 @@ import {
   type RGB
 } from './scene-model.js';
 import { parsePrintableArea } from './placement.js';
+import { assertFiniteBounds, inFloat32Range } from './finite.js';
 import { ModelParseError, resolveLimits, type ModelLimits, type ResolvedLimits } from './limits.js';
 
 /** millimeter is the 3MF default; convert others to mm. */
@@ -303,10 +304,42 @@ function decodePaintState(hex: string): { state: number; subdivided: boolean } |
   return { state: best, subdivided: states.length > 1 };
 }
 
+/**
+ * A 3MF `transform` attribute as 12 numbers, or `null` (identity) when it is absent or not 12 values long.
+ * Twelve values with any entry that is not finite and within float32 range (`NaN`, `Infinity`, `1e300`) throw
+ * `E_MODEL_PARSE`: such a matrix would put `NaN`/`Infinity` into the bounds and every instance matrix.
+ */
 function parseTransform(s: string | undefined): number[] | null {
   if (s === undefined) return null;
   const v = s.trim().split(/\s+/).map(Number);
-  return v.length === 12 && v.every((n) => !Number.isNaN(n)) ? v : null;
+  if (v.length !== 12) return null;
+  const bad = v.findIndex((n) => !inFloat32Range(n));
+  if (bad !== -1) {
+    throw new ModelParseError('E_MODEL_PARSE', `3MF transform entry ${bad} is not a finite float32 value`);
+  }
+  return v;
+}
+
+/** A vertex coordinate attribute: absent reads as 0 (as before); present must be finite and within float32. */
+function vertexCoord(raw: string | undefined, vertex: number, axis: string): number {
+  if (raw === undefined) return 0;
+  const n = Number(raw);
+  if (!inFloat32Range(n)) {
+    throw new ModelParseError('E_MODEL_PARSE', `3MF vertex ${vertex} ${axis} is not a finite float32 value`);
+  }
+  return n;
+}
+
+/** A triangle corner index attribute: must be a non-negative integer (range vs the mesh is checked at build). */
+function triangleIndex(raw: string | undefined, triangle: number, corner: string): number {
+  const n = Number(raw);
+  if (!Number.isInteger(n) || n < 0) {
+    throw new ModelParseError(
+      'E_MODEL_PARSE',
+      `3MF triangle ${triangle} ${corner} is not a non-negative integer index`
+    );
+  }
+  return n;
 }
 
 /** Apply a 3MF row-vector affine (12 values) to a point. */
@@ -453,10 +486,12 @@ function parseModelPart(xml: string, lim: ResolvedLimits): ModelPart {
       }
     } else if (name === 'vertex' && curObj !== null) {
       const a = attrs(raw);
-      curObj.vertices.push(Number(a.x) || 0, Number(a.y) || 0, Number(a.z) || 0);
+      const vn = curObj.vertices.length / 3;
+      curObj.vertices.push(vertexCoord(a.x, vn, 'x'), vertexCoord(a.y, vn, 'y'), vertexCoord(a.z, vn, 'z'));
     } else if (name === 'triangle' && curObj !== null) {
       const a = attrs(raw);
-      curObj.tris.push(Number(a.v1) | 0, Number(a.v2) | 0, Number(a.v3) | 0);
+      const tn = curObj.tris.length / 3;
+      curObj.tris.push(triangleIndex(a.v1, tn, 'v1'), triangleIndex(a.v2, tn, 'v2'), triangleIndex(a.v3, tn, 'v3'));
       if (curObj.tris.length / 3 > lim.maxTriangles) {
         throw new ModelParseError('E_MODEL_TOO_MANY_TRIANGLES', `3MF exceeds triangle limit ${lim.maxTriangles}`);
       }
@@ -569,6 +604,10 @@ function placeMaster(
   lim: ResolvedLimits
 ): void {
   const affine = matrix ?? IDENTITY_AFFINE;
+  // A nested placement multiplies its component transforms; each factor was range-checked on parse, the product may not be.
+  if (!affine.every(inFloat32Range)) {
+    throw new ModelParseError('E_MODEL_PARSE', '3MF placement transform overflows float32 after composing components');
+  }
   const mat4 = affineToMat4(matrix);
 
   const existing = st.masters.get(key);
@@ -582,6 +621,7 @@ function placeMaster(
   }
 
   const triCount = obj.tris.length / 3;
+  const vertexCount = obj.vertices.length / 3;
   st.totalTris += triCount;
   if (st.totalTris > lim.maxTriangles) {
     throw new ModelParseError('E_MODEL_TOO_MANY_TRIANGLES', `3MF exceeds triangle limit ${lim.maxTriangles}`);
@@ -614,11 +654,21 @@ function placeMaster(
     const palette = pid !== null ? part.palettes.get(pid) : undefined;
     const cidx = obj.triColorIdx[ti];
     for (let k = 0; k < 3; k++) {
-      const vi = obj.tris[ti * 3 + k] * 3;
+      const index = obj.tris[ti * 3 + k];
+      if (index >= vertexCount) {
+        throw new ModelParseError(
+          'E_MODEL_PARSE',
+          `3MF triangle ${ti} references vertex ${index}, but the mesh has ${vertexCount} vertices`
+        );
+      }
+      const vi = index * 3;
       // LOCAL geometry: unit scale only — the placement matrix (an instance transform) does the rest.
       const x = obj.vertices[vi] * part.unitScale;
       const y = obj.vertices[vi + 1] * part.unitScale;
       const z = obj.vertices[vi + 2] * part.unitScale;
+      if (!inFloat32Range(x) || !inFloat32Range(y) || !inFloat32Range(z)) {
+        throw new ModelParseError('E_MODEL_PARSE', `3MF vertex ${index} overflows float32 after unit scaling`);
+      }
       const o = (ti * 3 + k) * 3;
       positions[o] = x;
       positions[o + 1] = y;
@@ -1138,6 +1188,8 @@ export async function parse3mf(
   }
 
   const bounds: ModelBounds = { min: st.min, max: st.max };
+  // Transformed boxes can still overflow even when every vertex and matrix entry is in range.
+  assertFiniteBounds(bounds, '3MF');
   const scene: ModelScene = {
     objects: st.built,
     bounds,
