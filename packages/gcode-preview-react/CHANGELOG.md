@@ -1,5 +1,16 @@
 # @chestnutlabs/gcode-preview-react
 
+## 0.23.0
+
+### Patch Changes
+
+- Updated dependencies [[`3e133fd`](https://github.com/ChestnutLabs/gcode-preview/commit/3e133fd0e78f20d2cfdbbadd61b7fe4bb379abb1), [`d0c3fcc`](https://github.com/ChestnutLabs/gcode-preview/commit/d0c3fcc59e7973bcb0d39ba2278f830daa02fedd), [`d51d927`](https://github.com/ChestnutLabs/gcode-preview/commit/d51d927d848b68ce87439a6f968530878a9ab4f7), [`3ae53e9`](https://github.com/ChestnutLabs/gcode-preview/commit/3ae53e9cf687e62f0a4c2bfeee0900fb5a56d76c), [`d93de83`](https://github.com/ChestnutLabs/gcode-preview/commit/d93de834d6dc860701111f9588ea7beb0af2df2c), [`9a2c1fb`](https://github.com/ChestnutLabs/gcode-preview/commit/9a2c1fb3ae9d90c7c7940d5bf53aa3d58e3c9528), [`091b5d4`](https://github.com/ChestnutLabs/gcode-preview/commit/091b5d40e2e4a3670ccfc3615a299962914d72e5), [`792c3e8`](https://github.com/ChestnutLabs/gcode-preview/commit/792c3e8e578f8e465ea48600871e442821e2b8de), [`d171ad4`](https://github.com/ChestnutLabs/gcode-preview/commit/d171ad4f909ed8a333b2eff67ac3c656b6f3de34), [`d171ad4`](https://github.com/ChestnutLabs/gcode-preview/commit/d171ad4f909ed8a333b2eff67ac3c656b6f3de34), [`251e57f`](https://github.com/ChestnutLabs/gcode-preview/commit/251e57f6d38c231064792606b5a4bf44e1762b0c), [`d171ad4`](https://github.com/ChestnutLabs/gcode-preview/commit/d171ad4f909ed8a333b2eff67ac3c656b6f3de34), [`73be6d5`](https://github.com/ChestnutLabs/gcode-preview/commit/73be6d5e116acc2eabf5bb8416400bad70abeda6), [`3e1a11e`](https://github.com/ChestnutLabs/gcode-preview/commit/3e1a11ed171de55b4cf852aa3e5b94ddf69ac1ca), [`e6f159d`](https://github.com/ChestnutLabs/gcode-preview/commit/e6f159d605969ffe65c33ffe32767b2d61c43aac), [`bef4857`](https://github.com/ChestnutLabs/gcode-preview/commit/bef48574b7c2fc7f20f36a5641d006fbd904c93e), [`4d08cbc`](https://github.com/ChestnutLabs/gcode-preview/commit/4d08cbc86aa1672ebea6f9d312b376699db5ecf1)]:
+  - @chestnutlabs/gcode-parser@0.23.0
+  - @chestnutlabs/gcode-preview-core@0.23.0
+  - @chestnutlabs/gcode-renderer-three@0.23.0
+  - @chestnutlabs/gcode-model-renderer@0.23.0
+  - @chestnutlabs/toolpath-core@0.23.0
+
 ## 0.22.0
 
 ### Minor Changes
