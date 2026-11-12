@@ -531,14 +531,44 @@ export function createEngine(input: string | Uint8Array, opts: ParseOptions): En
       oy = prevY;
       oz = prevZ;
     }
+    // Each word was range-checked on its own, but an in-range word can still overflow once it is stored as
+    // an origin-relative position (G91 accumulation, or a far G92 origin plus a far move). float32 would
+    // store Infinity, so the segment is dropped with the same warning as an out-of-range word (#510). The
+    // machine position still advances, so later moves stay consistent. Only a magnitude test: NaN (an arc
+    // with a missing I/J) is a separate, older behaviour that the goldens pin, so it passes through.
+    const sx0 = prevX - ox;
+    const sy0 = prevY - oy;
+    const sz0 = prevZ - oz;
+    const sx1 = x - ox;
+    const sy1 = y - oy;
+    const sz1 = z - oz;
+    if (
+      Math.abs(sx0) > FLOAT32_MAX ||
+      Math.abs(sy0) > FLOAT32_MAX ||
+      Math.abs(sz0) > FLOAT32_MAX ||
+      Math.abs(sx1) > FLOAT32_MAX ||
+      Math.abs(sy1) > FLOAT32_MAX ||
+      Math.abs(sz1) > FLOAT32_MAX ||
+      Math.abs(eDelta) > FLOAT32_MAX
+    ) {
+      warn(
+        NUMBER_OUT_OF_RANGE_WARN,
+        'a stored position is beyond the float32 range the toolpath stores; segment dropped',
+        currentSrcByte
+      );
+      prevX = x;
+      prevY = y;
+      prevZ = z;
+      return true;
+    }
     try {
       writer.push({
-        x0: prevX - ox,
-        y0: prevY - oy,
-        z0: prevZ - oz,
-        x1: x - ox,
-        y1: y - oy,
-        z1: z - oz,
+        x0: sx0,
+        y0: sy0,
+        z0: sz0,
+        x1: sx1,
+        y1: sy1,
+        z1: sz1,
         e: eDelta,
         feedrate: modalFeed,
         kind,
