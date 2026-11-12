@@ -57,6 +57,15 @@ const equivalenceFixtures = manifest.fixtures.filter((f) => f.sizeTier !== 'adve
 const INTENTIONAL_MOTION_CORRECTION = new Set(['demo-mach3', 'demo-easel', 'container-adv-traversal-names']);
 
 /**
+ * #522: demo-3dbenchy has G2/G3 arcs that omit I or J. The inherited engine read the missing word as
+ * `undefined` and stored NaN coordinates (the renderers then skipped them, so the arcs vanished); the adapter
+ * golden's digests pin that NaN. An omitted centre offset is now 0, so those arcs are real geometry: 3
+ * extra segments and different position digests. Excluded from strict adapter-equivalence (like the CNC
+ * corrections above), pinned by the regenerated native golden, and asserted NaN-free below.
+ */
+const ARC_MISSING_OFFSET_CORRECTION = new Set(['demo-3dbenchy']);
+
+/**
  * #507: a G2/G3 arc with a NEGATIVE E (a retract during the arc) is no longer an extrusion — it takes the
  * same rule as a linear move. The inherited adapter golden still has those arc segments as Extrude, so
  * only the masked-kind digest differs for these two fixtures (positions, tool and layer are unchanged
@@ -77,7 +86,7 @@ function fnv1a(view: ArrayBufferView): string {
 
 describe('native parser vs adapter goldens (#28 gate)', () => {
   for (const fixture of equivalenceFixtures) {
-    it.skipIf(INTENTIONAL_MOTION_CORRECTION.has(fixture.id))(`geometry-equivalent for ${fixture.id}`, () => {
+    it.skipIf(INTENTIONAL_MOTION_CORRECTION.has(fixture.id) || ARC_MISSING_OFFSET_CORRECTION.has(fixture.id))(`geometry-equivalent for ${fixture.id}`, () => {
       const golden = JSON.parse(readFileSync(join(goldenDir, `${fixture.id}.json`), 'utf8'));
       const text = readFileSync(join(repoRoot, fixture.path), 'utf8');
       const { ir } = parseGcodeToIR(text, { sourceId: fixture.id, parserVersion: 'golden' });
@@ -102,6 +111,16 @@ describe('native parser vs adapter goldens (#28 gate)', () => {
       expect(ir.header.originOffset.x).toBeCloseTo(golden.originOffset.x, 3);
       expect(ir.header.originOffset.y).toBeCloseTo(golden.originOffset.y, 3);
       expect(ir.header.originOffset.z).toBeCloseTo(golden.originOffset.z, 3);
+    });
+
+    it(`stores no non-finite coordinate for ${fixture.id} (#522)`, () => {
+      const text = readFileSync(join(repoRoot, fixture.path), 'utf8');
+      const s = parseGcodeToIR(text, { sourceId: fixture.id, parserVersion: 'golden' }).ir.segments;
+      let bad = 0;
+      for (const a of [s.x0, s.y0, s.z0, s.x1, s.y1, s.z1]) {
+        for (let i = 0; i < s.count; i++) if (!Number.isFinite(a[i])) bad++;
+      }
+      expect(bad).toBe(0);
     });
 
     it(`matches the native golden for ${fixture.id}`, () => {
