@@ -156,6 +156,36 @@ describe('sink.apply is all or nothing (OSF)', () => {
     expect(conflicts).toEqual([]);
   });
 
+  it('a machine-overwrite conflict is reported only after the write succeeds, never for a rolled-back write', () => {
+    const run = (throwAfterMachine: boolean) => {
+      const ir = irOf([...line(2)]);
+      const md: DialectMetadata = { dialects: [], machine: machine(100) };
+      if (throwAfterMachine) {
+        // metadata.raw is written after metadata.machine, so the machine overwrite has already happened.
+        Object.defineProperty(md, 'raw', {
+          configurable: true,
+          get: () => undefined,
+          set: () => {
+            throw new Error('boom');
+          }
+        });
+      }
+      const sink = new BufferedAnnotationSink('t');
+      sink.setMachine(machine(200));
+      sink.setRaw('k', 'v');
+      const conflicts: [string, string][] = [];
+      const call = () => sink.apply(ir, md, (code, message) => conflicts.push([code, message]));
+      if (throwAfterMachine) expect(call).toThrow('boom');
+      else call();
+      return { conflicts, size: md.machine?.bed.kind === 'rect' ? md.machine.bed.max.x : undefined };
+    };
+    expect(run(true)).toEqual({ conflicts: [], size: 100 });
+    expect(run(false)).toEqual({
+      conflicts: [['dialect-conflict', "adapter 't' overwrote machine geometry"]],
+      size: 200
+    });
+  });
+
   it('registry: an adapter that throws mid-apply leaves the no-dialect IR plus an adapter-failed warning', () => {
     const text = G.join('\n');
     const plain = parseGcodeToIR(text).ir;
