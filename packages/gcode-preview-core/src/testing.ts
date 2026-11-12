@@ -326,6 +326,33 @@ export function runBehavioralSuite(name: string, api: TestApi, harness: AdapterH
       await a.dispose();
     });
 
+    it('scrub, scrub-time and layer-range calls made before the parse apply to the file it loads', async () => {
+      // Latest call wins: the 5 below replaces the earlier null. The next file still starts uncut.
+      const a = await harness.create();
+      a.controls.setScrubPosition(null);
+      a.controls.setScrubPosition(5);
+      await a.parse(new Uint8Array(1_000));
+      await a.settle();
+      expect(a.firstChunkDrawCount()).toBe(12);
+      await a.parse(new Uint8Array(1_000));
+      await a.settle();
+      expect(a.firstChunkDrawCount()).toBe(24);
+      await a.dispose();
+      // The suite IR has no feedrate, so every segment finishes at 0 ms: -1 ms is before the first one.
+      const b = await harness.create();
+      b.controls.setScrubTime(-1);
+      await b.parse(new Uint8Array(1_000));
+      await b.settle();
+      expect(b.firstChunkDrawCount()).toBe(0);
+      await b.dispose();
+      const c = await harness.create();
+      c.controls.setLayerRange(0, 0);
+      await c.parse(new Uint8Array(1_000));
+      await c.settle();
+      expect(c.firstChunkDrawCount()).toBe(12);
+      await c.dispose();
+    });
+
     it('the parse-complete (ready) event carries capabilities + warnings + metadata (#275/M3, #306/#4)', async () => {
       const a = await harness.create();
       const events: PreviewEvent[] = [];

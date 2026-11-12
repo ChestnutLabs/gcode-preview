@@ -231,19 +231,29 @@ export const ALL_COLOR_MODES: readonly ColorModeName[] = [
  * caller when the renderer is bound; if the call was queued, the replay reports it as `state.error` plus
  * an `error` event with code `E_CONTROL_REJECTED` (the message names the control), and the calls queued
  * after it still apply.
+ *
+ * Scrub and layer-range calls made before a file is shown (before the first parse completes, or while a
+ * parse is in flight) apply to the file that parse loads: loading a file does not wipe them. The latest
+ * call wins, and a clear (`null`) counts as a call. They wait through a failed, cancelled or superseded
+ * parse for the next successful one. A call made once a file is shown applies to that file only: the
+ * next file starts with the whole toolpath visible, as before.
  */
 export interface GcodePreviewControls {
   /**
    * Clip to an inclusive layer range. Throws `RangeError` for a non-number or NaN end (±Infinity is an
-   * open end).
+   * open end). A call made before a file is shown applies to the file being loaded (see above).
    */
   setLayerRange(startLayer: number, endLayer: number): void;
-  /** Cut the toolpath after segment `segIndex` (inclusive); null clears. Throws `RangeError` for NaN. */
+  /**
+   * Cut the toolpath after segment `segIndex` (inclusive); null clears. Throws `RangeError` for NaN. A call
+   * made before a file is shown applies to the file being loaded (see above).
+   */
   setScrubPosition(segIndex: number | null): void;
   /**
    * Time-based scrub (#181): cut the toolpath at print time `ms` (kinematic axis). null clears the
-   * cut. Resolves to a segment-index scrub; any other call before a successful parse is a no-op (an
-   * existing cut stays). Throws `RangeError` for a non-number or NaN.
+   * cut. Resolves to a segment-index scrub. A call made before a file is shown (no time axis yet, or a
+   * parse in flight) is resolved on the loaded file's own time axis when that parse completes. Throws
+   * `RangeError` for a non-number or NaN.
    */
   setScrubTime(ms: number | null): void;
   setKindVisible(kind: MoveKindToggle, visible: boolean): void;
@@ -424,6 +434,15 @@ function checkPosition(control: string, value: unknown): void {
   }
 }
 
+/**
+ * Resolve a print time to a segment-index scrub cut via the kinematic axis (#181). `completed` segments are
+ * done, and the renderer's scrub index is INCLUSIVE (draws indices <= it), so the cut is completed - 1
+ * (-1 draws nothing: no segment has finished at that time).
+ */
+function scrubCutAt(axis: ToolpathTime, ms: number): number {
+  return segmentsCompletedAtTime(axis.cumulativeMs, ms) - 1;
+}
+
 export function createPreviewController(options: PreviewControllerOptions = {}): PreviewController {
   let snapshot: GcodePreviewState = { ...INITIAL_STATE };
   const stateListeners = new Set<(s: GcodePreviewState) => void>();
@@ -466,6 +485,18 @@ export function createPreviewController(options: PreviewControllerOptions = {}):
   let bindGen = 0;
   // Each queued call keeps its control name, so a call the renderer rejects on replay is reported by name.
   const pendingOps: Array<{ control: string; run: (r: PreviewRenderer) => void }> = [];
+  // Scrub and layer-range calls made before a file is shown (no file yet, or a parse in flight). A renderer
+  // resets its clipping when it is given a new IR, so these would be lost if they reached it first. The
+  // latest request of each kind wins (null, a clear, is a request too); the IR the next successful parse
+  // applies consumes them. A failed, cancelled or superseded parse leaves them for the next one.
+  let requestedRange: { start: number; end: number } | null = null;
+  let requestedScrub: { kind: 'segment'; seg: number | null } | { kind: 'time'; ms: number } | null = null;
+  // True from a parse's start until its file takes the requests above (or it fails or is cancelled). Not
+  // `snapshot.parsing`: that stays true through the parse-complete emit and its state changes, so a call a
+  // listener makes there would be kept for the NEXT file too.
+  let awaitingFile = false;
+  /** A call made now is for the incoming file: there is no file yet, or one is loading. */
+  const forIncomingFile = (): boolean => lastIR === null || awaitingFile;
   const withRenderer = (control: string, fn: (r: PreviewRenderer) => void): void => {
     if (renderer !== null) fn(renderer);
     else pendingOps.push({ control, run: fn });
@@ -656,6 +687,7 @@ export function createPreviewController(options: PreviewControllerOptions = {}):
       // start; an older one was superseded before it began, so it reports cancelled (no event: it never ran).
       if (gen !== parseGen || disposed) return { ok: false, cancelled: true };
     }
+    awaitingFile = true;
     mutate({ parsing: true, parseProgress: null, error: null });
     const bytes =
       typeof File !== 'undefined' && input instanceof File
@@ -677,6 +709,7 @@ export function createPreviewController(options: PreviewControllerOptions = {}):
       // Time axis (#181): prefer the slicer's own estimate (#183) for the total; the kinematic axis
       // always backs time-scrub. `hasUnknownFeedrate` means the kinematic total is a lower bound.
       timeAxis = computeToolpathTime(result.ir);
+      const axis = timeAxis;
       const slicerSeconds = result.metadata?.printEstimate?.seconds;
       const totalTimeMs = slicerSeconds !== undefined ? slicerSeconds * 1000 : timeAxis.totalMs;
       const timeEstimateSource: 'slicer' | 'kinematic' = slicerSeconds !== undefined ? 'slicer' : 'kinematic';
@@ -692,6 +725,19 @@ export function createPreviewController(options: PreviewControllerOptions = {}):
           renderer.setColorMode(resolveColorMode(requestedColorMode, result.metadata, result.ir) as ColorMode);
         }
         renderer.setIR(result.ir);
+      }
+      // Re-apply the scrub / layer-range requests made for this file, after its setIR reset the clipping.
+      // An unbound renderer queues them behind the earlier calls, so they replay after its own setIR.
+      const range = requestedRange;
+      const scrub = requestedScrub;
+      requestedRange = null;
+      requestedScrub = null;
+      // This file is shown from here on: a call a parse-complete or state listener makes is for it only.
+      awaitingFile = false;
+      if (range !== null) withRenderer('setLayerRange', (r) => r.setLayerRange(range.start, range.end));
+      if (scrub !== null) {
+        const cut = scrub.kind === 'segment' ? scrub.seg : scrubCutAt(axis, scrub.ms);
+        withRenderer(scrub.kind === 'segment' ? 'setScrubPosition' : 'setScrubTime', (r) => r.setScrubPosition(cut));
       }
       mutate({
         summary: {
@@ -740,6 +786,9 @@ export function createPreviewController(options: PreviewControllerOptions = {}):
       emit({ type: 'parse-error', code, message });
       return { ok: false, error: { code, message } };
     } finally {
+      // A failed or cancelled parse brings no file. A superseded one leaves the flag to the newer parse
+      // (#531), which is still loading; a state listener below may also have started one.
+      if (gen === parseGen) awaitingFile = false;
       mutate({ parsing: false, parseProgress: null });
       if (activeParse === run) activeParse = null;
     }
@@ -763,24 +812,24 @@ export function createPreviewController(options: PreviewControllerOptions = {}):
     setLayerRange: (a, b) => {
       checkPosition('setLayerRange startLayer', a);
       checkPosition('setLayerRange endLayer', b);
+      requestedRange = forIncomingFile() ? { start: a, end: b } : null;
       withRenderer('setLayerRange', (r) => r.setLayerRange(a, b));
     },
     setScrubPosition: (s) => {
       if (s !== null) checkPosition('setScrubPosition', s);
+      requestedScrub = forIncomingFile() ? { kind: 'segment', seg: s } : null;
       withRenderer('setScrubPosition', (r) => r.setScrubPosition(s));
     },
     setScrubTime: (ms) => {
+      if (ms !== null) checkPosition('setScrubTime', ms);
+      requestedScrub = forIncomingFile() ? (ms === null ? { kind: 'segment', seg: null } : { kind: 'time', ms }) : null;
       if (ms === null) {
         withRenderer('setScrubTime', (r) => r.setScrubPosition(null));
         return;
       }
-      checkPosition('setScrubTime', ms);
-      // Before a successful parse there is no time axis: a documented no-op (it must not clear a scrub cut).
+      // Before a successful parse there is no time axis: the request waits for the file (recorded above).
       if (timeAxis === null) return;
-      // Resolve a print time to a segment-index scrub cut via the kinematic axis (#181). `completed` segments
-      // are done, and the renderer's scrub index is INCLUSIVE (draws indices <= it), so the cut is completed - 1
-      // (-1 draws nothing: no segment has finished at that time).
-      const cut = segmentsCompletedAtTime(timeAxis.cumulativeMs, ms) - 1;
+      const cut = scrubCutAt(timeAxis, ms);
       withRenderer('setScrubTime', (r) => r.setScrubPosition(cut));
     },
     setKindVisible: (k, v) => withRenderer('setKindVisible', (r) => r.setKindVisible(k, v)),

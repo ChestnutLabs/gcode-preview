@@ -1,8 +1,8 @@
 // @vitest-environment happy-dom
 /**
  * Controller mutation sweep (G3): the queued-control replay contract (E_CONTROL_REJECTED), subscriber
- * isolation, the layer/scrub argument checks, and the pre-parse setScrubTime no-op. Every expected value
- * is a literal; nothing reads the module's own constants.
+ * isolation, the layer/scrub argument checks, and pre-parse setScrubTime (it sends nothing until a file
+ * loads). Every expected value is a literal; nothing reads the module's own constants.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { MoveKind, ToolpathIRBuilder, type ToolpathIR } from '@chestnutlabs/toolpath-core';
@@ -501,26 +501,28 @@ describe('layer / scrub argument checks', () => {
   });
 });
 
-describe('setScrubTime before a parse (no-op)', () => {
-  it('does not clear an existing cut; null still clears; after a parse it cuts', async () => {
+describe('setScrubTime before a parse', () => {
+  it('sends nothing and does not clear an existing cut; the latest call applies to the loaded file', async () => {
     const { controller } = make3d();
     await settle();
     const spy = vi.spyOn(ToolpathRenderer.prototype, 'setScrubPosition');
     controller.controls.setScrubPosition(0);
-    controller.controls.setScrubTime(5);
     controller.controls.setScrubTime(Infinity);
+    controller.controls.setScrubTime(5);
     expect(spy.mock.calls).toEqual([[0]]);
     await controller.parse(new Uint8Array(1_000));
     await settle();
     const draw = (): number => (controller.raw.renderer() as ToolpathRenderer).chunkMeshes[0].geometry.drawRange.count;
-    expect(draw()).toBe(24); // a new file resets the cut; the pre-parse time scrubs sent nothing (spy above)
+    expect(draw()).toBe(10); // the latest pre-parse call (5 ms), re-applied after the new file's setIR
+    controller.controls.setScrubTime(Infinity);
+    expect(draw()).toBe(24);
     controller.controls.setScrubTime(5);
     expect(draw()).toBe(10);
     controller.controls.setScrubTime(-1);
     expect(draw()).toBe(0);
     controller.controls.setScrubTime(null);
     expect(draw()).toBe(24);
-    expect(spy.mock.calls.slice(1)).toEqual([[4], [-1], [null]]);
+    expect(spy.mock.calls.slice(1)).toEqual([[4], [11], [4], [-1], [null]]);
     controller.dispose();
   });
 
