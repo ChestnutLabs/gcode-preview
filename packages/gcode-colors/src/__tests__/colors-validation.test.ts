@@ -65,6 +65,11 @@ describe('checkColorMode: colour messages (literal)', () => {
       'single color mode color must be [r, g, b] of three finite numbers, got [0, NaN, 0, 1, …]'
     ],
     [
+      'four-entry colour (alpha shape) is shown in full',
+      { mode: 'single', color: [NaN, 0, 0, 1] },
+      'single color mode color must be [r, g, b] of three finite numbers, got [NaN, 0, 0, 1]'
+    ],
+    [
       'tool palette index 2',
       { mode: 'tool', palette: [A, B, [0.1, NaN, 0.3]] },
       'tool color mode palette[2] must be [r, g, b] of three finite numbers, got [0.1, NaN, 0.3]'
