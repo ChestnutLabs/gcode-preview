@@ -1,5 +1,29 @@
 # @chestnutlabs/gcode-containers
 
+## 0.22.0
+
+### Patch Changes
+
+- [#489](https://github.com/ChestnutLabs/gcode-preview/pull/489) [`f805747`](https://github.com/ChestnutLabs/gcode-preview/commit/f8057473fdd72b906562ffe4c19f838e864a3a82) Thanks [@sobechestnut-dev](https://github.com/sobechestnut-dev)! - `.gcode.3mf` plate thumbnails now reach the parse result. Bambu Studio and OrcaSlicer store each plate's
+  preview as a PNG next to its G-code, and the parser ignored them. Parsing a `.gcode.3mf` now fills
+  `metadata.thumbnails` with `{ width, height, mime: 'image/png', bytes }` for the plate you parse:
+  - Included: `Metadata/plate_N.png`, then `Metadata/plate_N_small.png`, where the file has them.
+    `top_N.png` and `pick_N.png` are not included (`pick_` is an object-id colour map, not a preview).
+  - It follows `parseOptions.plate`. With no plate selected you get the first plate's images.
+  - Width and height come from the PNG header. An image that is not a PNG, is over `maxMetadataBytes`
+    (8 MiB), fails its CRC, or does not fit in what is left of the archive's expanded-size budget is
+    dropped with a warning. The plate's G-code always loads first and is never affected.
+  - New warning code `container-thumbnail-invalid` (a plain string code; existing codes are unchanged),
+    used only when the image itself is bad: not a PNG, corrupt, or failing its CRC. An image dropped for
+    size reuses `metadata-truncated`, whether it was over `maxMetadataBytes` or the archive's expanded-size
+    budget had run out.
+  - `@chestnutlabs/gcode-containers`: `OpenedContainer` gains `thumbnailsFor(plate)`, and the types
+    `PlateThumbnail` / `PlateThumbnails` are exported. `plate` is the index into `plates`, not the number
+    in the file name.
+
+- Updated dependencies [[`3fe25f4`](https://github.com/ChestnutLabs/gcode-preview/commit/3fe25f4d8d66ab1f37d23892365fb33d2c813ff6)]:
+  - @chestnutlabs/toolpath-core@0.22.0
+
 ## 0.21.2
 
 ### Patch Changes

@@ -1,5 +1,82 @@
 # @chestnutlabs/gcode-preview-core
 
+## 0.22.0
+
+### Minor Changes
+
+- [#485](https://github.com/ChestnutLabs/gcode-preview/pull/485) [`7469a64`](https://github.com/ChestnutLabs/gcode-preview/commit/7469a643f1398d6ef9e4fbb39b89b4aa092a80d9) Thanks [@sobechestnut-dev](https://github.com/sobechestnut-dev)! - The toolpath viewer now draws the Studio look and has a camera lens control. With no theme set
+  and the default lens, it renders exactly as before.
+  - **Studio look in the toolpath viewer.** `setTheme(studioTheme('dark' | 'light'))`, or the `theme` prop,
+    now draws the theme's vertical-gradient `background` and its `contactShadow`: a soft footprint shadow under
+    the toolpath, part of the plate. The shadow needs a build volume and loaded content, and
+    `capture({ includeBuildVolume: false })` hides it with the plate. A gradient background used to fall back
+    to no background.
+  - **Camera lens.**
+    - New `renderer.cameraFov` controller option and `controls.setCameraFov(degrees)`: a vertical field of
+      view in [10, 120], default 50 (`STUDIO_CAMERA_FOV` is 32). Out of range throws `RangeError`; it is never
+      clamped. The throw is synchronous, even before the 3D renderer has loaded.
+    - Framing reads the lens, so the model fits at any value. A live change keeps the framing without a
+      re-fit and emits no `camera-changed`. The lens is kept across canvas rebinds.
+    - The 2D renderer reports `setCameraFov` as `renderer-unsupported`, the same as `setCameraMode`.
+  - **Stills.** `renderStill` gains a top-level `cameraFov`. An explicit `camera.fov` still wins.
+  - **Adapters.** Vue, React and Svelte gain a declarative `cameraFov` prop; leaving it unset keeps the
+    current lens. `<gcode-preview>` gains a `camera-fov` attribute and a `cameraFov` property. Setting the
+    property out of range throws `RangeError`; a bad attribute value is ignored, and the element keeps the
+    last valid lens.
+  - `gcode-preview-core` re-exports `studioTheme` and `STUDIO_CAMERA_FOV`, so you don't need to import from
+    the renderer package.
+  - `ToolpathRenderer` gains `cameraFov` (option and getter) and `setCameraFov`. `PreviewRenderer` gains an
+    optional `setCameraFov`, so an existing custom renderer still type-checks.
+
+- [#495](https://github.com/ChestnutLabs/gcode-preview/pull/495) [`3b15da8`](https://github.com/ChestnutLabs/gcode-preview/commit/3b15da8ef9d0ea79766008f3f4b210d084979d62) Thanks [@sobechestnut-dev](https://github.com/sobechestnut-dev)! - New opt-in `pixelRatio` for sharper interactive views on HiDPI screens. If you don't set it, nothing
+  changes: the renderer keeps its own ratio (1 for the built-in renderer, whatever a custom
+  `createRenderer` was set to).
+  - **What it takes.** A number in (0, 4], or `'device'`. `'device'` uses the screen's `devicePixelRatio`,
+    capped at 2, and follows it live when it changes, for example when the window moves to another monitor
+    or the browser zoom changes. Anything else throws `RangeError`. Values are never clamped, and
+    `'device'` must be that exact lowercase string.
+  - **Cost.** A higher ratio shades more pixels: ratio 2 fills 4× the fragments of ratio 1. That is fine
+    for a single viewer. On pages with many viewers, or on weak GPUs, leave it unset or use a number.
+  - **Orbiting.** `interactionQuality: 'auto'` still lowers detail while the camera moves and settles back
+    on your ratio. A change made mid-gesture applies at once, still reduced, and the gesture settles on
+    the new ratio.
+  - **`capture()`.** With no `width`/`height`: unset, the default image is the resting drawing-buffer size,
+    as before, whatever renderer you use (with the built-in renderer that is the CSS size). With a
+    `pixelRatio` set, it is the canvas's CSS size whatever the ratio. So with the built-in renderer, setting
+    a ratio never changes the default image size. Pass `width`/`height` for a crisper image. This also fixes
+    an unsized `capture()` taken during an orbit with `interactionQuality: 'auto'`: it used to return the
+    reduced-detail size, and now returns the resting size.
+  - **Where to set it.**
+    - Toolpath viewer: the `renderer.pixelRatio` controller option and `controls.setPixelRatio(ratio)`. It
+      is validated synchronously, even before the 3D renderer loads, and kept across canvas rebinds.
+    - Model viewer: the `pixelRatio` option and `controls.setPixelRatio(ratio)` on
+      `createModelPreviewController` and `createModelViewer`.
+    - Vue, React and Svelte: a declarative `pixelRatio` prop on `GcodePreview` and on the `/model`
+      `ModelViewer`. Leaving it unset keeps the current ratio.
+    - `<gcode-preview>` and `<gcode-model-viewer>`: a `pixel-ratio` attribute and a `pixelRatio` property.
+      Setting the property to an invalid value throws `RangeError`. A bad attribute value is ignored, and
+      the element keeps the last valid ratio.
+  - **2D renderer.** `setPixelRatio` reports `renderer-unsupported` (feature `quality`), and the 2D view
+    keeps its own resolution.
+  - **Stills.** `renderStill` and `renderModelStill` have no pixel-ratio option; size a still with
+    `width`/`height`.
+  - **Lower-level API.** `ToolpathRenderer` and `InteractiveStage` gain a `pixelRatio` option and
+    `setPixelRatio`. `InteractionQualityController` gains `rebase(ratio)`, `currentRatio` and
+    `reduction`. `PreviewRenderer`
+    gains an optional `setPixelRatio`, so an existing custom renderer still type-checks. New exports:
+    the `PixelRatioOption` type (also from `gcode-preview-core`), `DEVICE_PIXEL_RATIO_CAP`, and the
+    `DisplayEnv` / `MediaQueryListLike` types (an injectable display for tests).
+
+### Patch Changes
+
+- [#494](https://github.com/ChestnutLabs/gcode-preview/pull/494) [`f1544a3`](https://github.com/ChestnutLabs/gcode-preview/commit/f1544a35298ecd77ea48422c7475b6b75da0d6b4) Thanks [@sobechestnut-dev](https://github.com/sobechestnut-dev)! - `renderStill` now rejects instead of hanging when the toolpath build fails: the rejection is a `RenderStillError` (exported) with `code: 'E_GEOMETRY_BUILD'`, and the renderer is disposed. Callers that awaited without a `catch` now see a rejection (previously the promise never settled).
+
+- Updated dependencies [[`f805747`](https://github.com/ChestnutLabs/gcode-preview/commit/f8057473fdd72b906562ffe4c19f838e864a3a82), [`3a76509`](https://github.com/ChestnutLabs/gcode-preview/commit/3a7650900ed1c07c065f614c087777e09cd07ca2), [`815f095`](https://github.com/ChestnutLabs/gcode-preview/commit/815f0954ba3687b9a96bb35cd0813de2d63ec281), [`7912c65`](https://github.com/ChestnutLabs/gcode-preview/commit/7912c65b63cab190e33b95fad68c69332432d662), [`84e664a`](https://github.com/ChestnutLabs/gcode-preview/commit/84e664a4794cc80e8ea5377f53448995522bef2c), [`7469a64`](https://github.com/ChestnutLabs/gcode-preview/commit/7469a643f1398d6ef9e4fbb39b89b4aa092a80d9), [`38fa875`](https://github.com/ChestnutLabs/gcode-preview/commit/38fa8751de9cb874a51038b4adfb69088270aa19), [`3fe25f4`](https://github.com/ChestnutLabs/gcode-preview/commit/3fe25f4d8d66ab1f37d23892365fb33d2c813ff6), [`33a6e9d`](https://github.com/ChestnutLabs/gcode-preview/commit/33a6e9d1075b97765cece7734a72bcf1c0aceb25), [`3b15da8`](https://github.com/ChestnutLabs/gcode-preview/commit/3b15da8ef9d0ea79766008f3f4b210d084979d62)]:
+  - @chestnutlabs/gcode-parser@0.22.0
+  - @chestnutlabs/gcode-renderer-three@0.22.0
+  - @chestnutlabs/toolpath-core@0.22.0
+  - @chestnutlabs/gcode-renderer-2d@0.22.0
+
 ## 0.21.2
 
 ### Patch Changes
