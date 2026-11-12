@@ -114,6 +114,9 @@ export function buildChunks(ir: ToolpathIR, opts: ChunkBuildOptions = {}): Chunk
   }
   const travelHidden = decimation > 1;
 
+  // A layer's segStart comes from the IR (consumer-built IRs are untrusted): both walks start at max(0, segStart),
+  // so a negative or absurd value can't turn the build into a billions-of-iterations loop (the upper side is
+  // already bounded by seg.count).
   // Layer-boundary segments are always kept (§4.4). A layer's segStart/segEnd may
   // land on travel moves (hidden under decimation), so the honest boundary is the
   // first and last EXTRUSION segment within each layer's range.
@@ -121,7 +124,7 @@ export function buildChunks(ir: ToolpathIR, opts: ChunkBuildOptions = {}): Chunk
   for (const layer of ir.layers) {
     let first = -1;
     let last = -1;
-    for (let i = layer.segStart; i <= layer.segEnd && i < seg.count; i++) {
+    for (let i = Math.max(0, layer.segStart); i <= layer.segEnd && i < seg.count; i++) {
       if ((seg.kind[i] & MoveKind.Extrude) !== 0 && finite(i)) {
         if (first === -1) first = i;
         last = i;
@@ -173,19 +176,16 @@ export function buildChunks(ir: ToolpathIR, opts: ChunkBuildOptions = {}): Chunk
     kept = 0;
   };
 
+  // An empty layer table (empty IR) simply never enters the loop below: no chunks, 0 segments.
   const layerCount = ir.layers.length;
-  if (layerCount === 0) {
-    // No layer table (empty IR): nothing to build.
-    return { chunks, decimationApplied: decimation, travelHidden, totalSegmentsIncluded: 0, skippedNonFinite };
-  }
 
   for (let li = 0; li < layerCount; li++) {
     const layer = ir.layers[li];
-    for (let i = layer.segStart; i <= layer.segEnd && i < seg.count; i++) {
+    for (let i = Math.max(0, layer.segStart); i <= layer.segEnd && i < seg.count; i++) {
       if (!finite(i)) continue;
       const isExtrude = (seg.kind[i] & MoveKind.Extrude) !== 0;
       if (isExtrude) {
-        if (decimation === 1 || boundary.has(i) || i % decimation === 0) {
+        if (boundary.has(i) || i % decimation === 0) {
           pendingExtrude.push(i);
           kept++;
         }

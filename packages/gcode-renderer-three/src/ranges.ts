@@ -66,11 +66,11 @@ export function computeDrawState(
   endLayer: number,
   scrubSegIndex?: number
 ): ChunkDrawState {
-  if (chunk.layerEnd < startLayer || chunk.layerStart > endLayer || chunk.count === 0) {
+  if (chunk.layerEnd < startLayer || chunk.layerStart > endLayer) {
     return { visible: false, drawStart: 0, drawCount: 0 };
   }
-  const start = chunk.layerStart >= startLayer ? 0 : lowerBoundByLayer(ir, chunk, startLayer);
-  let end = chunk.layerEnd <= endLayer ? chunk.count : upperBoundByLayer(ir, chunk, endLayer);
+  const start = lowerBoundByLayer(ir, chunk, startLayer);
+  let end = upperBoundByLayer(ir, chunk, endLayer);
   if (scrubSegIndex !== undefined) {
     const cut = upperBoundBySegment(chunk, scrubSegIndex);
     if (cut < end) end = cut;
@@ -115,9 +115,10 @@ export function computeOverlayDrawStates(
   const hiEnd = toHi.drawStart + toHi.drawCount;
   const allEnd = all.drawStart + all.drawCount;
   const bandCount = Math.max(0, hiEnd - loEnd);
-  const ghostCount = Math.max(0, allEnd - hiEnd);
+  // hiEnd = max(start, min(end, cut)) <= max(start, end) = allEnd, so this is never negative.
+  const ghostCount = allEnd - hiEnd;
   return {
-    completed: { ...toLo, visible: toLo.visible && toLo.drawCount > 0 },
+    completed: { ...toLo },
     band: { visible: bandCount > 0, drawStart: loEnd, drawCount: bandCount },
     ghost: { visible: ghostCount > 0, drawStart: hiEnd, drawCount: ghostCount }
   };

@@ -52,6 +52,9 @@ import { createBackdrop, type Backdrop } from './backdrop.js';
 import { createContactShadow, type ShadowFootprint } from './contact-shadow.js';
 import {
   buildTubeChunk,
+  checkBudgetOptions,
+  checkQualityMode,
+  checkTubeOptions,
   tubeRadialForBudget,
   tubeSegmentBytes,
   TUBE_CPU_BYTE_BUDGET,
@@ -464,6 +467,10 @@ export class ToolpathRenderer {
   constructor(opts: ToolpathRendererOptions) {
     // Validate the lens before any GL/stage resource exists, so a bad value never leaks a context.
     if (opts.cameraFov !== undefined) checkFov(opts.cameraFov);
+    // Same policy for the tube / pool options: junk throws a RangeError here instead of hanging or corrupting
+    // a build later (an Infinity cross-section used to loop forever in tubeRadialForBudget).
+    checkTubeOptions(opts.tube);
+    checkBudgetOptions(opts);
     this.chunksPerTick = opts.chunksPerTick;
     this.renderDuringBuild = opts.renderDuringBuild ?? true;
     this.colorMode = opts.colorMode ?? DEFAULT_COLOR;
@@ -1981,6 +1988,8 @@ export class ToolpathRenderer {
 
   /** Set the fidelity policy (DD-023 §4 D6) and rebuild: 'full' | 'adaptive' | 'fast'. */
   setQualityMode(mode: QualityPolicy): void {
+    // Same RangeError as the constructor option: an unknown mode used to be stored and silently built as 'adaptive'.
+    checkQualityMode(mode);
     if (this.disposed) return;
     this.qualityMode = mode;
     if (this.ir !== null) {
