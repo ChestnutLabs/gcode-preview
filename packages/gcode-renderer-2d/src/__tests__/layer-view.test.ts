@@ -967,3 +967,91 @@ describe('summarize2DDrawable (whole-toolpath draw summary, #518)', () => {
     expect(summarize2DDrawable(irOf([]))).toEqual({ drawable: 0, skippedNonFinite: 0 });
   });
 });
+
+describe('LayerView2D: layer requests past the end and option checks (core 2D adapter sweep)', () => {
+  it('setLayer floors fractions; Infinity and past-the-end draw the top layer, never a blank view', () => {
+    const view = new LayerView2D(fakeCanvas(100, 100, new MockCtx()));
+    view.setToolpath(makeIR(3, 2));
+    view.setLayer(Number.POSITIVE_INFINITY);
+    expect(view.render()).toMatchObject({ layer: 2, drawn: true });
+    view.setLayer(1.9);
+    expect(view.render()).toMatchObject({ layer: 1, drawn: true });
+    view.setLayer(7);
+    expect(view.render()).toMatchObject({ layer: 2, drawn: true });
+  });
+
+  it('the empty result (no 2D context) reports the clamped layer too', () => {
+    const view = new LayerView2D(fakeCanvas(100, 100, null));
+    view.setToolpath(makeIR(3, 2));
+    view.setLayer(Number.POSITIVE_INFINITY);
+    expect(view.render()).toMatchObject({ layer: 2, layerCount: 3, drawn: false });
+  });
+
+  it('setLayer(NaN) keeps the current layer', () => {
+    const view = new LayerView2D(fakeCanvas(100, 100, new MockCtx()));
+    view.setToolpath(makeIR(3, 2));
+    view.setLayer(1);
+    view.setLayer(NaN);
+    expect(view.render()).toMatchObject({ layer: 1, drawn: true });
+  });
+
+  it('the layer request outlives a toolpath: Infinity is the top layer of each new one', () => {
+    const view = new LayerView2D(fakeCanvas(100, 100, new MockCtx()), { layer: Number.POSITIVE_INFINITY });
+    view.setToolpath(makeIR(2, 2));
+    expect(view.render().layer).toBe(1);
+    view.setToolpath(makeIR(5, 2));
+    expect(view.render().layer).toBe(4);
+  });
+
+  it('the constructor layer is floored and a NaN one falls back to 0', () => {
+    const view = new LayerView2D(fakeCanvas(100, 100, new MockCtx()), { layer: 1.5 });
+    view.setToolpath(makeIR(3, 2));
+    expect(view.render().layer).toBe(1);
+    const nan = new LayerView2D(fakeCanvas(100, 100, new MockCtx()), { layer: NaN });
+    nan.setToolpath(makeIR(3, 2));
+    expect(nan.render().layer).toBe(0);
+  });
+
+  it('invalid options throw a RangeError naming the option and value', () => {
+    const canvas = fakeCanvas(100, 100, new MockCtx());
+    const cases: [ConstructorParameters<typeof LayerView2D>[1], string][] = [
+      [{ adjacentLayers: NaN }, 'LayerView2D: adjacentLayers must be a number (got NaN).'],
+      [{ ghostOpacity: -0.1 }, 'LayerView2D: ghostOpacity must be in [0, 1] (got -0.1).'],
+      [{ ghostOpacity: 1.01 }, 'LayerView2D: ghostOpacity must be in [0, 1] (got 1.01).'],
+      [{ ghostOpacity: NaN }, 'LayerView2D: ghostOpacity must be in [0, 1] (got NaN).'],
+      [{ lineWidth: 0 }, 'LayerView2D: lineWidth must be a finite number > 0 (got 0).'],
+      [{ lineWidth: -1 }, 'LayerView2D: lineWidth must be a finite number > 0 (got -1).'],
+      [{ lineWidth: NaN }, 'LayerView2D: lineWidth must be a finite number > 0 (got NaN).'],
+      [{ lineWidth: Number.POSITIVE_INFINITY }, 'LayerView2D: lineWidth must be a finite number > 0 (got Infinity).'],
+      [{ padding: -1 }, 'LayerView2D: padding must be a finite number >= 0 (got -1).'],
+      [{ padding: NaN }, 'LayerView2D: padding must be a finite number >= 0 (got NaN).'],
+      [{ padding: Number.POSITIVE_INFINITY }, 'LayerView2D: padding must be a finite number >= 0 (got Infinity).']
+    ];
+    for (const [opts, message] of cases) {
+      expect(() => new LayerView2D(canvas, opts)).toThrowError(new RangeError(message));
+    }
+  });
+
+  it('the boundaries are legal: ghostOpacity 0 and 1, padding 0, a tiny lineWidth, any adjacentLayers count', () => {
+    const canvas = fakeCanvas(100, 100, new MockCtx());
+    for (const opts of [
+      { ghostOpacity: 0, padding: 0, lineWidth: 0.001, adjacentLayers: -2 },
+      { ghostOpacity: 1, adjacentLayers: Number.POSITIVE_INFINITY },
+      { adjacentLayers: Number.NEGATIVE_INFINITY }
+    ]) {
+      expect(() => new LayerView2D(canvas, opts)).not.toThrow();
+    }
+  });
+
+  it('setAdjacentLayers(NaN) throws and the previous count stays in effect', () => {
+    const view = new LayerView2D(fakeCanvas(100, 100, new MockCtx()), { adjacentLayers: 0 });
+    view.setToolpath(makeIR(3, 2));
+    view.setLayer(2);
+    expect(() => view.setAdjacentLayers(NaN)).toThrowError(
+      new RangeError('LayerView2D: adjacentLayers must be a number (got NaN).')
+    );
+    expect(JSON.stringify(view.render().ghostLayers)).toBe('[]');
+    view.setAdjacentLayers(2);
+    expect(JSON.stringify(view.render().ghostLayers)).toBe('[0,1]');
+  });
+});

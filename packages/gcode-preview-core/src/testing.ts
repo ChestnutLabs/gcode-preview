@@ -143,6 +143,56 @@ export function makeSuiteStubGL(canvas: HTMLCanvasElement): GLRendererLike {
   return { render: () => undefined, setSize: () => undefined, dispose: () => undefined, domElement: canvas };
 }
 
+/** A recording Canvas 2D context for the 2D cases; see {@link installSuite2DProbe}. */
+export interface Suite2DProbe {
+  /** `stroke()` calls since the last `clearRect()`: one per segment the last 2D frame drew. */
+  strokes(): number;
+  /** True once any canvas asked for a `'2d'` context, i.e. a 2D renderer is bound. */
+  used(): boolean;
+  /** Put the original `HTMLCanvasElement.prototype.getContext` back. */
+  restore(): void;
+}
+
+/**
+ * Route every canvas's `getContext('2d')` to one recording context until `restore()`. DOM shims such as
+ * happy-dom have no Canvas 2D, and the 2D renderer draws nothing without one, so the 2D cases count strokes
+ * here. It patches the prototype because some adapters (the custom element) create their canvas themselves.
+ */
+export function installSuite2DProbe(): Suite2DProbe {
+  const proto = HTMLCanvasElement.prototype;
+  const original = proto.getContext;
+  let strokes = 0;
+  let used = false;
+  const ctx = {
+    strokeStyle: '',
+    lineWidth: 1,
+    lineCap: 'butt',
+    lineJoin: 'miter',
+    globalAlpha: 1,
+    beginPath: () => undefined,
+    moveTo: () => undefined,
+    lineTo: () => undefined,
+    stroke: () => {
+      strokes++;
+    },
+    clearRect: () => {
+      strokes = 0;
+    }
+  };
+  proto.getContext = function (this: HTMLCanvasElement, id: string, ...rest: unknown[]) {
+    if (id !== '2d') return (original as (...a: unknown[]) => unknown).call(this, id, ...rest);
+    used = true;
+    return ctx;
+  } as unknown as typeof proto.getContext;
+  return {
+    strokes: () => strokes,
+    used: () => used,
+    restore: () => {
+      proto.getContext = original;
+    }
+  };
+}
+
 /**
  * Exhaustive by construction, like {@link REQUIRED_STATE_KEYS}: adding a `GcodePreviewControls`
  * method without listing it here fails the type check.
@@ -208,8 +258,15 @@ export const REQUIRED_STATE_KEYS: (keyof GcodePreviewState)[] = Object.keys(STAT
 
 /** What every adapter must expose to the suite — its PUBLIC surface, uniformly shaped. */
 export interface AdapterHarness {
-  /** Construct one preview bound to a fresh canvas, wired to a SuiteStubWorker + stub GL. */
-  create(opts?: { machine?: MachineGeometry; consumerVolume?: boolean }): Promise<AdapterInstance> | AdapterInstance;
+  /**
+   * Construct one preview bound to a fresh canvas, wired to a SuiteStubWorker + stub GL. `renderer: '2d'`
+   * selects the 2D renderer (the adapter's own renderer-mode option); omitted means the 3D default.
+   */
+  create(opts?: {
+    machine?: MachineGeometry;
+    consumerVolume?: boolean;
+    renderer?: '2d';
+  }): Promise<AdapterInstance> | AdapterInstance;
 }
 
 export interface AdapterInstance {
@@ -408,6 +465,33 @@ export function runBehavioralSuite(name: string, api: TestApi, harness: AdapterH
       await a.settle();
       expect(a.firstChunkDrawCount()).toBe(24);
       await a.dispose();
+    });
+
+    it('2D: layer range shows the top requested layer, and "show all" (Infinity) restores it', async () => {
+      const probe = installSuite2DProbe();
+      try {
+        const a = await harness.create({ renderer: '2d' });
+        await a.parse(new Uint8Array(1_000));
+        await a.settle();
+        if (!probe.used()) throw new Error("harness.create must honour opts.renderer '2d' (no 2D renderer drew)");
+        // Test IR: 2 layers × 6 extrusions. The 2D view draws the top layer of the range plus one ghost
+        // layer beneath it, so layer 0 is 6 strokes and layer 1 is 12.
+        const strokesAt = async (end: number): Promise<number> => {
+          a.controls.setLayerRange(0, end);
+          await a.settle();
+          return probe.strokes();
+        };
+        expect(await strokesAt(0)).toBe(6);
+        // Every framework adapter sends Infinity when its layerRange is cleared: the top layer, never blank.
+        expect(await strokesAt(Number.POSITIVE_INFINITY)).toBe(12);
+        expect(await strokesAt(0)).toBe(6);
+        expect(await strokesAt(7)).toBe(12); // past the last layer: the top layer
+        expect(await strokesAt(0.5)).toBe(6); // a fractional end is floored, like 3D
+        expect(await strokesAt(1.5)).toBe(12);
+        await a.dispose();
+      } finally {
+        probe.restore();
+      }
     });
 
     it('color-mode gating is honest and reachable through controls (DD-031 G6)', async () => {
