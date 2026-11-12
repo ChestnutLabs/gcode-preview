@@ -71,8 +71,8 @@ workers concept page.
   the part framed alone). In the gallery.
 - `setFeatureRoleVisible` (hide brim/skirt) — **captured**: `frame-all` vs `adhesion-hidden` before/
   after (skirt ring present vs gone). In the gallery.
-- `getRenderStats` diagnostics in-context — **captured**: `diagnostics-panel` (the demo panel reading
-  backend/GPU/geometry/counts/timings beside the render). In the gallery.
+- `getRenderStats` diagnostics in-context — **captured**: `app-diagnostics` (the Feature Lab Diagnostics tab
+  reading capabilities/backend/GPU/geometry/counts/timings beside the render). In the gallery.
 
 Genuinely deferred, each with a recorded reason (valid dispositions, not silent omissions):
 
@@ -149,9 +149,12 @@ are now closed:
   (off under Studio).
 - **Studio recapture and Pixel ratio.** All seven app-UI shots were recaptured after the Studio preset retune (major
   and outline contrast), and they now show the Feature Lab's Pixel ratio selector. Pixel ratio has no image of its
-  own by design (see its row). Known gap: `capture.mjs` (the mid-grey capability renders) still drives the
-  pre-Feature-Lab demo API (`window.viewer.renderer`, fixture paths); it fails on every toolpath shot and needs a port
-  to the controller API, so the shipped capability images are from the last working run and still match the SDK default look.
+  own by design (see its row). The gap recorded here earlier is closed (#504): `capture.mjs` (the mid-grey capability
+  renders) now drives the Feature Lab through the published controller (`window.viewer.preview.controls`,
+  `getState()` and events, no renderer reach-ins), and every capability image was regenerated from the current
+  build. It sets the SDK default look (50° lens, cage on) so they still represent a consumer without a theme.
+  The superseded `app-control-panel` and `diagnostics-panel` entries left the capability manifest: the app-UI
+  shots of those names belong to `capture-app.mjs`.
 - **Reproducibility / release gate:** `docs:shots` (capability renders) and `docs:shots:app` (app-UI)
   regenerate the media; the RELEASE_REVIEW Visual disposition now explicitly covers app-UI + live-demo
   parity so a future cut can't advertise a stale UI (see the release template).
