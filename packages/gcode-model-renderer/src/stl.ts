@@ -8,6 +8,7 @@
 import { STLLoader } from 'three/examples/jsm/loaders/STLLoader.js';
 import { IDENTITY_MAT4, type MeshGeometry, type ModelBounds, type ModelScene } from './scene-model.js';
 import { ModelParseError, resolveLimits, type ModelLimits } from './limits.js';
+import { inFloat32Range } from './finite.js';
 
 function toArrayBuffer(bytes: Uint8Array | ArrayBuffer): ArrayBuffer {
   if (bytes instanceof ArrayBuffer) return bytes;
@@ -64,6 +65,15 @@ export function parseStl(source: Uint8Array | ArrayBuffer, limits?: ModelLimits)
   }
 
   const positions = new Float32Array(posAttr.array as ArrayLike<number>);
+  for (let i = 0; i < positions.length; i++) {
+    if (!inFloat32Range(positions[i])) {
+      geom.dispose();
+      throw new ModelParseError(
+        'E_MODEL_PARSE',
+        `STL vertex ${Math.floor(i / 3)} has a non-finite coordinate (${String(positions[i])})`
+      );
+    }
+  }
   const normAttr = geom.getAttribute('normal');
   const normals =
     normAttr !== undefined

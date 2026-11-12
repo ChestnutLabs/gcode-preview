@@ -479,7 +479,7 @@ row inspects the *toolpath*, the bottom row presents the *source model* (see
 
 Design rationale, boundaries, and the accepted architecture live in
 [`docs/design/`](docs/design/README.md); the [docs index](docs/README.md) maps the whole set. Fourteen
-packages publish to npm in lockstep (currently **v0.22.0**) with npm provenance.
+packages publish to npm in lockstep (currently **v0.23.0**) with npm provenance.
 
 ## Development
 

@@ -10,6 +10,7 @@
 export type { RGB, ColorMode, SegmentColorer } from './colors.js';
 export {
   DEFAULT_FALLBACK,
+  checkColorMode,
   feedrateRange,
   toolPowerRange,
   layerHeights,

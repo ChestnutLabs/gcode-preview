@@ -50,6 +50,68 @@ const DEFAULT_MAX_VERTICES = 8_000_000;
 /** Minimum tube cross-section sides — below this a tube isn't a tube; degrade to lines instead. */
 export const MIN_RADIAL_SEGMENTS = 3;
 
+/** Upper bound for the tube cross-section: beyond this a ring is sub-pixel and only burns memory. */
+export const MAX_RADIAL_SEGMENTS = 64;
+
+// `Number.isInteger` / `Number.isFinite` are already false for any non-number, so no `typeof` guard is needed.
+const isWhole = (n: unknown, min: number, max: number): n is number =>
+  Number.isInteger(n) && (n as number) >= min && (n as number) <= max;
+const isPositiveFinite = (n: unknown): n is number => Number.isFinite(n) && (n as number) > 0;
+
+/**
+ * Validate consumer-supplied tube options. `undefined` keeps the default; anything else out of range throws
+ * a `RangeError` naming the option and its accepted range (never clamped): NaN, ±Infinity, fractions and
+ * negatives. A non-finite `radialSegments` used to hang `tubeRadialForBudget` forever; a fractional one
+ * produced a corrupt, half-vertex geometry.
+ */
+export function checkTubeOptions(tube: TubeOptions | undefined): void {
+  if (tube === undefined) return;
+  const { radialSegments, lineWidth, lineHeight, maxVertices } = tube;
+  if (radialSegments !== undefined && !isWhole(radialSegments, MIN_RADIAL_SEGMENTS, MAX_RADIAL_SEGMENTS)) {
+    throw new RangeError(
+      `tube.radialSegments must be a whole number in [${MIN_RADIAL_SEGMENTS}, ${MAX_RADIAL_SEGMENTS}] (got ${String(radialSegments)})`
+    );
+  }
+  if (lineWidth !== undefined && !isPositiveFinite(lineWidth)) {
+    throw new RangeError(`tube.lineWidth must be a finite number > 0 (got ${String(lineWidth)})`);
+  }
+  if (lineHeight !== undefined && !isPositiveFinite(lineHeight)) {
+    throw new RangeError(`tube.lineHeight must be a finite number > 0 (got ${String(lineHeight)})`);
+  }
+  if (maxVertices !== undefined && !isWhole(maxVertices, 1, Number.MAX_SAFE_INTEGER)) {
+    throw new RangeError(`tube.maxVertices must be a whole number >= 1 (got ${String(maxVertices)})`);
+  }
+}
+
+/** A quality policy must be exactly `'full'`, `'adaptive'` or `'fast'` (no `undefined` here: a setter needs a value). */
+export function checkQualityMode(q: unknown): void {
+  if (q !== 'full' && q !== 'adaptive' && q !== 'fast') {
+    throw new RangeError(`qualityMode must be 'full', 'adaptive' or 'fast' (got ${String(q)})`);
+  }
+}
+
+/** Validate the renderer's tube/pool budget options (same policy as {@link checkTubeOptions}). */
+export function checkBudgetOptions(opts: {
+  tubeByteBudget?: number;
+  geometryMemoryBudgetBytes?: number;
+  geometryConcurrency?: 'auto' | 'off' | number;
+  qualityMode?: string;
+}): void {
+  if (opts.qualityMode !== undefined) checkQualityMode(opts.qualityMode);
+  if (opts.tubeByteBudget !== undefined && !isPositiveFinite(opts.tubeByteBudget)) {
+    throw new RangeError(`tubeByteBudget must be a finite number > 0 (got ${String(opts.tubeByteBudget)})`);
+  }
+  if (opts.geometryMemoryBudgetBytes !== undefined && !isPositiveFinite(opts.geometryMemoryBudgetBytes)) {
+    throw new RangeError(
+      `geometryMemoryBudgetBytes must be a finite number > 0 (got ${String(opts.geometryMemoryBudgetBytes)})`
+    );
+  }
+  const c = opts.geometryConcurrency;
+  if (c !== undefined && c !== 'auto' && c !== 'off' && !isWhole(c, 1, Number.MAX_SAFE_INTEGER)) {
+    throw new RangeError(`geometryConcurrency must be 'auto', 'off' or a whole number >= 1 (got ${String(c)})`);
+  }
+}
+
 /**
  * CPU-side bytes one tube segment costs at `radialSegments` sides (RR-006 accounting): a ring of
  * `radialSegments + 1` vertices carrying position + normal + vertexSegment + colour, plus
@@ -77,10 +139,15 @@ export function tubeRadialForBudget(
   requested: number,
   byteBudget = TUBE_CPU_BYTE_BUDGET
 ): number | null {
-  for (let r = requested; r >= MIN_RADIAL_SEGMENTS; r--) {
+  // Validate BEFORE the loop: an Infinity `requested` never terminates, a fraction yields a fractional ring.
+  checkTubeOptions({ radialSegments: requested });
+  // Start from the validated range's ceiling, not `requested` itself: if the guard above were ever lost, an
+  // Infinity `requested` would spin a synchronous loop no test runner can interrupt.
+  for (let r = Math.min(requested, MAX_RADIAL_SEGMENTS); r >= MIN_RADIAL_SEGMENTS; r--) {
     if (segmentCount * tubeSegmentBytes(r) <= byteBudget) return r;
   }
-  return segmentCount * tubeSegmentBytes(MIN_RADIAL_SEGMENTS) <= byteBudget ? MIN_RADIAL_SEGMENTS : null;
+  // `requested` is validated >= MIN_RADIAL_SEGMENTS, so the loop above already tried the minimum cross-section.
+  return null;
 }
 
 /**
@@ -118,6 +185,7 @@ function findPolylines(chunk: GeometryChunk): number[] {
  * the previous IR-indexed implementation, since `chunk.positions` carries the same endpoints.
  */
 export function buildTubeChunk(chunk: GeometryChunk, opts: TubeOptions = {}): TubeChunkGeometry {
+  checkTubeOptions(opts);
   const lineWidth = opts.lineWidth ?? 0.6;
   const lineHeight = opts.lineHeight ?? 0.2;
   const radialSegments = opts.radialSegments ?? 8;

@@ -12,6 +12,13 @@ RepRap-flavor** — see the evidence-dated
 Every annotation is capability-tagged (`known | inferred | approximated | unavailable`); consumers
 render what is known and disclose what is not.
 
+Slicer comments are untrusted file data. A comment whose number cannot be true is left out of the
+metadata. That covers a print time or filament total that overflows or is not a number, a print height
+of zero or less, and thumbnail dimensions outside 1..65535. The parse records one
+`dialect-metadata-invalid` warning for these, with a count. A bed point that is not finite gives no bed,
+with the `dialect-bed-unparsed` warning. It never reports `NaN` or
+`Infinity`, and it never fails the parse.
+
 This package is bundled into the parser's default *batteries* worker — most applications never
 import it directly. Import it to build a **custom worker** with a chosen adapter subset, or to
 register your own adapter against the annotator contract.

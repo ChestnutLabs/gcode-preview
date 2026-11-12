@@ -36,4 +36,8 @@ Wire options accept dialect selection, container/plate selection (`plate` for mu
 [`@chestnutlabs/gcode-preview-core`](../gcode-preview-core/README.md) or a framework adapter rather than
 directly.
 
+Resource limits are validated: a limit that is not a non-negative safe integer throws a `ParseOptionError`
+(`code: 'E_PARSE_OPTION'`) instead of silently disabling the bound. There is no `Infinity` for "unlimited";
+pass a large integer.
+
 Part of [Chestnut Labs G-code Preview](../../README.md) · MIT

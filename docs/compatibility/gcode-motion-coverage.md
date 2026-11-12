@@ -76,7 +76,7 @@ and is **byte-identical**. Shipped in v0.18.0 (DD-017 phases 1–3). See the
 |---|---|---|
 | Parameters `#1`–`#5399`, `#<local>`, `#<_global>`; assignment; indirect `##`; computed `#[expr]` | **honored** | read-before-write → `0` + `rs274-uninitialized-param` |
 | System parameters | read-only allow-list (current position `#5420`–`#5422`) | others → `0` + `rs274-unsupported-sysparam` |
-| Expressions `[ … ]` — full operator/function set, **degree** trig, LinuxCNC `MOD`/`EQ` | **honored** | malformed → word dropped + `rs274-bad-expression`; non-finite result → `rs274-non-finite-value` |
+| Expressions `[ … ]` — full operator/function set, **degree** trig, LinuxCNC `MOD`/`EQ` | **honored** | malformed → word dropped + `rs274-bad-expression`; non-finite result, or a non-finite operand of a comparison/logic operator or a `#[…]` index → `rs274-non-finite-value`; assignment to `#0`, a negative number or `#5400`+ → ignored + `rs274-readonly-param`; `ROUND` is half away from zero |
 | `if` / `elseif` / `else` / `endif` | **honored** | — |
 | `while` / `endwhile`, `do` / `while`, `repeat` / `endrepeat` | **honored** | total loop work capped → `rs274-iteration-limit` |
 | `break` / `continue` | **honored** (innermost loop, frame-local) | outside a loop → `rs274-misplaced-control` |
@@ -84,8 +84,9 @@ and is **byte-identical**. Shipped in v0.18.0 (DD-017 phases 1–3). See the
 | External subprogram files (`M98 P…`, external `o<name> call`), persistent `.var` params, `return` values | **out of scope** | — |
 
 **Bounds & honesty.** Two `ParseLimits` fields bound execution: `maxProgramIterations` (default
-1,000,000) caps total loop work — charged per loop pass *and* per statement inside a loop or subroutine,
-so a large body or an exponential recursive fan-out cannot exceed it — and `maxCallDepth` (default 50)
+1,000,000) caps total loop work — charged per loop pass *and*, inside a loop or subroutine, per
+statement, condition test, `call` argument, entered loop and 256 characters of text, so a large body,
+a long `elseif` chain or an exponential recursive fan-out cannot exceed it — and `maxCallDepth` (default 50)
 caps subroutine recursion. There is no `eval` and no I/O. Clean execution reports the
 `parametricProgram` capability as `known`; any disclosure above drops it to `approximated`; a
 non-parametric file reports `unavailable` — never a fabricated value. FDM / non-parametric input is

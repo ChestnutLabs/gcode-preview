@@ -190,7 +190,8 @@ Run it with `npm install --prefix tools/example-vue && npm run dev --prefix tool
 
 Everything the engine reports as `inferred`/`approximated`/`unavailable` stays that way at this
 layer: feature coloring refuses rather than fabricates, live progress shows a band instead of a
-fake-precise marker, and decimation is disclosed via the `disclosure` emit — surface it.
+fake-precise marker, and decimation and segments skipped for a non-finite coordinate are disclosed via
+the `disclosure` emit — surface it.
 
 ## Support
 

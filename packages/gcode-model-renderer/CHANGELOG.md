@@ -1,5 +1,55 @@
 # @chestnutlabs/gcode-model-renderer
 
+## 0.23.0
+
+### Patch Changes
+
+- [#527](https://github.com/ChestnutLabs/gcode-preview/pull/527) [`d93de83`](https://github.com/ChestnutLabs/gcode-preview/commit/d93de834d6dc860701111f9588ea7beb0af2df2c) Thanks [@sobechestnut-dev](https://github.com/sobechestnut-dev)! - Hostile 3MF files can no longer hang the parser, and model `limits` are now validated and enforced.
+  - **A small 3MF could hang the load forever.** Components that list the next object twice (a 3 KB file
+    with 50 levels is 2^50 steps), or an object that lists itself, were walked without a bound. Every node
+    of the assembly now counts against `maxInstances` (default 50,000) and fails with
+    `E_MODEL_TOO_MANY_INSTANCES`, including nodes inside production-extension parts. An object that contains
+    itself, directly or through others, throws the new `E_MODEL_CYCLE`. A part shared by several parents is
+    valid 3MF and still loads.
+  - **`maxObjects` is now enforced.** It was documented (default 10,000) but never checked. A 3MF with more
+    `<object>` elements than the limit, counted across the main and any external parts, now throws the new
+    `E_MODEL_TOO_MANY_OBJECTS`. **Files with more than 10,000 objects that used to load now reject**; raise
+    `maxObjects` if you load such files on purpose.
+  - **Invalid limits throw instead of switching the bound off.** `maxTriangles`, `maxObjects`,
+    `maxSourceBytes` and `maxInstances` must be non-negative integers. Before, `NaN` disabled the bound and a
+    negative value rejected every file. Now they throw `ModelParseError` with `code: 'E_MODEL_OPTION'`. As with
+    the container and parser caps, `Infinity` is not accepted as "unlimited"; pass a large integer. A field
+    that is left out or `undefined` keeps its default, and `0` is allowed.
+  - **A 3MF whose components fan out past `maxInstances` also counts mesh-free containers.** An assembly
+    that was within the cap by placements alone, but had more than `maxInstances` nodes in total, now rejects.
+
+- [#528](https://github.com/ChestnutLabs/gcode-preview/pull/528) [`9a2c1fb`](https://github.com/ChestnutLabs/gcode-preview/commit/9a2c1fb3ae9d90c7c7940d5bf53aa3d58e3c9528) Thanks [@sobechestnut-dev](https://github.com/sobechestnut-dev)! - Model files with non-finite geometry now fail the load with `E_MODEL_PARSE` instead of rendering as `NaN`/`Infinity` positions and bounds.
+  - **3MF.** A vertex coordinate that is `NaN`, `Infinity`, `1e999` or beyond float32 range (`1e300`) rejects, as does
+    a `transform` (build item or component) with such an entry. A coordinate that only overflows after the
+    `unit` scale (meters to mm), component transforms whose product overflows, and a transformed box that
+    overflows also reject. A triangle index that is negative, fractional, not a number, missing, or points past
+    the mesh's last vertex rejects (it used to be truncated or read as a `NaN` position). The message names the
+    vertex, transform entry or triangle. A `transform` that does not have 12 entries is still read as identity, and an
+    absent vertex coordinate is still 0.
+  - **STL.** A binary or ASCII STL with a `NaN`, infinite or float32-overflowing vertex rejects, naming the vertex.
+    Before, an all-`NaN` STL loaded with `NaN` bounds. There is no partial load: dropping triangles silently
+    would show a different model, and the model renderer has no warnings channel.
+  - **Scene bounds.** `bounds` that are not finite float32 numbers reject at the one place every source passes
+    through: a pre-built `ModelScene`, a registered custom loader's result, and `renderModelStill`. Fit and
+    plate placement therefore never see a `NaN` box.
+
+  **Files that used to load and now reject (`E_MODEL_PARSE`):** 3MFs with a missing, negative, fractional or
+  out-of-range triangle index (it was truncated or read past the mesh); 3MFs with a vertex coordinate that is not
+  a number (it was read as 0) or is beyond float32 range; 3MFs with a 12-value `transform` that has a non-numeric
+  or out-of-range entry (a non-numeric one used to be ignored, the transform treated as identity); and STLs with
+  `NaN`/`Infinity` coordinates. A pre-built `ModelScene` or a custom loader whose `bounds` are not finite also
+  rejects now.
+
+- Updated dependencies [[`3ae53e9`](https://github.com/ChestnutLabs/gcode-preview/commit/3ae53e9cf687e62f0a4c2bfeee0900fb5a56d76c), [`bf3513b`](https://github.com/ChestnutLabs/gcode-preview/commit/bf3513b67566cb597d2dd366e0f28c84660768a6), [`3e1a11e`](https://github.com/ChestnutLabs/gcode-preview/commit/3e1a11ed171de55b4cf852aa3e5b94ddf69ac1ca), [`e6f159d`](https://github.com/ChestnutLabs/gcode-preview/commit/e6f159d605969ffe65c33ffe32767b2d61c43aac), [`4d08cbc`](https://github.com/ChestnutLabs/gcode-preview/commit/4d08cbc86aa1672ebea6f9d312b376699db5ecf1)]:
+  - @chestnutlabs/gcode-renderer-three@0.23.0
+  - @chestnutlabs/gcode-containers@0.23.0
+  - @chestnutlabs/toolpath-core@0.23.0
+
 ## 0.22.0
 
 ### Minor Changes

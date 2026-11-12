@@ -1016,6 +1016,36 @@ describe('tubes quality mode (phase 4)', () => {
     );
   });
 
+  it('a file-discovered bed that cannot be drawn keeps the volume and emits machine-geometry-invalid only', () => {
+    const h = makeHarness(); // configured volume: 220×220×250
+    h.renderer.setIR(makeIR(1, 3));
+    h.runTicks();
+    const meshesBefore = h.renderer.chunkMeshes.length;
+    const before = h.events.length;
+
+    expect(() =>
+      h.renderer.setBuildVolume({
+        bed: { kind: 'rect', min: { x: 1e20, y: 0 }, max: { x: 1e20 + 100, y: 100 } },
+        origin: { x: 0, y: 0 },
+        confidence: 'inferred',
+        source: { adapterId: 'test', evidence: 'test' }
+      })
+    ).not.toThrow();
+
+    const errors = h.events.slice(before).filter((e) => e.type === 'error');
+    expect(errors).toEqual([
+      {
+        type: 'error',
+        code: 'machine-geometry-invalid',
+        message:
+          'file-discovered bed rejected: buildVolume x range 100000000000000000000..100000000000000000000 is too large for a 10 mm grid (the grid pitch is below the coordinate precision)'
+      }
+    ]);
+    expect(h.renderer.chunkMeshes.length).toBe(meshesBefore);
+    // The previous volume is still the one in place: a consumer-sized volume still throws, a good one applies.
+    expect(() => h.renderer.setBuildVolume({ x: 100, y: 100, z: 50, min: { x: 1e20, y: 0 } })).toThrow(RangeError);
+  });
+
   it('setQuality rebuilds from the retained IR', () => {
     const h = makeHarness({ quality: 'tubes' });
     h.renderer.setIR(makeIR(2, 5));

@@ -1,5 +1,86 @@
 # @chestnutlabs/gcode-preview-core
 
+## 0.23.0
+
+### Minor Changes
+
+- [#523](https://github.com/ChestnutLabs/gcode-preview/pull/523) [`3ae53e9`](https://github.com/ChestnutLabs/gcode-preview/commit/3ae53e9cf687e62f0a4c2bfeee0900fb5a56d76c) Thanks [@sobechestnut-dev](https://github.com/sobechestnut-dev)! - Segments skipped for an `Infinity` or `NaN` coordinate are now disclosed, in 2D and 3D ([#518](https://github.com/ChestnutLabs/gcode-preview/issues/518)).
+  - **The `disclosure` text names the count.** When a toolpath you build yourself has segments with a
+    non-finite coordinate, the renderer skips them. `GcodePreviewState.disclosure` and the `disclosure`
+    callback in Vue, React, Svelte and the Web Component now say so, for example
+    `3 segments with a non-finite coordinate were not drawn.` (`1 segment … was not drawn.` for one). When
+    decimation also applies, the sentence follows the decimation sentence. The 2D view checks x and y over
+    extrusion and travel. The 3D renderer checks x, y and z over every segment it builds. Both count the
+    whole toolpath, travel included whether or not it is shown.
+  - **2D mode now fires `build-complete`.** With `renderer: '2d'`, the 2D view emits `buildComplete` once
+    each time a toolpath loads: the number of drawable segments, `decimationApplied: 1`,
+    `travelHidden: false`, `quality: 'lines'`. It fires after parse-complete, as in 3D, so a
+    build-complete handler reads the new file's `layerCount` and `segmentCount`. Before, it never fired in 2D, so `onBuildComplete` and
+    `onDisclosure` (and their Vue, Svelte and Web Component equivalents) stayed silent. `activeQuality`
+    now reads `'lines'` after a 2D load instead of `null`.
+  - **`gcode-renderer-three`:** the `buildComplete` event carries an optional `skippedNonFinite` count.
+  - **`gcode-renderer-2d`:** new `summarize2DDrawable(ir)` returns `{ drawable, skippedNonFinite }` for
+    the whole toolpath.
+  - **`gcode-preview-core/testing`:** `SuiteStubWorker` takes an optional IR factory, `makeNonFiniteTestIR()`
+    is exported, and `ComponentHarness.mount` takes `{ renderer, ir }` and an `onReady` callback.
+    `MountedComponent` gains `parse()`.
+    The component conformance suite adds a 2D case and a 3D case.
+
+- [#530](https://github.com/ChestnutLabs/gcode-preview/pull/530) [`73be6d5`](https://github.com/ChestnutLabs/gcode-preview/commit/73be6d5e116acc2eabf5bb8416400bad70abeda6) Thanks [@sobechestnut-dev](https://github.com/sobechestnut-dev)! - `renderStill` now accepts `qualityMode` (`'full' | 'adaptive' | 'fast'`), the same option the interactive viewer already has. Omitted, it stays `'adaptive'` and nothing changes. `'full'` skips the `tubeByteBudget` tubes-to-lines fallback; `'fast'` renders flat lines.
+
+### Patch Changes
+
+- [#539](https://github.com/ChestnutLabs/gcode-preview/pull/539) [`d0c3fcc`](https://github.com/ChestnutLabs/gcode-preview/commit/d0c3fcc59e7973bcb0d39ba2278f830daa02fedd) Thanks [@sobechestnut-dev](https://github.com/sobechestnut-dev)! - Colour modes now reject options that have no meaning, and a hostile file can no longer distort or break colouring.
+  - **Bad colour options throw a `RangeError` when you set them.** In `feedrate`, `layerHeight` and `power`
+    mode, an explicit `range` must be two finite numbers `>= 0`, in ascending order. An inverted range such as
+    `[2000, 1000]` now throws; for a reversed scale, reverse the `ramp` instead. In `object` mode, `only` must
+    be a 1-based integer. Before, `range: [0, NaN]` or `only: 0` silently painted every segment one colour. A
+    point range such as `[1500, 1500]` is still valid and paints every segment the ramp's first colour.
+  - **Where it throws.** `controls.setColorMode(mode)` (in Vue, React, Svelte and the Web Component too) and
+    the `colorMode` option throw synchronously, before anything is stored, so the previous mode stays in
+    effect, even if the call comes before the viewer has loaded. The same goes for `LayerView2D`'s constructor
+    and `setColorMode`, and for `createSegmentColorer`. To validate a mode built from user input yourself,
+    call the new `checkColorMode(mode)`. It's exported from `@chestnutlabs/gcode-colors` and
+    `@chestnutlabs/gcode-renderer-2d`.
+  - **`segmentColor(ir, mode, i)` throws a `RangeError` for an index outside `[0, segments.count)`.** It used
+    to return `undefined`. The per-segment function returned by `createSegmentColorer` is unchanged.
+  - **A negative `F` or `S` in the file is drawn in `fallback`.** It is also left out of the auto-range, like
+    NaN and Infinity already were, so one hostile `G1 F-99999` can no longer stretch the speed scale and wash
+    out every other segment.
+  - **`filament` colour mode ignores impossible filament slots.** A slot from file metadata that is not an
+    integer from 0 to 63 is dropped. Before, a fractional slot threw while the palette was built. Gaps in the
+    palette now use your `fallback`, not always the default grey.
+  - **`filament` colour mode no longer borrows colours.** When a file uses a tool or a colour-change slot that
+    it declared no filament colour for, those segments are drawn in `fallback`. Before, the palette wrapped,
+    so `T3` in a file with two filament colours was drawn in the second filament's colour.
+
+- [#514](https://github.com/ChestnutLabs/gcode-preview/pull/514) [`d51d927`](https://github.com/ChestnutLabs/gcode-preview/commit/d51d927d848b68ce87439a6f968530878a9ab4f7) Thanks [@sobechestnut-dev](https://github.com/sobechestnut-dev)! - `@chestnutlabs/gcode-preview-core/testing` adds `runComponentConformanceSuite` (with its `ComponentHarness` / `MountedComponent` types) and the `emitSuiteBuild` helper. They are a component-level conformance case that mounts each adapter's component and checks that the disclosure callback reports the current build's text, after build-complete ([#502](https://github.com/ChestnutLabs/gcode-preview/issues/502)). This is test support with the same status as `runBehavioralSuite`.
+
+- [#531](https://github.com/ChestnutLabs/gcode-preview/pull/531) [`091b5d4`](https://github.com/ChestnutLabs/gcode-preview/commit/091b5d40e2e4a3670ccfc3615a299962914d72e5) Thanks [@sobechestnut-dev](https://github.com/sobechestnut-dev)! - Replacing the source several times in one tick now applies only the last file, and a time scrub draws the right number of segments ([#529](https://github.com/ChestnutLabs/gcode-preview/issues/529), [#435](https://github.com/ChestnutLabs/gcode-preview/issues/435)).
+  - **Rapid source changes.** Setting `source` (or calling `parse()`) three times in one tick used to run
+    two parses at once: you got a spurious `parse-error` event, and which file ended up on screen
+    depended on timing. Now only the newest call runs. The superseded calls resolve as
+    `{ ok: false, cancelled: true }`. A parse that was already running reports `parse-cancelled`, and its
+    result or error is dropped even if it had finished or failed first. A call that never started emits no event. This is the
+    same in Vue, React, Svelte and the Web Component, which share this controller.
+  - **`setScrubTime(ms)` no longer draws one segment too many.** A scrub at 0 ms drew the first segment,
+    and a scrub at the end of segment 5 drew segments 0 to 5. It now draws exactly the segments finished
+    by `ms`, and nothing before the first one ends. Segments with an unknown feedrate take 0 ms, so leading
+    ones count as finished at 0 ms.
+
+- [#509](https://github.com/ChestnutLabs/gcode-preview/pull/509) [`bef4857`](https://github.com/ChestnutLabs/gcode-preview/commit/bef48574b7c2fc7f20f36a5641d006fbd904c93e) Thanks [@sobechestnut-dev](https://github.com/sobechestnut-dev)! - The portable behavioral suite (`@chestnutlabs/gcode-preview-core/testing`) now checks that every
+  `GcodePreviewState` field is reachable through an adapter, the way it already checks every
+  `GcodePreviewControls` method. The new `REQUIRED_STATE_KEYS` and `REQUIRED_CONTROLS` exports list
+  the fields and methods it checks. Both lists are derived from their types, so adding a field or a
+  method without listing it fails the type check. A failure now names the missing keys. The library
+  itself does not change. An adapter run through `runBehavioralSuite` now fails if its state is
+  missing a field.
+- Updated dependencies [[`3e133fd`](https://github.com/ChestnutLabs/gcode-preview/commit/3e133fd0e78f20d2cfdbbadd61b7fe4bb379abb1), [`d0c3fcc`](https://github.com/ChestnutLabs/gcode-preview/commit/d0c3fcc59e7973bcb0d39ba2278f830daa02fedd), [`3ae53e9`](https://github.com/ChestnutLabs/gcode-preview/commit/3ae53e9cf687e62f0a4c2bfeee0900fb5a56d76c), [`792c3e8`](https://github.com/ChestnutLabs/gcode-preview/commit/792c3e8e578f8e465ea48600871e442821e2b8de), [`d171ad4`](https://github.com/ChestnutLabs/gcode-preview/commit/d171ad4f909ed8a333b2eff67ac3c656b6f3de34), [`d171ad4`](https://github.com/ChestnutLabs/gcode-preview/commit/d171ad4f909ed8a333b2eff67ac3c656b6f3de34), [`251e57f`](https://github.com/ChestnutLabs/gcode-preview/commit/251e57f6d38c231064792606b5a4bf44e1762b0c), [`d171ad4`](https://github.com/ChestnutLabs/gcode-preview/commit/d171ad4f909ed8a333b2eff67ac3c656b6f3de34), [`b827e7f`](https://github.com/ChestnutLabs/gcode-preview/commit/b827e7fe87c2fcd5d636617090e4c58de09b57e0), [`3e1a11e`](https://github.com/ChestnutLabs/gcode-preview/commit/3e1a11ed171de55b4cf852aa3e5b94ddf69ac1ca), [`e6f159d`](https://github.com/ChestnutLabs/gcode-preview/commit/e6f159d605969ffe65c33ffe32767b2d61c43aac), [`4d08cbc`](https://github.com/ChestnutLabs/gcode-preview/commit/4d08cbc86aa1672ebea6f9d312b376699db5ecf1)]:
+  - @chestnutlabs/gcode-parser@0.23.0
+  - @chestnutlabs/gcode-renderer-2d@0.23.0
+  - @chestnutlabs/gcode-renderer-three@0.23.0
+  - @chestnutlabs/toolpath-core@0.23.0
+
 ## 0.22.0
 
 ### Minor Changes

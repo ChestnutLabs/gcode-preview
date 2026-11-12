@@ -38,6 +38,7 @@ import type {
 } from '@chestnutlabs/gcode-renderer-three';
 import { CaptureUnsupportedError } from '@chestnutlabs/gcode-renderer-three';
 import { LayerView2DRenderer } from './renderer-2d-adapter.js';
+import { checkColorMode } from '@chestnutlabs/gcode-renderer-2d';
 import type { MoveKindToggle, PreviewRenderer, PreviewRendererEvent, RendererMode } from './renderer-interface.js';
 import {
   createProgressMapper,
@@ -179,7 +180,11 @@ export interface GcodePreviewState {
   presentation: ProgressPresentationMode;
   layerCount: number;
   segmentCount: number;
-  /** User-presentable decimation/travel disclosure (empty when rendering everything). */
+  /**
+   * User-presentable disclosure of what the current build leaves out (empty when it draws everything):
+   * decimation (3D), then the count of segments skipped for a non-finite coordinate (#518), e.g.
+   * `"3 segments with a non-finite coordinate were not drawn."`. Updated on every `buildComplete`.
+   */
   disclosure: string;
   /**
    * Estimated total print time in ms (#181), or null before a parse. `timeEstimateSource` says whether
@@ -308,6 +313,12 @@ export interface GcodePreviewControls {
 export interface PreviewController {
   /** Bind/rebind the renderer to a canvas (null unbinds). Rebinding disposes safely. */
   bindCanvas(canvas: HTMLCanvasElement | null): void;
+  /**
+   * Parse a file. Event contract: every `parse-started` is followed by exactly one terminal event
+   * (`parse-complete`, `parse-error` or `parse-cancelled`). A call superseded by a newer `parse()` is
+   * `parse-cancelled` (even if it failed or finished first) and resolves `{ ok: false, cancelled: true }`;
+   * a superseded call that never started (it was waiting on the running parse) emits no event.
+   */
   parse(input: Uint8Array | ArrayBuffer | File, opts?: WireParseOptions): Promise<ParseOutcome>;
   cancel(): void;
   /** DD-006: map one observation and drive the overlay. Null before a successful parse. */
@@ -379,6 +390,8 @@ export function createPreviewController(options: PreviewControllerOptions = {}):
   let mapper: ProgressMapper | null = null;
   // The consumer's requested colour mode, kept so a `filament` request (colour by the file's own filament
   // colours) can be resolved against the parse metadata as each file loads (DD-024 flash fix).
+  // Validated up front (a bad `range` / `only` throws a RangeError here), so no renderer ever gets it.
+  if (options.renderer?.colorMode !== undefined) checkColorMode(options.renderer.colorMode);
   let requestedColorMode: ColorMode | undefined = options.renderer?.colorMode;
   let lastMetadata: DialectMetadata | undefined;
   let consumerVolumeSet = options.renderer?.buildVolume !== undefined;
@@ -390,6 +403,8 @@ export function createPreviewController(options: PreviewControllerOptions = {}):
   if (options.renderer?.pixelRatio !== undefined) checkPixelRatio(options.renderer.pixelRatio);
   let pixelRatio: PixelRatioOption | undefined = options.renderer?.pixelRatio;
   let activeParse: Promise<unknown> | null = null;
+  // Bumped by every parse() call: a call that is no longer the newest after an await was superseded (#529).
+  let parseGen = 0;
   let resizeObserver: { disconnect(): void } | null = null;
   let windowResize: (() => void) | null = null;
   let disposed = false;
@@ -410,13 +425,22 @@ export function createPreviewController(options: PreviewControllerOptions = {}):
 
   function onRendererEvent(e: PreviewRendererEvent): void {
     if (e.type === 'buildComplete') {
+      const decimated =
+        e.decimationApplied > 1
+          ? `Showing every ${ordinal(e.decimationApplied)} extrusion segment (layer boundaries kept); ` +
+            `travel hidden. ${e.segments.toLocaleString()} segments drawn.`
+          : '';
+      // #518: segments a renderer skipped for an Infinity/NaN coordinate (2D: x/y; 3D: x/y/z), named by count.
+      const skipped = e.skippedNonFinite ?? 0;
+      const nonFinite =
+        skipped > 0
+          ? skipped === 1
+            ? '1 segment with a non-finite coordinate was not drawn.'
+            : `${skipped.toLocaleString()} segments with a non-finite coordinate were not drawn.`
+          : '';
       mutate({
         activeQuality: e.quality,
-        disclosure:
-          e.decimationApplied > 1
-            ? `Showing every ${ordinal(e.decimationApplied)} extrusion segment (layer boundaries kept); ` +
-              `travel hidden. ${e.segments.toLocaleString()} segments drawn.`
-            : ''
+        disclosure: decimated !== '' && nonFinite !== '' ? `${decimated} ${nonFinite}` : decimated + nonFinite
       });
     } else if (e.type === 'qualityFallback') {
       mutate({ activeQuality: e.to });
@@ -554,10 +578,14 @@ export function createPreviewController(options: PreviewControllerOptions = {}):
 
   async function parse(input: Uint8Array | ArrayBuffer | File, opts?: WireParseOptions): Promise<ParseOutcome> {
     if (disposed) return { ok: false, error: { code: 'E_DISPOSED', message: 'preview disposed' } };
+    const gen = ++parseGen;
     if (snapshot.parsing) {
       // §5: parse-during-parse cancels then restarts (session semantics preserved).
       session.cancel();
       await activeParse?.catch(() => undefined);
+      // #529: several calls can wait on the same running parse (a; b; c in one tick). Only the newest may
+      // start; an older one was superseded before it began, so it reports cancelled (no event: it never ran).
+      if (gen !== parseGen || disposed) return { ok: false, cancelled: true };
     }
     mutate({ parsing: true, parseProgress: null, error: null });
     const bytes =
@@ -570,6 +598,9 @@ export function createPreviewController(options: PreviewControllerOptions = {}):
     activeParse = run;
     try {
       const result = await run;
+      // #529: a newer parse() was issued while this one ran (its cancel can lose the race to completion).
+      // Its result is for a file the caller has replaced: never apply it.
+      if (gen !== parseGen) throw new CancelledError('superseded by a newer parse');
       lastIR = result.ir;
       lastMetadata = result.metadata;
       lastMachine = result.metadata?.machine;
@@ -628,7 +659,9 @@ export function createPreviewController(options: PreviewControllerOptions = {}):
       refreshCapabilityState();
       return { ok: true, result };
     } catch (err) {
-      if (err instanceof CancelledError) {
+      // #529: a superseded run is cancelled whatever way it settled (a worker error or crash that beat the
+      // cancel included): its failure belongs to a file the caller already replaced.
+      if (err instanceof CancelledError || gen !== parseGen) {
         emit({ type: 'parse-cancelled' });
         return { ok: false, cancelled: true };
       }
@@ -661,9 +694,11 @@ export function createPreviewController(options: PreviewControllerOptions = {}):
     setLayerRange: (a, b) => withRenderer((r) => r.setLayerRange(a, b)),
     setScrubPosition: (s) => withRenderer((r) => r.setScrubPosition(s)),
     setScrubTime: (ms) => {
-      // Resolve a print time to a segment-index scrub cut via the kinematic axis (#181).
-      const seg = ms === null || timeAxis === null ? null : segmentsCompletedAtTime(timeAxis.cumulativeMs, ms);
-      withRenderer((r) => r.setScrubPosition(seg));
+      // Resolve a print time to a segment-index scrub cut via the kinematic axis (#181). `completed` segments
+      // are done, and the renderer's scrub index is INCLUSIVE (draws indices <= it), so the cut is completed - 1
+      // (-1 draws nothing: no segment has finished at that time).
+      const completed = ms === null || timeAxis === null ? null : segmentsCompletedAtTime(timeAxis.cumulativeMs, ms);
+      withRenderer((r) => r.setScrubPosition(completed === null ? null : completed - 1));
     },
     setKindVisible: (k, v) => withRenderer((r) => r.setKindVisible(k, v)),
     setFeatureRoleVisible: (role, v) => withRenderer((r) => r.setFeatureRoleVisible?.(role, v)),
@@ -671,6 +706,9 @@ export function createPreviewController(options: PreviewControllerOptions = {}):
     // Availability is IR/renderer-dependent; before the renderer is ready we optimistically queue
     // and report true (the mode applies once bound). Callers can re-check after `parse-complete`.
     setColorMode: (m) => {
+      // Synchronous, before anything is stored or queued: a bad mode throws here, the previous mode stays
+      // in effect, and nothing reaches a renderer bound later.
+      checkColorMode(m);
       // Remember the request so a `filament` mode re-resolves per file; resolve it against the current
       // metadata before handing the concrete mode to the renderer (DD-024).
       requestedColorMode = m;

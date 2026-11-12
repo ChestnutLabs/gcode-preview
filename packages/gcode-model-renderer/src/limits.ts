@@ -5,7 +5,7 @@
 export interface ModelLimits {
   /** Max triangles across the whole scene. Default 5,000,000. */
   maxTriangles?: number;
-  /** Max objects in a scene (3MF). Default 10,000. */
+  /** Max `<object>` elements in a 3MF, across the main and external parts (`E_MODEL_TOO_MANY_OBJECTS`). Default 10,000. */
   maxObjects?: number;
   /** Max source bytes accepted before parsing. Default 256 MiB. */
   maxSourceBytes?: number;
@@ -13,7 +13,8 @@ export interface ModelLimits {
    * Max total instance placements across the scene (DD-022): a source 3MF that reuses meshes via
    * production-extension components / repeated build items is bounded on placement count, so an "instance
    * bomb" (a tiny master referenced millions of times) is rejected cheaply from the structure — before any
-   * large geometry part is decompressed. Default 50,000.
+   * large geometry part is decompressed. Every node visited in the component graph also counts, so a fan-out DAG
+   * is bounded too. Default 50,000.
    */
   maxInstances?: number;
 }
@@ -32,12 +33,25 @@ export const DEFAULT_LIMITS: ResolvedLimits = {
   maxInstances: 50_000
 };
 
+/**
+ * A present limit must be a non-negative integer (`0` is valid and rejects any source that has the thing
+ * being counted). `NaN`/`Infinity`/negative/fractional would silently disable or invert the bound, so they
+ * throw `E_MODEL_OPTION` (the E_CONTAINER_OPTION / E_PARSE_OPTION shape). `undefined`/`null` keep the default.
+ */
+function limitOrDefault(name: string, value: number | undefined, fallback: number): number {
+  if (value === undefined || value === null) return fallback;
+  if (!Number.isSafeInteger(value) || value < 0) {
+    throw new ModelParseError('E_MODEL_OPTION', `${name} must be a non-negative integer (got ${String(value)})`);
+  }
+  return value;
+}
+
 export function resolveLimits(limits?: ModelLimits): ResolvedLimits {
   return {
-    maxTriangles: limits?.maxTriangles ?? DEFAULT_LIMITS.maxTriangles,
-    maxObjects: limits?.maxObjects ?? DEFAULT_LIMITS.maxObjects,
-    maxSourceBytes: limits?.maxSourceBytes ?? DEFAULT_LIMITS.maxSourceBytes,
-    maxInstances: limits?.maxInstances ?? DEFAULT_LIMITS.maxInstances
+    maxTriangles: limitOrDefault('maxTriangles', limits?.maxTriangles, DEFAULT_LIMITS.maxTriangles),
+    maxObjects: limitOrDefault('maxObjects', limits?.maxObjects, DEFAULT_LIMITS.maxObjects),
+    maxSourceBytes: limitOrDefault('maxSourceBytes', limits?.maxSourceBytes, DEFAULT_LIMITS.maxSourceBytes),
+    maxInstances: limitOrDefault('maxInstances', limits?.maxInstances, DEFAULT_LIMITS.maxInstances)
   };
 }
 

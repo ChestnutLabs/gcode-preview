@@ -142,7 +142,8 @@ export function computePlacement(
     const cellY = (bed.max[1] - bed.min[1]) * WORKSPACE_CELL_FACTOR;
     const i = Math.round((fb.min[0] + fb.max[0] - bed.min[0] - bed.max[0]) / 2 / cellX);
     const j = Math.round((fb.min[1] + fb.max[1] - bed.min[1] - bed.max[1]) / 2 / cellY);
-    if ((i !== 0 || j !== 0) && onBed(fb, i * cellX, j * cellY, bed)) {
+    // (i = j = 0 is the `known` check above, which already failed, so it needs no separate guard.)
+    if (onBed(fb, i * cellX, j * cellY, bed)) {
       // `0 -` (not unary minus) so a zero axis is +0, never −0.
       return { placement: 'inferred', placementOffset: { x: 0 - i * cellX, y: 0 - j * cellY, z: 0 } };
     }

@@ -24,7 +24,8 @@ export const RS274_WARN = {
   badExpression: 'rs274-bad-expression',
   nonFiniteValue: 'rs274-non-finite-value',
   unsupportedSysParam: 'rs274-unsupported-sysparam',
-  paramLimit: 'rs274-param-limit'
+  paramLimit: 'rs274-param-limit',
+  readonlyParam: 'rs274-readonly-param'
 } as const;
 
 /**
@@ -118,6 +119,8 @@ export class Rs274Context {
   ];
   private uninitWarned = false;
   private paramLimitWarned = false;
+  private readonlyWarned = false;
+  private nonFiniteWarned = false;
   /** True once any parametric construct was executed — drives the `parametricProgram` capability. */
   used = false;
   /**
@@ -162,7 +165,19 @@ export class Rs274Context {
     if (this.scopes.length > 1) this.scopes.pop();
   }
 
+  /** Disclose (once) a non-finite value met where a finite number is required; the caller substitutes 0. */
+  _warnNonFinite(what: string, srcByte?: number): void {
+    if (this.nonFiniteWarned) return;
+    this.nonFiniteWarned = true;
+    this.warn(RS274_WARN.nonFiniteValue, `${what} is not a finite number; treated as 0`, srcByte);
+  }
+
   private readNumbered(n: number, srcByte?: number): number {
+    if (!Number.isFinite(n)) {
+      // `#[SQRT[-1]]` / `#[1/0]`: a NaN index would miss every typed-array slot and read `undefined`.
+      this._warnNonFinite('parameter number', srcByte);
+      return 0;
+    }
     const idx = Math.round(n);
     if (idx >= NUMBERED_LEN) return this.readSystem(idx, srcByte);
     if (idx < 1) {
@@ -209,9 +224,24 @@ export class Rs274Context {
     return v;
   }
 
-  private writeNumbered(n: number, value: number): void {
+  private writeNumbered(n: number, value: number, srcByte?: number): void {
+    if (!Number.isFinite(n)) {
+      this._warnNonFinite('parameter number', srcByte);
+      return;
+    }
     const idx = Math.round(n);
-    if (idx < 1 || idx >= NUMBERED_LEN) return;
+    if (idx < 1 || idx >= NUMBERED_LEN) {
+      // `#0`, a negative number, or a read-only system parameter (`#5400`+): the write has no effect.
+      if (!this.readonlyWarned) {
+        this.readonlyWarned = true;
+        this.warn(
+          RS274_WARN.readonlyParam,
+          `parameter #${idx} is read-only or out of range; assignment ignored`,
+          srcByte
+        );
+      }
+      return;
+    }
     if (idx <= LOCAL_NUMBERED_MAX) {
       const s = this.scope;
       s.localNumbered[idx] = value;
@@ -379,8 +409,8 @@ export class Rs274Context {
   _readParam(kind: 'numbered' | 'named', key: number | string, srcByte?: number): number {
     return kind === 'numbered' ? this.readNumbered(key as number, srcByte) : this.readNamed(key as string, srcByte);
   }
-  _writeParam(kind: 'numbered' | 'named', key: number | string, value: number): void {
-    if (kind === 'numbered') this.writeNumbered(key as number, value);
+  _writeParam(kind: 'numbered' | 'named', key: number | string, value: number, srcByte?: number): void {
+    if (kind === 'numbered') this.writeNumbered(key as number, value, srcByte);
     else this.writeNamed(key as string, value);
   }
   _exists(name: string): number {
@@ -493,18 +523,18 @@ class Evaluator {
     const c = this.s[this.i];
     if (c === '[') {
       const n = this.parseBracket();
-      return (v) => this.ctx._writeParam('numbered', n, v);
+      return (v) => this.ctx._writeParam('numbered', n, v, this.srcByte);
     }
     if (c === '#') {
       const n = this.readParamRef();
-      return (v) => this.ctx._writeParam('numbered', n, v);
+      return (v) => this.ctx._writeParam('numbered', n, v, this.srcByte);
     }
     if (c === '<') {
       const name = this.readNamedRef();
-      return (v) => this.ctx._writeParam('named', name, v);
+      return (v) => this.ctx._writeParam('named', name, v, this.srcByte);
     }
     const n = this.readNumber();
-    return (v) => this.ctx._writeParam('numbered', n, v);
+    return (v) => this.ctx._writeParam('numbered', n, v, this.srcByte);
   }
 
   private readNamedRef(): string {
@@ -558,7 +588,14 @@ class Evaluator {
       if (op === null) return left;
       this.i += op.length;
       const right = this.parseExpr(level + 1);
-      left = applyBinary(op, left, right);
+      if (CMP_LOGIC_OPS.has(op) && !(Number.isFinite(left) && Number.isFinite(right))) {
+        // A NaN/Infinity operand would be silently laundered into a plain 1/0 (`1/0 GT 5` → 1,
+        // `SQRT[-1] AND 1` → 1). Disclose it and treat the comparison as false (0) instead.
+        this.ctx._warnNonFinite('a comparison/logic operand', this.srcByte);
+        left = 0;
+      } else {
+        left = applyBinary(op, left, right);
+      }
     }
   }
 
@@ -581,7 +618,11 @@ class Evaluator {
     this.skipWs();
     if (this.s[this.i] === '*' && this.s[this.i + 1] === '*') {
       this.i += 2;
+      // Right-assoc recursion: a `2**2**2**…` chain recurses once per `**` and no bracket is involved,
+      // so it must count against the depth guard or ~20 000 terms (a 60 KB line) overflow the JS stack.
+      if (++this.depth > MAX_EXPR_DEPTH) throw new Rs274EvalError('expression nested too deep');
       const exp = this.parseUnary(); // right-assoc + allows `2 ** -1`
+      this.depth--;
       return Math.pow(base, exp);
     }
     return base;
@@ -687,6 +728,8 @@ function isLetter(c: string | undefined): boolean {
   return (cc >= 65 && cc <= 90) || (cc >= 97 && cc <= 122);
 }
 
+const CMP_LOGIC_OPS: ReadonlySet<string> = new Set(['and', 'or', 'xor', 'eq', 'ne', 'gt', 'ge', 'lt', 'le']);
+
 const bool = (b: boolean): number => (b ? 1 : 0);
 
 function applyBinary(op: string, a: number, b: number): number {
@@ -747,7 +790,9 @@ function applyFunction(name: string, x: number): number {
     case 'ln':
       return Math.log(x);
     case 'round':
-      return Math.round(x);
+      // Half away from zero, as LinuxCNC's interp_execute.cc (ROUND: x + (x < 0 ? -0.5 : 0.5), truncated).
+      // `Math.round` alone sends -2.5 to -2.
+      return x < 0 ? -Math.round(-x) : Math.round(x);
     case 'sqrt':
       return Math.sqrt(x);
     default:

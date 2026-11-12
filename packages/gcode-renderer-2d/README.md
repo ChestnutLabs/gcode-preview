@@ -29,6 +29,11 @@ view.setLayer(12);
 view.render(); // clears + redraws the active layer
 ```
 
+The constructor and `setColorMode` throw a `RangeError` for a colour mode whose options have no
+meaning (for example an inverted `range`), and the previous mode stays in effect. To validate a mode
+built from user input first, call `checkColorMode(mode)`, re-exported here from
+[`@chestnutlabs/gcode-colors`](../gcode-colors/README.md).
+
 The drawing core is also exposed as pure functions — `drawLayer(ctx, ir, opts)`, `computeLayerFit`,
 `layerBounds2D`, `rgbToCss` — which take a minimal Canvas-2D-context interface and are fully
 testable in Node with a recording mock.
@@ -37,7 +42,11 @@ testable in Node with a recording mock.
 
 A flat per-layer 2D view cannot represent non-XY/CNC toolpaths or 3D-only options. A missing or
 out-of-range layer draws nothing and reports `drawn: false` rather than fabricating geometry.
-Color modes that read an optional IR channel (`feature`, `object`, `feedrate`) must be
+A segment with an `Infinity` or `NaN` X/Y coordinate (possible in a toolpath you build yourself) is
+skipped: it is not drawn, it does not affect the view frame, and the draw result counts it in
+`skippedNonFinite`, for the layers it drew. `summarize2DDrawable(ir)` gives the count for the whole toolpath.
+`GcodePreview` with `renderer="2d"` and the framework adapters report that whole-toolpath count in their
+`disclosure` text, for example `3 segments with a non-finite coordinate were not drawn.` Color modes that read an optional IR channel (`feature`, `object`, `feedrate`) must be
 capability-gated by the caller. The full capability-honesty UX for non-XY / `layers: unavailable`
 inputs arrives with the phase-4 work (#215).
 

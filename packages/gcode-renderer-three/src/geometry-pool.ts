@@ -5,13 +5,15 @@
  * synchronous fake and Node uses a `worker_threads` adapter. Memory-aware backpressure and the renderer
  * wiring land in the follow-up phase; this module is the measurable core.
  */
-import type { GeometryBuildRequest, GeometryBuildResponse } from './geometry-worker-core.js';
+import type { GeometryBuildError, GeometryBuildRequest, GeometryBuildResponse } from './geometry-worker-core.js';
 
 /** Minimal duck-typed worker surface the pool drives (a Web Worker, a worker_threads shim, or a fake). */
 export interface GeometryWorkerLike {
   postMessage(msg: GeometryBuildRequest, transfer?: ArrayBuffer[]): void;
-  onmessage: ((ev: { data: GeometryBuildResponse }) => void) | null;
+  onmessage: ((ev: { data: GeometryBuildResponse | GeometryBuildError }) => void) | null;
   onerror?: ((err: unknown) => void) | null;
+  /** A reply that could not be deserialised: the request will never be answered, so it must reject. */
+  onmessageerror?: ((err: unknown) => void) | null;
   terminate(): void;
 }
 
@@ -33,12 +35,15 @@ export function createBrowserGeometryWorker(): GeometryWorkerLike {
 }
 
 export function resolvePoolSize(coreBudget: number | undefined, max = 8): number {
-  const cores =
-    typeof coreBudget === 'number' && Number.isFinite(coreBudget) && coreBudget > 0 ? Math.floor(coreBudget) : 2;
+  const cores = typeof coreBudget === 'number' && Number.isFinite(coreBudget) ? Math.floor(coreBudget) : 2;
   return Math.max(1, Math.min(max, cores - 1));
 }
 
 interface Pending {
+  /** Pool-unique id sent on the wire; a reply is accepted only if it carries exactly this id. */
+  wireId: number;
+  /** The caller's own request id, restored on the response. */
+  callerId: number;
   resolve: (r: GeometryBuildResponse) => void;
   reject: (err: unknown) => void;
 }
@@ -48,6 +53,9 @@ export class GeometryWorkerPool {
   /** Per-worker settler for its single in-flight request (a worker builds one chunk at a time). */
   private readonly current = new Map<GeometryWorkerLike, Pending>();
   private disposed = false;
+  /** Bumped by every `buildStreaming`; a run whose epoch is no longer current has been superseded. */
+  private epoch = 0;
+  private wireSeq = 0;
 
   constructor(
     readonly size: number,
@@ -57,14 +65,21 @@ export class GeometryWorkerPool {
       const w = createWorker();
       w.onmessage = (ev) => {
         const p = this.current.get(w);
+        // A reply for a request that is no longer the worker's live one (its build was superseded) must not
+        // settle the live request: it would hand the old build's geometry to the new build's chunk.
+        if (p === undefined || ev.data.id !== p.wireId) return;
         this.current.delete(w);
-        p?.resolve(ev.data);
+        // An id-matched kernel failure rejects exactly the request it answers; a stale one was dropped above.
+        if ('error' in ev.data) p.reject(new Error(ev.data.error));
+        else p.resolve({ ...ev.data, id: p.callerId });
       };
-      w.onerror = (err) => {
+      const fail = (err: unknown): void => {
         const p = this.current.get(w);
         this.current.delete(w);
         p?.reject(err instanceof Error ? err : new Error(String(err)));
       };
+      w.onerror = fail;
+      w.onmessageerror = fail;
       this.workers.push(w);
     }
   }
@@ -72,8 +87,9 @@ export class GeometryWorkerPool {
   /** Dispatch one request to one worker; settles when that worker replies or errors. */
   private dispatch(worker: GeometryWorkerLike, req: GeometryBuildRequest): Promise<GeometryBuildResponse> {
     return new Promise((resolve, reject) => {
-      this.current.set(worker, { resolve, reject });
-      worker.postMessage(req, [req.positions]);
+      const wireId = ++this.wireSeq;
+      this.current.set(worker, { wireId, callerId: req.id, resolve, reject });
+      worker.postMessage({ ...req, id: wireId }, [req.positions]);
     });
   }
 
@@ -88,22 +104,30 @@ export class GeometryWorkerPool {
     requests: GeometryBuildRequest[],
     onResult: (index: number, response: GeometryBuildResponse) => void
   ): Promise<void> {
+    // A new run supersedes any run still in flight on this pool (a rebuild while the previous build is
+    // mid-air): reject its pending requests so it stops cleanly, and let its late replies be ignored.
+    const epoch = ++this.epoch;
+    for (const p of this.current.values()) p.reject(new Error('E_POOL_SUPERSEDED: a newer geometry build took over'));
+    this.current.clear();
     let next = 0;
+    let failed = false;
+    const live = (): boolean => !this.disposed && epoch === this.epoch && !failed;
     const pump = async (worker: GeometryWorkerLike): Promise<void> => {
-      while (!this.disposed) {
+      while (live()) {
         const i = next++;
         if (i >= requests.length) return;
         let response: GeometryBuildResponse;
         try {
           response = await this.dispatch(worker, requests[i]);
         } catch (err) {
-          // dispose() rejects the in-flight request so this await unblocks (a terminated worker fires
-          // no message/error of its own). Treat a dispose-driven rejection as a clean stop; re-throw a
-          // genuine worker error so the batch still fails fast.
-          if (this.disposed) return;
+          // dispose() / a superseding run rejects the in-flight request so this await unblocks (a terminated
+          // worker fires no message/error of its own). Treat that as a clean stop; re-throw a genuine worker
+          // error so the batch fails fast — and stop the sibling pumps so nothing is delivered after it.
+          if (this.disposed || epoch !== this.epoch) return;
+          failed = true;
           throw err;
         }
-        if (this.disposed) return;
+        if (!live()) return;
         onResult(i, response);
       }
     };

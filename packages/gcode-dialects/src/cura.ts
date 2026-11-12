@@ -8,7 +8,13 @@
  */
 import { FeatureRole, type ToolpathIR } from '@chestnutlabs/toolpath-core';
 import type { AnnotationSink, DialectAdapter } from './contracts.js';
-import { applyMarkerRanges, parseKeyValue, type RangeMarker } from './annotate.js';
+import {
+  INVALID_VALUE_WARNING,
+  applyMarkerRanges,
+  finiteNonNegative,
+  parseKeyValue,
+  type RangeMarker
+} from './annotate.js';
 
 /** Cura `;TYPE:` names → DD-001 FeatureRole. */
 const TYPE_MAP: Record<string, number> = {
@@ -74,8 +80,10 @@ export function cura(): DialectAdapter {
       }
       // Cura filament comment: `;Filament used: 2.22m` (metres; multi-material → first value).
       if (trimmed.toLowerCase().startsWith('filament used:')) {
-        const metres = parseFloat(trimmed.slice('filament used:'.length).trim());
-        if (Number.isFinite(metres)) {
+        const metres = finiteNonNegative(parseFloat(trimmed.slice('filament used:'.length).trim()));
+        if (metres === undefined) {
+          sink.warn(INVALID_VALUE_WARNING, 'Filament used value unreadable; dropped', srcByte);
+        } else {
           sink.setFilamentUsage({
             lengthMm: metres * 1000,
             source: { adapterId: 'cura', evidence: ';Filament used:', srcByte }

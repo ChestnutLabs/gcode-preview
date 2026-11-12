@@ -120,15 +120,24 @@ describe('worker protocol v1 (#45)', () => {
   });
 
   it('worker-side busy guard answers E_BUSY on overlapping parse requests', async () => {
-    const replies: { type: string; error?: { code: string } }[] = [];
-    const handler = createWorkerHandler((msg) => replies.push(msg as never));
+    const replies: { type: string; id?: number; error?: { code: string } }[] = [];
+    // Resolve when the first parse's terminal reply arrives, not after a guessed delay (a fixed 500 ms wait
+    // failed under CI/gate load). The test's own timeout is the only upper bound.
+    let finished!: () => void;
+    const firstDone = new Promise<void>((resolve) => (finished = resolve));
+    const handler = createWorkerHandler((msg) => {
+      replies.push(msg as never);
+      if (msg.type === 'done' || (msg.type === 'error' && msg.id === 1)) finished();
+    });
     handler({ v: PROTOCOL_VERSION, type: 'parse', id: 1, input: bigGcode(50000), opts: { yieldIntervalMs: 5 } });
     handler({ v: PROTOCOL_VERSION, type: 'parse', id: 2, input: 'G0 X0' });
-    // Wait for the first parse to finish.
-    await new Promise((r) => setTimeout(r, 500));
-    const busy = replies.find((m) => m.type === 'error');
-    expect(busy?.error?.code).toBe('E_BUSY');
-    expect(replies.some((m) => m.type === 'done')).toBe(true);
+    await firstDone;
+    const busy = replies.filter((m) => m.type === 'error');
+    expect(busy).toHaveLength(1);
+    expect(busy[0]).toMatchObject({ id: 2, error: { code: 'E_BUSY' } });
+    const done = replies.filter((m) => m.type === 'done');
+    expect(done).toHaveLength(1);
+    expect(done[0].id).toBe(1);
   });
 
   it('recovers from a worker crash: active parse rejects, next parse works on a fresh worker', async () => {

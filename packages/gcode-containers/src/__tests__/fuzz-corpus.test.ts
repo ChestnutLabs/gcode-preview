@@ -13,22 +13,19 @@ import { readdirSync, readFileSync } from 'node:fs';
 import { basename, dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, it, expect } from 'vitest';
-import { crc32 as referenceCrc32 } from 'node:zlib';
-import { readDirectory, streamEntry, extractEntry, ContainerError } from '../index.js';
+import { readDirectory, streamEntry, ContainerError } from '../index.js';
+import { buildZip } from './zip-builder';
+// The REAL fuzz target and limits, not copies. fuzz-extract-entry.mjs imports '../dist/index.js' (the real
+// fuzzer loads the built package); vitest.config.mts aliases that import to src, so no dist build is needed.
+// @ts-expect-error -- plain .mjs, no declaration file
+import { extractAll } from '../../fuzz/fuzz-extract-entry.mjs';
+// @ts-expect-error -- plain .mjs, no declaration file
+import { FUZZ_LIMITS, FUZZ_STREAM_CAP as CAP } from '../../fuzz/limits.mjs';
 
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..', '..');
 const corpusDir = join(repoRoot, 'test-data', 'fixtures', 'fuzz-regressions');
 const containersDir = join(repoRoot, 'test-data', 'fixtures', 'containers');
 const adversarialDir = join(containersDir, 'adversarial');
-
-const FUZZ_LIMITS = {
-  maxEntries: 64,
-  maxEntryNameBytes: 256,
-  maxExpandedBytesPerEntry: 1 * 1024 * 1024,
-  maxExpandedBytesTotal: 4 * 1024 * 1024,
-  maxMetadataBytes: 256 * 1024
-};
-const CAP = 1 * 1024 * 1024;
 
 async function exercise(bytes: Uint8Array): Promise<void> {
   let dir;
@@ -45,39 +42,6 @@ async function exercise(bytes: Uint8Array): Promise<void> {
       if (e instanceof ContainerError) continue;
       throw e;
     }
-  }
-}
-
-/** Mirror of fuzz/fuzz-extract-entry.mjs: typed errors from the extract stage only; success = exact bytes. */
-const EXTRACT_CODES = new Set([
-  'E_CONTAINER_FORMAT',
-  'E_CONTAINER_ENCRYPTED',
-  'E_CONTAINER_HEADER_MISMATCH',
-  'E_CONTAINER_LIMIT_EXPANDED',
-  'E_CONTAINER_METHOD',
-  'E_CONTAINER_INFLATE',
-  'E_CONTAINER_CRC'
-]);
-
-async function exerciseExtract(bytes: Uint8Array): Promise<void> {
-  let dir;
-  try {
-    dir = readDirectory(bytes, FUZZ_LIMITS);
-  } catch (e) {
-    if (e instanceof ContainerError) return;
-    throw e;
-  }
-  for (const entry of dir.entries) {
-    let out: Uint8Array;
-    try {
-      out = await extractEntry(bytes, entry, CAP);
-    } catch (e) {
-      if (e instanceof ContainerError && EXTRACT_CODES.has(e.code)) continue;
-      throw e;
-    }
-    expect(out.byteLength).toBeLessThanOrEqual(CAP);
-    expect(out.byteLength).toBe(entry.uncompressedSize);
-    expect(referenceCrc32(out)).toBe(entry.crc32);
   }
 }
 
@@ -127,10 +91,34 @@ describe('extractEntry fuzz property replay (fuzz-extract-entry.mjs seeds)', () 
     expect(adversarial.length).toBe(6);
   });
 
+  it('a multi-entry input trips the archive total: 800 KiB + 800 KiB + 100 KiB → E_CONTAINER_LIMIT_TOTAL on the second only', async () => {
+    const bytes = buildZip([
+      { name: 'a.txt', data: 'a'.repeat(800 * 1024) },
+      { name: 'b.txt', data: 'b'.repeat(800 * 1024) },
+      { name: 'c.txt', data: 'c'.repeat(100 * 1024) }
+    ]).bytes;
+    // a (800 KiB) fits the 1536 KiB total; b would reach 1600 KiB and trips; c (900 KiB cumulative) fits.
+    expect(await extractAll(bytes)).toEqual(['E_CONTAINER_LIMIT_TOTAL']);
+  });
+
+  it('the archive total is 1536 KiB, not the 1 MiB per-entry cap: 600 KiB + 600 KiB (1200 KiB) extracts cleanly', async () => {
+    const bytes = buildZip([
+      { name: 'a.txt', data: 'a'.repeat(600 * 1024) },
+      { name: 'b.txt', data: 'b'.repeat(600 * 1024) }
+    ]).bytes;
+    expect(await extractAll(bytes)).toEqual([]);
+  });
+
+  it('multi-entry-total.zip (1802 B, 2 × 800 KiB deflate — within the fuzzer max_len of 4096) reaches the archive total', async () => {
+    const bytes = new Uint8Array(readFileSync(join(corpusDir, 'multi-entry-total.zip')));
+    expect(bytes.byteLength).toBe(1802);
+    expect(await extractAll(bytes)).toEqual(['E_CONTAINER_LIMIT_TOTAL']);
+  });
+
   const seeds = [...inputs.map((n) => join(corpusDir, n)), ...adversarial.map((n) => join(adversarialDir, n))];
   for (const file of seeds) {
     it(`typed extract-stage errors or exact bytes for ${basename(file)}`, async () => {
-      await expect(exerciseExtract(new Uint8Array(readFileSync(file)))).resolves.toBeUndefined();
+      await expect(extractAll(new Uint8Array(readFileSync(file)))).resolves.toBeInstanceOf(Array);
     });
   }
 });

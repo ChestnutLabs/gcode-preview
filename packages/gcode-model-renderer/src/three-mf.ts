@@ -33,6 +33,7 @@ import {
   type RGB
 } from './scene-model.js';
 import { parsePrintableArea } from './placement.js';
+import { assertFiniteBounds, inFloat32Range } from './finite.js';
 import { ModelParseError, resolveLimits, type ModelLimits, type ResolvedLimits } from './limits.js';
 
 /** millimeter is the 3MF default; convert others to mm. */
@@ -47,6 +48,15 @@ const UNIT_TO_MM: Record<string, number> = {
 
 /** Max component-resolution depth (guards cyclic / pathological assemblies). */
 const MAX_DEPTH = 50;
+
+const tooManyInstances = (lim: ResolvedLimits): ModelParseError =>
+  new ModelParseError(
+    'E_MODEL_TOO_MANY_INSTANCES',
+    `3MF declares more than ${lim.maxInstances} instance placements or component references`
+  );
+
+const componentCycle = (objectid: string): ModelParseError =>
+  new ModelParseError('E_MODEL_CYCLE', `3MF object ${objectid} contains itself through its components`);
 
 interface Component {
   /** Absolute OPC path to an external model part (production extension), or undefined = same part. */
@@ -294,10 +304,42 @@ function decodePaintState(hex: string): { state: number; subdivided: boolean } |
   return { state: best, subdivided: states.length > 1 };
 }
 
+/**
+ * A 3MF `transform` attribute as 12 numbers, or `null` (identity) when it is absent or not 12 values long.
+ * Twelve values with any entry that is not finite and within float32 range (`NaN`, `Infinity`, `1e300`) throw
+ * `E_MODEL_PARSE`: such a matrix would put `NaN`/`Infinity` into the bounds and every instance matrix.
+ */
 function parseTransform(s: string | undefined): number[] | null {
   if (s === undefined) return null;
   const v = s.trim().split(/\s+/).map(Number);
-  return v.length === 12 && v.every((n) => !Number.isNaN(n)) ? v : null;
+  if (v.length !== 12) return null;
+  const bad = v.findIndex((n) => !inFloat32Range(n));
+  if (bad !== -1) {
+    throw new ModelParseError('E_MODEL_PARSE', `3MF transform entry ${bad} is not a finite float32 value`);
+  }
+  return v;
+}
+
+/** A vertex coordinate attribute: absent reads as 0 (as before); present must be finite and within float32. */
+function vertexCoord(raw: string | undefined, vertex: number, axis: string): number {
+  if (raw === undefined) return 0;
+  const n = Number(raw);
+  if (!inFloat32Range(n)) {
+    throw new ModelParseError('E_MODEL_PARSE', `3MF vertex ${vertex} ${axis} is not a finite float32 value`);
+  }
+  return n;
+}
+
+/** A triangle corner index attribute: must be a non-negative integer (range vs the mesh is checked at build). */
+function triangleIndex(raw: string | undefined, triangle: number, corner: string): number {
+  const n = Number(raw);
+  if (!Number.isInteger(n) || n < 0) {
+    throw new ModelParseError(
+      'E_MODEL_PARSE',
+      `3MF triangle ${triangle} ${corner} is not a non-negative integer index`
+    );
+  }
+  return n;
 }
 
 /** Apply a 3MF row-vector affine (12 values) to a point. */
@@ -381,6 +423,7 @@ function parseModelPart(xml: string, lim: ResolvedLimits): ModelPart {
   let curObjId: string | null = null;
   let curPaletteId: string | null = null;
   let inBuild = false;
+  let objectTags = 0;
 
   const tags = new TagScanner(xml);
   while (tags.next()) {
@@ -409,6 +452,9 @@ function parseModelPart(xml: string, lim: ResolvedLimits): ModelPart {
         curObj = null;
         curObjId = null;
       } else {
+        if (++objectTags > lim.maxObjects) {
+          throw new ModelParseError('E_MODEL_TOO_MANY_OBJECTS', `3MF declares more than ${lim.maxObjects} objects`);
+        }
         const a = attrs(raw);
         curObjId = a.id ?? null;
         curObj = {
@@ -440,10 +486,12 @@ function parseModelPart(xml: string, lim: ResolvedLimits): ModelPart {
       }
     } else if (name === 'vertex' && curObj !== null) {
       const a = attrs(raw);
-      curObj.vertices.push(Number(a.x) || 0, Number(a.y) || 0, Number(a.z) || 0);
+      const vn = curObj.vertices.length / 3;
+      curObj.vertices.push(vertexCoord(a.x, vn, 'x'), vertexCoord(a.y, vn, 'y'), vertexCoord(a.z, vn, 'z'));
     } else if (name === 'triangle' && curObj !== null) {
       const a = attrs(raw);
-      curObj.tris.push(Number(a.v1) | 0, Number(a.v2) | 0, Number(a.v3) | 0);
+      const tn = curObj.tris.length / 3;
+      curObj.tris.push(triangleIndex(a.v1, tn, 'v1'), triangleIndex(a.v2, tn, 'v2'), triangleIndex(a.v3, tn, 'v3'));
       if (curObj.tris.length / 3 > lim.maxTriangles) {
         throw new ModelParseError('E_MODEL_TOO_MANY_TRIANGLES', `3MF exceeds triangle limit ${lim.maxTriangles}`);
       }
@@ -556,6 +604,10 @@ function placeMaster(
   lim: ResolvedLimits
 ): void {
   const affine = matrix ?? IDENTITY_AFFINE;
+  // A nested placement multiplies its component transforms; each factor was range-checked on parse, the product may not be.
+  if (!affine.every(inFloat32Range)) {
+    throw new ModelParseError('E_MODEL_PARSE', '3MF placement transform overflows float32 after composing components');
+  }
   const mat4 = affineToMat4(matrix);
 
   const existing = st.masters.get(key);
@@ -569,6 +621,7 @@ function placeMaster(
   }
 
   const triCount = obj.tris.length / 3;
+  const vertexCount = obj.vertices.length / 3;
   st.totalTris += triCount;
   if (st.totalTris > lim.maxTriangles) {
     throw new ModelParseError('E_MODEL_TOO_MANY_TRIANGLES', `3MF exceeds triangle limit ${lim.maxTriangles}`);
@@ -601,11 +654,21 @@ function placeMaster(
     const palette = pid !== null ? part.palettes.get(pid) : undefined;
     const cidx = obj.triColorIdx[ti];
     for (let k = 0; k < 3; k++) {
-      const vi = obj.tris[ti * 3 + k] * 3;
+      const index = obj.tris[ti * 3 + k];
+      if (index >= vertexCount) {
+        throw new ModelParseError(
+          'E_MODEL_PARSE',
+          `3MF triangle ${ti} references vertex ${index}, but the mesh has ${vertexCount} vertices`
+        );
+      }
+      const vi = index * 3;
       // LOCAL geometry: unit scale only — the placement matrix (an instance transform) does the rest.
       const x = obj.vertices[vi] * part.unitScale;
       const y = obj.vertices[vi + 1] * part.unitScale;
       const z = obj.vertices[vi + 2] * part.unitScale;
+      if (!inFloat32Range(x) || !inFloat32Range(y) || !inFloat32Range(z)) {
+        throw new ModelParseError('E_MODEL_PARSE', `3MF vertex ${index} overflows float32 after unit scaling`);
+      }
       const o = (ti * 3 + k) * 3;
       positions[o] = x;
       positions[o + 1] = y;
@@ -824,18 +887,28 @@ function estimateSceneCost(
   const countedMasters = new Set<string>();
 
   const checkInstances = (): void => {
-    if (instanceCount > lim.maxInstances) {
-      throw new ModelParseError(
-        'E_MODEL_TOO_MANY_INSTANCES',
-        `3MF declares more than ${lim.maxInstances} instance placements`
-      );
-    }
+    if (instanceCount > lim.maxInstances) throw tooManyInstances(lim);
   };
+
+  // Every node visit (mesh, container or dangling reference) is charged to the instance cap: a DAG that doubles
+  // per level (each object listing the next twice) has no mesh until its leaves and is 2^depth visits.
+  let visits = 0;
+  // Objects on the current descent path. A reference back to one of them is a cycle (A → A); a shared child
+  // reused across siblings (a diamond) is valid 3MF and is NOT on the path when revisited.
+  const ancestors = new Set<string>();
 
   const visit = (part: ModelPart, objectid: string, depth: number): void => {
     if (depth > MAX_DEPTH) return;
+    if (++visits > lim.maxInstances) throw tooManyInstances(lim);
     const obj = part.objects.get(objectid);
     if (obj === undefined) return;
+    if (ancestors.has(objectid)) throw componentCycle(objectid);
+    ancestors.add(objectid);
+    visitObject(part, objectid, obj, depth);
+    ancestors.delete(objectid);
+  };
+
+  const visitObject = (part: ModelPart, objectid: string, obj: ParsedObject, depth: number): void => {
     if (obj.tris.length > 0) {
       instanceCount++;
       const key = `local:${objectid}`;
@@ -870,12 +943,7 @@ function estimateSceneCost(
       : [...mainPart.objects.keys()].map((objectid) => ({ objectid, transform: null }));
   for (const inst of roots) visit(mainPart, inst.objectid, 0);
 
-  if (instanceCount > lim.maxInstances) {
-    throw new ModelParseError(
-      'E_MODEL_TOO_MANY_INSTANCES',
-      `3MF declares more than ${lim.maxInstances} instance placements`
-    );
-  }
+  if (instanceCount > lim.maxInstances) throw tooManyInstances(lim);
   if (estTriangles > lim.maxTriangles * EST_REJECT_MARGIN) {
     throw new ModelParseError(
       'E_MODEL_TOO_MANY_TRIANGLES',
@@ -945,6 +1013,7 @@ export async function parse3mf(
 
   // Lazily parse model parts by absolute OPC path (production-extension components reference them).
   const partCache = new Map<string, ModelPart>();
+  let objectsInScene = 0;
   const parseEntry = async (entry: ZipDirectory['entries'][number]): Promise<ModelPart> => {
     const key = entry.name.toLowerCase();
     const cached = partCache.get(key);
@@ -956,6 +1025,11 @@ export async function parse3mf(
       throw unzipFailure(e);
     }
     const part = parseModelPart(xml, lim);
+    // maxObjects is a scene-wide bound: the objects of every part (main + production-extension) count together.
+    objectsInScene += part.objects.size;
+    if (objectsInScene > lim.maxObjects) {
+      throw new ModelParseError('E_MODEL_TOO_MANY_OBJECTS', `3MF declares more than ${lim.maxObjects} objects`);
+    }
     partCache.set(key, part);
     return part;
   };
@@ -1053,6 +1127,8 @@ export async function parse3mf(
   // Resolve an object (mesh and/or components) within `part`, folding component transforms into the
   // running placement `matrix` (DD-022) instead of baking vertices. `partKey` identifies the part so the
   // same `${partKey}#${objectid}` master, reached via different placements, is instanced not copied.
+  let visits = 0;
+  const ancestors = new Set<string>();
   const resolve = async (
     part: ModelPart,
     objectid: string,
@@ -1061,9 +1137,14 @@ export async function parse3mf(
     depth: number
   ): Promise<void> => {
     if (depth > MAX_DEPTH) return;
+    // Same cap as the pre-walk, but this walk also covers external parts (the pre-walk treats them as leaves).
+    if (++visits > lim.maxInstances) throw tooManyInstances(lim);
     const obj = part.objects.get(objectid);
     if (obj === undefined) return;
-    if (obj.tris.length > 0) placeMaster(obj, part, matrix, `${partKey}#${objectid}`, st, lim);
+    const nodeKey = `${partKey}#${objectid}`;
+    if (ancestors.has(nodeKey)) throw componentCycle(objectid);
+    ancestors.add(nodeKey);
+    if (obj.tris.length > 0) placeMaster(obj, part, matrix, nodeKey, st, lim);
     for (const comp of obj.components) {
       const targetPart = comp.path !== undefined ? await getPartByPath(comp.path) : part;
       if (targetPart === null) continue;
@@ -1073,6 +1154,7 @@ export async function parse3mf(
       const childKey = comp.path !== undefined ? comp.path.replace(/^\//, '').toLowerCase() : partKey;
       await resolve(targetPart, comp.objectid, childMatrix, childKey, depth + 1);
     }
+    ancestors.delete(nodeKey);
   };
 
   // With no <build>, resolve every declared object at identity (some minimal 3MFs omit build).
@@ -1106,6 +1188,8 @@ export async function parse3mf(
   }
 
   const bounds: ModelBounds = { min: st.min, max: st.max };
+  // Transformed boxes can still overflow even when every vertex and matrix entry is in range.
+  assertFiniteBounds(bounds, '3MF');
   const scene: ModelScene = {
     objects: st.built,
     bounds,

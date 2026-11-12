@@ -78,6 +78,8 @@ export interface BgcodeDecodeResult {
   settings: Record<string, string>;
   /** Thumbnails from Thumbnail blocks (#188 phase 4c) — only when `metadata: true`. */
   thumbnails: BgcodeThumbnail[];
+  /** Thumbnail blocks left out of `thumbnails` because their width or height is 0 (only when `metadata: true`). */
+  droppedThumbnails: number;
 }
 
 export interface BgcodeDecodeOptions {
@@ -102,7 +104,7 @@ function parseIni(text: string): Record<string, string> {
   const out: Record<string, string> = {};
   for (const line of text.split('\n')) {
     const eq = line.indexOf('=');
-    if (eq <= 0) continue;
+    if (eq === -1) continue; // a leading '=' (eq 0) gives an empty key, which the next check skips
     const key = line.slice(0, eq).trim();
     if (key.length === 0 || key.startsWith(';') || key.startsWith('#') || key.startsWith('[')) continue;
     out[key] = line.slice(eq + 1).trim();
@@ -118,6 +120,13 @@ const DEFAULT_MAX_OUTPUT = 512 * 1024 * 1024;
  * those plus the INI blocks. A real PrusaSlicer 2.9 file carries ~125 KB in total.
  */
 const META_BUDGET = 32 * 1024 * 1024;
+
+/**
+ * Hard cap on the number of blocks walked. Each walked block costs ~90 bytes of heap in `blocks`
+ * (measured), so a file of empty 10-byte blocks would cost ~9x its own size. A real PrusaSlicer file
+ * writes 64 KiB G-code blocks: even a 512 MiB decode is ~8,200 blocks. One million is far above that.
+ */
+const MAX_BLOCKS = 1_000_000;
 
 function readU16(b: Uint8Array, o: number): number {
   return b[o] | (b[o + 1] << 8);
@@ -264,12 +273,16 @@ export async function openBgcode(bytes: Uint8Array, opts: BgcodeDecodeOptions = 
   const gcodeParts: Uint8Array[] = [];
   const settings: Record<string, string> = {};
   const thumbnails: BgcodeThumbnail[] = [];
+  let droppedThumbnails = 0;
   let totalOut = 0;
   let metaUsed = 0; // bytes decoded so far from metadata + thumbnail blocks, against META_BUDGET
   let off = 10;
 
   while (off < len) {
     const blockStart = off;
+    if (blocks.length >= MAX_BLOCKS) {
+      throw new ContainerError('E_BGCODE_BOMB', `file has more than ${MAX_BLOCKS} blocks`);
+    }
     if (off + 8 > len) throw new ContainerError('E_BGCODE_TRUNCATED', 'truncated block header');
     const type = readU16(bytes, off);
     const compression = readU16(bytes, off + 2);
@@ -331,6 +344,11 @@ export async function openBgcode(bytes: Uint8Array, opts: BgcodeDecodeOptions = 
       metaUsed += raw.length;
       if (isThumb) {
         // Thumbnails are stored as image bytes (PrusaSlicer uses None compression); decompress if flagged.
+        // A zero width or height is not a real image: drop it (its bytes still counted against the budget).
+        if (thumbWidth === 0 || thumbHeight === 0) {
+          droppedThumbnails++;
+          continue;
+        }
         thumbnails.push({
           format: THUMB_FORMAT[thumbFormat] ?? 'unknown',
           width: thumbWidth,
@@ -350,5 +368,5 @@ export async function openBgcode(bytes: Uint8Array, opts: BgcodeDecodeOptions = 
     gcode.set(part, o);
     o += part.length;
   }
-  return { gcode, blocks, checksum: hasCrc ? 'crc32' : 'none', settings, thumbnails };
+  return { gcode, blocks, checksum: hasCrc ? 'crc32' : 'none', settings, thumbnails, droppedThumbnails };
 }

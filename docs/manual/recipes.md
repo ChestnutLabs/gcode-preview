@@ -25,6 +25,29 @@ Clip to a layer range and scrub within it — no geometry rebuilds, just draw-ra
 `colorMode` is capability-gated — the stack colors by a feature only when the dialect actually
 disclosed it (see [ToolpathIR & the capability model](concept-ir-capabilities.md)).
 
+## Color by speed on a fixed scale
+
+The speed, layer-height, and power modes fit their color ramp to each file. To compare files on
+the same scale, pass a `range`:
+
+```ts
+controls.setColorMode({
+  mode: 'feedrate',
+  ramp: [
+    [0, 0, 1], // blue = slow
+    [1, 0, 0] // red = fast
+  ],
+  range: [600, 12000], // mm/min, ascending
+  fallback: [0.7, 0.7, 0.7]
+});
+```
+
+A `range` must be two finite numbers `>= 0` in ascending order. Anything else throws a `RangeError`
+when you set the mode, and the previous mode stays in effect. For a reversed scale, reverse the
+`ramp`. A point range such as `[1500, 1500]` is valid and draws every segment in the ramp's first
+color. Moves with no speed in the file, or a negative one, are drawn in `fallback`. To check a mode
+built from user input before you set it, call `checkColorMode(mode)` from `@chestnutlabs/gcode-colors`.
+
 ## Camera control: preset views & saved state
 
 The imperative `controls` handle (the composable return / React ref / Svelte `bind:this` / element

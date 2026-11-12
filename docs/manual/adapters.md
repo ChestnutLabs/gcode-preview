@@ -99,7 +99,19 @@ Each fires the same events (naming follows each framework's idiom): parse lifecy
 (`ready` / `parse-error` / `parse-cancelled` / `parse-progress`), staged preparation (`stage`),
 `build-complete`, `quality-fallback`, camera settle (`camera-change`), machine geometry
 (`machine-geometry-discovered` / `machine-geometry-mismatch`), `progress-presentation-changed`,
-`disclosure`, and `error`.
+`disclosure`, and `error`. Every parse that starts ends with exactly one of `ready`, `parse-error` or
+`parse-cancelled`; a parse replaced by a newer source reports `parse-cancelled`, and one replaced before it
+started emits nothing.
+
+The `disclosure` text says what the current build leaves out. It follows every `build-complete`, in both
+renderers, and is empty when the build draws everything. In 3D it names decimation (`Showing every 3rd
+extrusion segment …`). For a toolpath you build yourself, it also counts segments skipped for an `Infinity` or
+`NaN` coordinate: `3 segments with a non-finite coordinate were not drawn.` The two renderers count
+differently. The flat 2D view checks x and y, over extrusion and travel. The 3D renderer checks x, y and z, over
+every segment it builds: extrusion, travel and wipe. A segment with only a non-finite z is drawn in 2D and
+skipped in 3D. Both count every layer, not only the one on screen, and both count travel whether or not travel
+is shown, because a skipped segment is never drawn. In 2D, `build-complete` fires once each time a toolpath
+loads, with `quality: 'lines'`.
 
 Beyond the declarative props, the same **imperative surface** is reachable through the handle's
 `controls` in every adapter — including render diagnostics (`getRenderStats`), segment picking /

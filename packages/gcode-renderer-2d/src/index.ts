@@ -16,6 +16,7 @@ export {
   layerBounds2D,
   modelBounds2D,
   describe2DDisclosures,
+  summarize2DDrawable,
   rgbToCss
 } from './layer-view.js';
 export type {
@@ -28,6 +29,8 @@ export type {
   LayerFit,
   LayerBounds2D,
   TravelStyle,
-  CanvasContext2DLike
+  CanvasContext2DLike,
+  Drawable2DSummary
 } from './layer-view.js';
 export type { ColorMode, RGB } from '@chestnutlabs/gcode-colors';
+export { checkColorMode } from '@chestnutlabs/gcode-colors';

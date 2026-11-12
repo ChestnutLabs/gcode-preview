@@ -30,6 +30,7 @@
       "class": "feature-proof",
       "file": "gcodes/calicat.gcode",
       "quality": "tubes",
+      "travel": true,
       "color": { "mode": "feedrate", "fallback": [0.55, 0.6, 0.62] },
       "caption": "Color by feedrate: blue at slow moves ramping to red at fast moves.",
       "alt": "The calicat model colored by feedrate, from blue at slow moves to red at fast moves"
@@ -120,18 +121,6 @@
       "layerRange": "low",
       "caption": "Retraction and de-retraction markers pinned on the toolpath.",
       "alt": "Calicat lower layers with retraction and de-retraction markers as orange and cyan pins on the toolpath"
-    },
-    {
-      "name": "app-control-panel",
-      "page": "toolpath",
-      "class": "showcase",
-      "file": "gcodes/3DBenchy.gcode",
-      "quality": "tubes",
-      "color": { "mode": "feature", "fallback": [0.55, 0.55, 0.55] },
-      "view": "iso",
-      "fullPage": true,
-      "caption": "The demo application: control panel beside a fully rendered 3DBenchy.",
-      "alt": "The demo application: a control panel — corpus picker, layer and time scrub, an honest print-time estimate, display toggles — beside a fully rendered 3DBenchy with feature coloring"
     },
     {
       "name": "canvas-2d-fallback",
@@ -260,18 +249,6 @@
       "hideRoles": [6, 7],
       "caption": "setFeatureRoleVisible(Skirt/Brim, false): the adhesion ring is hidden, leaving just the part.",
       "alt": "The same whole-job view with the skirt and brim hidden, leaving only the model"
-    },
-    {
-      "name": "diagnostics-panel",
-      "page": "toolpath",
-      "class": "feature-proof",
-      "file": "gcodes/3DBenchy.gcode",
-      "quality": "tubes",
-      "color": { "mode": "feature", "fallback": [0.55, 0.55, 0.55] },
-      "view": "iso",
-      "recipe": "diagnostics",
-      "caption": "getRenderStats() in context: the demo's Render diagnostics panel reads backend, hardware-vs-software GPU, geometry mode, counts, and timings beside the live render.",
-      "alt": "The demo app with the Render diagnostics panel populated — backend, GPU capability, geometry mode, segment and draw counts, and timings — next to the rendered 3DBenchy"
     }
   ]
 }

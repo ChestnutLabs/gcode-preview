@@ -52,6 +52,13 @@ export interface ChunkBuildResult {
   /** True when travel geometry was omitted because decimation is active. */
   travelHidden: boolean;
   totalSegmentsIncluded: number;
+  /**
+   * IR segments left out because an endpoint coordinate (x0..z1) is Infinity or NaN (a consumer-built IR,
+   * or a float32 overflow). They are never uploaded: a non-finite position poisons the bounding sphere,
+   * so picking and frustum culling would break for the whole chunk. 0 for a well-formed IR. The renderer
+   * reports it on `buildComplete`, and core names it in its `disclosure` text (#518).
+   */
+  skippedNonFinite: number;
 }
 
 /** §4.4 provisional thresholds (ratified by the E3 benchmark phase). */
@@ -76,12 +83,25 @@ export function buildChunks(ir: ToolpathIR, opts: ChunkBuildOptions = {}): Chunk
   const seg = ir.segments;
   const target = opts.targetSegmentsPerChunk ?? DEFAULT_TARGET;
 
+  // A segment with any non-finite endpoint coordinate is skipped everywhere below (counted, never drawn).
+  const finite = (i: number): boolean =>
+    Number.isFinite(seg.x0[i] + seg.y0[i] + seg.z0[i] + seg.x1[i] + seg.y1[i] + seg.z1[i]);
+  let skippedNonFinite = 0;
   let extrudeCount = 0;
   for (let i = 0; i < seg.count; i++) {
+    if (!finite(i)) {
+      skippedNonFinite++;
+      continue;
+    }
     if ((seg.kind[i] & MoveKind.Extrude) !== 0) extrudeCount++;
   }
   let decimation: number;
   if (typeof opts.decimation === 'number') {
+    // An explicit factor must be a whole number ≥ 1 (1 = keep everything). 0, a negative, a fraction, NaN
+    // or Infinity made `i % decimation` NaN/odd and silently dropped or kept the wrong segments.
+    if (!Number.isInteger(opts.decimation) || opts.decimation < 1) {
+      throw new RangeError(`decimation must be a whole number >= 1 or 'auto' (got ${String(opts.decimation)})`);
+    }
     decimation = opts.decimation; // explicit caller override wins
   } else {
     decimation = autoDecimation(extrudeCount);
@@ -94,6 +114,9 @@ export function buildChunks(ir: ToolpathIR, opts: ChunkBuildOptions = {}): Chunk
   }
   const travelHidden = decimation > 1;
 
+  // A layer's segStart comes from the IR (consumer-built IRs are untrusted): both walks start at max(0, segStart),
+  // so a negative or absurd value can't turn the build into a billions-of-iterations loop (the upper side is
+  // already bounded by seg.count).
   // Layer-boundary segments are always kept (§4.4). A layer's segStart/segEnd may
   // land on travel moves (hidden under decimation), so the honest boundary is the
   // first and last EXTRUSION segment within each layer's range.
@@ -101,8 +124,8 @@ export function buildChunks(ir: ToolpathIR, opts: ChunkBuildOptions = {}): Chunk
   for (const layer of ir.layers) {
     let first = -1;
     let last = -1;
-    for (let i = layer.segStart; i <= layer.segEnd && i < seg.count; i++) {
-      if ((seg.kind[i] & MoveKind.Extrude) !== 0) {
+    for (let i = Math.max(0, layer.segStart); i <= layer.segEnd && i < seg.count; i++) {
+      if ((seg.kind[i] & MoveKind.Extrude) !== 0 && finite(i)) {
         if (first === -1) first = i;
         last = i;
       }
@@ -153,18 +176,16 @@ export function buildChunks(ir: ToolpathIR, opts: ChunkBuildOptions = {}): Chunk
     kept = 0;
   };
 
+  // An empty layer table (empty IR) simply never enters the loop below: no chunks, 0 segments.
   const layerCount = ir.layers.length;
-  if (layerCount === 0) {
-    // No layer table (empty IR): nothing to build.
-    return { chunks, decimationApplied: decimation, travelHidden, totalSegmentsIncluded: 0 };
-  }
 
   for (let li = 0; li < layerCount; li++) {
     const layer = ir.layers[li];
-    for (let i = layer.segStart; i <= layer.segEnd && i < seg.count; i++) {
+    for (let i = Math.max(0, layer.segStart); i <= layer.segEnd && i < seg.count; i++) {
+      if (!finite(i)) continue;
       const isExtrude = (seg.kind[i] & MoveKind.Extrude) !== 0;
       if (isExtrude) {
-        if (decimation === 1 || boundary.has(i) || i % decimation === 0) {
+        if (boundary.has(i) || i % decimation === 0) {
           pendingExtrude.push(i);
           kept++;
         }
@@ -185,5 +206,11 @@ export function buildChunks(ir: ToolpathIR, opts: ChunkBuildOptions = {}): Chunk
     }
   }
 
-  return { chunks, decimationApplied: decimation, travelHidden, totalSegmentsIncluded: totalIncluded };
+  return {
+    chunks,
+    decimationApplied: decimation,
+    travelHidden,
+    totalSegmentsIncluded: totalIncluded,
+    skippedNonFinite
+  };
 }

@@ -42,7 +42,7 @@ const CHANNELS: ChannelSpec[] = [
   { name: 'srcByte', bytesPerElement: 4 }
 ];
 
-const CORE_BYTES_PER_SEGMENT = CHANNELS.reduce((a, c) => a + c.bytesPerElement, 0); // 40 B core set
+const CORE_BYTES_PER_SEGMENT = CHANNELS.reduce((a, c) => a + c.bytesPerElement, 0); // 48 B core set
 const MODAL_BYTES_PER_ELEMENT = 4; // each opt-in modal channel is one Float32 column
 
 export interface SegmentRecord {

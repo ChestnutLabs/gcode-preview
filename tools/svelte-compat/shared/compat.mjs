@@ -7,7 +7,12 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { SuiteStubWorker, makeSuiteStubGL } from '@chestnutlabs/gcode-preview-core/testing';
+import {
+  SuiteStubWorker,
+  emitSuiteBuild,
+  makeSuiteStubGL,
+  runComponentConformanceSuite
+} from '@chestnutlabs/gcode-preview-core/testing';
 import { MODEL_STUB_CONTROLS, MODEL_STUB_GL, makeStlModelSource } from '@chestnutlabs/gcode-model-renderer/testing';
 import GcodePreview from '../../../packages/gcode-preview-svelte/src/GcodePreview.svelte';
 import ModelViewer from '../../../packages/gcode-preview-svelte/src/model/ModelViewer.svelte';
@@ -150,6 +155,45 @@ export function registerCompat({ describe, it, expect, svelte, compiler, expecte
       target.remove();
     });
   });
+
+  // The portable component conformance case (#502): event -> callback wiring through the compiled component.
+  runComponentConformanceSuite(
+    `svelte ${expectedMajor} <GcodePreview>`,
+    { describe, it, expect },
+    {
+      mount(cb, opts = {}) {
+        const target = document.body.appendChild(document.createElement('div'));
+        const handle = mountComponent(svelte, GcodePreview, {
+          target,
+          props: {
+            renderer: opts.renderer,
+            quality: 'lines',
+            createWorker: () => new SuiteStubWorker(undefined, opts.ir),
+            rendererOptions: {
+              createRenderer: (canvas) => makeSuiteStubGL(canvas),
+              scheduleFrame: (f) => f(),
+              chunksPerTick: 8
+            }
+          },
+          events: {
+            ready: (e) => cb.onReady(e.detail.segments),
+            buildcomplete: (e) => cb.onBuildComplete(e.detail.segments),
+            disclosure: (e) => cb.onDisclosure(e.detail)
+          }
+        });
+        const preview = handle.instance.preview; // Svelte 4 clears the instance's exports on $destroy()
+        return {
+          emitBuild: (decimation, segments) => emitSuiteBuild(preview.raw.renderer(), decimation, segments),
+          parse: (bytes) => preview.parse(bytes),
+          settle,
+          unmount: () => {
+            handle.destroy();
+            target.remove();
+          }
+        };
+      }
+    }
+  );
 
   describe(`${label}: mount ModelViewer`, () => {
     it('renders the canvas, fires `ready` for a source, and unmount disposes the renderer', async () => {

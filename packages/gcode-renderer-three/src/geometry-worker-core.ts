@@ -35,6 +35,28 @@ export interface GeometryBuildResponse {
   indicesPerSegment: number;
 }
 
+/** A request the kernel threw on: posted with the request's own id so the pool fails only that request. */
+export interface GeometryBuildError {
+  id: number;
+  error: string;
+}
+
+/**
+ * Worker entry body: run {@link handleGeometryRequest}, but turn a throw into an id-tagged
+ * {@link GeometryBuildError}. A bare uncaught worker error carries no id, so after a superseded build it
+ * could reject the NEXT build's live request on the same worker.
+ */
+export function handleGeometryMessage(req: GeometryBuildRequest): {
+  response: GeometryBuildResponse | GeometryBuildError;
+  transfer: ArrayBuffer[];
+} {
+  try {
+    return handleGeometryRequest(req);
+  } catch (err) {
+    return { response: { id: req.id, error: err instanceof Error ? err.message : String(err) }, transfer: [] };
+  }
+}
+
 /**
  * Run the tube kernel on a self-contained chunk payload (pure; host-agnostic). Returns the response plus
  * the list of `ArrayBuffer`s to transfer. Byte-identical to the inline `buildTubeChunk` — it *is* the
