@@ -28,6 +28,7 @@
     "coordinateSystem": "known"
   },
   "warningCodes": [
+    "arc-radius-too-small",
     "layers-unavailable",
     "probe-position-runtime-dependent",
     "unsupported-command"

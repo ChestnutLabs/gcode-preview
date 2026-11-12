@@ -456,6 +456,8 @@ export function createEngine(input: string | Uint8Array, opts: ParseOptions): En
   let cannedQ = 0; // peck increment (G83)
   let cannedInitialZ = 0; // Z when the cycle activated — the G98 retract plane
   let cannedRetractInitial = true; // G98 (retract to initial Z) vs G99 (retract to R); modal, default G98
+  let cannedZSet = false; // a Z / R word was ever given (else the cycle runs on the 0 default, which is disclosed)
+  let cannedRSet = false;
   let cannedCyclesSeen = false; // any G81/G82/G83 expanded → cannedCycles capability 'known'
   // RS274NGC parametric programs (DD-017 Phase 1, #189 phase 7). The store + expression evaluator resolve
   // `#params`/`[expr]` on any line that uses them; non-parametric lines never touch it (byte-identical).
@@ -785,19 +787,48 @@ export function createEngine(input: string | Uint8Array, opts: ParseOptions): En
     // from the word made the segment count NaN, so the arc collapsed to a single chord (#522).
     let ia = oa ?? 0;
     let ib = ob ?? 0;
+    // Disclosure tolerance for "this arc does not close": LinuxCNC rejects such arcs, Marlin draws them, so the
+    // parser draws them too and says so. 0.005 mm / 0.0002 in plus 0.1% of the radius absorbs slicer rounding.
+    const arcTolerance = (radius: number): number => (units == 'in' ? 0.0002 : 0.005) + 0.001 * radius;
     if (r) {
       const deltaA = ta - sa;
       const deltaB = tb - sb;
       const minR = Math.sqrt(Math.pow(deltaA / 2, 2) + Math.pow(deltaB / 2, 2));
+      if (Math.abs(r) < minR - arcTolerance(minR)) {
+        warn(
+          'arc-radius-too-small',
+          `G2/G3 radius ${Math.abs(r)} is smaller than half the chord ${minR}; the radius was raised to half the chord (a half circle).`,
+          currentSrcByte
+        );
+      }
       // A negative R selects the arc longer than 180°: clamp the magnitude only, so the sign survives
       // to the long-way test below (clamping the signed value turned every negative R into +minR).
       r = r < 0 ? -Math.max(-r, minR) : Math.max(r, minR);
       const dSquared = Math.pow(deltaA, 2) + Math.pow(deltaB, 2);
-      const hSquared = Math.pow(r, 2) - dSquared / 4;
-      let hDivD = Math.sqrt(hSquared / dSquared);
-      if ((cw && r < 0.0) || (!cw && r > 0.0)) hDivD = -hDivD;
-      ia = deltaA / 2 + deltaB * hDivD;
-      ib = deltaB / 2 - deltaA * hDivD;
+      if (dSquared === 0) {
+        // Start == target with R: the centre is undefined (LinuxCNC rejects it). Dividing by the zero chord
+        // made the centre NaN; draw a point and say so.
+        warn(
+          'arc-radius-degenerate',
+          'G2/G3 arc with an R radius has the same start and target; the centre is undefined, so no arc is drawn (use I/J for a full circle).',
+          currentSrcByte
+        );
+        ia = 0;
+        ib = 0;
+      } else {
+        const hSquared = Math.pow(r, 2) - dSquared / 4;
+        let hDivD = Math.sqrt(hSquared / dSquared);
+        if ((cw && r < 0.0) || (!cw && r > 0.0)) hDivD = -hDivD;
+        ia = deltaA / 2 + deltaB * hDivD;
+        ib = deltaB / 2 - deltaA * hDivD;
+      }
+    }
+    if (p.p !== undefined && Math.trunc(p.p) !== 1) {
+      warn(
+        'arc-turns-ignored',
+        `G2/G3 P${p.p} (number of turns) is not applied; the arc is drawn as a single sweep.`,
+        currentSrcByte
+      );
     }
 
     // No I/J(/K) and no R: nothing defines the arc. The zero offsets make it a straight move to the target
@@ -816,6 +847,17 @@ export function createEngine(input: string | Uint8Array, opts: ParseOptions): En
     const arcRadius = Math.sqrt(ia * ia + ib * ib);
     const arcCurrentAngle = Math.atan2(-ib, -ia);
     const finalTheta = Math.atan2(tb - centerB, ta - centerA);
+    const endRadius = Math.hypot(ta - centerA, tb - centerB);
+    // Only an I/J/K arc can miss its target: an R arc's centre is derived from the target, and a full circle
+    // ends where it starts, so both close by construction.
+    const offsetsStated = oa !== undefined || ob !== undefined;
+    if (offsetsStated && Math.abs(endRadius - arcRadius) > arcTolerance(arcRadius)) {
+      warn(
+        'arc-end-off-circle',
+        `G2/G3 target is ${endRadius} from the centre but the start is ${arcRadius}; the arc spirals and the last segment jumps to the target.`,
+        currentSrcByte
+      );
+    }
 
     let totalArc;
     if (wholeCircle) {
@@ -1017,8 +1059,29 @@ export function createEngine(input: string | Uint8Array, opts: ParseOptions): En
             cannedCyclesSeen = true;
             cannedCycle = gcode as 'g81' | 'g82' | 'g83';
             cannedInitialZ = sz;
-            if (cmd.params.z !== undefined) cannedZ = nextAxis(sz, cmd.params.z, offZ());
-            if (cmd.params.r !== undefined) cannedR = nextAxis(sz, cmd.params.r, offZ());
+            // R first: under G91 Z is incremental from the R plane (not from the current Z), as in LinuxCNC.
+            if (cmd.params.r !== undefined) {
+              cannedR = nextAxis(sz, cmd.params.r, offZ());
+              cannedRSet = true;
+            }
+            if (cmd.params.z !== undefined) {
+              cannedZ = xyzAbsolute ? nextAxis(sz, cmd.params.z, offZ()) : cannedR + cmd.params.z;
+              cannedZSet = true;
+            }
+            if (!cannedZSet || !cannedRSet) {
+              warn(
+                'canned-cycle-missing-word',
+                `${gcode.toUpperCase()} has no ${cannedZSet ? 'R' : cannedRSet ? 'Z' : 'Z or R'} word and none was set earlier; 0 is used.`,
+                currentSrcByte
+              );
+            }
+            if (arcPlane !== 'xy') {
+              warn(
+                'canned-cycle-plane',
+                `${gcode.toUpperCase()} drills along Z in the XY plane only; the active plane is ${arcPlane.toUpperCase()}.`,
+                currentSrcByte
+              );
+            }
             if (cmd.params.q !== undefined) cannedQ = Math.abs(cmd.params.q);
             modalMotion = null;
             ok = runCannedCycle(cmd.params);
