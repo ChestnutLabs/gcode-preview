@@ -15,8 +15,8 @@ import { fileURLToPath } from 'node:url';
 import { describe, it, expect } from 'vitest';
 import { readDirectory, streamEntry, ContainerError } from '../index.js';
 import { buildZip } from './zip-builder';
-// The REAL fuzz target and limits, not copies. fuzz-extract-entry.mjs imports ../dist, so this file needs the
-// dist build (`npm run gate` and CI build every package dist before the tests run).
+// The REAL fuzz target and limits, not copies. fuzz-extract-entry.mjs imports '../dist/index.js' (the real
+// fuzzer loads the built package); vitest.config.mts aliases that import to src, so no dist build is needed.
 // @ts-expect-error -- plain .mjs, no declaration file
 import { extractAll } from '../../fuzz/fuzz-extract-entry.mjs';
 // @ts-expect-error -- plain .mjs, no declaration file
