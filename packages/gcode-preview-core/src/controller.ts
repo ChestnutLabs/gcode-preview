@@ -548,10 +548,10 @@ export function createPreviewController(options: PreviewControllerOptions = {}):
     // reported as E_CONTROL_REJECTED and the rest still apply: the renderer IS bound, so it is neither
     // a load failure nor a reason to drop later calls. A subscriber may dispose or rebind mid-replay (an
     // `error` listener, or a renderer event): then `r` is no longer the bound renderer, so stop rather
-    // than drive a disposed one (dispose() also unbinds, so this covers it). The new renderer, if any, does
-    // its own wiring.
+    // than drive a disposed one (dispose() also unbinds, so this covers it). Checked after every call, the
+    // last one included, so neither the remaining calls nor the counts below come from the stale renderer.
+    // The new renderer, if any, does its own wiring; the calls not yet run are dropped.
     for (const op of pendingOps.splice(0)) {
-      if (renderer !== r) return;
       try {
         op.run(r);
       } catch (err) {
@@ -559,6 +559,7 @@ export function createPreviewController(options: PreviewControllerOptions = {}):
         mutate({ error: { code: 'E_CONTROL_REJECTED', message } });
         emit({ type: 'error', code: 'E_CONTROL_REJECTED', message });
       }
+      if (renderer !== r) return;
     }
     if (lastIR !== null) {
       mutate({ layerCount: r.layerCount, segmentCount: r.segmentCount });

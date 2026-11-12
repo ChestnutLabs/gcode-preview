@@ -178,7 +178,9 @@ describe('queued control replay (E_CONTROL_REJECTED)', () => {
     controller.controls.setTheme({ gridOpacity: 2 }); // rejected on replay -> state.error -> subscriber disposes
     controller.controls.setCameraMode('orthographic');
     let disposals = 0;
+    let afterDispose = 0;
     controller.onStateChange((s) => {
+      if (disposals > 0) afterDispose++;
       if (s.error?.code === 'E_CONTROL_REJECTED') {
         disposals++;
         controller.dispose();
@@ -186,8 +188,79 @@ describe('queued control replay (E_CONTROL_REJECTED)', () => {
     });
     await settle();
     expect(disposals).toBe(1);
+    expect(afterDispose).toBe(0);
     expect(log).toEqual([]);
     expect(controller.raw.renderer()).toBeNull();
+  });
+
+  // A parse BEFORE bindCanvas sets the IR, so the replay's trailing block (layer/segment counts) runs. The
+  // SuiteStubWorker file has 2 layers and 12 segments; a disposed 2D renderer reports 0 / 0.
+  function parsed2d(): Promise<ReturnType<typeof createPreviewController>> {
+    vi.spyOn(LayerView2DRenderer.prototype, 'setView').mockImplementation(() => {
+      throw new Error('view boom');
+    });
+    const controller = createPreviewController({ createWorker: () => new SuiteStubWorker(), renderer: { mode: '2d' } });
+    return controller.parse(new Uint8Array(1000)).then((outcome) => {
+      expect(outcome.ok).toBe(true);
+      return controller;
+    });
+  }
+
+  it('2D, parsed first: the only queued call rebinds from its error listener; counts come from the live renderer', async () => {
+    const controller = await parsed2d();
+    controller.controls.setView('iso');
+    let rebinds = 0;
+    controller.onEvent((e) => {
+      if (e.type === 'error' && rebinds === 0) {
+        rebinds++;
+        controller.bindCanvas(document.createElement('canvas'));
+      }
+    });
+    controller.bindCanvas(document.createElement('canvas'));
+    expect(rebinds).toBe(1);
+    const s = controller.getState();
+    expect({ layerCount: s.layerCount, segmentCount: s.segmentCount }).toEqual({ layerCount: 2, segmentCount: 12 });
+    expect(s.error?.code).toBe('E_CONTROL_REJECTED');
+    controller.dispose();
+  });
+
+  it('2D, parsed first: the first of two queued calls rebinds; same counts, the second never reaches the old renderer', async () => {
+    const controller = await parsed2d();
+    const shown = vi.spyOn(LayerView2DRenderer.prototype, 'setShowRetractions');
+    controller.controls.setView('iso');
+    controller.controls.setShowRetractions(true);
+    let rebinds = 0;
+    controller.onEvent((e) => {
+      if (e.type === 'error' && rebinds === 0) {
+        rebinds++;
+        controller.bindCanvas(document.createElement('canvas'));
+      }
+    });
+    controller.bindCanvas(document.createElement('canvas'));
+    expect(rebinds).toBe(1);
+    expect(shown).toHaveBeenCalledTimes(0);
+    const s = controller.getState();
+    expect({ layerCount: s.layerCount, segmentCount: s.segmentCount }).toEqual({ layerCount: 2, segmentCount: 12 });
+    controller.dispose();
+  });
+
+  it('2D, parsed first: a dispose from the only queued call leaves the counts and notifies nothing after', async () => {
+    const controller = await parsed2d();
+    controller.controls.setView('iso');
+    let disposals = 0;
+    let afterDispose = 0;
+    controller.onStateChange((s) => {
+      if (disposals > 0) afterDispose++;
+      if (s.error?.code === 'E_CONTROL_REJECTED' && disposals === 0) {
+        disposals++;
+        controller.dispose();
+      }
+    });
+    controller.bindCanvas(document.createElement('canvas'));
+    expect(disposals).toBe(1);
+    expect(afterDispose).toBe(0);
+    const s = controller.getState();
+    expect({ layerCount: s.layerCount, segmentCount: s.segmentCount }).toEqual({ layerCount: 2, segmentCount: 12 });
   });
 
   it('a subscriber that rebinds during replay stops it on the old renderer', async () => {

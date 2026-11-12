@@ -23,7 +23,9 @@ The preview controller no longer misreports a rejected control or a throwing sub
   only the parse. A throwing listener no longer makes `parse()` reject or report `parse-error`. The
   subscriber's error is re-thrown from a microtask, so it still shows up as an uncaught error.
   If a subscriber disposes the preview or rebinds its canvas while queued calls are being replayed,
-  the rest of those calls are no longer run on the old renderer.
+  the rest of those calls are no longer run on the old renderer, and `state.layerCount` and
+  `state.segmentCount` no longer drop to 0. A rebind during replay drops the queued calls that had not run
+  yet: the new view starts from the construction options, as on any rebind.
 - **These calls now throw `RangeError` for a value that is not a number, or is `NaN`:**
   `setLayerRange(startLayer, endLayer)` (either end), `setScrubPosition(segIndex)` and
   `setScrubTime(ms)`. They throw at once, before anything is queued, even before the renderer has loaded.
