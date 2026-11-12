@@ -59,6 +59,23 @@ describe('ParseLimits validation (#508)', () => {
     }
   }
 
+  it('maxInputBytes above 2^32-1 throws E_PARSE_OPTION; 2^32-1 itself is accepted', () => {
+    let caught: unknown;
+    try {
+      parseGcodeToIR(PROGRAM, { limits: { maxInputBytes: 4294967296 } });
+    } catch (e) {
+      caught = e;
+    }
+    expect(caught).toBeInstanceOf(ParseOptionError);
+    expect((caught as ParseOptionError).code).toBe('E_PARSE_OPTION');
+    expect((caught as ParseOptionError).message).toBe(
+      'limits.maxInputBytes must be at most 4294967295 (got 4294967296)'
+    );
+    expect(() => parseGcodeToIR(PROGRAM, { limits: { maxInputBytes: 4294967295 } })).not.toThrow();
+    // the ceiling is specific to maxInputBytes
+    expect(() => parseGcodeToIR(PROGRAM, { limits: { maxSegments: 4294967296 } })).not.toThrow();
+  });
+
   it('names the offending value in the message', () => {
     expect(() => parseGcodeToIR(PROGRAM, { limits: { maxCallDepth: NaN } })).toThrow(
       'limits.maxCallDepth must be a non-negative integer (got NaN)'
