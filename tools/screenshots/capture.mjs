@@ -20,8 +20,10 @@
  */
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
+import { createHash } from 'node:crypto';
 import { existsSync, readFileSync } from 'node:fs';
 import { launchBrowser, savePngDataUrl, encodeWebm } from './lib/browser.mjs';
+import { applyUntilStable, diffApplied, findDuplicateImages } from './lib/stabilize.mjs';
 import { docTheme, VIEW, SCALE, PAL, DOC_BACKGROUND_CSS } from './lib/presentation.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -51,11 +53,31 @@ function expandColor(spec) {
  */
 async function installProbe(page) {
   await page.evaluate(() => {
-    const probe = { last: performance.now(), builds: 0 };
+    const probe = { last: performance.now(), builds: 0, ledger: {} };
     window.__probe = probe;
     window.viewer.preview.onEvent((e) => {
       if (e.type === 'buildComplete') probe.builds++;
       if (e.type === 'buildComplete' || e.type === 'stage') probe.last = performance.now();
+    });
+    // Ledger of the LAST value ANY caller (the Lab's own handlers included) wrote through the public
+    // controls. getState() does not expose colour mode or layer range, so this is how the harness proves
+    // the shot's settings survived the Lab re-applying its own.
+    const c = window.viewer.preview.controls;
+    const clone = (v) => JSON.parse(JSON.stringify(v));
+    const wrap = (method, record) => {
+      const orig = c[method].bind(c);
+      c[method] = (...a) => {
+        record(a);
+        return orig(...a);
+      };
+    };
+    wrap('setColorMode', (a) => (probe.ledger.colorMode = clone(a[0])));
+    wrap('setLayerRange', (a) => (probe.ledger.layerRange = clone(a)));
+    wrap('setTheme', (a) => (probe.ledger.theme = clone(a[0])));
+    wrap('setCameraFov', (a) => (probe.ledger.fov = clone(a[0])));
+    wrap('setBuildVolumeCage', (a) => (probe.ledger.cage = clone(a[0])));
+    wrap('setKindVisible', (a) => {
+      if (a[0] === 'travel') probe.ledger.travel = clone(a[1]);
     });
   });
 }
@@ -118,6 +140,25 @@ function capturePng(page, opts = {}) {
   }, opts);
 }
 
+/**
+ * Hard post-condition before any pixel is captured: the last value the controller received for each
+ * setting must be the shot's, so a Lab re-apply that won the race fails the shot instead of the review.
+ */
+async function assertApplied(page, shot, color, theme) {
+  const { ledger, layers } = await page.evaluate(() => ({
+    ledger: window.__probe.ledger,
+    layers: window.viewer.preview.getState().layerCount
+  }));
+  const expected = { theme, fov: 50, cage: true };
+  if (color) expected.colorMode = color;
+  if (shot.travel !== undefined && shot.travel !== null) expected.travel = shot.travel;
+  if (shot.layerRange === 'mid') expected.layerRange = [0, Math.max(0, Math.round(layers * 0.42))];
+  else if (shot.layerRange === 'low') expected.layerRange = [0, Math.max(0, Math.round(layers * 0.18))];
+  else if (Array.isArray(shot.layerRange)) expected.layerRange = shot.layerRange;
+  const bad = diffApplied(ledger, expected);
+  if (bad.length) throw new Error('settings lost after settle: ' + bad.join('; '));
+}
+
 /** Toolpath renders (the Feature Lab, driven through its published controller). Doc theme is applied LAST. */
 async function driveToolpath(page, shot) {
   await page.goto(BASE + '/', { waitUntil: 'load' });
@@ -128,110 +169,121 @@ async function driveToolpath(page, shot) {
   await loadFixture(page, shot.file);
 
   const color = expandColor(shot.color);
-  await page.evaluate(
-    ({ shot, color }) => {
-      const p = window.viewer.preview;
-      const c = p.controls;
-      const layers = p.getState().layerCount;
-      if (shot.quality) c.setQuality(shot.quality);
-      if (color) c.setColorMode(color);
-      if (shot.travel !== undefined && shot.travel !== null) c.setKindVisible('travel', shot.travel);
-      if (shot.retractions) c.setShowRetractions(true);
-      if (shot.camera) c.setCameraMode(shot.camera);
-      if (shot.frameContent) c.setFrameContent(shot.frameContent);
-      if (shot.bedShape) c.setBuildVolume(shot.bedShape);
-      if (shot.layerRange) {
-        if (shot.layerRange === 'mid') c.setLayerRange(0, Math.max(0, Math.round(layers * 0.42)));
-        else if (shot.layerRange === 'low') c.setLayerRange(0, Math.max(0, Math.round(layers * 0.18)));
-        else if (Array.isArray(shot.layerRange)) c.setLayerRange(shot.layerRange[0], shot.layerRange[1]);
-      }
-    },
-    { shot, color }
-  );
-  await settle(page);
 
-  // Progress overlay, framing, camera, and the doc theme (applied last so it wins).
-  await page.evaluate(
-    ({ shot, color, theme }) => {
-      const p = window.viewer.preview;
-      const c = p.controls;
-      const ir = window.__ir;
-      // The Lab re-applies ITS colour mode + theme on every buildComplete (a rebuild — e.g. the quality
-      // change above — would otherwise clobber ours), so set both again now that the build is quiet.
-      if (color) c.setColorMode(color);
-      c.setTheme(theme);
-      // The Lab starts on its opt-in Studio look (32° lens, cage off). These images show the SDK default
-      // look the docs describe: 50° lens and the build-volume cage on.
-      c.setCameraFov(50);
-      c.setBuildVolumeCage(true);
-      // Place the camera through the public CameraState (position/target in scene coords: printer
-      // (x, y, z) maps to scene (x, z, -y)); zoom and cameraMode are kept from the current state.
-      const place = (position, target) => c.setCameraState({ ...c.getCameraState(), position, target });
-      // Non-rectangular bed (DD-030 D3): auto-fit a round/polygon bed around the
-      // model's XY footprint and frame the bed so the build surface is visible.
-      if (shot.bed) {
-        const b = Number.isFinite(ir.bounds.min.x) ? ir.bounds : ir.boundsWithTravel;
-        const cx = (b.min.x + b.max.x) / 2,
-          cy = (b.min.y + b.max.y) / 2;
-        const ext = Math.max(b.max.x - b.min.x, b.max.y - b.min.y);
-        const size = Math.max(40, ext * (shot.bed.fit || 1.9));
-        const z = Math.max(60, b.max.z + 20);
-        let shape;
-        if (shot.bed.shape === 'circular') {
-          shape = { kind: 'circular', center: { x: cx, y: cy }, diameter: size };
-        } else {
-          const n = shot.bed.sides || 6;
-          const R = size / 2;
-          const pts = [];
-          for (let i = 0; i < n; i++) {
-            const a = Math.PI / 2 + (i * 2 * Math.PI) / n;
-            pts.push({ x: cx + R * Math.cos(a), y: cy + R * Math.sin(a) });
-          }
-          shape = { kind: 'polygon', points: pts };
+  // Every setting, the framing and the doc theme in ONE idempotent pass, repeated until a round fires no
+  // further build. The Lab re-applies ITS colour mode, theme and full layer range on every buildComplete,
+  // and our own calls (quality, colour, theme) can trigger that rebuild, so a single pass is not enough.
+  const theme = docTheme({ withBed: !!shot.withBed });
+  const applyShot = () =>
+    page.evaluate(
+      ({ shot, color, theme }) => {
+        const p = window.viewer.preview;
+        const c = p.controls;
+        const ir = window.__ir;
+        const layers = p.getState().layerCount;
+        // Start the quiet window NOW: a rebuild these calls trigger is asynchronous, so without this a
+        // settle that began before the call could return before the build has even started.
+        window.__probe.last = performance.now();
+        // Calls that rebuild geometry run once per shot (re-running them would rebuild every round and the
+        // loop could never converge). The Lab does not touch them, so they cannot be clobbered; the
+        // idempotent calls below (layer range, colour, theme, lens, cage) re-run every round.
+        const done = (window.__once ??= new Set());
+        const once = (key, fn) => {
+          if (done.has(key)) return;
+          done.add(key);
+          fn();
+        };
+        if (shot.quality) once('quality', () => c.setQuality(shot.quality));
+        if (shot.travel !== undefined && shot.travel !== null)
+          once('travel', () => c.setKindVisible('travel', shot.travel));
+        if (shot.retractions) once('retractions', () => c.setShowRetractions(true));
+        if (shot.camera) once('camera', () => c.setCameraMode(shot.camera));
+        if (shot.frameContent) once('frameContent', () => c.setFrameContent(shot.frameContent));
+        if (shot.bedShape) once('bedShape', () => c.setBuildVolume(shot.bedShape));
+        if (shot.layerRange) {
+          if (shot.layerRange === 'mid') c.setLayerRange(0, Math.max(0, Math.round(layers * 0.42)));
+          else if (shot.layerRange === 'low') c.setLayerRange(0, Math.max(0, Math.round(layers * 0.18)));
+          else if (Array.isArray(shot.layerRange)) c.setLayerRange(shot.layerRange[0], shot.layerRange[1]);
         }
-        c.setBuildVolume({ x: size, y: size, z, min: { x: cx - size / 2, y: cy - size / 2 }, shape });
-        // Frame the whole bed from a steeper, pulled-back 3/4 angle so the bed
-        // OUTLINE (the point of the shot) reads clearly above the model.
-        const t = { x: cx, y: 0, z: -cy };
-        const radius = size * 1.05;
-        place({ x: t.x - radius * 0.7, y: t.y + radius * 1.35, z: t.z + radius * 1.0 }, t);
-        return;
-      }
-      if (shot.progress) {
-        const now = Date.now();
-        const obs =
-          shot.progress === 'byte'
-            ? { v: 1, timestampMs: now, state: 'printing', position: { byte: Math.round(0.55 * window.__fileBytes) } }
-            : {
-                v: 1,
-                timestampMs: now,
-                state: 'printing',
-                position: { layer: Math.round(ir.layers.length * 0.5), totalLayers: ir.layers.length }
-              };
-        p.observeProgress(obs);
-      }
-      if (shot.hideRoles) for (const role of shot.hideRoles) c.setFeatureRoleVisible(role, false);
-      c.frame();
-      if (shot.view) {
-        c.setView(shot.view);
-      } else if (!shot.camera) {
-        // Consistent slightly-lower ~22° 3/4 elevation across perspective shots.
-        // frameContent:'object' frames the printed model (excludes skirt/prime); 'all'/default frames
-        // the whole job. CNC cut moves aren't extrusion → extrude-only bounds can be empty; fall back.
-        const useModel = shot.frameContent === 'object' && Number.isFinite(ir.modelBounds?.min?.x);
-        const b = useModel ? ir.modelBounds : Number.isFinite(ir.bounds.min.x) ? ir.bounds : ir.boundsWithTravel;
-        const cx = (b.min.x + b.max.x) / 2,
-          cy = (b.min.y + b.max.y) / 2,
-          cz = (b.min.z + b.max.z) / 2;
-        const radius = Math.max(10, Math.hypot(b.max.x - cx, b.max.y - cy, b.max.z - cz));
-        const t = { x: cx, y: cz, z: -cy };
-        place({ x: t.x - radius * 1.75, y: t.y + radius * 1.05, z: t.z + radius * 2.05 }, t);
-      }
-    },
-    { shot, color, theme: docTheme({ withBed: !!shot.withBed }) }
-  );
-  await settle(page);
+        if (color) c.setColorMode(color);
+        c.setTheme(theme);
+        // The Lab starts on its opt-in Studio look (32° lens, cage off). These images show the SDK default
+        // look the docs describe: 50° lens and the build-volume cage on.
+        c.setCameraFov(50);
+        c.setBuildVolumeCage(true);
+        // Place the camera through the public CameraState (position/target in scene coords: printer
+        // (x, y, z) maps to scene (x, z, -y)); zoom and cameraMode are kept from the current state.
+        const place = (position, target) => c.setCameraState({ ...c.getCameraState(), position, target });
+        // Non-rectangular bed (DD-030 D3): auto-fit a round/polygon bed around the
+        // model's XY footprint and frame the bed so the build surface is visible.
+        if (shot.bed) {
+          const b = Number.isFinite(ir.bounds.min.x) ? ir.bounds : ir.boundsWithTravel;
+          const cx = (b.min.x + b.max.x) / 2,
+            cy = (b.min.y + b.max.y) / 2;
+          const ext = Math.max(b.max.x - b.min.x, b.max.y - b.min.y);
+          const size = Math.max(40, ext * (shot.bed.fit || 1.9));
+          const z = Math.max(60, b.max.z + 20);
+          let shape;
+          if (shot.bed.shape === 'circular') {
+            shape = { kind: 'circular', center: { x: cx, y: cy }, diameter: size };
+          } else {
+            const n = shot.bed.sides || 6;
+            const R = size / 2;
+            const pts = [];
+            for (let i = 0; i < n; i++) {
+              const a = Math.PI / 2 + (i * 2 * Math.PI) / n;
+              pts.push({ x: cx + R * Math.cos(a), y: cy + R * Math.sin(a) });
+            }
+            shape = { kind: 'polygon', points: pts };
+          }
+          once('bed', () =>
+            c.setBuildVolume({ x: size, y: size, z, min: { x: cx - size / 2, y: cy - size / 2 }, shape })
+          );
+          // Frame the whole bed from a steeper, pulled-back 3/4 angle so the bed
+          // OUTLINE (the point of the shot) reads clearly above the model.
+          const t = { x: cx, y: 0, z: -cy };
+          const radius = size * 1.05;
+          place({ x: t.x - radius * 0.7, y: t.y + radius * 1.35, z: t.z + radius * 1.0 }, t);
+          return;
+        }
+        if (shot.progress) {
+          const now = Date.now();
+          const obs =
+            shot.progress === 'byte'
+              ? { v: 1, timestampMs: now, state: 'printing', position: { byte: Math.round(0.55 * window.__fileBytes) } }
+              : {
+                  v: 1,
+                  timestampMs: now,
+                  state: 'printing',
+                  position: { layer: Math.round(ir.layers.length * 0.5), totalLayers: ir.layers.length }
+                };
+          once('progress', () => p.observeProgress(obs));
+        }
+        if (shot.hideRoles)
+          once('hideRoles', () => shot.hideRoles.forEach((role) => c.setFeatureRoleVisible(role, false)));
+        c.frame();
+        if (shot.view) {
+          c.setView(shot.view);
+        } else if (!shot.camera) {
+          // Consistent slightly-lower ~22° 3/4 elevation across perspective shots.
+          // frameContent:'object' frames the printed model (excludes skirt/prime); 'all'/default frames
+          // the whole job. CNC cut moves aren't extrusion → extrude-only bounds can be empty; fall back.
+          const useModel = shot.frameContent === 'object' && Number.isFinite(ir.modelBounds?.min?.x);
+          const b = useModel ? ir.modelBounds : Number.isFinite(ir.bounds.min.x) ? ir.bounds : ir.boundsWithTravel;
+          const cx = (b.min.x + b.max.x) / 2,
+            cy = (b.min.y + b.max.y) / 2,
+            cz = (b.min.z + b.max.z) / 2;
+          const radius = Math.max(10, Math.hypot(b.max.x - cx, b.max.y - cy, b.max.z - cz));
+          const t = { x: cx, y: cz, z: -cy };
+          place({ x: t.x - radius * 1.75, y: t.y + radius * 1.05, z: t.z + radius * 2.05 }, t);
+        }
+      },
+      { shot, color, theme }
+    );
+  const builds = () => page.evaluate(() => window.__probe.builds);
+  await applyUntilStable({ apply: applyShot, builds, settle: () => settle(page) });
   await page.waitForTimeout(300);
+  await assertApplied(page, shot, color, theme);
 
   // Animation: sweep a temporal control across frames and encode a looping WebM.
   // The camera + theme set above stay fixed; only the draw-range changes. Frames
@@ -390,6 +442,8 @@ console.log('chromium:', executablePath);
 const page = await browser.newPage({ viewport: VIEW, deviceScaleFactor: SCALE });
 page.on('pageerror', (e) => console.log('  [pageerror]', e.message));
 
+const rendered = [];
+let failed = 0;
 for (const shot of shots) {
   process.stdout.write(`• ${shot.name} (${shot.page}) … `);
   try {
@@ -398,9 +452,20 @@ for (const shot of shots) {
     else if (shot.page === 'model') await driveModel(page, shot);
     else throw new Error('unknown page: ' + shot.page);
     console.log('saved');
+    if (shot.output !== 'webm') {
+      const hash = createHash('sha256')
+        .update(readFileSync(resolve(MEDIA, shot.name + '.png')))
+        .digest('hex');
+      rendered.push({ name: shot.name, hash });
+    }
   } catch (e) {
+    failed++;
     console.log('FAILED:', e.message.split('\n')[0]);
   }
 }
 await browser.close();
+// Two different shots must never render the same pixels: that means a setting was lost.
+const dupes = findDuplicateImages(rendered);
+for (const group of dupes) console.error('DUPLICATE IMAGES (byte-identical):', group.join(', '));
+if (failed || dupes.length) process.exitCode = 1;
 console.log('done');

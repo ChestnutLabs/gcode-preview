@@ -30,6 +30,7 @@
       "class": "feature-proof",
       "file": "gcodes/calicat.gcode",
       "quality": "tubes",
+      "travel": true,
       "color": { "mode": "feedrate", "fallback": [0.55, 0.6, 0.62] },
       "caption": "Color by feedrate: blue at slow moves ramping to red at fast moves.",
       "alt": "The calicat model colored by feedrate, from blue at slow moves to red at fast moves"

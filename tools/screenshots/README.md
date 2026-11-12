@@ -117,9 +117,19 @@ locally with `node tools/docs/serve-site.mjs` (`:5098`).
   renderer or simulator reach-ins.
 - **Readiness** is the controller's own signal, not status text: `getState()` reports not parsing with
   segments and `getRenderStats()` is populated, and no `buildComplete` / `stage` event has fired for
-  0.8 s. The Lab re-applies its own colour mode and theme on every `buildComplete`, so the harness
-  re-applies the shot's colour, the doc theme, the 50° lens and the cage after the build is quiet (the
-  Lab itself starts on the opt-in Studio look; these images show the SDK default look).
+  0.8 s. The quiet window restarts whenever the harness applies settings, because a rebuild they trigger is
+  asynchronous.
+- **Settings are applied until stable, then proven.** The Lab re-applies its own colour mode, theme and full
+  layer range on every `buildComplete`, and the harness's own calls can trigger that rebuild. So the harness
+  applies every setting, settles, and repeats until a whole round fires no further build (bounded at 6 rounds,
+  then the shot fails). Geometry-rebuilding calls (quality, travel, bed, retractions…) run once per shot so the
+  loop can converge. `getState()` does not expose colour mode or layer range, so the harness records the last
+  value any caller wrote through the public controls and fails the shot if it differs from the shot's (colour,
+  theme, lens, cage, travel, layer range) before capturing. Lab-default look (Studio) is replaced by the SDK
+  default look: 50° lens, cage on.
+- **Duplicate guard:** if two different shots produce byte-identical PNGs the run exits non-zero, because a
+  setting was lost. Any failed shot also exits non-zero. The loop, the check and the duplicate finder live in
+  `lib/stabilize.mjs` (unit-tested by `tools/screenshots-stabilize.test.mjs`).
 - The image is `controls.capture()` at 2x the viewport's CSS size, so no canvas copy is needed.
   Animated shots capture each frame the same way. The full-page and diagnostics recipes are gone: the
   app-UI shots belong to `capture-app.mjs`.
