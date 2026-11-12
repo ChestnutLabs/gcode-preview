@@ -2,7 +2,7 @@
 
 Regenerates the screenshots in `docs/media/` used by the root README, the GitHub Pages site, and
 the manual. **Every image is a real render of a real file from the tracked MIT demo corpus**,
-produced by driving the actual `tools/demo` app with a headless browser — nothing is mocked or
+produced by driving the actual `tools/demo` Feature Lab with a headless browser — nothing is mocked or
 hand-edited. Regenerate whenever visible rendering behavior changes (see
 [`docs/USER_FACING_DOCS_STYLE.md`](../../docs/USER_FACING_DOCS_STYLE.md) §8 and the
 [Visual Feature Coverage Matrix](../../docs/VISUAL_FEATURE_COVERAGE.md)).
@@ -16,7 +16,7 @@ environment people associate with slicers/CAM tools.
 
 This is a **documentation/showcase setting, not a library default.** The renderer still ships a
 transparent/unset background (`DEFAULT_THEME.background === null`) and consumers keep full control of
-their own theme. The harness simply applies the doc theme via the public `renderer.setTheme(...)`
+their own theme. The harness simply applies the doc theme via the public `controls.setTheme(...)`
 before each capture. Intentional exceptions (transparency, dark/light themes, custom or independent
 capture backgrounds) are captured deliberately as their own shots.
 
@@ -28,9 +28,9 @@ place. Add or adjust a shot there; keep the caption/alt honest about what the im
 
 | Field | Meaning |
 |---|---|
-| `page` | `toolpath` (main demo), `canvas2d` (`2d.html`), `model` (`model.html`) |
+| `page` | `toolpath` (Feature Lab), `canvas2d` (`2d.html`), `model` (`model.html`) |
 | `class` | `showcase` (clean, README/homepage) or `feature-proof` (controls/legends/comparisons) |
-| `file` | corpus path served by the demo (`gcodes/…`, `fixtures/…`) |
+| `file` | corpus path under `test-data/`, served by the demo (`gcodes/…`, `fixtures/…`); checked before the browser launches |
 | `quality`, `color`, `layerRange`, `camera`, `view`, `progress`, `retractions`, `travel`, `frameContent`, `bedShape`, `withBed` | render parameters (see the runner for the full set) |
 | `caption`, `alt` | documentation text — must pass the §8 "recognize the feature without the caption" test |
 
@@ -111,15 +111,18 @@ locally with `node tools/docs/serve-site.mjs` (`:5098`).
 
 ## How it works (and why)
 
-- For each shot it navigates to the right page, selects the corpus file, parses, applies the shot's
-  parameters via the demo's debug handle (`window.viewer.renderer`), applies the doc theme **last**
-  so it wins, waits for `buildComplete` so it never captures a half-built model, frames with a
-  consistent slightly-lower 3/4 camera, and renders.
-- For canvas shots it copies the WebGL backing store into a 2D canvas and reads a PNG — the same
-  deterministic technique as the repo's VR harness (`tools/demo/src/vr.js`), which avoids the
-  compositor stall a live rAF loop causes for a full-page screenshot under headless SwiftShader. The
-  one full-page shot (`app-control-panel`) freezes the GL frame into a static `<img>` first, then
-  screenshots the DOM (real sidebar + frozen render).
+- Toolpath shots use only the published controller the Feature Lab itself uses
+  (`window.viewer.preview`): it fetches the corpus file and `parse()`s it, applies the shot's parameters
+  with `controls.*`, and frames the camera through `getCameraState()` / `setCameraState()`. There are no
+  renderer or simulator reach-ins.
+- **Readiness** is the controller's own signal, not status text: `getState()` reports not parsing with
+  segments and `getRenderStats()` is populated, and no `buildComplete` / `stage` event has fired for
+  0.8 s. The Lab re-applies its own colour mode and theme on every `buildComplete`, so the harness
+  re-applies the shot's colour, the doc theme, the 50° lens and the cage after the build is quiet (the
+  Lab itself starts on the opt-in Studio look; these images show the SDK default look).
+- The image is `controls.capture()` at 2x the viewport's CSS size, so no canvas copy is needed.
+  Animated shots capture each frame the same way. The full-page and diagnostics recipes are gone: the
+  app-UI shots belong to `capture-app.mjs`.
 - CNC/laser files have no extrusion, so their extrude-only bounds are empty — the harness frames
   them from travel-inclusive bounds instead.
 
