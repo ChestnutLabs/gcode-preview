@@ -440,3 +440,83 @@ export function runBehavioralSuite(name: string, api: TestApi, harness: AdapterH
     });
   });
 }
+
+/**
+ * What every adapter's COMPONENT must expose to {@link runComponentConformanceSuite} (#502).
+ * The behavioral suite drives hooks/controllers; this one mounts the component itself, so
+ * event → callback wiring (props, emits, dispatched/DOM events) is covered on every adapter.
+ */
+export interface ComponentHarness {
+  /** Mount the adapter's component, wired to a SuiteStubWorker + stub GL, with these callbacks bound in its own idiom. */
+  mount(callbacks: {
+    onBuildComplete: (segments: number) => void;
+    onDisclosure: (text: string) => void;
+  }): Promise<MountedComponent> | MountedComponent;
+}
+
+export interface MountedComponent {
+  /**
+   * Emit a `buildComplete` from the component's bound renderer (`raw.renderer().emit(...)`), inside the
+   * framework's update scope. This is the decimation seam: real decimation needs over 2M segments, and the
+   * controller derives its disclosure from the event's `decimationApplied`.
+   */
+  emitBuild(decimationApplied: number, segments: number): Promise<void> | void;
+  /** Let microtask round-trips + framework effects settle. */
+  settle(): Promise<void>;
+  unmount(): Promise<void> | void;
+}
+
+/** Emit `buildComplete` from a bound renderer; for {@link MountedComponent.emitBuild} implementations. */
+export function emitSuiteBuild(renderer: unknown, decimationApplied: number, segments: number): void {
+  if (renderer === null || renderer === undefined) throw new Error('emitSuiteBuild: renderer not bound');
+  (renderer as { emit(e: unknown): void }).emit({
+    type: 'buildComplete',
+    segments,
+    decimationApplied,
+    travelHidden: true,
+    quality: 'lines'
+  });
+}
+
+/** Component-level callback conformance every adapter must pass (#502). */
+export function runComponentConformanceSuite(name: string, api: TestApi, harness: ComponentHarness): void {
+  const { describe, it, expect } = api;
+  describe(`component conformance — ${name}`, () => {
+    it('the disclosure callback reports the CURRENT build, after build-complete (#430)', async () => {
+      const log: string[] = [];
+      const m = await harness.mount({
+        onBuildComplete: (segments) => log.push(`build ${segments}`),
+        onDisclosure: (text) => log.push(`disclosure ${text}`)
+      });
+      await m.settle();
+      expect(JSON.stringify(log)).toBe('[]');
+
+      // First build: the new text, not ''.
+      await m.emitBuild(3, 9);
+      await m.settle();
+      expect(JSON.stringify(log)).toBe(
+        JSON.stringify([
+          'build 9',
+          'disclosure Showing every 3rd extrusion segment (layer boundaries kept); travel hidden. 9 segments drawn.'
+        ])
+      );
+
+      // Next build with a different disclosure: the new text, not the previous build's.
+      await m.emitBuild(2, 7);
+      await m.settle();
+      expect(JSON.stringify(log.slice(2))).toBe(
+        JSON.stringify([
+          'build 7',
+          'disclosure Showing every 2nd extrusion segment (layer boundaries kept); travel hidden. 7 segments drawn.'
+        ])
+      );
+
+      // An undecimated build clears it, again without lagging a build behind.
+      await m.emitBuild(1, 12);
+      await m.settle();
+      expect(JSON.stringify(log.slice(4))).toBe(JSON.stringify(['build 12', 'disclosure ']));
+
+      await m.unmount();
+    });
+  });
+}
