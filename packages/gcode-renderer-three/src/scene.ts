@@ -44,6 +44,7 @@ import {
 } from 'three';
 import type { FeatureRoleValue, MachineGeometry, MappedProgress, ToolpathIR } from '@chestnutlabs/toolpath-core';
 import { autoDecimation, buildChunks, type ChunkBuildResult, type GeometryChunk } from './chunks.js';
+import { checkColorMode } from '@chestnutlabs/gcode-colors';
 import { buildChunkColors, type ColorMode } from './colors.js';
 import { computeDrawState, computeOverlayDrawStates } from './ranges.js';
 import { createBuildVolume, disposeBuildVolume, type BuildVolumeDef, type BuildVolumeStyle } from './build-volume.js';
@@ -92,6 +93,13 @@ export type QualityMode = 'lines' | 'tubes';
  *     supplies its own loading/progress treatment until the final build is revealed.
  */
 export type ProgressivePreview = 'auto' | 'lines' | 'hold' | 'off';
+
+/** `progressivePreview` must be exactly one of the four modes; anything else would silently act like `'hold'`. */
+function checkProgressivePreview(mode: unknown): asserts mode is ProgressivePreview {
+  if (mode !== 'auto' && mode !== 'lines' && mode !== 'hold' && mode !== 'off') {
+    throw new RangeError(`progressivePreview must be 'auto', 'lines', 'hold' or 'off' (got ${String(mode)})`);
+  }
+}
 
 // Camera types + the preset-view table live in the shared interactive stage (DD-021 Phase 0);
 // re-exported here so existing import paths (index re-exports them from './scene.js') keep working.
@@ -471,6 +479,8 @@ export class ToolpathRenderer {
     // a build later (an Infinity cross-section used to loop forever in tubeRadialForBudget).
     checkTubeOptions(opts.tube);
     checkBudgetOptions(opts);
+    if (opts.progressivePreview !== undefined) checkProgressivePreview(opts.progressivePreview);
+    if (opts.colorMode !== undefined) checkColorMode(opts.colorMode);
     this.chunksPerTick = opts.chunksPerTick;
     this.renderDuringBuild = opts.renderDuringBuild ?? true;
     this.colorMode = opts.colorMode ?? DEFAULT_COLOR;
@@ -1599,17 +1609,18 @@ export class ToolpathRenderer {
    * synchronously before control returns to the event loop, so no intermediate frame is ever painted.
    */
   async capture(opts?: CaptureOptions): Promise<Blob> {
-    const hideVolume = opts?.includeBuildVolume === false && this.volumeGroup !== null;
-    const prevVisible = this.volumeGroup?.visible ?? true;
-    if (hideVolume) this.volumeGroup!.visible = false;
-    try {
-      return await this.stage.capture(opts);
-    } finally {
-      if (hideVolume) {
-        this.volumeGroup!.visible = prevVisible;
-        this.render();
-      }
-    }
+    const group = this.volumeGroup;
+    if (opts?.includeBuildVolume !== false || group === null) return this.stage.capture(opts);
+    // The stage applies this around its synchronous render-to-target only (and undoes it before its live
+    // repaint), so the hidden volume never spans the async encode: an interleaved live frame or a second
+    // overlapping capture would otherwise see (and "restore" to) the hidden state.
+    return this.stage.capture(opts, () => {
+      const prevVisible = group.visible;
+      group.visible = false;
+      return () => {
+        group.visible = prevVisible;
+      };
+    });
   }
 
   /**
@@ -1656,9 +1667,11 @@ export class ToolpathRenderer {
 
   /**
    * Switch color mode (attribute rewrite, no geometry rebuild — §4.6). Returns
-   * false (and emits an error event) when the mode is capability-gated off.
+   * false (and emits an error event) when the mode is capability-gated off. Throws a `RangeError` for an
+   * invalid mode (see `checkColorMode`); the previous mode stays in effect.
    */
   setColorMode(mode: ColorMode): boolean {
+    checkColorMode(mode);
     if (!this.isColorModeAvailable(mode.mode)) {
       this.emit({
         type: 'error',
@@ -2003,6 +2016,7 @@ export class ToolpathRenderer {
    * preview during the NEXT parse; no effect on an already-built scene, so no rebuild.
    */
   setProgressivePreview(mode: ProgressivePreview): void {
+    checkProgressivePreview(mode);
     if (this.disposed) return;
     this.progressivePreview = mode;
   }

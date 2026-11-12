@@ -73,8 +73,8 @@ export { probeGpuInfo, UNKNOWN_GPU_INFO } from './render-stats.js';
 export type { RenderStats, GpuInfo } from './render-stats.js';
 export { GeometryWorkerPool, resolvePoolSize, createBrowserGeometryWorker } from './geometry-pool.js';
 export type { GeometryWorkerLike } from './geometry-pool.js';
-export { handleGeometryRequest } from './geometry-worker-core.js';
-export type { GeometryBuildRequest, GeometryBuildResponse } from './geometry-worker-core.js';
+export { handleGeometryRequest, handleGeometryMessage } from './geometry-worker-core.js';
+export type { GeometryBuildRequest, GeometryBuildResponse, GeometryBuildError } from './geometry-worker-core.js';
 export { classifyRenderer, detectRenderCapability, resolveCapability } from './capability.js';
 export type {
   RenderCapability,
