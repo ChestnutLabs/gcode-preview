@@ -87,10 +87,9 @@ and are attributes or properties on the Web Component (see the Web Component not
 **Machine & progress** — `buildVolume` · `progress`
 
 A `Uint8Array` or `ArrayBuffer` given as `source` (or to `controls.parse`) is handed to the parse
-worker without copying, so that buffer is empty afterwards. In React, Vue, and the Web Component,
-changing `parseOptions` alone does not re-parse; Svelte, whose reactive block also tracks
-`parseOptions`, does re-parse when it changes. Either way, to parse the same file again — for example a
-different plate — set a new `source` that is a fresh copy (`bytes.slice()`), or call
+worker without copying, so that buffer is empty afterwards. In every adapter, changing `parseOptions`
+alone does not re-parse: the next parse uses the current `parseOptions`. To parse the same file again —
+for example a different plate — set a new `source` that is a fresh copy (`bytes.slice()`), or call
 `controls.parse(bytes.slice(), { plate: 1 })`. Passing the
 already-used buffer fails with `E_POST_FAILED`, and the preview keeps working. A `File` source can
 be re-parsed as-is.

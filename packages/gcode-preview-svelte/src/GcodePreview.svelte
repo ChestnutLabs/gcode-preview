@@ -158,9 +158,15 @@
   // ---- prop wiring: each prop is a thin reactive call into the handle (D1 shell rule) ----
   // buildVolume must be reactive too (#274) — matching Vue's watch and React's useEffect. A machine
   // geometry is (re)applied via the handle; a plain BuildVolumeDef is an init-time renderer option
-  // (above) that a post-mount change re-applies here as well.
+  // (above) that a post-mount change re-applies here as well (React and Vue do the same).
   $: if (buildVolume !== undefined) preview.controls.setBuildVolume(buildVolume);
-  $: if (source !== null && source !== undefined) void preview.parse(source, parseOptions);
+  // Only `source` re-parses. `parseOptions` is read inside the function, so the `$:` block does not track it:
+  // an inline `parseOptions={{ ... }}` is a new object every render and must not re-parse an unchanged file
+  // (React reads it from a ref and Vue untracked, so all three adapters agree). #435.
+  function parseSource(bytes) {
+    void preview.parse(bytes, parseOptions);
+  }
+  $: if (source !== null && source !== undefined) parseSource(source);
   $: if (layerRange === null || layerRange === undefined) preview.controls.setLayerRange(0, Number.POSITIVE_INFINITY);
   else preview.controls.setLayerRange(layerRange[0], layerRange[1]);
   $: preview.controls.setScrubPosition(scrub ?? null);

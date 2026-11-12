@@ -135,6 +135,36 @@ export function registerCompat({ describe, it, expect, svelte, compiler, expecte
       target.remove();
     });
 
+    it('a new parseOptions object with an unchanged source does not re-parse; a changed source does (#435)', async () => {
+      const ready = [];
+      const parseCalls = [];
+      const source = new Uint8Array(1_000);
+      const { target, handle } = mountPreview({ source }, { ready: (e) => ready.push(e.detail) });
+      await settle();
+      expect(ready.length).toBe(1);
+      const preview = handle.instance.preview;
+      const parse = preview.parse;
+      // Count parse calls on the live handle's controller path: the component calls `preview.parse`.
+      preview.parse = (...args) => {
+        parseCalls.push(args[1]);
+        return parse(...args);
+      };
+      handle.setProps({ parseOptions: { maxSegments: 5 } });
+      await settle();
+      handle.setProps({ parseOptions: { maxSegments: 5 } });
+      await settle();
+      expect(parseCalls.length).toBe(0);
+      expect(ready.length).toBe(1);
+      // A changed source re-parses, with the CURRENT parseOptions (not a stale one).
+      handle.setProps({ source: new Uint8Array(2_000) });
+      await settle();
+      expect(parseCalls.length).toBe(1);
+      expect(JSON.stringify(parseCalls[0])).toBe('{"maxSegments":5}');
+      expect(ready.length).toBe(2);
+      handle.destroy();
+      target.remove();
+    });
+
     it('exposes the preview handle and its state reflects the parse', async () => {
       const { target, handle } = mountPreview({ source: new Uint8Array(1_000) });
       await settle();

@@ -78,6 +78,8 @@ preview.raw.session; preview.raw.renderer();// escape hatches (non-reactive)
 The composable owns the sharp edges: dispose-on-unmount/HMR, SSR-import safety, canvas resize
 (ResizeObserver + fallback), and a strict reactivity boundary (toolpath buffers are never proxied).
 
+Invalid numbers throw a `RangeError`, and a control the renderer rejects surfaces as an `error` with code `E_CONTROL_REJECTED`; both are described in [Adapters](../../docs/manual/adapters.md).
+
 ## Workers: default and custom (both first-class)
 
 **Default (zero setup):** the batteries worker — all supported slicer/firmware dialect adapters

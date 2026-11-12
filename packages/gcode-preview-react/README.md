@@ -54,6 +54,8 @@ function CustomViewer() {
 }
 ```
 
+Invalid numbers throw a `RangeError`, and a control the renderer rejects surfaces as an `error` with code `E_CONTROL_REJECTED`; both are described in [Adapters](../../docs/manual/adapters.md).
+
 ## Workers
 
 The batteries default (all dialect adapters + `.gcode.3mf`) needs zero setup under Vite; pass
