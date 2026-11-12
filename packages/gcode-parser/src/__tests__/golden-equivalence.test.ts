@@ -86,32 +86,35 @@ function fnv1a(view: ArrayBufferView): string {
 
 describe('native parser vs adapter goldens (#28 gate)', () => {
   for (const fixture of equivalenceFixtures) {
-    it.skipIf(INTENTIONAL_MOTION_CORRECTION.has(fixture.id) || ARC_MISSING_OFFSET_CORRECTION.has(fixture.id))(`geometry-equivalent for ${fixture.id}`, () => {
-      const golden = JSON.parse(readFileSync(join(goldenDir, `${fixture.id}.json`), 'utf8'));
-      const text = readFileSync(join(repoRoot, fixture.path), 'utf8');
-      const { ir } = parseGcodeToIR(text, { sourceId: fixture.id, parserVersion: 'golden' });
-      const s = ir.segments;
+    it.skipIf(INTENTIONAL_MOTION_CORRECTION.has(fixture.id) || ARC_MISSING_OFFSET_CORRECTION.has(fixture.id))(
+      `geometry-equivalent for ${fixture.id}`,
+      () => {
+        const golden = JSON.parse(readFileSync(join(goldenDir, `${fixture.id}.json`), 'utf8'));
+        const text = readFileSync(join(repoRoot, fixture.path), 'utf8');
+        const { ir } = parseGcodeToIR(text, { sourceId: fixture.id, parserVersion: 'golden' });
+        const s = ir.segments;
 
-      expect(s.count).toBe(golden.segmentCount);
-      // Exact-position equivalence: identical float math → identical bits.
-      expect(fnv1a(s.x0)).toBe(golden.bufferDigests.x0);
-      expect(fnv1a(s.y0)).toBe(golden.bufferDigests.y0);
-      expect(fnv1a(s.z0)).toBe(golden.bufferDigests.z0);
-      expect(fnv1a(s.x1)).toBe(golden.bufferDigests.x1);
-      expect(fnv1a(s.y1)).toBe(golden.bufferDigests.y1);
-      expect(fnv1a(s.z1)).toBe(golden.bufferDigests.z1);
-      expect(fnv1a(s.tool)).toBe(golden.bufferDigests.tool);
-      expect(fnv1a(s.layer)).toBe(golden.bufferDigests.layer);
-      // Kind masked to the bits the adapter could know (Extrude|Travel).
-      const masked = new Uint8Array(s.count);
-      const mask = MoveKind.Extrude | MoveKind.Travel;
-      for (let i = 0; i < s.count; i++) masked[i] = s.kind[i] & mask;
-      if (!ARC_RETRACT_KIND_CORRECTION.has(fixture.id)) expect(fnv1a(masked)).toBe(golden.bufferDigests.kind);
-      // Same floating origin.
-      expect(ir.header.originOffset.x).toBeCloseTo(golden.originOffset.x, 3);
-      expect(ir.header.originOffset.y).toBeCloseTo(golden.originOffset.y, 3);
-      expect(ir.header.originOffset.z).toBeCloseTo(golden.originOffset.z, 3);
-    });
+        expect(s.count).toBe(golden.segmentCount);
+        // Exact-position equivalence: identical float math → identical bits.
+        expect(fnv1a(s.x0)).toBe(golden.bufferDigests.x0);
+        expect(fnv1a(s.y0)).toBe(golden.bufferDigests.y0);
+        expect(fnv1a(s.z0)).toBe(golden.bufferDigests.z0);
+        expect(fnv1a(s.x1)).toBe(golden.bufferDigests.x1);
+        expect(fnv1a(s.y1)).toBe(golden.bufferDigests.y1);
+        expect(fnv1a(s.z1)).toBe(golden.bufferDigests.z1);
+        expect(fnv1a(s.tool)).toBe(golden.bufferDigests.tool);
+        expect(fnv1a(s.layer)).toBe(golden.bufferDigests.layer);
+        // Kind masked to the bits the adapter could know (Extrude|Travel).
+        const masked = new Uint8Array(s.count);
+        const mask = MoveKind.Extrude | MoveKind.Travel;
+        for (let i = 0; i < s.count; i++) masked[i] = s.kind[i] & mask;
+        if (!ARC_RETRACT_KIND_CORRECTION.has(fixture.id)) expect(fnv1a(masked)).toBe(golden.bufferDigests.kind);
+        // Same floating origin.
+        expect(ir.header.originOffset.x).toBeCloseTo(golden.originOffset.x, 3);
+        expect(ir.header.originOffset.y).toBeCloseTo(golden.originOffset.y, 3);
+        expect(ir.header.originOffset.z).toBeCloseTo(golden.originOffset.z, 3);
+      }
+    );
 
     it(`stores no non-finite coordinate for ${fixture.id} (#522)`, () => {
       const text = readFileSync(join(repoRoot, fixture.path), 'utf8');
