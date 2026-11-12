@@ -35,6 +35,7 @@ runBehavioralSuite(
         chunksPerTick: 8
       };
       if (opts.consumerVolume === true) el.buildVolume = { x: 220, y: 220, z: 250 };
+      if (opts.renderer === '2d') el.renderer = '2d'; // read by connectedCallback (construction-time)
       document.body.appendChild(el); // connectedCallback creates the controller + binds synchronously
 
       const instance: AdapterInstance = {

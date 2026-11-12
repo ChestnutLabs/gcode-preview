@@ -20,11 +20,12 @@ const settle = async (): Promise<void> => {
   for (let i = 0; i < 4; i++) await new Promise((r) => setTimeout(r, 0));
 };
 
-function makeController(opts: { machine?: MachineGeometry; consumerVolume?: boolean } = {}) {
+function makeController(opts: { machine?: MachineGeometry; consumerVolume?: boolean; renderer?: '2d' } = {}) {
   const canvas = document.createElement('canvas');
   const controller = createPreviewController({
     createWorker: () => new SuiteStubWorker(opts.machine),
     renderer: {
+      mode: opts.renderer ?? '3d',
       buildVolume: opts.consumerVolume === true ? { x: 220, y: 220, z: 250 } : undefined,
       quality: 'lines',
       chunksPerTick: 8,

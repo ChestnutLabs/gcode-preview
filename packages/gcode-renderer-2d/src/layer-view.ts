@@ -476,6 +476,31 @@ export interface LayerView2DOptions {
 const DEFAULT_COLOR_MODE: ColorMode = { mode: 'single', color: [0.55, 0.72, 0.55] };
 
 /**
+ * Consumer-option checks (RangeError, the option keeps its previous value). `undefined` means "use the
+ * default" and is never passed here. `adjacentLayers` keeps its documented floor: any negative count draws
+ * no ghosts and `Infinity` draws every layer below, so only NaN is meaningless.
+ */
+function checkAdjacentLayers(n: number): void {
+  if (Number.isNaN(n)) throw new RangeError(`LayerView2D: adjacentLayers must be a number (got ${n}).`);
+}
+
+function checkGhostOpacity(v: number): void {
+  if (!(v >= 0 && v <= 1)) throw new RangeError(`LayerView2D: ghostOpacity must be in [0, 1] (got ${v}).`);
+}
+
+function checkLineWidth(v: number): void {
+  if (!(Number.isFinite(v) && v > 0)) {
+    throw new RangeError(`LayerView2D: lineWidth must be a finite number > 0 (got ${v}).`);
+  }
+}
+
+function checkPadding(v: number): void {
+  if (!(Number.isFinite(v) && v >= 0)) {
+    throw new RangeError(`LayerView2D: padding must be a finite number >= 0 (got ${v}).`);
+  }
+}
+
+/**
  * A thin lifecycle wrapper binding a `ToolpathIR` to a `<canvas>`: pick a layer, pick a color
  * mode, `render()`. It owns no WebGL context and holds no per-layer geometry — each `render()`
  * clears and redraws the active layer (plus its dimmed "ghost" layers), so peak memory stays near
@@ -499,26 +524,38 @@ export class LayerView2D {
     private readonly canvas: HTMLCanvasElement,
     opts: LayerView2DOptions = {}
   ) {
-    // Validate before storing: a bad mode throws here, never later from render().
+    // Validate before storing: a bad option throws here, never later from render().
     if (opts.colorMode !== undefined) checkColorMode(opts.colorMode);
-    this.layer = opts.layer ?? 0;
+    if (opts.lineWidth !== undefined) checkLineWidth(opts.lineWidth);
+    if (opts.padding !== undefined) checkPadding(opts.padding);
+    if (opts.adjacentLayers !== undefined) checkAdjacentLayers(opts.adjacentLayers);
+    if (opts.ghostOpacity !== undefined) checkGhostOpacity(opts.ghostOpacity);
+    this.layer = 0;
+    if (opts.layer !== undefined) this.setLayer(opts.layer);
     this.colorMode = opts.colorMode ?? DEFAULT_COLOR_MODE;
     this.lineWidth = opts.lineWidth ?? 1;
     this.travel = opts.travel ?? false;
     this.padding = opts.padding ?? 8;
-    this.adjacentLayers = opts.adjacentLayers ?? 1; // normalized by drawLayers
+    this.adjacentLayers = opts.adjacentLayers ?? 1; // floored by drawLayers
     this.ghostOpacity = opts.ghostOpacity ?? 0.25;
   }
 
   setToolpath(ir: ToolpathIR | null): void {
     this.ir = ir;
     // Cache the stable whole-model frame once (a scan is O(segments); render() stays layer-bounded).
+    // The requested layer is kept as is: render() clamps it to this toolpath's last layer, so a request
+    // past the end (an `Infinity` "show all" included) still means the top layer of the next toolpath.
     this.bounds = ir ? modelBounds2D(ir) : { minX: 0, minY: 0, maxX: 0, maxY: 0, hasContent: false };
-    if (ir && this.layer > ir.layers.length - 1) this.layer = Math.max(0, ir.layers.length - 1);
   }
 
+  /**
+   * Select the active layer. Fractions are floored, a negative index selects layer 0, and an index past
+   * the last layer (`Infinity` included) selects the top layer at render time. NaN is ignored (the current
+   * layer stays), like any other imperative control fed a meaningless value.
+   */
   setLayer(layer: number): void {
-    this.layer = layer < 0 ? 0 : layer;
+    if (Number.isNaN(layer)) return;
+    this.layer = layer < 0 ? 0 : Math.floor(layer);
   }
 
   /** Throws a `RangeError` for an invalid mode (see `checkColorMode`); the previous mode stays in effect. */
@@ -527,8 +564,12 @@ export class LayerView2D {
     this.colorMode = colorMode;
   }
 
-  /** Number of preceding ghost layers drawn beneath the active one (floored; ≤ 0 draws none). */
+  /**
+   * Number of preceding ghost layers drawn beneath the active one (floored; ≤ 0 draws none). Throws a
+   * `RangeError` for NaN; the previous count stays in effect.
+   */
   setAdjacentLayers(n: number): void {
+    checkAdjacentLayers(n);
     this.adjacentLayers = n;
   }
 
@@ -558,8 +599,10 @@ export class LayerView2D {
   /** Clear and redraw the active layer + ghosts. Returns the draw result (drawn:false when empty). */
   render(): DrawLayersResult {
     const ctx = this.canvas.getContext('2d');
+    // The effective layer: the request clamped to this toolpath's last layer (0 with no toolpath).
+    const layer = Math.min(this.layer, Math.max(0, this.layerCount - 1));
     const empty: DrawLayersResult = {
-      layer: this.layer,
+      layer,
       layerCount: this.layerCount,
       ghostLayers: [],
       extrudeDrawn: 0,
@@ -572,7 +615,7 @@ export class LayerView2D {
     if (!this.ir) return empty;
     const fit = computeLayerFit(this.bounds, this.canvas.width, this.canvas.height, this.padding);
     return drawLayers(ctx, this.ir, {
-      layer: this.layer,
+      layer,
       adjacentLayers: this.adjacentLayers,
       colorMode: this.colorMode,
       fit,

@@ -40,6 +40,7 @@ runBehavioralSuite(
       const options: UseGcodePreviewOptions = {
         createWorker: () => new SuiteStubWorker(opts.machine),
         renderer: {
+          mode: opts.renderer ?? '3d',
           buildVolume: opts.consumerVolume === true ? { x: 220, y: 220, z: 250 } : undefined,
           quality: 'lines',
           chunksPerTick: 8,
