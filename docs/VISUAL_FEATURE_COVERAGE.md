@@ -210,6 +210,7 @@ are now closed:
 | Renderer build stages (`stage` event) | ✅ | ❌ | — | ✅ (prose) | gallery | concept-workers | needs animation |
 | Interaction-aware quality | ✅ | ❌ | — | ✅ (prose) | gallery | concept-workers | needs animation |
 | Disclosed decimation / degradation | ✅ | ✅ (disclosure) | — | ✅ (prose) | gallery | concept-workers | needs screenshot (disclosure text) |
+| 2D unsupported-setting notice (`renderer-unsupported` event, #520) | ✅ | ❌ (Feature Lab is 3D-only) | — | — | — | adapters | not visually meaningful: an event with a text message, no 3D view to show; documented in the adapters events table |
 | Render diagnostics (`getRenderStats`) | ✅ | ✅ (panel) | `app-diagnostics` | ✅ | gallery | concept-workers | covered — current Feature Lab Diagnostics tab (capability badges + stats) in the gallery |
 | Geometry worker pool (parallel tubes) | ✅ | ❌ | — | mention | gallery | concept-workers | not visually meaningful (diagnostics panel proxies it) |
 | WebGL context-loss recovery | ✅ | ❌ | — | mention | — | — | not visually meaningful |

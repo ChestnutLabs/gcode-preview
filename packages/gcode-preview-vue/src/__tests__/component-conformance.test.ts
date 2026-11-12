@@ -22,7 +22,11 @@ runComponentConformanceSuite(
     mount(cb, opts = {}) {
       const canvas = document.createElement('canvas');
       const comp = ref<{
-        preview: { raw: { renderer(): unknown }; parse(bytes: Uint8Array): Promise<unknown> };
+        preview: {
+          raw: { renderer(): unknown };
+          controls: { setCameraMode(mode: 'perspective' | 'orthographic'): void };
+          parse(bytes: Uint8Array): Promise<unknown>;
+        };
       } | null>(null);
       const container = document.body.appendChild(document.createElement('div'));
       const app = createApp(
@@ -32,6 +36,8 @@ runComponentConformanceSuite(
               ref: comp,
               renderer: opts.renderer,
               quality: 'lines',
+              cameraFov: opts.cameraFov,
+              pixelRatio: opts.pixelRatio,
               createWorker: () => new SuiteStubWorker(undefined, opts.ir),
               rendererOptions: {
                 createRenderer: () => makeSuiteStubGL(canvas),
@@ -40,7 +46,9 @@ runComponentConformanceSuite(
               },
               onReady: (e: { segments: number }) => cb.onReady(e.segments),
               onBuildComplete: (e: { segments: number }) => cb.onBuildComplete(e.segments),
-              onDisclosure: (text: string) => cb.onDisclosure(text)
+              onDisclosure: (text: string) => cb.onDisclosure(text),
+              onRendererUnsupported: (e: { feature: string; message: string }) =>
+                cb.onRendererUnsupported?.(e.feature, e.message)
             })
         })
       );
@@ -52,6 +60,10 @@ runComponentConformanceSuite(
           const out = await comp.value?.preview.parse(bytes);
           await nextTick();
           return out;
+        },
+        setCameraMode: async (mode) => {
+          comp.value?.preview.controls.setCameraMode(mode);
+          await nextTick();
         },
         settle,
         unmount: () => {

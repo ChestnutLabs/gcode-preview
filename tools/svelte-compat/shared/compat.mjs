@@ -17,6 +17,8 @@ import { MODEL_STUB_CONTROLS, MODEL_STUB_GL, makeStlModelSource } from '@chestnu
 import GcodePreview from '../../../packages/gcode-preview-svelte/src/GcodePreview.svelte';
 import ModelViewer from '../../../packages/gcode-preview-svelte/src/model/ModelViewer.svelte';
 import { mountComponent } from './mount-api.mjs';
+import PreviewHost from './PreviewHost.svelte';
+import { ToolpathRenderer } from '@chestnutlabs/gcode-renderer-three';
 
 const PKG_DIR = resolve(dirname(fileURLToPath(import.meta.url)), '../../../packages/gcode-preview-svelte');
 
@@ -156,35 +158,113 @@ export function registerCompat({ describe, it, expect, svelte, compiler, expecte
     });
   });
 
+  // #520: the mount pass for the four 3D-only construction props. 2D applies a non-default value once (and
+  // the 2D renderer reports it); 3D was built with them and must not re-apply (a re-applied quality rebuilds).
+  describe(`${label}: 3D-only props at mount (#520)`, () => {
+    const QUALITY = 'quality Quality/geometry modes apply only to the 3D renderer; the 2D view has none.';
+    const CAMERA = 'camera Camera projection applies only to the 3D renderer; the 2D view is flat top-down.';
+    const mountP = (props) => {
+      const log = [];
+      const target = document.body.appendChild(document.createElement('div'));
+      const base = {
+        createWorker: () => new SuiteStubWorker(),
+        rendererOptions: { createRenderer: (canvas) => makeSuiteStubGL(canvas), scheduleFrame: (f) => f() }
+      };
+      const handle = mountComponent(svelte, PreviewHost, {
+        target,
+        props: {
+          props: { ...base, ...props },
+          handlers: { rendererunsupported: (e) => log.push(`${e.detail.feature} ${e.detail.message}`) }
+        }
+      });
+      return {
+        log,
+        set: (patch) => handle.setProps({ props: { ...base, ...props, ...patch } }),
+        unmount: () => {
+          handle.destroy();
+          target.remove();
+        }
+      };
+    };
+
+    it('2D: explicit defaults report nothing', async () => {
+      const m = mountP({ renderer: '2d', quality: 'auto', cameraMode: 'perspective', cameraFov: 50 });
+      await settle();
+      expect(JSON.stringify(m.log)).toBe('[]');
+      m.unmount();
+    });
+
+    it('2D: a non-default quality and camera mode report once at mount, then once per change', async () => {
+      const m = mountP({ renderer: '2d', quality: 'tubes', cameraMode: 'orthographic' });
+      await settle();
+      expect(JSON.stringify(m.log)).toBe(JSON.stringify([QUALITY, CAMERA]));
+      // Back to the defaults is a change too: each is applied (and reported) once more.
+      m.set({ quality: 'auto', cameraMode: 'perspective' });
+      await settle();
+      expect(JSON.stringify(m.log)).toBe(JSON.stringify([QUALITY, CAMERA, QUALITY, CAMERA]));
+      m.unmount();
+    });
+
+    it('3D: the mount pass re-applies none of the construction props (no extra build)', async () => {
+      const calls = [];
+      const keys = ['setQuality', 'setCameraMode', 'setCameraFov', 'setPixelRatio'];
+      const saved = keys.map((k) => ToolpathRenderer.prototype[k]);
+      for (const k of keys) {
+        ToolpathRenderer.prototype[k] = () => {
+          calls.push(k);
+        };
+      }
+      try {
+        const m = mountP({ quality: 'lines', cameraMode: 'orthographic', cameraFov: 32, pixelRatio: 2 });
+        await settle();
+        expect(JSON.stringify(calls)).toBe('[]');
+        m.unmount();
+      } finally {
+        keys.forEach((k, i) => {
+          ToolpathRenderer.prototype[k] = saved[i];
+        });
+      }
+    });
+  });
+
   // The portable component conformance case (#502): event -> callback wiring through the compiled component.
+  // Mounted through a parent template (PreviewHost) so `on:` listeners attach before the child mounts, as in
+  // an app; mount-time events (#520) are otherwise dispatched inside Svelte 4's constructor, before `$on`.
   runComponentConformanceSuite(
     `svelte ${expectedMajor} <GcodePreview>`,
     { describe, it, expect },
     {
       mount(cb, opts = {}) {
         const target = document.body.appendChild(document.createElement('div'));
-        const handle = mountComponent(svelte, GcodePreview, {
+        const handle = mountComponent(svelte, PreviewHost, {
           target,
           props: {
-            renderer: opts.renderer,
-            quality: 'lines',
-            createWorker: () => new SuiteStubWorker(undefined, opts.ir),
-            rendererOptions: {
-              createRenderer: (canvas) => makeSuiteStubGL(canvas),
-              scheduleFrame: (f) => f(),
-              chunksPerTick: 8
+            props: {
+              renderer: opts.renderer,
+              quality: 'lines',
+              cameraFov: opts.cameraFov,
+              pixelRatio: opts.pixelRatio,
+              createWorker: () => new SuiteStubWorker(undefined, opts.ir),
+              rendererOptions: {
+                createRenderer: (canvas) => makeSuiteStubGL(canvas),
+                scheduleFrame: (f) => f(),
+                chunksPerTick: 8
+              }
+            },
+            handlers: {
+              ready: (e) => cb.onReady(e.detail.segments),
+              buildcomplete: (e) => cb.onBuildComplete(e.detail.segments),
+              disclosure: (e) => cb.onDisclosure(e.detail),
+              rendererunsupported: (e) => cb.onRendererUnsupported?.(e.detail.feature, e.detail.message)
             }
-          },
-          events: {
-            ready: (e) => cb.onReady(e.detail.segments),
-            buildcomplete: (e) => cb.onBuildComplete(e.detail.segments),
-            disclosure: (e) => cb.onDisclosure(e.detail)
           }
         });
-        const preview = handle.instance.preview; // Svelte 4 clears the instance's exports on $destroy()
+        svelte.flushSync?.(); // Svelte 5 assigns the host's bind:this in an effect (Svelte 4: done already)
+        const preview = handle.instance.getPreview(); // Svelte 4 clears the instance's exports on $destroy()
         return {
           emitBuild: (decimation, segments) => emitSuiteBuild(preview.raw.renderer(), decimation, segments),
           parse: (bytes) => preview.parse(bytes),
+          setCameraMode: (mode) => preview.controls.setCameraMode(mode),
           settle,
           unmount: () => {
             handle.destroy();

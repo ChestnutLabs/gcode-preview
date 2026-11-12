@@ -31,10 +31,10 @@ the `svelte` export condition), not from the package index. The ~24-prop default
 `source`, `parseOptions`, `buildVolume` (consumer-wins bed precedence), `quality` / `qualityMode`,
 `colorMode`, `theme`, `cameraMode` / `view` / `frameContent`, `layerRange`, `scrub`, `showTravel` /
 `showRetractions` / `showWipe`, `hiddenFeatureRoles` (hide feature roles like Skirt or Brim; gate on
-`capabilities.featureRoles`), `progress` (DD-006 observation), and `createWorker`. Events (13):
+`capabilities.featureRoles`), `progress` (DD-006 observation), and `createWorker`. Events (14):
 `ready`, `camerachange`, `parseerror`, `parsecancelled`, `parseprogress`, `stage`, `buildcomplete`,
 `qualityfallback`, `machinegeometrymismatch`/`discovered`, `progresspresentationchanged`,
-`disclosure`, `error`. The full handle is exported as `preview` (`bind:this` then `.preview`); its
+`disclosure`, `rendererunsupported`, `error`. The full handle is exported as `preview` (`bind:this` then `.preview`); its
 `controls` reach the imperative surface — `getRenderStats()` (render diagnostics),
 `pickSegment(ndcX, ndcY, threshold?)` (source-mapping / picking), `isColorModeAvailable(mode)`, and
 `capture(opts?)` (image `Blob`, also `preview.capture`). The handle `state` carries capability-aware
@@ -117,7 +117,7 @@ shadow), and `controls.setBuildVolumeCage(visible)` changes it live.
 
 `cameraFov` takes 10-120 degrees (the default is 50) and throws `RangeError` outside it. The model viewer reports
 `placement` (`known` / `inferred` / `approximated`, or `null` with no plate) and `placementOffset` in `on:ready` and its state.
-The 2D renderer ignores `theme`; a lens call records a `renderer-unsupported` disclosure. See the [Studio look and build plate guide](https://github.com/ChestnutLabs/gcode-preview/blob/dev/docs/manual/guide-looks-lens-plate.md).
+The 2D renderer ignores `theme`; a lens, as a prop or a call, dispatches `rendererunsupported` once. See the [Studio look and build plate guide](https://github.com/ChestnutLabs/gcode-preview/blob/dev/docs/manual/guide-looks-lens-plate.md).
 
 ### Pixel ratio
 
@@ -132,7 +132,7 @@ fragments of ratio 1, so prefer `'device'` on pages with one viewer. Imperativel
 
 An unsized `controls.capture()` is the resting drawing-buffer size when unset and the CSS size when set; with the
 built-in renderer a ratio never changes the default capture size, so pass `width`/`height` for a crisper image. The 2D
-renderer ignores it and records a `renderer-unsupported` disclosure.
+renderer ignores it and dispatches `rendererunsupported` once.
 
 ## Examples
 
