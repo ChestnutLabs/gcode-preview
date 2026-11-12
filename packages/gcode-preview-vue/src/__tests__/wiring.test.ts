@@ -93,7 +93,7 @@ describe('<GcodePreview> (vue) wiring: mount', () => {
       cameraState: { position: [1, 2, 3] },
       hiddenFeatureRoles: ['skirt', 'brim'],
       progress: { v: 1, timestampMs: 1, position: { byte: 9 } },
-      colorMode: { type: 'feedrate' },
+      colorMode: { mode: 'single', color: [1, 0, 0] },
       theme: { background: '#101010' },
       frameContent: 'object',
       interactionQuality: 'auto'
@@ -156,7 +156,7 @@ describe('<GcodePreview> (vue) wiring: changes after mount', () => {
     const m = await mount();
     log.length = 0;
     await m.set({
-      colorMode: { type: 'layer' },
+      colorMode: { mode: 'single', color: [0, 0, 1] },
       qualityMode: 'full',
       progressivePreview: 'off',
       frameContent: 'object',
@@ -166,7 +166,7 @@ describe('<GcodePreview> (vue) wiring: changes after mount', () => {
     });
     expect(log.slice().sort()).toEqual(
       [
-        'setColorMode({"type":"layer"})',
+        'setColorMode({"mode":"single","color":[0,0,1]})',
         'setQualityMode("full")',
         'setProgressivePreview("off")',
         'setFrameContent("object")',

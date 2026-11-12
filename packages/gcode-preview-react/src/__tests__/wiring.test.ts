@@ -95,7 +95,7 @@ describe('<GcodePreview> (react) wiring: props reach the controller', () => {
     const theme = { background: '#101010' };
     const cameraState = { position: [1, 2, 3] };
     const m = await mount({
-      colorMode: { type: 'feedrate' },
+      colorMode: { mode: 'single', color: [1, 0, 0] },
       qualityMode: 'fast',
       progressivePreview: 'hold',
       frameContent: 'object',
@@ -114,7 +114,7 @@ describe('<GcodePreview> (react) wiring: props reach the controller', () => {
     });
     const c = log.filter((l) => !l.startsWith('ctl.'));
     for (const expected of [
-      'setColorMode({"type":"feedrate"})',
+      'setColorMode({"mode":"single","color":[1,0,0]})',
       'setQualityMode("fast")',
       'setProgressivePreview("hold")',
       'setFrameContent("object")',
@@ -180,7 +180,7 @@ describe('<GcodePreview> (react) wiring: props reach the controller', () => {
     const m = await mount();
     log.length = 0;
     await m.set({
-      colorMode: { type: 'layer' },
+      colorMode: { mode: 'single', color: [0, 0, 1] },
       qualityMode: 'full',
       progressivePreview: 'off',
       frameContent: 'object',
@@ -190,7 +190,7 @@ describe('<GcodePreview> (react) wiring: props reach the controller', () => {
       cameraState: { position: [0, 0, 1] }
     });
     expect(log).toEqual([
-      'setColorMode({"type":"layer"})',
+      'setColorMode({"mode":"single","color":[0,0,1]})',
       'setQualityMode("full")',
       'setProgressivePreview("off")',
       'setFrameContent("object")',

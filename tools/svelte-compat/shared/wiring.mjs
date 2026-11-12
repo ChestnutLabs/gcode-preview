@@ -81,7 +81,7 @@ export function registerWiring({ describe, it, expect, beforeEach, svelte, expec
         showWipe: false,
         showRetractions: true,
         showVolumeCage: false,
-        colorMode: { type: 'feedrate' },
+        colorMode: { mode: 'single', color: [1, 0, 0] },
         qualityMode: 'fast',
         progressivePreview: 'hold',
         frameContent: 'object',
@@ -99,7 +99,7 @@ export function registerWiring({ describe, it, expect, beforeEach, svelte, expec
         'setKindVisible("wipe",false)',
         'setShowRetractions(true)',
         'setBuildVolumeCage(false)',
-        'setColorMode({"type":"feedrate"})',
+        'setColorMode({"mode":"single","color":[1,0,0]})',
         'setQualityMode("fast")',
         'setProgressivePreview("hold")',
         'setFrameContent("object")',
@@ -197,7 +197,7 @@ export function registerWiring({ describe, it, expect, beforeEach, svelte, expec
       await settle();
       log.length = 0;
       await m.set({
-        colorMode: { type: 'layer' },
+        colorMode: { mode: 'single', color: [0, 0, 1] },
         view: 'iso',
         theme: { background: '#fff' },
         cameraState: { position: [0, 0, 1] },
@@ -206,7 +206,7 @@ export function registerWiring({ describe, it, expect, beforeEach, svelte, expec
       });
       expect(log.slice().sort()).toEqual(
         [
-          'setColorMode({"type":"layer"})',
+          'setColorMode({"mode":"single","color":[0,0,1]})',
           'setView("iso")',
           'setTheme({"background":"#fff"})',
           'setCameraState({"position":[0,0,1]})',
