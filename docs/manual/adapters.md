@@ -107,6 +107,13 @@ A control you call before the 3D renderer has loaded is queued and applied when 
 rejects one of those calls, for example a theme opacity outside 0–1, you get an `error` event and `state.error`
 with code `E_CONTROL_REJECTED` and a message that names the control; the other queued controls still apply.
 
+`setLayerRange`, `setScrubPosition` and `setScrubTime` throw `RangeError` at once for a value that is not a
+number, or is `NaN`, even before the renderer has loaded. `null` (clear) and `±Infinity` (an open end) are
+still accepted. On `<gcode-preview>` a non-numeric `scrub` or `scrub-time` attribute is ignored instead, and
+the previous cut is kept, so the source still parses. A callback of yours that throws (an event handler or
+`onStateChange`) cannot change a parse's outcome: the other callbacks still run, and the error is re-thrown
+from a microtask so it still reaches the console.
+
 Two of the events tell your users what the view is not showing. They answer different questions:
 
 | | `disclosure` | `renderer-unsupported` |

@@ -262,6 +262,8 @@ are now closed:
 | Cut vs rapid classification | ✅ | validate page | `cnc-cut-vs-rapid` | ✅ | gallery (CNC) | motion-coverage | needs better coverage (legend/context) |
 | Tool power channel (laser/RPM) | ✅ | validate page | — | mention | gallery (CNC) | — | needs demo exposure + needs screenshot |
 | Canned drilling cycles (G81/82/83) | ✅ | ❌ | — | mention | gallery (CNC) | motion-coverage | needs screenshot |
+| Arc / canned-cycle drawing warnings (`arc-radius-too-small`, `canned-cycle-plane`, …, #553) | ✅ | validate page (All parser warnings) | — | — | — | motion-coverage | not visually meaningful: warning text in `ir.header.warnings`; the drawn approximation looks like an ordinary arc or cycle |
+| `( … )` comments ignored on plain lines (#544) | ✅ | ❌ | — | — | — | motion-coverage | not visually meaningful: a parse correctness fix (no stray move), nothing new to show |
 | Validation tiers (validated vs experimental) | ✅ | validate page | — | ✅ (prose) | gallery (CNC) | compatibility | not visually meaningful (prose/table) |
 | Parametric RS274NGC programs (params/expr/O-word/subs) | ✅ | ✅ (fixture) | `parametric-bolt-circle` | ✅ | gallery (CNC) | concept-parametric-programs | covered — demo fixture + media + README + gallery (program paired with geometry) |
 
