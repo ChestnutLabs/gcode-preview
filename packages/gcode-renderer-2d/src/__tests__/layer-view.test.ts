@@ -359,6 +359,22 @@ function recordReads<T extends Float32Array | Uint8Array>(arr: T, reads: number[
   });
 }
 
+/**
+ * Wrap an array so it throws after `budget` property reads. A regression that turns a bounded loop
+ * into a runaway one then fails fast with a clear error, instead of spinning a synchronous loop that
+ * vitest's per-test timeout cannot interrupt (it would hang the run, and CI, until killed).
+ */
+function readBudget<T extends object>(arr: T, budget: number, label: string): T {
+  let reads = 0;
+  return new Proxy(arr, {
+    get(target, key) {
+      if (++reads > budget) throw new Error(`${label}: read budget of ${budget} exceeded (runaway loop)`);
+      const v = Reflect.get(target, key, target);
+      return typeof v === 'function' ? v.bind(target) : v;
+    }
+  });
+}
+
 describe('rgbToCss (sweep)', () => {
   it('clamps each channel to [0,1] and rounds to 8 bits', () => {
     expect(rgbToCss([-0.5, 1.5, 0.5])).toBe('rgb(0, 255, 128)');
@@ -551,10 +567,20 @@ describe('drawLayer (sweep)', () => {
   it('a hostile negative segStart is clamped to 0 (no billion-step loop)', () => {
     const ir = makeIR(1, 2);
     ir.layers[0] = { ...ir.layers[0], segStart: -1e15 };
+    ir.segments.kind = readBudget(ir.segments.kind, 100, 'segments.kind');
+    ir.segments.x0 = readBudget(ir.segments.x0, 100, 'segments.x0');
     const m = new MockCtx();
     const res = drawLayer(m.ctx, ir, { layer: 0, colorMode: single, fit: scaleFit, travel: { color: '#888' } });
     expect(res).toMatchObject({ extrudeDrawn: 2, travelDrawn: 1, skippedNonFinite: 0 });
     expect(layerBounds2D(ir, 0)).toEqual({ minX: 0, minY: 0, maxX: 2, maxY: 1, hasContent: true });
+  });
+
+  it('a fractional segEnd stops at its integer part (1.5 → segments 0 and 1)', () => {
+    const ir = makeIR(1, 3); // extrusion 0..2 (x 0→1, 1→2, 2→3), travel 3
+    ir.layers[0] = { ...ir.layers[0], segEnd: 1.5 };
+    const res = drawLayer(new MockCtx().ctx, ir, { layer: 0, colorMode: single, fit: scaleFit });
+    expect(res).toMatchObject({ extrudeDrawn: 2, travelDrawn: 0 });
+    expect(layerBounds2D(ir, 0)).toEqual({ minX: 0, minY: 0, maxX: 2, maxY: 0, hasContent: true });
   });
 });
 
@@ -577,6 +603,7 @@ describe('drawLayers (sweep)', () => {
 
   it('adjacentLayers: Infinity draws every layer below, without hanging', () => {
     const ir = makeIR(3, 2);
+    ir.layers = readBudget(ir.layers, 200, 'ir.layers');
     const res = drawLayers(new MockCtx().ctx, ir, {
       layer: 2,
       adjacentLayers: Infinity,

@@ -39,7 +39,8 @@ A flat per-layer 2D view cannot represent non-XY/CNC toolpaths or 3D-only option
 out-of-range layer draws nothing and reports `drawn: false` rather than fabricating geometry.
 A segment with an `Infinity` or `NaN` X/Y coordinate (possible in a toolpath you build yourself) is
 skipped: it is not drawn, it does not affect the view frame, and the draw result counts it in
-`skippedNonFinite`. Color modes that read an optional IR channel (`feature`, `object`, `feedrate`) must be
+`skippedNonFinite`. Only this package reports that count: `GcodePreview` and the framework adapters
+skip the same segments but do not surface the count yet. Color modes that read an optional IR channel (`feature`, `object`, `feedrate`) must be
 capability-gated by the caller. The full capability-honesty UX for non-XY / `layers: unavailable`
 inputs arrives with the phase-4 work (#215).
 

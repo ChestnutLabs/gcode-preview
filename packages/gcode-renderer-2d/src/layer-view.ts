@@ -111,7 +111,7 @@ export function rgbToCss(rgb: RGB): string {
  * layer table with an overshooting `segEnd` or a negative `segStart` never reads (or loops) outside it.
  */
 function layerRange(l: { segStart: number; segEnd: number }, count: number): [number, number] {
-  return [Math.max(0, l.segStart), Math.min(l.segEnd + 1, count)];
+  return [Math.max(0, l.segStart), Math.min(Math.floor(l.segEnd) + 1, count)];
 }
 
 /** True when both XY endpoints of segment `i` are finite numbers (#501: Infinity/NaN are skipped). */
@@ -385,7 +385,9 @@ export function drawLayers(ctx: CanvasContext2DLike, ir: ToolpathIR, opts: DrawL
   };
   if (!ir.layers[opts.layer]) return base;
 
-  const adjacent = Math.max(0, Math.floor(opts.adjacentLayers ?? 1));
+  // No floor at 0 needed: a negative (or NaN) count puts firstGhost at/after the active layer (or makes
+  // it NaN), so the ghost loop below never runs.
+  const adjacent = Math.floor(opts.adjacentLayers ?? 1);
   const ghostOpacity = opts.ghostOpacity ?? 0.25;
   const firstGhost = Math.max(0, opts.layer - adjacent);
 
@@ -477,7 +479,7 @@ export class LayerView2D {
     this.lineWidth = opts.lineWidth ?? 1;
     this.travel = opts.travel ?? false;
     this.padding = opts.padding ?? 8;
-    this.adjacentLayers = Math.max(0, Math.floor(opts.adjacentLayers ?? 1));
+    this.adjacentLayers = opts.adjacentLayers ?? 1; // normalized by drawLayers
     this.ghostOpacity = opts.ghostOpacity ?? 0.25;
   }
 
@@ -496,9 +498,9 @@ export class LayerView2D {
     this.colorMode = colorMode;
   }
 
-  /** Number of preceding ghost layers drawn beneath the active one (clamped to ≥ 0). */
+  /** Number of preceding ghost layers drawn beneath the active one (floored; ≤ 0 draws none). */
   setAdjacentLayers(n: number): void {
-    this.adjacentLayers = Math.max(0, Math.floor(n));
+    this.adjacentLayers = n;
   }
 
   /** Live-progress cut (DD-006); null clears it. Applied only when on the active layer. */

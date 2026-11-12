@@ -9,7 +9,9 @@ yourself.
   coordinate made the whole-model frame infinite, so every line was drawn at `NaN` pixels and the
   canvas stayed empty. Now a segment with a non-finite X/Y endpoint is skipped: it is not drawn and
   it does not affect the frame. `drawLayer` and `drawLayers` report how many segments were skipped
-  in a new `skippedNonFinite` field (also on `LayerView2D.render()`'s result).
+  in a new `skippedNonFinite` field (also on `LayerView2D.render()`'s result). Only this package
+  reports the count. `GcodePreview` with `renderer="2d"` and the framework adapters skip the same
+  segments, but they do not surface the count yet.
 - **`computeLayerFit` always returns a finite projection.** Bounds with an `Infinity` or `NaN` edge
   are treated as empty (scale 1, centred). A `NaN` width, height or padding is treated as 0.
 - **A layer with a negative `segStart` no longer hangs the draw.** The range is clamped to the
