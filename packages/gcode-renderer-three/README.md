@@ -60,6 +60,19 @@ built-in renderer setting a ratio never changes the default capture size (a cust
 another ratio returns its own drawing-buffer size when unset); pass `width`/`height` for a crisper image. Ratio 2 shades four times the
 fragments of ratio 1.
 
+## Bad coordinates and bad build volumes
+
+A segment with an `Infinity` or `NaN` endpoint coordinate is not drawn. The camera frame still comes from the IR's bounds, so with the default `frameContent: 'all'` the
+camera frames the build volume (or the preview bounds) instead of the remaining toolpath; under `'object'` it
+tries the model, then the object bounds, then the build volume. The 2D renderer skips on x/y only.
+`buildChunks` counts skipped segments in `skippedNonFinite`; core and the framework adapters do not surface that
+count yet (tracked with [#518](https://github.com/ChestnutLabs/gcode-preview/issues/518)). `createBuildVolume` and
+`setBuildVolume` throw `RangeError` for a volume that cannot be drawn: a non-finite size, origin or height, a grid
+pitch that is not a positive number, more than 10 000 grid lines on one axis, or an origin so large that the pitch
+no longer advances. A bed discovered in the file (a `MachineGeometry`) never throws: `setBuildVolume` keeps the
+current volume and emits an `error` event with code `machine-geometry-invalid`. A `decimation` option must be a
+whole number of at least 1, or `'auto'`; anything else throws `RangeError`.
+
 ## Tighter limits on software GL
 
 On headless or software-rendered GL (CI, a VM, a remote desktop) a large file can exhaust memory long before it is

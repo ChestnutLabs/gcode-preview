@@ -251,6 +251,18 @@ export interface ToolpathRendererOptions {
   scheduleFrame?: (cb: () => void) => void;
 }
 
+/**
+ * True when all six components of an axis-aligned box are finite. An empty IR's bounds are ±Infinity
+ * sentinels and a consumer-built or float32-overflowed IR can carry Infinity/NaN in any component, so the
+ * old `min.x`-only test let a box with `max.x = Infinity` through into the camera (a NaN pose, blank canvas).
+ */
+function isFiniteBox(b: {
+  min: { x: number; y: number; z: number };
+  max: { x: number; y: number; z: number };
+}): boolean {
+  return Number.isFinite(b.min.x + b.min.y + b.min.z + b.max.x + b.max.y + b.max.z);
+}
+
 const DEFAULT_COLOR: ColorMode = { mode: 'single', color: [0.9, 0.4, 0.7] };
 
 /** Discovered machine geometry → renderable volume (bounding volume for circular/polygon beds, v1). */
@@ -610,7 +622,7 @@ export class ToolpathRenderer {
     }
     // Track bounds for camera framing before the final IR exists (both 'lines' and 'hold').
     const b = slice.boundsWithTravel;
-    if (Number.isFinite(b.min.x)) {
+    if (isFiniteBox(b)) {
       if (this.previewBounds === null) {
         this.previewBounds = {
           min: new Vector3(b.min.x, b.min.y, b.min.z),
@@ -1105,7 +1117,7 @@ export class ToolpathRenderer {
   /** Forgiving click radius (~0.5% of the model diagonal) that scales with model size. */
   private pickThreshold(): number {
     const b = this.ir?.bounds;
-    if (b === undefined) return 0.5;
+    if (b === undefined || !isFiniteBox(b)) return 0.5;
     return Math.max(0.2, 0.005 * Math.hypot(b.max.x - b.min.x, b.max.y - b.min.y, b.max.z - b.min.z));
   }
 
@@ -1477,7 +1489,7 @@ export class ToolpathRenderer {
     const ir = this.ir as ToolpathIR;
     // Model-relative size (fixed mm vanish on large models / small canvases), clamped sane.
     const b = ir.bounds;
-    if (Number.isFinite(b.min.x)) {
+    if (isFiniteBox(b)) {
       const modelRadius = Math.hypot(b.max.x - b.min.x, b.max.y - b.min.y, b.max.z - b.min.z) / 2;
       this.markerMesh.scale.setScalar(Math.max(1.5, Math.min(5, modelRadius * 0.035)) / 1.5);
     }
@@ -1600,10 +1612,10 @@ export class ToolpathRenderer {
     const ir = this.ir;
     if (ir === null) return null;
     if (this.frameContentMode === 'object') {
-      if (Number.isFinite(ir.modelBounds.min.x)) return ir.modelBounds;
-      if (Number.isFinite(ir.objectBounds.min.x)) return ir.objectBounds;
+      if (isFiniteBox(ir.modelBounds)) return ir.modelBounds;
+      if (isFiniteBox(ir.objectBounds)) return ir.objectBounds;
     }
-    return Number.isFinite(ir.bounds.min.x) ? ir.bounds : null;
+    return isFiniteBox(ir.bounds) ? ir.bounds : null;
   }
 
   /** Fit the camera to the toolpath bounds (falls back to the preview bounds, then the build volume). */
@@ -1696,8 +1708,8 @@ export class ToolpathRenderer {
     if (
       mode === 'object' &&
       this.ir !== null &&
-      !Number.isFinite(this.ir.modelBounds.min.x) &&
-      !Number.isFinite(this.ir.objectBounds.min.x)
+      !isFiniteBox(this.ir.modelBounds) &&
+      !isFiniteBox(this.ir.objectBounds)
     ) {
       const confidence = this.ir.header.capabilities.nonModelClassification ?? 'unavailable';
       this.emit({
@@ -1747,9 +1759,9 @@ export class ToolpathRenderer {
   private shadowFootprint(): ShadowFootprint | null {
     const ir = this.ir;
     if (ir === null) return null;
-    if (Number.isFinite(ir.modelBounds.min.x)) return ir.modelBounds;
-    if (Number.isFinite(ir.objectBounds.min.x)) return ir.objectBounds;
-    return Number.isFinite(ir.bounds.min.x) ? ir.bounds : null;
+    if (isFiniteBox(ir.modelBounds)) return ir.modelBounds;
+    if (isFiniteBox(ir.objectBounds)) return ir.objectBounds;
+    return isFiniteBox(ir.bounds) ? ir.bounds : null;
   }
 
   /**
@@ -1897,12 +1909,33 @@ export class ToolpathRenderer {
    * discover machine geometry → apply, no renderer reconstruction). Accepts a
    * plain BuildVolumeDef or a discovered MachineGeometry (circular/polygon beds
    * render as their bounding volume in v1). Emits `machine-geometry-mismatch`
-   * when a consumer-configured volume disagrees with a discovered one by >1 mm.
+   * when a consumer-configured volume disagrees with a discovered one by >1 mm. Throws `RangeError` for a
+   * volume that cannot be drawn (non-finite size/pitch, or over 10 000 grid lines per axis); the current
+   * volume is left in place. A discovered `MachineGeometry` that cannot be drawn does NOT throw: it emits an
+   * `error` event with code `machine-geometry-invalid` (before any `machine-geometry-mismatch`) and keeps the
+   * current volume.
    */
   setBuildVolume(def: BuildVolumeDef | MachineGeometry): void {
     if (this.disposed) return;
+    const discovered = 'bed' in def;
     const next = 'bed' in def ? machineToVolume(def) : def;
-    if (this.volumeDef !== null && 'bed' in def) {
+    // Build first: createBuildVolume throws RangeError for a volume it cannot draw, and the current volume
+    // must survive that untouched (not be left disposed but still referenced). A consumer-passed def keeps
+    // the typed throw. A bed DISCOVERED in a file is inferred data: a bad one must not lose the toolpath or
+    // the renderer bind, so it is reported as an `error` event and the current volume is kept.
+    let group: Group;
+    try {
+      group = createBuildVolume(next, this.volumeStyle());
+    } catch (err) {
+      if (!discovered || !(err instanceof RangeError)) throw err;
+      this.emit({
+        type: 'error',
+        code: 'machine-geometry-invalid',
+        message: `file-discovered bed rejected: ${err.message}`
+      });
+      return;
+    }
+    if (this.volumeDef !== null && discovered) {
       const dx = Math.abs(this.volumeDef.x - next.x);
       const dy = Math.abs(this.volumeDef.y - next.y);
       if (dx > 1 || dy > 1) {
@@ -1920,7 +1953,7 @@ export class ToolpathRenderer {
       this.root.remove(this.volumeGroup);
     }
     this.volumeDef = next;
-    this.volumeGroup = createBuildVolume(next, this.volumeStyle());
+    this.volumeGroup = group;
     this.root.add(this.volumeGroup);
     this.refreshContactShadow();
     this.render();
