@@ -118,6 +118,6 @@ viewer is reachable without switching APIs.
   [Parametric programs (RS274NGC)](concept-parametric-programs.md).
 - **API reference** — pick a package in the sidebar (`toolpath-core`, `gcode-parser`, …).
 
-> **Status:** published — all fourteen `@chestnutlabs/*` packages are on npm (latest `v0.22.0`,
+> **Status:** published — all fourteen `@chestnutlabs/*` packages are on npm (latest `v0.23.0`,
 > lockstep-versioned with provenance). Governance and epic status live in the
 > [repository docs](https://github.com/ChestnutLabs/gcode-preview/tree/dev/docs).

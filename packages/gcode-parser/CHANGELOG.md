@@ -1,5 +1,76 @@
 # @chestnutlabs/gcode-parser
 
+## 0.23.0
+
+### Patch Changes
+
+- [#526](https://github.com/ChestnutLabs/gcode-preview/pull/526) [`3e133fd`](https://github.com/ChestnutLabs/gcode-preview/commit/3e133fd0e78f20d2cfdbbadd61b7fe4bb379abb1) Thanks [@sobechestnut-dev](https://github.com/sobechestnut-dev)! - A G2/G3 arc whose points lie beyond the float32 range no longer hangs the parser. Segments dropped for an out-of-range stored position now count toward `maxSegments`, and an arc whose target or centre ± radius box is out of range is dropped whole, with the existing `number-out-of-range` warning, before any interpolation ([#525](https://github.com/ChestnutLabs/gcode-preview/issues/525)).
+
+- [#524](https://github.com/ChestnutLabs/gcode-preview/pull/524) [`792c3e8`](https://github.com/ChestnutLabs/gcode-preview/commit/792c3e8e578f8e465ea48600871e442821e2b8de) Thanks [@sobechestnut-dev](https://github.com/sobechestnut-dev)! - A G2/G3 arc that leaves out `I`, `J` (or `K` in G18/G19) now draws as an arc instead of a straight line.
+
+  An omitted centre offset is 0, as in RS274NGC and Marlin, so `G3 X0 Y10 J5` is the half circle it looks like.
+  Before, the missing word made the arc's segment count non-finite and the whole arc collapsed to one chord
+  from its start to its target. An arc with no `I`/`J`/`K` and no `R` at all has no centre to draw from: it is
+  drawn as a straight move to its target and the parse reports an `arc-missing-center` warning (once per file,
+  with a count).
+
+  You will only see a difference on files that omit an offset. In the bundled corpus that is `demo-3dbenchy`:
+  3 arcs that were drawn as chords now draw as multi-segment arcs (3 more segments in total).
+
+- [#521](https://github.com/ChestnutLabs/gcode-preview/pull/521) [`d171ad4`](https://github.com/ChestnutLabs/gcode-preview/commit/d171ad4f909ed8a333b2eff67ac3c656b6f3de34) Thanks [@sobechestnut-dev](https://github.com/sobechestnut-dev)! - A G2/G3 arc with a negative `E` is no longer classified or drawn as an extrusion.
+
+  A retract during an arc (for example a wipe-with-retract) was drawn as extruded material, while the same move
+  written as a `G1` was already a retraction. Arcs now follow the same rule as straight moves: only a positive
+  `E` extrudes. A negative or zero `E` arc is a travel move (a cut move while a spindle or laser is engaged).
+  Its `E` value is kept on the segments.
+
+  You will only see a difference on files that retract mid-arc. In the bundled corpus that is `demo-plant-sign`
+  (689 arc segments) and `demo-screw` (2022 arc segments); their arc segments change from extrude to travel.
+
+- [#521](https://github.com/ChestnutLabs/gcode-preview/pull/521) [`d171ad4`](https://github.com/ChestnutLabs/gcode-preview/commit/d171ad4f909ed8a333b2eff67ac3c656b6f3de34) Thanks [@sobechestnut-dev](https://github.com/sobechestnut-dev)! - Invalid parse limits now throw instead of silently turning the limit off.
+
+  Each `limits` field (`maxInputBytes`, `maxSegments`, `maxBufferBytes`, `maxLineLength`, `maxWarnings`,
+  `maxProgramIterations`, `maxCallDepth`) must be a non-negative integer. Before, `NaN` switched the bound
+  off, so a looping RS274NGC program such as `o1 while [1]` / `o1 endwhile` never returned. `Infinity`, a
+  negative number, a fraction, `null` and a string were accepted too and gave no real bound.
+  - **`Infinity` is no longer accepted as "unlimited".** It now throws like any other invalid value, the same
+    break as the container caps in v0.21.1. If you passed `Infinity` to lift a bound, pass a large integer instead.
+  - **What changes for you:** a bad value now throws a `ParseOptionError` with `code: 'E_PARSE_OPTION'` before
+    any parsing starts. Through a parse session (the worker) the same code arrives on the rejection, and the
+    session stays usable. There is no "unlimited" value; pass a large integer such as `Number.MAX_SAFE_INTEGER`
+    if you really want a high bound.
+  - **Unchanged:** a field that is left out or `undefined` keeps its default, and `0` is still allowed.
+  - `ParseOptionError` is exported from `@chestnutlabs/gcode-parser`.
+
+- [#540](https://github.com/ChestnutLabs/gcode-preview/pull/540) [`251e57f`](https://github.com/ChestnutLabs/gcode-preview/commit/251e57f6d38c231064792606b5a4bf44e1762b0c) Thanks [@sobechestnut-dev](https://github.com/sobechestnut-dev)! - Hostile parametric (RS274NGC) programs can no longer keep the parser busy for hours. Work inside a loop or subroutine now counts against `maxProgramIterations` per test, argument, entered loop and 256 characters of text, not only per statement, so programs with many `elseif` branches, long conditions or many `call` arguments inside loops stop sooner with the existing `rs274-iteration-limit` warning. A plain loop still costs 2 units per pass, and code outside loops and subroutines is never counted. A loop whose body tests `if`/`elseif` conditions now uses more of the budget on each pass, so a long-running legitimate program close to the default limit of 1 000 000 can stop earlier than before; raise `maxProgramIterations` if it does.
+
+  Also in this release:
+  - A very long chain of `**` operators (about 20 000 terms, under the line-length cap) no longer overflows the stack and throws out of the parse. Past 64 levels the word, assignment or condition is dropped with `rs274-bad-expression`.
+  - A comparison or logic operator (`GT`, `EQ`, `AND`, …) with a non-finite operand, such as `1/0 GT 5`, and a non-finite parameter index, such as `#[SQRT[-1]]`, now give `rs274-non-finite-value` and are treated as 0 instead of passing silently.
+  - Assigning to `#0`, a negative parameter or a read-only system parameter (`[#5400](https://github.com/ChestnutLabs/gcode-preview/issues/5400)` and up) is ignored with the new `rs274-readonly-param` warning.
+  - `ROUND` rounds halves away from zero, as LinuxCNC does: `ROUND[-2.5]` is now `-3` (it was `-2`).
+
+- [#521](https://github.com/ChestnutLabs/gcode-preview/pull/521) [`d171ad4`](https://github.com/ChestnutLabs/gcode-preview/commit/d171ad4f909ed8a333b2eff67ac3c656b6f3de34) Thanks [@sobechestnut-dev](https://github.com/sobechestnut-dev)! - Moves whose stored position would overflow no longer put `Infinity` into the toolpath.
+
+  The parser already dropped a single number that is beyond float32 range (`number-out-of-range`). A value
+  that is in range on its own could still overflow once it was stored as a position: adding relative (`G91`)
+  moves together, or a far `G92` origin plus a far move, produced `Infinity` coordinates and an `Infinity`
+  bounding box, with no warning.
+
+  Now a segment whose start, end or extrusion amount is outside float32 range is dropped and reported with the
+  same `number-out-of-range` warning (counted once per file, not once per segment). The machine position keeps
+  advancing, so later moves that come back into range are still drawn. Ordinary files are unaffected.
+
+  The same applies to retraction and colour-change (`M600`) markers: one at a position that overflows float32
+  is dropped and reported with the same warning. The `retractions` / `colorChanges` arrays can therefore be
+  shorter than before, and the `retractions` / `colorChanges` capability becomes `unavailable` if none remain.
+
+- Updated dependencies [[`e31d45e`](https://github.com/ChestnutLabs/gcode-preview/commit/e31d45e17e3d706b1485f163051b47270b706379), [`e31d45e`](https://github.com/ChestnutLabs/gcode-preview/commit/e31d45e17e3d706b1485f163051b47270b706379), [`bf3513b`](https://github.com/ChestnutLabs/gcode-preview/commit/bf3513b67566cb597d2dd366e0f28c84660768a6), [`4d08cbc`](https://github.com/ChestnutLabs/gcode-preview/commit/4d08cbc86aa1672ebea6f9d312b376699db5ecf1)]:
+  - @chestnutlabs/gcode-bgcode@0.23.0
+  - @chestnutlabs/gcode-dialects@0.23.0
+  - @chestnutlabs/gcode-containers@0.23.0
+  - @chestnutlabs/toolpath-core@0.23.0
+
 ## 0.22.0
 
 ### Patch Changes

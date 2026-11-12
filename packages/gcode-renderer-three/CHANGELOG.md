@@ -1,5 +1,87 @@
 # @chestnutlabs/gcode-renderer-three
 
+## 0.23.0
+
+### Patch Changes
+
+- [#523](https://github.com/ChestnutLabs/gcode-preview/pull/523) [`3ae53e9`](https://github.com/ChestnutLabs/gcode-preview/commit/3ae53e9cf687e62f0a4c2bfeee0900fb5a56d76c) Thanks [@sobechestnut-dev](https://github.com/sobechestnut-dev)! - Segments skipped for an `Infinity` or `NaN` coordinate are now disclosed, in 2D and 3D ([#518](https://github.com/ChestnutLabs/gcode-preview/issues/518)).
+  - **The `disclosure` text names the count.** When a toolpath you build yourself has segments with a
+    non-finite coordinate, the renderer skips them. `GcodePreviewState.disclosure` and the `disclosure`
+    callback in Vue, React, Svelte and the Web Component now say so, for example
+    `3 segments with a non-finite coordinate were not drawn.` (`1 segment … was not drawn.` for one). When
+    decimation also applies, the sentence follows the decimation sentence. The 2D view checks x and y over
+    extrusion and travel. The 3D renderer checks x, y and z over every segment it builds. Both count the
+    whole toolpath, travel included whether or not it is shown.
+  - **2D mode now fires `build-complete`.** With `renderer: '2d'`, the 2D view emits `buildComplete` once
+    each time a toolpath loads: the number of drawable segments, `decimationApplied: 1`,
+    `travelHidden: false`, `quality: 'lines'`. It fires after parse-complete, as in 3D, so a
+    build-complete handler reads the new file's `layerCount` and `segmentCount`. Before, it never fired in 2D, so `onBuildComplete` and
+    `onDisclosure` (and their Vue, Svelte and Web Component equivalents) stayed silent. `activeQuality`
+    now reads `'lines'` after a 2D load instead of `null`.
+  - **`gcode-renderer-three`:** the `buildComplete` event carries an optional `skippedNonFinite` count.
+  - **`gcode-renderer-2d`:** new `summarize2DDrawable(ir)` returns `{ drawable, skippedNonFinite }` for
+    the whole toolpath.
+  - **`gcode-preview-core/testing`:** `SuiteStubWorker` takes an optional IR factory, `makeNonFiniteTestIR()`
+    is exported, and `ComponentHarness.mount` takes `{ renderer, ir }` and an `onReady` callback.
+    `MountedComponent` gains `parse()`.
+    The component conformance suite adds a 2D case and a 3D case.
+
+- [#519](https://github.com/ChestnutLabs/gcode-preview/pull/519) [`3e1a11e`](https://github.com/ChestnutLabs/gcode-preview/commit/3e1a11ed171de55b4cf852aa3e5b94ddf69ac1ca) Thanks [@sobechestnut-dev](https://github.com/sobechestnut-dev)! - The three.js renderer now copes with bad coordinates and bad build volumes instead of showing a blank
+  canvas or never returning.
+  - **One `Infinity` or `NaN` coordinate no longer blanks the view.** Before, a toolpath you built
+    yourself with a single non-finite coordinate left the camera at `NaN` (an empty canvas), and picking
+    and culling broke for the whole chunk holding that segment. Now the segment is skipped: it is not
+    drawn, and picking and culling stay correct. The camera frame is still computed from the IR's own
+    bounds, so with the default `frameContent: 'all'` an `Infinity` segment makes those bounds
+    non-finite and the camera frames the build volume (or the preview bounds), not the remaining
+    toolpath. With `frameContent: 'object'` it tries the model, then the object bounds, then the build
+    volume. `buildChunks` reports the number of skipped segments in a new `skippedNonFinite` field.
+    The 2D renderer skips on x/y only, so the two renderers do not skip exactly the same segments.
+  - **A build volume that cannot be drawn now throws a `RangeError` instead of hanging.** Before, an
+    `Infinity` size, a grid pitch of 0, a negative or `NaN` pitch, or a huge size such as 1e9 mm at a
+    10 mm pitch ran the grid loop until the tab ran out of memory. `createBuildVolume`, `setBuildVolume`
+    and the `buildVolume` option now throw for a non-finite size, origin, height or bed shape, a pitch
+    that is not a positive number, more than 10 000 grid lines on one axis, and an origin so large
+    that the pitch no longer advances (1e20 + 10 is still 1e20). A rejected `setBuildVolume` leaves the
+    current volume in place. Real beds are far under the limit (1 m at a 1 mm pitch is 1001 lines).
+  - **A bad bed discovered in a file does not break the load.** When the bed comes from the file's own
+    comments (`; bed_shape` and similar) and cannot be drawn, `setBuildVolume` does not throw. It keeps
+    the current volume and emits an `error` event with the new code `machine-geometry-invalid`, so the
+    toolpath still loads. The code reaches Vue, React, Svelte and the Web Component through their
+    existing generic `error` event (`{ code, message }`). A volume you pass yourself still throws.
+  - **A bad `decimation` option now throws.** `buildChunks` takes a whole number of at least 1, or
+    `'auto'`. Before, `0`, a negative number, a fraction or `NaN` silently drew the wrong segments.
+
+  Parsed files are not affected unless they hit these cases. The parser already drops number words
+  that overflow, with a `number-out-of-range` warning.
+
+- [#537](https://github.com/ChestnutLabs/gcode-preview/pull/537) [`e6f159d`](https://github.com/ChestnutLabs/gcode-preview/commit/e6f159d605969ffe65c33ffe32767b2d61c43aac) Thanks [@sobechestnut-dev](https://github.com/sobechestnut-dev)! - Changing the file or quality while a large tube build is still running could show the previous file's
+  tubes, and a bad tube or budget option could hang the build or corrupt the geometry. Both are fixed.
+  - **A mid-build file or quality change no longer shows the previous file's tubes.** When a new toolpath
+    was loaded while the worker pool was still building the old one, the old build's reply was handed to
+    the new build's chunk, and the old build never finished. The pool now pairs every reply with its own
+    request, drops replies from a superseded build, and stops the old build cleanly. A worker that fails
+    stops the whole build, with nothing delivered afterwards, and a reply that cannot be read now counts
+    as a failure instead of hanging. A worker that throws while building a chunk now reports the failure
+    with that chunk's id, so a superseded build's late crash can no longer fail the build that replaced it
+    (it used to drop the new build to a slower serial rebuild on the main thread).
+  - **Invalid options now throw a `RangeError` that names the option and the accepted range**, instead of
+    hanging, silently disabling a guard, or producing broken geometry. `undefined` keeps the default.
+    - `tube.radialSegments`: must be a whole number from 3 to 64. `Infinity` used to hang the build
+      forever; `8.5` produced half-vertex geometry.
+    - `tube.lineWidth`, `tube.lineHeight`: must be finite and greater than 0.
+    - `tube.maxVertices`: must be a whole number of at least 1 (`NaN` used to turn the guard off).
+    - `tubeByteBudget`, `geometryMemoryBudgetBytes`: must be finite and greater than 0.
+    - `geometryConcurrency`: must be `'auto'`, `'off'`, or a whole number of at least 1.
+    - `qualityMode`: must be `'full'`, `'adaptive'` or `'fast'`. `setQualityMode()` now throws the same
+      error; before, it stored an unknown value and silently built as `'adaptive'`.
+  - **A toolpath whose layer table starts at a negative segment index no longer stalls the build.** A
+    `segStart` of -50 million took 2.6 seconds; it is now bounded by the real segment count.
+
+- Updated dependencies [[`d0c3fcc`](https://github.com/ChestnutLabs/gcode-preview/commit/d0c3fcc59e7973bcb0d39ba2278f830daa02fedd), [`4d08cbc`](https://github.com/ChestnutLabs/gcode-preview/commit/4d08cbc86aa1672ebea6f9d312b376699db5ecf1)]:
+  - @chestnutlabs/gcode-colors@0.23.0
+  - @chestnutlabs/toolpath-core@0.23.0
+
 ## 0.22.0
 
 ### Minor Changes
