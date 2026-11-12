@@ -125,9 +125,19 @@ export function createDialectRunner(adapters: DialectAdapter[]): DialectRunnerFa
           const conflicts: Warning[] = [];
           for (const a of active) {
             contain(a, () => a.adapter.finalize?.(ir, a.sink, a.config));
-            a.sink.apply(ir, metadata, (code, message) =>
-              conflicts.push({ code, message, severity: 'warn', count: 1 })
-            );
+            try {
+              // All or nothing: a throw rolls this adapter's writes back before it reaches here.
+              a.sink.apply(ir, metadata, (code, message) =>
+                conflicts.push({ code, message, severity: 'warn', count: 1 })
+              );
+            } catch (err) {
+              conflicts.push({
+                code: 'adapter-failed',
+                message: `adapter '${a.adapter.id}' failed to apply: ${err instanceof Error ? err.message : err}`,
+                severity: 'warn',
+                count: 1
+              });
+            }
           }
           // Now that every adapter has settled the object/feature channels, refresh the non-model
           // classification authoritatively (DD-026 D4/D5/D7, lifecycle §5). Parse time saw empty
