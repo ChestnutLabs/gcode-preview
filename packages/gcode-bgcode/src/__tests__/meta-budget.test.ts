@@ -49,7 +49,8 @@ function noneThumbFile(n: number): Uint8Array {
   v.setUint16(10, THUMB, true);
   v.setUint16(12, NONE, true);
   v.setUint32(14, n, true);
-  // params (format, width, height) stay 0; data stays zero
+  v.setUint16(20, 8, true); // width (format stays 0 = png); a 0x0 thumbnail is dropped since the G3 sweep
+  v.setUint16(22, 8, true); // height; data stays zero
   return f;
 }
 

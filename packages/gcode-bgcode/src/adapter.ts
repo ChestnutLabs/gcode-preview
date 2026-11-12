@@ -49,26 +49,49 @@ function parseBedShape(value: string): Point2[] | null {
   for (const p of parts) {
     const m = /^\s*(-?\d+(?:\.\d+)?)x(-?\d+(?:\.\d+)?)\s*$/.exec(p);
     if (m === null) return null;
-    points.push({ x: parseFloat(m[1]), y: parseFloat(m[2]) });
+    const x = parseFloat(m[1]);
+    const y = parseFloat(m[2]);
+    // A digit run past ~309 digits parses to Infinity: treat it like any other unreadable point.
+    if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
+    points.push({ x, y });
   }
   return points;
 }
 
-/** Build a MachineGeometry from the decoded `.bgcode` settings (bed_shape + max_print_height + model). */
-function machineFrom(settings: Record<string, string>): MachineGeometry | undefined {
-  const points = settings.bed_shape ? parseBedShape(settings.bed_shape) : null;
-  if (points === null) return undefined;
+/**
+ * Build a MachineGeometry from the decoded `.bgcode` settings (bed_shape + max_print_height + model).
+ * File data is untrusted: an unreadable `bed_shape` gives no machine (plus a `bgcode-bed-unparsed`
+ * warning), and a height that is not a finite positive number is left out (plus a `bgcode-metadata-invalid` warning).
+ */
+function machineFrom(
+  settings: Record<string, string>,
+  warnings: { code: string; message: string }[]
+): MachineGeometry | undefined {
+  if (!settings.bed_shape) return undefined;
+  const points = parseBedShape(settings.bed_shape);
+  if (points === null) {
+    warnings.push({
+      code: 'bgcode-bed-unparsed',
+      message: 'bed_shape setting present but unreadable; no bed reported'
+    });
+    return undefined;
+  }
   const xs = points.map((p) => p.x);
   const ys = points.map((p) => p.y);
   const min = { x: Math.min(...xs), y: Math.min(...ys) };
   const max = { x: Math.max(...xs), y: Math.max(...ys) };
   const rect =
     points.length === 4 && points.every((p) => (p.x === min.x || p.x === max.x) && (p.y === min.y || p.y === max.y));
-  const h = parseFloat(settings.max_print_height ?? settings.printable_height ?? '');
+  const heightText = settings.max_print_height ?? settings.printable_height;
+  const h = parseFloat(heightText ?? '');
+  const heightMm = Number.isFinite(h) && h > 0 ? h : undefined;
+  if (heightText !== undefined && heightMm === undefined) {
+    warnings.push({ code: 'bgcode-metadata-invalid', message: 'print height is not a positive number; dropped' });
+  }
   return {
     bed: rect ? { kind: 'rect', min, max } : { kind: 'polygon', points },
     origin: { x: 0, y: 0 },
-    heightMm: Number.isFinite(h) ? h : undefined,
+    heightMm,
     printerName: settings.printer_model,
     confidence: 'inferred', // read from the slicer's embedded settings, not machine config
     source: { adapterId: 'bgcode', evidence: 'bgcode metadata (bed_shape)' }
@@ -93,13 +116,21 @@ function streamOf(bytes: Uint8Array): BgcodeStreamLike {
  * metadata + thumbnails. Errors are the structured `ContainerError`s from {@link openBgcode}.
  */
 export async function openBgcodeContainer(bytes: Uint8Array): Promise<OpenedBgcode> {
-  const { gcode, settings, thumbnails } = await openBgcode(bytes, { metadata: true });
+  const { gcode, settings, thumbnails, droppedThumbnails } = await openBgcode(bytes, { metadata: true });
   const raw: Record<string, string> = {};
   for (const key of RAW_WHITELIST) if (settings[key] !== undefined) raw[key] = settings[key];
+  const warnings: { code: string; message: string }[] = [];
+  const machine = machineFrom(settings, warnings);
+  if (droppedThumbnails > 0) {
+    warnings.push({
+      code: 'bgcode-metadata-invalid',
+      message: `${droppedThumbnails} thumbnail block(s) with a zero width or height; dropped`
+    });
+  }
   return {
     id: 'bgcode',
     plates: [{ index: 0, name: 'bgcode', estimatedBytes: gcode.length }],
-    metadata: { machine: machineFrom(settings), raw, warnings: [] },
+    metadata: { machine, raw, warnings },
     thumbnails,
     openPlate(index: number): BgcodeStreamLike {
       if (index !== 0) throw new Error(`.bgcode has a single plate; requested ${index}`);

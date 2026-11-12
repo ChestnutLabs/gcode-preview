@@ -16,11 +16,13 @@ import type { AnnotationSink, DialectAdapter } from './contracts.js';
 import { parseFilamentTotals, parseHmsToSeconds } from './prusaslicer.js';
 import { PrintingObjectTracker } from './object-markers.js';
 import {
+  INVALID_VALUE_WARNING,
   ThumbnailCollector,
   applyFeatureBracketRanges,
   applyMarkerRanges,
   applyWipeRanges,
   bedFromPoints,
+  finitePositive,
   matchBracketComment,
   matchWipeComment,
   parseAreaPoints,
@@ -60,7 +62,7 @@ const FEATURE_MAP: Record<string, number> = {
  * (or the normal-mode time, which is the job total) wins over the model time; the first field of a kind
  * that parses wins. Returns null when no field parses.
  */
-function matchPrintTime(trimmed: string): { seconds: number; evidence: string } | null {
+function matchPrintTime(trimmed: string, onInvalid: () => void): { seconds: number; evidence: string } | null {
   let total: { seconds: number; evidence: string } | null = null;
   let model: { seconds: number; evidence: string } | null = null;
   for (const part of trimmed.split(';')) {
@@ -69,7 +71,7 @@ function matchPrintTime(trimmed: string): { seconds: number; evidence: string } 
     const m = normal === null ? /^(total estimated time|model printing time)\s*:\s*(\S.*)$/i.exec(field) : null;
     const text = normal !== null ? normal[1] : m?.[2];
     if (text === undefined) continue;
-    const seconds = parseHmsToSeconds(text);
+    const seconds = parseHmsToSeconds(text, onInvalid);
     if (seconds === null) continue;
     const found = { seconds, evidence: field };
     if (m === null || m[1].toLowerCase() === 'total estimated time') total ??= found;
@@ -174,7 +176,9 @@ export function orcaBambu(): DialectAdapter {
       }
       // Print time: `; model printing time: 1h 53m 22s; total estimated time: 2h 0m 34s` (Bambu) or
       // `; estimated printing time (normal mode) = 2h 0m 34s` (Orca, non-Bambu printers).
-      const time = matchPrintTime(trimmed);
+      const time = matchPrintTime(trimmed, () =>
+        sink.warn(INVALID_VALUE_WARNING, 'print time out of range; dropped', srcByte)
+      );
       if (time !== null) {
         sink.setPrintEstimate({
           seconds: time.seconds,
@@ -189,8 +193,9 @@ export function orcaBambu(): DialectAdapter {
         s.bedPoints = kv.value;
         s.bedSrcByte = srcByte;
       } else if (kv.key === 'printable_height') {
-        const h = parseFloat(kv.value);
-        if (Number.isFinite(h)) s.heightMm = h;
+        const h = finitePositive(parseFloat(kv.value));
+        if (h !== undefined) s.heightMm = h;
+        else sink.warn(INVALID_VALUE_WARNING, 'printable_height is not a positive number; dropped', srcByte);
       } else if (kv.key === 'printer_model') {
         s.printerModel = kv.value;
       } else if (kv.key === 'filament_type') {
@@ -229,6 +234,8 @@ export function orcaBambu(): DialectAdapter {
       if (s.printerModel !== undefined) sink.setRaw('printer_model', s.printerModel);
       // Multi-tool/AMS metadata (phase 5): filament slots enrich ir.tools.
       const slots = Math.max(s.filamentTypes?.length ?? 0, s.filamentColours?.length ?? 0);
+      // Capped here, not only in the sink: orcaBambu and AnnotationSink are public, and the sink contract
+      // does not promise to bound setFilament / setToolInfo calls.
       for (let i = 0; i < Math.min(slots, 64); i++) {
         sink.setFilament({ slot: i, type: s.filamentTypes?.[i], color: s.filamentColours?.[i] });
         sink.setToolInfo(i, { material: s.filamentTypes?.[i], colorHex: s.filamentColours?.[i] });

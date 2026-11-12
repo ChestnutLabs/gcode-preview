@@ -52,3 +52,18 @@ is `image/png`, `image/jpeg` or `image/qoi`), the same list `; thumbnail` commen
 
 Every failure — bad magic/version, CRC mismatch, truncation, unknown/unsupported codec, or a
 decompression bomb — is a structured, bounded `ContainerError` (never a crash or an unbounded read).
+
+Fixed limits:
+
+| Limit | Value | When exceeded |
+|---|---|---|
+| Decoded G-code (`maxOutputBytes`) | 512 MiB by default | `E_BGCODE_BOMB` |
+| Metadata + thumbnail blocks, combined | 32 MiB | `E_BGCODE_BOMB` |
+| Blocks in one file | 1,000,000 (a real file has about 8,000) | `E_BGCODE_BOMB` |
+
+A MeatPack G-code block that ends mid-token throws `E_BGCODE_MEATPACK`. Values the file declares but
+that cannot be true are left out, not passed on. A `bed_shape` point that is not a finite number gives
+no machine geometry, with a `bgcode-bed-unparsed` container warning. A height that is not a positive
+number gives no `heightMm`, with a `bgcode-metadata-invalid` warning. A thumbnail with a zero width or
+height is dropped: `openBgcode` counts these in `droppedThumbnails`, and the container adds one
+`bgcode-metadata-invalid` warning with the count.
