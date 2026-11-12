@@ -8,6 +8,7 @@ import { describe, expect, it } from 'vitest';
 import { MoveKind, ToolpathIRBuilder, type MachineGeometry } from '@chestnutlabs/toolpath-core';
 import { createPreviewController, LayerView2DRenderer, type PreviewEvent, type PreviewRendererEvent } from '../index';
 import {
+  REQUIRED_CONTROLS,
   REQUIRED_STATE_KEYS,
   SuiteStubWorker,
   makeSuiteStubGL,
@@ -66,6 +67,15 @@ describe('state parity list (REQUIRED_STATE_KEYS)', () => {
     await settle();
     expect(sorted(REQUIRED_STATE_KEYS)).toEqual(sorted(Object.keys(controller.getState())));
     expect(REQUIRED_STATE_KEYS.length).toBe(15);
+    await controller.dispose();
+  });
+});
+
+describe('controls parity list (REQUIRED_CONTROLS)', () => {
+  it('names exactly the methods the controller controls object carries', async () => {
+    const controller = makeController();
+    expect([...REQUIRED_CONTROLS].sort()).toEqual(Object.keys(controller.controls).sort());
+    expect(REQUIRED_CONTROLS.length).toBe(26);
     await controller.dispose();
   });
 });
