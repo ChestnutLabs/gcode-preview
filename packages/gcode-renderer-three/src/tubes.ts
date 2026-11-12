@@ -83,7 +83,6 @@ export function checkTubeOptions(tube: TubeOptions | undefined): void {
   }
 }
 
-/** Validate the renderer's tube/pool budget options (same policy as {@link checkTubeOptions}). */
 /** A quality policy must be exactly `'full'`, `'adaptive'` or `'fast'` (no `undefined` here: a setter needs a value). */
 export function checkQualityMode(q: unknown): void {
   if (q !== 'full' && q !== 'adaptive' && q !== 'fast') {
@@ -91,6 +90,7 @@ export function checkQualityMode(q: unknown): void {
   }
 }
 
+/** Validate the renderer's tube/pool budget options (same policy as {@link checkTubeOptions}). */
 export function checkBudgetOptions(opts: {
   tubeByteBudget?: number;
   geometryMemoryBudgetBytes?: number;
