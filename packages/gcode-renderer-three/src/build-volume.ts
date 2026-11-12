@@ -153,6 +153,18 @@ function validateBuildVolume(def: BuildVolumeDef): void {
       );
     }
   }
+  // The count above is pure arithmetic on the EXTENT; the loops step the ORIGIN. At |origin| ≥ ~2^53·pitch
+  // `v + pitch === v`, so a stepping loop never advances (1e20 + 10 === 1e20). Reject that at either edge.
+  for (const [axis, lo, hi] of [
+    ['x', def.min?.x ?? 0, (def.min?.x ?? 0) + def.x],
+    ['y', def.min?.y ?? 0, (def.min?.y ?? 0) + def.y]
+  ] as const) {
+    if (lo + pitch === lo || hi + pitch === hi) {
+      throw new RangeError(
+        `buildVolume ${axis} range ${lo}..${hi} is too large for a ${pitch} mm grid (the grid pitch is below the coordinate precision)`
+      );
+    }
+  }
   const shape = def.shape;
   if (shape?.kind === 'circular') {
     for (const v of [shape.center.x, shape.center.y, shape.diameter]) {
@@ -249,12 +261,12 @@ export function createBuildVolume(def: BuildVolumeDef, style?: BuildVolumeStyle)
     const grid: number[] = [];
     const majorGrid: number[] = [];
     let k = 0;
-    for (let gx = x0; gx <= x1 + 1e-6; gx += pitch) {
+    for (let i = 0, gx = x0; i <= MAX_GRID_LINES_PER_AXIS && gx <= x1 + 1e-6; i++, gx += pitch) {
       const tier = tierOf(k++);
       if (!onEdge(gx, x0, x1)) (tier === 'major' ? majorGrid : grid).push(gx, y0, 0, gx, y1, 0);
     }
     k = 0;
-    for (let gy = y0; gy <= y1 + 1e-6; gy += pitch) {
+    for (let i = 0, gy = y0; i <= MAX_GRID_LINES_PER_AXIS && gy <= y1 + 1e-6; i++, gy += pitch) {
       const tier = tierOf(k++);
       if (!onEdge(gy, y0, y1)) (tier === 'major' ? majorGrid : grid).push(x0, gy, 0, x1, gy, 0);
     }
@@ -463,9 +475,13 @@ function clipGridToPolygon(
     }
   };
   let k = 0;
-  for (let gx = x0; gx <= x1 + 1e-6; gx += pitch) if (tierOf(k++) === tier) addClipped(gx, y0, gx, y1);
+  for (let i = 0, gx = x0; i <= MAX_GRID_LINES_PER_AXIS && gx <= x1 + 1e-6; i++, gx += pitch) {
+    if (tierOf(k++) === tier) addClipped(gx, y0, gx, y1);
+  }
   k = 0;
-  for (let gy = y0; gy <= y1 + 1e-6; gy += pitch) if (tierOf(k++) === tier) addClipped(x0, gy, x1, gy);
+  for (let i = 0, gy = y0; i <= MAX_GRID_LINES_PER_AXIS && gy <= y1 + 1e-6; i++, gy += pitch) {
+    if (tierOf(k++) === tier) addClipped(x0, gy, x1, gy);
+  }
   return out;
 }
 

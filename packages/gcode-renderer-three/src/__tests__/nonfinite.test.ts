@@ -293,9 +293,9 @@ describe('build volume — bounded by construction (#501)', () => {
   const msg = (axis: string, extent: number, pitch: number, lines: number): string =>
     `buildVolume.${axis} of ${extent} mm at a ${pitch} mm grid needs ${lines} grid lines (> 10000 per axis)`;
 
-  it('a huge but FINITE extent throws instead of looping ~1e8 grid lines', () => {
-    expect(() => createBuildVolume({ x: 1e9, y: 100, z: 50 })).toThrow(msg('x', 1e9, 10, 100000001));
-    expect(() => createBuildVolume({ x: 100, y: 1e9, z: 50 })).toThrow(msg('y', 1e9, 10, 100000001));
+  it('a huge but FINITE extent throws instead of looping 10 000+ grid lines', () => {
+    expect(() => createBuildVolume({ x: 100010, y: 100, z: 50 })).toThrow(msg('x', 100010, 10, 10002));
+    expect(() => createBuildVolume({ x: 100, y: 100010, z: 50 })).toThrow(msg('y', 100010, 10, 10002));
   });
 
   it('the cap is exactly 10 000 lines per axis', () => {
@@ -309,8 +309,56 @@ describe('build volume — bounded by construction (#501)', () => {
 
   it('the cap also guards non-rectangular beds (clipped-grid loops)', () => {
     expect(() =>
-      createBuildVolume({ x: 1e9, y: 100, z: 50, shape: { kind: 'circular', center: { x: 0, y: 0 }, diameter: 100 } })
-    ).toThrow(msg('x', 1e9, 10, 100000001));
+      createBuildVolume({
+        x: 100010,
+        y: 100,
+        z: 50,
+        shape: { kind: 'circular', center: { x: 0, y: 0 }, diameter: 100 }
+      })
+    ).toThrow(msg('x', 100010, 10, 10002));
+  });
+
+  it('a huge ORIGIN throws a typed error: the pitch no longer advances (1e20 + 10 === 1e20)', () => {
+    const text = (axis: string, lo: number, hi: number): string =>
+      `buildVolume ${axis} range ${lo}..${hi} is too large for a 10 mm grid (the grid pitch is below the coordinate precision)`;
+    expect(() => createBuildVolume({ x: 100, y: 100, z: 50, min: { x: 1e20, y: 0 } })).toThrow(
+      text('x', 1e20, 1e20 + 100)
+    );
+    expect(() => createBuildVolume({ x: 100, y: 100, z: 50, min: { x: 0, y: -1e20 } })).toThrow(
+      text('y', -1e20, -1e20 + 100)
+    );
+  });
+
+  it('the far edge alone is checked too (origin still advances, max does not)', () => {
+    const lo = 2 ** 53 - 5; // 9007199254740987: +1 advances; lo + 10 = 9007199254740996: +1 does not
+    expect(() => createBuildVolume({ x: 10, y: 100, z: 50, grid: 1, min: { x: lo, y: 0 } })).toThrow(
+      'buildVolume x range 9007199254740987..9007199254740996 is too large for a 1 mm grid (the grid pitch is below the coordinate precision)'
+    );
+  });
+
+  it('the origin alone is checked too (origin does not advance, max still does)', () => {
+    const lo = -(2 ** 53) - 4; // -9007199254740996: +1 does not advance; lo + 16 = -9007199254740980: +1 does
+    expect(() => createBuildVolume({ x: 16, y: 100, z: 50, grid: 1, min: { x: lo, y: 0 } })).toThrow(
+      'buildVolume x range -9007199254740996..-9007199254740980 is too large for a 1 mm grid (the grid pitch is below the coordinate precision)'
+    );
+  });
+
+  it('the loop bound never drops a line of a bed at the cap (10 000 lines)', () => {
+    const g = createBuildVolume({ x: 99990, y: 100, z: 50 });
+    const grid = g.children[0] as unknown as { geometry: { getAttribute(n: string): { count: number } } };
+    expect(grid.geometry.getAttribute('position').count).toBe(2 * (10000 + 11));
+  });
+
+  it('a polygon bed at a huge origin is rejected the same way (clipped-grid loops)', () => {
+    expect(() =>
+      createBuildVolume({
+        x: 100,
+        y: 100,
+        z: 50,
+        min: { x: 1e20, y: 0 },
+        shape: { kind: 'circular', center: { x: 1e20, y: 50 }, diameter: 100 }
+      })
+    ).toThrow(RangeError);
   });
 
   for (const v of [Infinity, -Infinity, NaN]) {
@@ -406,6 +454,6 @@ describe('build volume — bounded by construction (#501)', () => {
   });
 
   it('the constructor rejects a bad volume with the same typed error', () => {
-    expect(() => makeRenderer({ x: 1e9, y: 100, z: 50 })).toThrow(RangeError);
+    expect(() => makeRenderer({ x: 100010, y: 100, z: 50 })).toThrow(RangeError);
   });
 });

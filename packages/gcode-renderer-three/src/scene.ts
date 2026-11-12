@@ -1911,12 +1911,31 @@ export class ToolpathRenderer {
    * render as their bounding volume in v1). Emits `machine-geometry-mismatch`
    * when a consumer-configured volume disagrees with a discovered one by >1 mm. Throws `RangeError` for a
    * volume that cannot be drawn (non-finite size/pitch, or over 10 000 grid lines per axis); the current
-   * volume is left in place.
+   * volume is left in place. A discovered `MachineGeometry` that cannot be drawn does NOT throw: it emits an
+   * `error` event with code `machine-geometry-invalid` (before any `machine-geometry-mismatch`) and keeps the
+   * current volume.
    */
   setBuildVolume(def: BuildVolumeDef | MachineGeometry): void {
     if (this.disposed) return;
+    const discovered = 'bed' in def;
     const next = 'bed' in def ? machineToVolume(def) : def;
-    if (this.volumeDef !== null && 'bed' in def) {
+    // Build first: createBuildVolume throws RangeError for a volume it cannot draw, and the current volume
+    // must survive that untouched (not be left disposed but still referenced). A consumer-passed def keeps
+    // the typed throw. A bed DISCOVERED in a file is inferred data: a bad one must not lose the toolpath or
+    // the renderer bind, so it is reported as an `error` event and the current volume is kept.
+    let group: Group;
+    try {
+      group = createBuildVolume(next, this.volumeStyle());
+    } catch (err) {
+      if (!discovered || !(err instanceof RangeError)) throw err;
+      this.emit({
+        type: 'error',
+        code: 'machine-geometry-invalid',
+        message: `file-discovered bed rejected: ${err.message}`
+      });
+      return;
+    }
+    if (this.volumeDef !== null && discovered) {
       const dx = Math.abs(this.volumeDef.x - next.x);
       const dy = Math.abs(this.volumeDef.y - next.y);
       if (dx > 1 || dy > 1) {
@@ -1929,9 +1948,6 @@ export class ToolpathRenderer {
         });
       }
     }
-    // Build first: createBuildVolume throws RangeError for a volume it cannot draw, and the current volume
-    // must survive that untouched (not be left disposed but still referenced).
-    const group = createBuildVolume(next, this.volumeStyle());
     if (this.volumeGroup !== null) {
       disposeBuildVolume(this.volumeGroup);
       this.root.remove(this.volumeGroup);

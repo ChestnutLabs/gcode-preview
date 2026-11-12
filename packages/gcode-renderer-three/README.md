@@ -62,11 +62,15 @@ fragments of ratio 1.
 
 ## Bad coordinates and bad build volumes
 
-A segment with an `Infinity` or `NaN` endpoint coordinate is not drawn, and it does not affect the camera frame.
-`buildChunks` counts them in `skippedNonFinite`; core and the framework adapters do not surface that count yet
-(tracked with [#518](https://github.com/ChestnutLabs/gcode-preview/issues/518)). `createBuildVolume` and
+A segment with an `Infinity` or `NaN` endpoint coordinate is not drawn. The camera frame still comes from the IR's bounds, so with the default `frameContent: 'all'` the
+camera frames the build volume (or the preview bounds) instead of the remaining toolpath; under `'object'` it
+tries the model, then the object bounds, then the build volume. The 2D renderer skips on x/y only.
+`buildChunks` counts skipped segments in `skippedNonFinite`; core and the framework adapters do not surface that
+count yet (tracked with [#518](https://github.com/ChestnutLabs/gcode-preview/issues/518)). `createBuildVolume` and
 `setBuildVolume` throw `RangeError` for a volume that cannot be drawn: a non-finite size, origin or height, a grid
-pitch that is not a positive number, or more than 10 000 grid lines on one axis. A `decimation` option must be a
+pitch that is not a positive number, more than 10 000 grid lines on one axis, or an origin so large that the pitch
+no longer advances. A bed discovered in the file (a `MachineGeometry`) never throws: `setBuildVolume` keeps the
+current volume and emits an `error` event with code `machine-geometry-invalid`. A `decimation` option must be a
 whole number of at least 1, or `'auto'`; anything else throws `RangeError`.
 
 ## Tighter limits on software GL
