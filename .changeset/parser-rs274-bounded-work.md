@@ -2,7 +2,7 @@
 '@chestnutlabs/gcode-parser': patch
 ---
 
-Hostile parametric (RS274NGC) programs can no longer keep the parser busy for hours. Work inside a loop or subroutine now counts against `maxProgramIterations` per test, argument, entered loop and 256 characters of text, not only per statement, so programs with many `elseif` branches, long conditions or many `call` arguments inside loops stop sooner with the existing `rs274-iteration-limit` warning. Ordinary programs are unaffected: a plain loop still costs 2 units per pass, and code outside loops and subroutines is never counted.
+Hostile parametric (RS274NGC) programs can no longer keep the parser busy for hours. Work inside a loop or subroutine now counts against `maxProgramIterations` per test, argument, entered loop and 256 characters of text, not only per statement, so programs with many `elseif` branches, long conditions or many `call` arguments inside loops stop sooner with the existing `rs274-iteration-limit` warning. A plain loop still costs 2 units per pass, and code outside loops and subroutines is never counted. A loop whose body tests `if`/`elseif` conditions now uses more of the budget on each pass, so a long-running legitimate program close to the default limit of 1 000 000 can stop earlier than before; raise `maxProgramIterations` if it does.
 
 Also in this release:
 
