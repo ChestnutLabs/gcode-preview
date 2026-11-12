@@ -178,7 +178,7 @@ describe('<gcode-preview> non-numeric scrub / scrub-time', () => {
     el.remove();
   });
 
-  it('a reconnect keeps the last numeric scrub-time over a non-numeric attribute (no clear)', async () => {
+  it('a reconnect keeps the last numeric scrub-time over a non-numeric attribute, and it wins after the parse', async () => {
     const el = await parsed();
     el.setAttribute('scrub-time', '5');
     el.setAttribute('scrub-time', 'nope');
@@ -188,7 +188,9 @@ describe('<gcode-preview> non-numeric scrub / scrub-time', () => {
     await el.parse(new Uint8Array(1000));
     await settle();
     expect(el.scrubTime).toBe(5);
-    expect(drawCount(el)).toBe(6); // the scrub cut stands: scrub-time 5 before the parse did not clear it
+    // Connect applies scrub (2), then scrub-time (5 ms) last. Made before the parse, the scrub-time waits for
+    // the file and resolves on its axis: 5 segments done, cut after segment 4, 10 vertices.
+    expect(drawCount(el)).toBe(10);
     el.remove();
   });
 });
