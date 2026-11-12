@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import type { GLRendererLike, RenderTargetCanvas } from '@chestnutlabs/gcode-renderer-three';
 import { renderModelStill } from '../render-model-still.js';
 import { applyRenderScope, checkRenderScope, IDENTITY_MAT4, type ModelScene } from '../scene-model.js';
+import { enc, makeZip, singleObjectModel, TWO_PLATE_MODEL, TWO_PLATE_SETTINGS } from './zip-fixture.js';
 
 const canvas = (): RenderTargetCanvas => ({ width: 8, height: 8 }) as unknown as RenderTargetCanvas;
 const gl = (d: RenderTargetCanvas): GLRendererLike => ({
@@ -50,6 +51,22 @@ describe('renderModelStill cache key', () => {
       { ...opts, renderScope: { objectIds: ['stl'] }, cameraFov: 40 }
     );
     expect(scoped.cacheKey).toBe('mr1_9df686241e31e208c1edfa99');
+  });
+
+  it('keeps 3MF source keys byte-identical to dev (literal; measured at base e6f159d too)', async () => {
+    const opts = { canvas: canvas(), width: 8, height: 8, createRenderer: gl, envId: 'env-1' };
+    const single = makeZip([{ name: '3D/3dmodel.model', data: enc(singleObjectModel('5 5 0')) }]);
+    const twoPlate = (): Uint8Array =>
+      makeZip([
+        { name: '3D/3dmodel.model', data: enc(TWO_PLATE_MODEL) },
+        { name: 'Metadata/model_settings.config', data: enc(TWO_PLATE_SETTINGS) }
+      ]);
+    const k = async (bytes: Uint8Array, extra: Record<string, unknown> = {}): Promise<string> =>
+      (await renderModelStill({ kind: '3mf', bytes }, { ...opts, ...extra })).cacheKey;
+    expect(await k(single)).toBe('mr1_a37f733c40c21d0716833eae');
+    expect(await k(twoPlate())).toBe('mr1_84060de443356c4f878b8d16');
+    expect(await k(twoPlate(), { renderScope: { plateId: 1 } })).toBe('mr1_84060de406ccc12e9d03d20f');
+    expect(await k(twoPlate(), { renderScope: { plateId: 2 } })).toBe('mr1_84060de497eb61d58a78390c');
   });
 
   it('is deterministic for an identical pre-built scene', async () => {
