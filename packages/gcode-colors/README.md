@@ -25,6 +25,13 @@ Every mode degrades to its `fallback` for unknown channel values — it never fa
 role/speed/object color. Modes that read an optional channel (`feature`, `object`, `feedrate`) must
 be **capability-gated by the caller** before use.
 
+Values that come from the file never throw: a NaN, infinite, or negative feedrate or tool power is
+left out of the auto-range and drawn in `fallback`. Options you pass do throw a `RangeError` when they
+have no meaning: a `range` that is not two finite numbers `>= 0` in ascending order, or an object
+`only` that is not a 1-based integer. For a reversed scale, reverse the `ramp`, not the `range`. A
+point range such as `[1500, 1500]` is valid and paints every segment the ramp's first colour. Call
+`checkColorMode(mode)` to validate a mode up front, before you store it.
+
 ## Usage
 
 ```ts
