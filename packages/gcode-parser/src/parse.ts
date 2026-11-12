@@ -42,7 +42,13 @@ import {
   type Warning
 } from '@chestnutlabs/toolpath-core';
 import { BudgetExceededError, SegmentWriter } from './growable.js';
-import { FLOAT32_MAX, NUMBER_OUT_OF_RANGE_WARN, Rs274Context, lineUsesParametric } from './rs274.js';
+import {
+  FLOAT32_MAX,
+  NUMBER_OUT_OF_RANGE_WARN,
+  Rs274Context,
+  lineUsesParametric,
+  stripParenComments
+} from './rs274.js';
 import { RS274_FLOW_WARN, interpretOWordProgram, programUsesOWords, type FlowLine } from './rs274-flow.js';
 
 export interface ParseLimits {
@@ -76,6 +82,8 @@ export const DEFAULT_LIMITS: ParseLimits = {
   maxCallDepth: 50
 };
 
+const MAX_INPUT_BYTES_CEILING = 0xffffffff;
+
 /**
  * Thrown before parsing when a caller's option is invalid (#508). `code` is `E_PARSE_OPTION`; through a
  * parse session it arrives as a `ParseSessionError`-style rejection carrying the same code.
@@ -103,6 +111,12 @@ export function resolveParseLimits(limits?: Partial<ParseLimits>): ParseLimits {
     // isSafeInteger is false for NaN, Infinity, fractions, null, strings and objects
     if (!(Number.isSafeInteger(value) && (value as number) >= 0)) {
       throw new ParseOptionError(`limits.${key} must be a non-negative integer (got ${String(value)})`);
+    }
+    // srcByte is a Uint32 column (UNRESOLVED_LAYER = 0xffffffff): an input past 2^32-1 bytes would wrap
+    if (key === 'maxInputBytes' && (value as number) > MAX_INPUT_BYTES_CEILING) {
+      throw new ParseOptionError(
+        `limits.maxInputBytes must be at most ${MAX_INPUT_BYTES_CEILING} (got ${String(value)})`
+      );
     }
     out[key] = value as number;
   }
@@ -248,7 +262,11 @@ const SPLIT_LETTERS = /([a-zA-Z])/g;
  * command word, so `codes = [thatCommand]` and behavior is byte-identical to the inherited lexer.
  */
 function lexLine(line: string, onOutOfRange?: (key: string) => void): Cmd {
-  const body = line.trim().split(';')[0];
+  // `( … )` is a comment in RS274NGC / Fanuc / Mach, never code: strip it before the `;` split (so a `;`
+  // inside parens does not truncate the line), exactly as the parametric path does. A line without `(`
+  // (every FDM slicer line) skips the scan and is byte-identical.
+  const code = line.indexOf('(') === -1 ? line : stripParenComments(line);
+  const body = code.trim().split(';')[0];
   const parts = body
     .split(SPLIT_LETTERS)
     .slice(1)
