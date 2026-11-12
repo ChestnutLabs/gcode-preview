@@ -28,13 +28,20 @@ const EXTRACT_CODES = new Set([
   'E_CONTAINER_CRC'
 ]);
 
-export async function fuzz(data) {
-  const bytes = new Uint8Array(data.buffer, data.byteOffset, data.byteLength);
+/**
+ * The whole property loop, exported so the per-PR replay test runs the REAL target rather than a copy.
+ * Returns the expected extract-stage codes it saw (in entry order); throws on any property violation.
+ * An input that fails to parse as a directory returns [] (typed rejection).
+ * @param {Uint8Array} bytes
+ * @returns {Promise<string[]>}
+ */
+export async function extractAll(bytes) {
+  const seen = [];
   let dir;
   try {
     dir = readDirectory(bytes, FUZZ_LIMITS);
   } catch (e) {
-    if (e instanceof ContainerError) return;
+    if (e instanceof ContainerError) return seen;
     throw e;
   }
   // One budget per input, shared by every entry (#458): the archive-wide total (#449) is only reachable
@@ -49,6 +56,7 @@ export async function fuzz(data) {
         if (!EXTRACT_CODES.has(e.code)) {
           throw new Error(`unexpected extract-stage code ${e.code}: ${e.message}`, { cause: e });
         }
+        seen.push(e.code);
         continue;
       }
       throw e;
@@ -64,4 +72,9 @@ export async function fuzz(data) {
       throw new Error(`extractEntry returned bytes whose CRC does not match the header for '${entry.name}'`);
     }
   }
+  return seen;
+}
+
+export async function fuzz(data) {
+  await extractAll(new Uint8Array(data.buffer, data.byteOffset, data.byteLength));
 }
