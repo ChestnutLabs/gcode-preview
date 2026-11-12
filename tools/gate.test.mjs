@@ -1,9 +1,8 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { buildOrder, planSteps } from './gate.mjs';
+import { buildOrder, main, planSteps } from './gate.mjs';
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -61,36 +60,75 @@ describe('buildOrder', () => {
   });
 });
 
+// main() runs in-process with a recording stub runner, so no test can start a real build: a broken
+// argument check shows up as a recorded call, never as a spawned shell that outlives the test.
 describe('gate CLI', () => {
-  const script = path.join(repoRoot, 'tools', 'gate.mjs');
-  const run = (args, env = {}) =>
-    spawnSync(process.execPath, [script, ...args], {
-      encoding: 'utf8',
-      env: { ...process.env, ...env },
-      timeout: 30000
+  function drive(argv, { env = {}, fail } = {}) {
+    const calls = [];
+    const out = [];
+    const errs = [];
+    const status = main(argv, {
+      root: repoRoot,
+      env,
+      run: (cmd) => {
+        calls.push(cmd);
+        return cmd === fail ? 1 : 0;
+      },
+      log: (m) => out.push(m),
+      err: (m) => errs.push(m)
     });
+    return { status, calls, out: out.join('\n'), errs: errs.join('\n') };
+  }
 
   it('rejects an unknown option before running any step', () => {
-    const r = run(['--bogus']);
+    const r = drive(['--ci', '--bogus']);
     expect(r.status).toBe(2);
-    expect(r.stderr).toContain('gate: unknown option --bogus (expected --ci and/or --install)');
-    expect(r.stdout).not.toContain('▶ gate');
+    expect(r.errs).toBe('gate: unknown option --bogus (expected --ci and/or --install)');
+    expect(r.calls).toEqual([]);
   });
 
   it('rejects a worker cap that is not a positive integer before running any step', () => {
     for (const bad of ['0', '-1', '2.5', 'eight']) {
-      const r = run([], { GATE_MAX_WORKERS: bad });
+      const r = drive([], { env: { GATE_MAX_WORKERS: bad } });
       expect(r.status).toBe(2);
-      expect(r.stderr).toContain(`gate: GATE_MAX_WORKERS must be a positive integer, got '${bad}'`);
-      expect(r.stdout).not.toContain('▶ gate');
+      expect(r.errs).toBe(`gate: GATE_MAX_WORKERS must be a positive integer, got '${bad}'`);
+      expect(r.calls).toEqual([]);
     }
+  });
+
+  it('runs every planned step in order and reports green', () => {
+    const r = drive([], { env: { GATE_MAX_WORKERS: '3' } });
+    expect(r.status).toBe(0);
+    expect(r.calls).toHaveLength(21);
+    expect(r.calls[0]).toBe('npm run build');
+    expect(r.calls[1]).toBe('npm run build -w @chestnutlabs/toolpath-core');
+    expect(r.calls).toContain('npm test --workspaces --if-present -- --maxWorkers=3');
+    expect(r.calls.at(-1)).toBe('npm run docs:build');
+    expect(r.out).toContain('✔ gate GREEN: 21 steps in');
+    expect(r.errs).toBe('');
+  });
+
+  it('stops at the first failing step and reports it', () => {
+    const r = drive([], { fail: 'npm run lint' });
+    expect(r.status).toBe(1);
+    expect(r.calls.at(-1)).toBe('npm run lint');
+    expect(r.calls).not.toContain('npm run typeCheck');
+    expect(r.errs).toContain('✖ gate FAILED at lint (exit 1) after');
+    expect(r.out).not.toContain('gate GREEN');
+  });
+
+  it('passes --ci and --install through to the plan', () => {
+    const r = drive(['--install', '--ci']);
+    expect(r.status).toBe(0);
+    expect(r.calls[0]).toBe('npm ci');
+    expect(r.calls).toContain('npm run pack:check');
   });
 });
 
 describe('planSteps', () => {
   const order = ['@chestnutlabs/a', '@chestnutlabs/b'];
 
-  it('runs the default local gate in CI order with capped test workers', () => {
+  it('runs the default local gate fail-fast (lint and typeCheck before tests) with capped test workers', () => {
     expect(planSteps({ order })).toEqual([
       { name: 'build (root bundle)', cmd: 'npm run build' },
       { name: 'build @chestnutlabs/a', cmd: 'npm run build -w @chestnutlabs/a' },

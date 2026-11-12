@@ -1,6 +1,6 @@
 #!/usr/bin/env node
-// Local pre-push gate: one command that runs the same checks CI runs, in the order CI runs them,
-// and stops at the first failure.
+// Local pre-push gate: one command that runs the same checks as CI's `build` job and stops at the
+// first failure. The order is fail-fast, not CI's: lint and typeCheck run before the test suites.
 //
 //   npm run gate               # build + package dists + lint + typeCheck + root and package tests
 //                              # + docs links + typedoc
@@ -88,18 +88,36 @@ function readManifests(root) {
   return out;
 }
 
-function main(argv) {
-  const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+/** Runs one step with the user's terminal attached; returns its exit status (or the signal name). */
+function spawnStep(cmd, cwd) {
+  const r = spawnSync(cmd, { cwd, stdio: 'inherit', shell: true });
+  return r.status ?? r.signal;
+}
+
+/**
+ * The CLI. `run`, `env`, `log` and `err` are injectable so the tests drive it in-process with a stub
+ * runner: a broken argument check then records a stub call instead of starting a real build.
+ */
+export function main(
+  argv,
+  {
+    root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..'),
+    env = process.env,
+    run = spawnStep,
+    log = console.log,
+    err = console.error
+  } = {}
+) {
   const known = new Set(['--ci', '--install']);
   const bad = argv.filter((a) => !known.has(a));
   if (bad.length > 0) {
-    console.error(`gate: unknown option ${bad.join(' ')} (expected --ci and/or --install)`);
+    err(`gate: unknown option ${bad.join(' ')} (expected --ci and/or --install)`);
     return 2;
   }
-  const raw = process.env.GATE_MAX_WORKERS ?? '8';
+  const raw = env.GATE_MAX_WORKERS ?? '8';
   const maxWorkers = Number(raw);
   if (!Number.isInteger(maxWorkers) || maxWorkers < 1) {
-    console.error(`gate: GATE_MAX_WORKERS must be a positive integer, got '${raw}'`);
+    err(`gate: GATE_MAX_WORKERS must be a positive integer, got '${raw}'`);
     return 2;
   }
   const steps = planSteps({
@@ -110,16 +128,16 @@ function main(argv) {
   });
   const started = Date.now();
   for (const [i, step] of steps.entries()) {
-    console.log(`\n▶ gate ${i + 1}/${steps.length}: ${step.name}  (${step.cmd})`);
+    log(`\n▶ gate ${i + 1}/${steps.length}: ${step.name}  (${step.cmd})`);
     const t = Date.now();
-    const r = spawnSync(step.cmd, { cwd: root, stdio: 'inherit', shell: true });
-    if (r.status !== 0) {
-      console.error(`\n✖ gate FAILED at ${step.name} (exit ${r.status ?? r.signal}) after ${secs(started)}`);
+    const status = run(step.cmd, root);
+    if (status !== 0) {
+      err(`\n✖ gate FAILED at ${step.name} (exit ${status}) after ${secs(started)}`);
       return 1;
     }
-    console.log(`✔ ${step.name} (${secs(t)})`);
+    log(`✔ ${step.name} (${secs(t)})`);
   }
-  console.log(`\n✔ gate GREEN: ${steps.length} steps in ${secs(started)}`);
+  log(`\n✔ gate GREEN: ${steps.length} steps in ${secs(started)}`);
   return 0;
 }
 
