@@ -1,5 +1,164 @@
 # @chestnutlabs/gcode-renderer-three
 
+## 0.22.0
+
+### Minor Changes
+
+- [#470](https://github.com/ChestnutLabs/gcode-preview/pull/470) [`84e664a`](https://github.com/ChestnutLabs/gcode-preview/commit/84e664a4794cc80e8ea5377f53448995522bef2c) Thanks [@sobechestnut-dev](https://github.com/sobechestnut-dev)! - New renderer primitives for the Studio viewport look (DD-032). They are opt-in, and a scene with no theme
+  and the default lens renders exactly as before.
+  - `Theme` gains `gridOpacity`, a major grid tier (`gridMajor: { every, opacity, color? }`), a bed boundary
+    loop for every bed shape (`bedOutline: { opacity, color? }`), `contactShadow: { opacity }`, and a
+    vertical-gradient `background: { top, bottom }`. `BedSurface` gains `thickness` (a solid plate with side
+    walls; the top face keeps its height and colour) and `edgeColor`.
+    - `gridMajor.every` snaps to a whole number of grid pitches, so changing the grid pitch never fails.
+    - With `bedOutline` set, the outline replaces the grid lines on the bed edge and the cage's floor edges.
+  - `studioTheme('dark' | 'light')` returns the Studio preset; `STUDIO_CAMERA_FOV` is 32.
+  - Lens support: `framingFromCenterRadius(center, radius, fov?)` frames correctly at any lens from 10° to
+    120°, and `InteractiveStage.setFov(fov)` changes the lens without a re-fit. Up to 50° it keeps the model's
+    apparent size; above 50° it keeps the frame margin, so the camera never ends up inside the model.
+  - `createBackdrop`, `createContactShadow` and `volumeStyle` are exported as pure builders for viewers to
+    wire in, and `disposeBuildVolume` frees a plate group including its textures.
+  - Fixed: the bed texture is now freed when the build volume is rebuilt (`setTheme`, `setBuildVolume`) and
+    on `dispose()`. It used to leak each time.
+  - Invalid values throw `RangeError`: an opacity outside [0,1], a non-positive `gridMajor.every`, or a lens
+    outside [10, 120].
+
+  `ResolvedTheme` gains optional fields. It is an output type; constructing one by hand is not supported.
+
+  Not wired yet: `ToolpathRenderer` does not draw the gradient background or the contact shadow in this
+  step. A gradient `background` (`{ top, bottom }`, as in `studioTheme`) is ignored for now and treated as no
+  background (three's default), until that wiring lands.
+
+- [#485](https://github.com/ChestnutLabs/gcode-preview/pull/485) [`7469a64`](https://github.com/ChestnutLabs/gcode-preview/commit/7469a643f1398d6ef9e4fbb39b89b4aa092a80d9) Thanks [@sobechestnut-dev](https://github.com/sobechestnut-dev)! - The toolpath viewer now draws the Studio look and has a camera lens control. With no theme set
+  and the default lens, it renders exactly as before.
+  - **Studio look in the toolpath viewer.** `setTheme(studioTheme('dark' | 'light'))`, or the `theme` prop,
+    now draws the theme's vertical-gradient `background` and its `contactShadow`: a soft footprint shadow under
+    the toolpath, part of the plate. The shadow needs a build volume and loaded content, and
+    `capture({ includeBuildVolume: false })` hides it with the plate. A gradient background used to fall back
+    to no background.
+  - **Camera lens.**
+    - New `renderer.cameraFov` controller option and `controls.setCameraFov(degrees)`: a vertical field of
+      view in [10, 120], default 50 (`STUDIO_CAMERA_FOV` is 32). Out of range throws `RangeError`; it is never
+      clamped. The throw is synchronous, even before the 3D renderer has loaded.
+    - Framing reads the lens, so the model fits at any value. A live change keeps the framing without a
+      re-fit and emits no `camera-changed`. The lens is kept across canvas rebinds.
+    - The 2D renderer reports `setCameraFov` as `renderer-unsupported`, the same as `setCameraMode`.
+  - **Stills.** `renderStill` gains a top-level `cameraFov`. An explicit `camera.fov` still wins.
+  - **Adapters.** Vue, React and Svelte gain a declarative `cameraFov` prop; leaving it unset keeps the
+    current lens. `<gcode-preview>` gains a `camera-fov` attribute and a `cameraFov` property. Setting the
+    property out of range throws `RangeError`; a bad attribute value is ignored, and the element keeps the
+    last valid lens.
+  - `gcode-preview-core` re-exports `studioTheme` and `STUDIO_CAMERA_FOV`, so you don't need to import from
+    the renderer package.
+  - `ToolpathRenderer` gains `cameraFov` (option and getter) and `setCameraFov`. `PreviewRenderer` gains an
+    optional `setCameraFov`, so an existing custom renderer still type-checks.
+
+- [#495](https://github.com/ChestnutLabs/gcode-preview/pull/495) [`3b15da8`](https://github.com/ChestnutLabs/gcode-preview/commit/3b15da8ef9d0ea79766008f3f4b210d084979d62) Thanks [@sobechestnut-dev](https://github.com/sobechestnut-dev)! - New opt-in `pixelRatio` for sharper interactive views on HiDPI screens. If you don't set it, nothing
+  changes: the renderer keeps its own ratio (1 for the built-in renderer, whatever a custom
+  `createRenderer` was set to).
+  - **What it takes.** A number in (0, 4], or `'device'`. `'device'` uses the screen's `devicePixelRatio`,
+    capped at 2, and follows it live when it changes, for example when the window moves to another monitor
+    or the browser zoom changes. Anything else throws `RangeError`. Values are never clamped, and
+    `'device'` must be that exact lowercase string.
+  - **Cost.** A higher ratio shades more pixels: ratio 2 fills 4× the fragments of ratio 1. That is fine
+    for a single viewer. On pages with many viewers, or on weak GPUs, leave it unset or use a number.
+  - **Orbiting.** `interactionQuality: 'auto'` still lowers detail while the camera moves and settles back
+    on your ratio. A change made mid-gesture applies at once, still reduced, and the gesture settles on
+    the new ratio.
+  - **`capture()`.** With no `width`/`height`: unset, the default image is the resting drawing-buffer size,
+    as before, whatever renderer you use (with the built-in renderer that is the CSS size). With a
+    `pixelRatio` set, it is the canvas's CSS size whatever the ratio. So with the built-in renderer, setting
+    a ratio never changes the default image size. Pass `width`/`height` for a crisper image. This also fixes
+    an unsized `capture()` taken during an orbit with `interactionQuality: 'auto'`: it used to return the
+    reduced-detail size, and now returns the resting size.
+  - **Where to set it.**
+    - Toolpath viewer: the `renderer.pixelRatio` controller option and `controls.setPixelRatio(ratio)`. It
+      is validated synchronously, even before the 3D renderer loads, and kept across canvas rebinds.
+    - Model viewer: the `pixelRatio` option and `controls.setPixelRatio(ratio)` on
+      `createModelPreviewController` and `createModelViewer`.
+    - Vue, React and Svelte: a declarative `pixelRatio` prop on `GcodePreview` and on the `/model`
+      `ModelViewer`. Leaving it unset keeps the current ratio.
+    - `<gcode-preview>` and `<gcode-model-viewer>`: a `pixel-ratio` attribute and a `pixelRatio` property.
+      Setting the property to an invalid value throws `RangeError`. A bad attribute value is ignored, and
+      the element keeps the last valid ratio.
+  - **2D renderer.** `setPixelRatio` reports `renderer-unsupported` (feature `quality`), and the 2D view
+    keeps its own resolution.
+  - **Stills.** `renderStill` and `renderModelStill` have no pixel-ratio option; size a still with
+    `width`/`height`.
+  - **Lower-level API.** `ToolpathRenderer` and `InteractiveStage` gain a `pixelRatio` option and
+    `setPixelRatio`. `InteractionQualityController` gains `rebase(ratio)`, `currentRatio` and
+    `reduction`. `PreviewRenderer`
+    gains an optional `setPixelRatio`, so an existing custom renderer still type-checks. New exports:
+    the `PixelRatioOption` type (also from `gcode-preview-core`), `DEVICE_PIXEL_RATIO_CAP`, and the
+    `DisplayEnv` / `MediaQueryListLike` types (an injectable display for tests).
+
+### Patch Changes
+
+- [#480](https://github.com/ChestnutLabs/gcode-preview/pull/480) [`815f095`](https://github.com/ChestnutLabs/gcode-preview/commit/815f0954ba3687b9a96bb35cd0813de2d63ec281) Thanks [@sobechestnut-dev](https://github.com/sobechestnut-dev)! - Mark `CapabilityHint` and `resolveCapability` as `@experimental` and diagnostic-only in their TSDoc: no entry point accepts a `capabilityHint` option and they have no effect on rendering or budgets until capability-aware budgets ship. No behaviour change.
+
+- [#484](https://github.com/ChestnutLabs/gcode-preview/pull/484) [`7912c65`](https://github.com/ChestnutLabs/gcode-preview/commit/7912c65b63cab190e33b95fad68c69332432d662) Thanks [@sobechestnut-dev](https://github.com/sobechestnut-dev)! - The source-model viewer can draw a build plate. It is opt-in: with no `buildVolume` the viewer and
+  the stills render exactly as before.
+  - **Plate.** `createModelViewer`, `createModelPreviewController` and `renderModelStill` take `buildVolume`
+    (the full `BuildVolumeDef`: shape, `min`, excluded regions), `theme` and `cameraFov`; the controller and
+    viewer gain `setBuildVolume`, `setTheme` and `setCameraFov`. `studioTheme` and `STUDIO_CAMERA_FOV` are
+    re-exported. Stills draw the plate too, so a saved thumbnail matches the live view.
+  - **Honest placement.** A source file's transforms do not prove where its parts sit on a plate, so
+    `ModelPreviewState` (and `ModelReadyInfo` and the still result) report `placement`: `'known'` (a
+    Bambu/Orca project made for your bed whose parts lie on your plate, within 1 mm), `'inferred'` (such a
+    project shifted by whole multi-plate workspace cells), `'approximated'` (anything else, centred on your
+    plate at z = 0; a project made for a different printer's bed is shown centred on your plate and labelled
+    approximated), or `null` (no plate drawn: no `buildVolume`, nothing shown, or the render scope spans more
+    than one declared plate).
+    `placementOffset` is the offset applied. It is presentation-only: `ModelScene` and `bounds` stay authored,
+    picking works through it, and the camera, resize re-fit and contact shadow use the presented position.
+    The `inferred` rule uses an observed workspace-cell size and is pending a real two-plate fixture.
+  - **Theme subset.** The model viewer honours only the plate and backdrop fields of `Theme`. Lights and
+    `materialPreset` are deliberately not applicable: model lighting does not change under a theme.
+  - **Background.** Precedence is `capture({ background })`, then `theme.background`, then the `background`
+    option / `setBackground` (now the fallback tier: it has no visible effect while the theme sets a
+    background), then transparent.
+  - **Capture.** `capture({ includeBuildVolume: false })` now hides the plate and its shadow on the model
+    viewer (it used to be a no-op there).
+  - **Lens.** `cameraFov` is in degrees, [10, 120]; outside it throws `RangeError` synchronously (also before a
+    canvas binds), and the controller remembers it across canvas rebinds. The camera re-fits when it changes
+    while the viewer is auto-framing.
+  - **`ModelScene.source` (public, additive).** `{ slicerProject?: 'bambu-orca', printableArea? }` records what
+    a 3MF itself says: `'bambu-orca'` only when it carries a Bambu/Orca project config, and `printableArea`
+    (the bed box of its `printable_area`) only when that is a valid polygon. Absence means the file did not
+    say; it is never inferred from geometry. A consumer-supplied `filamentPalette` still wins for colours, and
+    a malformed `project_settings.config` still just loses the palette. `ModelReadyInfo` and `RenderModelStillResult`
+    gain `placement` / `placementOffset`, and `ModelViewer` gains `getPlacement()`.
+  - **Adapters (`/model` on all four).** `buildVolume`, `theme` and `cameraFov` as props (Vue, React, Svelte)
+    and `buildVolume` / `theme` as properties plus a `camera-fov` attribute and `cameraFov` property on
+    `<gcode-model-viewer>`; the three setters are on `controls`. An invalid `camera-fov` attribute is
+    ignored and the last valid lens kept; an invalid property value throws.
+  - The shared model parity guard requires the three setters and the two state fields, and
+    `@chestnutlabs/gcode-model-renderer/testing` adds `makeModelRecordingGL()`.
+
+  `@chestnutlabs/gcode-renderer-three` is a docs-only patch: the `capture()` option comment now says the model
+  viewer honours `includeBuildVolume`.
+
+- [#486](https://github.com/ChestnutLabs/gcode-preview/pull/486) [`38fa875`](https://github.com/ChestnutLabs/gcode-preview/commit/38fa8751de9cb874a51038b4adfb69088270aa19) Thanks [@sobechestnut-dev](https://github.com/sobechestnut-dev)! - Fix `interactionQuality: 'auto'` (reduced detail while orbiting), which is on by default in the model viewer:
+  - No more permanent resolution jump after the first orbit on HiDPI screens. The view used to return at
+    the screen's full device pixel ratio after the first orbit, which can be 4× the pixels it started with.
+    It now returns to the resolution it had before you moved the camera.
+  - A custom pixel ratio you set on your renderer (for example through `createRenderer`) is preserved
+    through orbits and through `setInteractionQuality('off')`. Switching to `'off'` no longer resets it.
+  - Detail while orbiting now adapts to the measured frame interval. When frames take longer it steps
+    coarser, and when they come quickly it can step back toward full detail. Before, almost every frame
+    measured as fast, so detail was back to full within a few mouse moves on any machine. A single slow
+    frame does not change the detail level.
+  - The pixel ratio is no longer reset on every mouse move during a drag, only when the detail level
+    actually changes.
+
+  At rest the image is unchanged: full detail at the renderer's own pixel ratio. `GLRendererLike` gains an
+  optional `getPixelRatio()` (three's `WebGLRenderer` already has it), and `InteractionQualityDeps` gains
+  optional `getPixelRatio`, `requestFrame` and `cancelFrame` for custom hosts.
+
+- Updated dependencies [[`3fe25f4`](https://github.com/ChestnutLabs/gcode-preview/commit/3fe25f4d8d66ab1f37d23892365fb33d2c813ff6)]:
+  - @chestnutlabs/gcode-colors@0.22.0
+  - @chestnutlabs/toolpath-core@0.22.0
+
 ## 0.21.2
 
 ### Patch Changes

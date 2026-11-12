@@ -1,5 +1,22 @@
 # @chestnutlabs/gcode-dialects
 
+## 0.22.0
+
+### Patch Changes
+
+- [#506](https://github.com/ChestnutLabs/gcode-preview/pull/506) [`33a6e9d`](https://github.com/ChestnutLabs/gcode-preview/commit/33a6e9d1075b97765cece7734a72bcf1c0aceb25) Thanks [@sobechestnut-dev](https://github.com/sobechestnut-dev)! - Toolpath and metadata fixes found by a mutation-testing sweep:
+  - **Helical arcs** (a `G2`/`G3` that also moves the third axis, e.g. `G2 X10 Y0 Z5 I5 J0`) now ramp from the start height toward the target. They used to ramp the other way and jump back to the target on the last segment. Flat arcs are unchanged.
+  - **Negative-radius arcs** (`G2 X10 Y0 R-8`) now take the long way round (more than 180°), as the G-code standard specifies. They used to be drawn as a half circle.
+  - A parse limit passed as `undefined` (for example `limits: { maxProgramIterations: undefined }`) now keeps its default. It used to switch that limit off, so a looping RS274NGC program could run forever.
+  - A single coordinate, `E`, `F` or `S` word that is a valid number but too large for the toolpath to store (for example 40 nines) is now dropped with a `number-out-of-range` warning. It used to become Infinity in the segments and the bounds, with no warning.
+  - A line with many malformed `[...]` expressions no longer makes the valid expressions after it on that line fail.
+  - **Print-time estimates**: Bambu Studio files, and OrcaSlicer files for any printer profile, now report their estimate. Bambu Studio, and OrcaSlicer with Bambu printer profiles, put both times on one header line (`; model printing time: …; total estimated time: …`), and that line was skipped. OrcaSlicer with other printers writes `; estimated printing time (normal mode) = …`, which was not read for Orca files. Estimates of a day or more (`1d 2h 3m 4s`) are now read for PrusaSlicer and OrcaSlicer too; they used to be dropped.
+
+- [#488](https://github.com/ChestnutLabs/gcode-preview/pull/488) [`fd3ddaa`](https://github.com/ChestnutLabs/gcode-preview/commit/fd3ddaa151a311e779b1a6652bc468ea0d980d70) Thanks [@sobechestnut-dev](https://github.com/sobechestnut-dev)! - JPG and QOI thumbnails embedded as G-code comments (`; thumbnail_JPG begin` / `; thumbnail_QOI begin`) now report their real `mime` (`image/jpeg` / `image/qoi`) instead of always `image/png`. A thumbnail block whose `end` line names a different variant than its `begin` line is now dropped rather than emitted.
+
+- Updated dependencies [[`3fe25f4`](https://github.com/ChestnutLabs/gcode-preview/commit/3fe25f4d8d66ab1f37d23892365fb33d2c813ff6)]:
+  - @chestnutlabs/toolpath-core@0.22.0
+
 ## 0.21.2
 
 ### Patch Changes
