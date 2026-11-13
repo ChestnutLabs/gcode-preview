@@ -12,14 +12,32 @@
  * each into the window (so runs can reference themselves). bgcode uses window 11 or 12, lookahead 4.
  */
 import { ContainerError } from '@chestnutlabs/gcode-containers';
+import { checkDecoderLimit } from './meatpack.js';
 
-/** Decode a heatshrink stream. `windowBits`/`lookaheadBits` come from the bgcode compression id. */
+/**
+ * Decode a heatshrink stream. `windowBits`/`lookaheadBits` come from the bgcode compression id.
+ *
+ * Accepted parameters (all validated before any allocation; anything else throws `ContainerError`
+ * `E_BGCODE_OPTION`): `windowBits` an integer in 4..15, `lookaheadBits` an integer in 3..`windowBits − 1`, `limit`
+ * a non-negative safe integer. Output past `limit` throws `E_BGCODE_BOMB`. bgcode itself uses window 11 or 12,
+ * lookahead 4.
+ */
 export function heatshrinkDecode(
   data: Uint8Array,
   windowBits: number,
   lookaheadBits: number,
   limit: number
 ): Uint8Array {
+  if (!(Number.isInteger(windowBits) && windowBits >= 4 && windowBits <= 15)) {
+    throw new ContainerError('E_BGCODE_OPTION', `windowBits must be an integer in 4..15 (got ${String(windowBits)})`);
+  }
+  if (!(Number.isInteger(lookaheadBits) && lookaheadBits >= 3 && lookaheadBits <= windowBits - 1)) {
+    throw new ContainerError(
+      'E_BGCODE_OPTION',
+      `lookaheadBits must be an integer in 3..${windowBits - 1} (got ${String(lookaheadBits)})`
+    );
+  }
+  checkDecoderLimit(limit);
   const windowSize = 1 << windowBits;
   const mask = windowSize - 1;
   const window = new Uint8Array(windowSize);
@@ -30,7 +48,7 @@ export function heatshrinkDecode(
   const emit = (c: number): void => {
     if (pos >= limit) throw new ContainerError('E_BGCODE_BOMB', `heatshrink output exceeds the limit (${pos})`);
     if (pos >= out.length) {
-      const bigger = new Uint8Array(Math.min(limit, Math.max(out.length * 2, pos + 1)));
+      const bigger = new Uint8Array(Math.min(limit, out.length * 2));
       bigger.set(out.subarray(0, pos));
       out = bigger;
     }
@@ -64,12 +82,12 @@ export function heatshrinkDecode(
       if (byte === null) break;
       emit(byte & 0xff);
     } else {
-      const index = getBits(windowBits);
-      if (index === null) break;
-      const count = getBits(lookaheadBits);
-      if (count === null) break;
-      const negOffset = index + 1;
-      const copyCount = count + 1;
+      // Index and count are read as ONE field (windowBits + lookaheadBits <= 29 bits, so it fits an int32): a
+      // token cut off anywhere inside it is a single truncation, never a half-token.
+      const field = getBits(windowBits + lookaheadBits);
+      if (field === null) break;
+      const negOffset = (field >>> lookaheadBits) + 1;
+      const copyCount = (field & ((1 << lookaheadBits) - 1)) + 1;
       for (let i = 0; i < copyCount; i++) {
         emit(window[(head - negOffset) & mask]);
       }
