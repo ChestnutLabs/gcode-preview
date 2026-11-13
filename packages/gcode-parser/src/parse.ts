@@ -1099,20 +1099,21 @@ export function createEngine(input: string | Uint8Array, opts: ParseOptions): En
             cannedCyclesSeen = true;
             cannedCycle = gcode as 'g81' | 'g82' | 'g83';
             cannedInitialZ = sz;
-            // R first: under G91 Z is incremental from the R plane (not from the current Z), as in LinuxCNC.
-            // R and Z are sticky NUMBERS (kept as written in cannedRWord/cannedZWord): a later G91 block that
-            // omits one re-applies it from this block's current Z, instead of reusing a stale absolute plane.
+            // R and Z are sticky NUMBERS (kept as written in cannedRWord/cannedZWord). Under G90 the planes
+            // are absolute and stored here once. Under G91 they are derived only by rederiveIncrementalPlanes()
+            // below: R from this block's current Z first, then Z from the NEW R plane, as in LinuxCNC. So a
+            // later G91 block that omits one re-applies it from its own current Z, never a stale absolute plane.
             if (cmd.params.r !== undefined) {
               cannedRWord = cmd.params.r;
-              cannedR = nextAxis(sz, cmd.params.r, offZ());
+              if (xyzAbsolute) cannedR = nextAxis(sz, cmd.params.r, offZ());
               cannedRSet = true;
             }
             if (cmd.params.z !== undefined) {
               cannedZWord = cmd.params.z;
-              cannedZ = xyzAbsolute ? nextAxis(sz, cmd.params.z, offZ()) : cannedR + cmd.params.z;
+              if (xyzAbsolute) cannedZ = nextAxis(sz, cmd.params.z, offZ());
               cannedZSet = true;
             }
-            if (!xyzAbsolute) rederiveIncrementalPlanes(); // R first, so a Z given on this block is measured from the NEW R plane
+            if (!xyzAbsolute) rederiveIncrementalPlanes();
             if (!cannedZSet || !cannedRSet) {
               warn(
                 'canned-cycle-missing-word',
