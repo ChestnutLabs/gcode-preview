@@ -18,5 +18,8 @@ declaration.**
 - A `G20` file carries one `units-converted` warning with severity `info`. A word that fits in inches but is too
   big for the IR once converted is dropped with the usual `number-out-of-range` warning.
 - Inch arcs are flattened into ~0.5 mm segments, like mm arcs. The old inch-only ×25 segment factor is gone.
+- If you labelled sizes or coordinates with `header.units`, label them mm: the numbers are millimetres for every file.
+- A `G20` or `G21` inside message text (`M117 Printing G20 part`, `M118`, `M486`, Klipper `RESPOND`) is text: it
+  does not switch units.
 
 Millimetre files are unchanged: every file in the test corpus except the two inch files parses to the same IR.

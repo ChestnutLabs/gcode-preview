@@ -82,6 +82,39 @@ describe('G20 on the same line as motion: units apply to the whole line (RS274NG
   });
 });
 
+describe('G20 / G21 inside message text is text, not a units switch (#585 R2)', () => {
+  const mmFile = [
+    'M117 Printing G20 part',
+    'M118 G20 test',
+    'M117 G20',
+    'M486 S0 A"plate G20 bracket"',
+    'RESPOND MSG="switch to G20 now"'
+  ];
+  for (const text of mmFile) {
+    it(`a mm file stays mm after: ${text}`, () => {
+      const { ir } = parse(`${text}\nG1 X10 Y10 F600`);
+      expect(ends(ir)).toEqual(['(10.0000,10.0000,0.0000)']);
+      expect(Array.from(ir.segments.feedrate!)).toEqual([600]);
+      expect(ir.header.units).toBe('mm');
+      expect(ir.header.unitsSource).toBe('inferred');
+      expect(codes(ir, 'units-converted')).toEqual([]);
+    });
+  }
+
+  for (const text of ['M117 Printing G21 part', 'M118 back to G21', 'RESPOND MSG="G21 now"']) {
+    it(`an inch file stays inches after: ${text}`, () => {
+      const { ir } = parse(`G20\n${text}\nG1 X1 Y1`);
+      expect(ends(ir)).toEqual(['(25.4000,25.4000,0.0000)']);
+      expect(ir.header.units).toBe('in');
+    });
+  }
+
+  it('a real G20 on a line with an N number and other codes still switches', () => {
+    const { ir } = parse('N10 G20 G90\nG1 X1');
+    expect(ends(ir)).toEqual(['(25.4000,0.0000,0.0000)']);
+  });
+});
+
 describe('G20 arcs (I/J/K, R): converted, flattened like the same arc in mm', () => {
   it('an I/J quarter arc lands on the mm target with the mm segment count', () => {
     const inch = parse('G20\nG0 X1 Y0\nG3 X0 Y1 I-1 J0').ir;

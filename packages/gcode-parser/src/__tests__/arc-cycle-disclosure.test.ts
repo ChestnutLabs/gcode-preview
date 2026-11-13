@@ -40,10 +40,11 @@ describe('G2/G3 with R', () => {
     expect(run('G2 X10 Y0 R4.989').codes('arc-radius-too-small')).toHaveLength(1);
   });
 
-  it('inches use the tighter tolerance', () => {
-    // half chord 0.5 in; 0.5 - 0.0008 is outside 0.0002 + 0.0005 in
+  it('G20 arcs use the mm tolerance on the converted radius (#578)', () => {
+    // Half chord 0.5 in = 12.7 mm; the tolerance is 0.005 + 0.0127 = 0.0177 mm.
+    // R0.4992 in = 12.67968 mm is 0.02032 mm short: outside.
     expect(run('G20\nG2 X1 Y0 R0.4992').codes('arc-radius-too-small')).toHaveLength(1);
-    // 0.5 - 0.0006 is inside
+    // R0.4994 in = 12.68476 mm is 0.01524 mm short: inside.
     expect(run('G20\nG2 X1 Y0 R0.4994').codes('arc-radius-too-small')).toHaveLength(0);
   });
 

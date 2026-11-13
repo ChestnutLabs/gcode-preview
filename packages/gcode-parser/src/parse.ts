@@ -1028,9 +1028,15 @@ export function createEngine(input: string | Uint8Array, opts: ParseOptions): En
   // the modal F latch, the observer and every handler; the stored state (position, G92/G10 offsets, canned
   // planes) is therefore mm and a later G21 needs no rescale. FDM files never declare G20: their lines
   // take only the `codes` scan and the units test below, so the corpus stays byte-identical.
+  // A `G20`/`G21` inside message text (`M117 Printing G20 part`, M118, M486, a Klipper `RESPOND MSG=…`) is
+  // text, not a units switch: such a line (TEXT_ARGUMENT_LINE) never changes units. The line test runs only
+  // when a units code is on the line, so the FDM hot path is unchanged.
   let unitsConvertedWarned = false;
-  const applyUnits = (cmd: Cmd): void => {
+  const applyUnits = (cmd: Cmd, rawLine: string): void => {
+    let textLine: boolean | undefined;
     for (const code of cmd.codes) {
+      if (code !== 'g20' && code !== 'g21') continue;
+      if ((textLine ??= TEXT_ARGUMENT_LINE.test(rawLine))) continue;
       if (code === 'g20') {
         units = 'in';
         unitsSeen = true;
@@ -1094,7 +1100,7 @@ export function createEngine(input: string | Uint8Array, opts: ParseOptions): En
     } else {
       cmd = lexLine(rawLine, warnOutOfRange);
     }
-    applyUnits(cmd);
+    applyUnits(cmd, rawLine);
     // LinuxCNC rejects an unclosed or nested `(` comment; the plain lexer tolerates both (an unclosed `(`
     // swallows the rest of the line). Disclose it, once per file. Dialect extended commands (Klipper
     // `EXCLUDE_OBJECT_START NAME=cube_(1`) legitimately carry bare parentheses and are not checked.
