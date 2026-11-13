@@ -41,8 +41,31 @@ const renderer = new ToolpathRenderer({ canvas, theme: studioTheme('dark'), came
 renderer.setBuildVolumeCage(false); // the preset is measured with the cage off
 ```
 
-`cameraFov` accepts 10-120 degrees and throws `RangeError` outside it. See the
+`cameraFov` accepts 10-120 degrees and throws `RangeError` outside it, and so does `lensScale(from, to)`. See the
 [Studio look and build plate guide](https://github.com/ChestnutLabs/gcode-preview/blob/dev/docs/manual/guide-looks-lens-plate.md).
+
+### Theme values that throw
+
+A theme value the renderer can't draw throws a `RangeError` that names the field, from the `theme` option and
+from `setTheme()`. Before, it drew something else without telling you. The defaults and both `studioTheme()`
+presets pass.
+
+| Field | Accepted |
+| --- | --- |
+| `hemisphereIntensity`, `directionalIntensity` | a finite number `>= 0` |
+| `materialPreset` | `'matte'` or `'glossy'` |
+| `bedSurface.mode` | `'none'` or `'solid'` (required when you pass `bedSurface`) |
+| `bedSurface.opacity` | a number in `[0, 1]` |
+| `bedSurface.thickness` | a finite number `>= 0` |
+| grid, major-grid, outline and contact-shadow opacities | a number in `[0, 1]` |
+| `gridMajor.every` | a finite number above 0 |
+
+A misspelled `materialPreset` or `bedSurface.mode` used to fall back to matte, or to no plate. It now throws,
+and the message lists the accepted values. If your theme comes from user settings or untyped JSON, check these
+two fields first. `createContactShadow(footprint, opacity)` throws for an `opacity` outside `[0, 1]`. Colour
+strings are not checked yet.
+
+The model viewer (`@chestnutlabs/gcode-model-renderer`) checks the same theme the same way.
 
 ## Pixel ratio (opt-in)
 

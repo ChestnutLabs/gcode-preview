@@ -36,6 +36,17 @@ turning the cage off keeps the plate, grid and contact shadow.
 
 ![The same 3DBenchy on the Studio light look](https://chestnutlabs.github.io/gcode-preview/media/app-studio-light.png)
 
+### Your own theme: values that throw
+
+A theme you build yourself is checked when you set it. A value the viewer can't draw throws a `RangeError` that
+names the field, instead of quietly drawing something else. The checks: light intensities must be finite and
+`>= 0`, `bedSurface.opacity` and the other opacities must be in `[0, 1]`, `bedSurface.thickness` must be finite
+and `>= 0`, and `bedSurface.mode` (`'none'` / `'solid'`) and `materialPreset` (`'matte'` / `'glossy'`) must be
+one of their names. A typo in either name used to fall back to the default, and now it throws, so check them if
+your theme comes from saved settings. The full table is in the
+[renderer-three README](https://github.com/ChestnutLabs/gcode-preview/blob/dev/packages/gcode-renderer-three/README.md#theme-values-that-throw).
+Both viewers run the same check.
+
 ## Camera lens
 
 `cameraFov` (degrees, perspective only) takes `10`–`120`. The SDK default is `50`; `STUDIO_CAMERA_FOV` is `32`.
