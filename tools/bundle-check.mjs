@@ -15,9 +15,16 @@
  *   - at least one startup chunk, for the same reason (a bundler API change that hides the entry flag
  *     would otherwise count every chunk, three included, as lazy).
  *
+ * Then, at RUNTIME, import each startup package's built entry in Node with a resolve hook
+ * (tools/bundle-check/startup-hook.mjs) that throws if the renderer's main entry is resolved, calling
+ * nothing. That catches an eager import() of any shape (an IIFE, a promise chain, an `if` block, a
+ * template-literal specifier), which the bundle check can't see because any import() makes a lazy chunk.
+ * A control import of the main entry must trip the hook, so the runtime check can't pass vacuously.
+ *
  * Needs the package dists (run after the package builds, as in `npm run gate -- --ci`).
  * Usage:  node tools/bundle-check.mjs
  */
+import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -77,6 +84,49 @@ export function verdict({ startupThree, lazyThree, startupChunks: startupCount }
   if (startupThree > 0) problems.push(`${startupThree} bytes of three.js load at startup (want 0)`);
   if (lazyThree === 0) problems.push('no three.js in any lazy chunk (the 3D load is missing, so the check is vacuous)');
   return problems;
+}
+
+/** The packages whose startup path must not load the renderer's main entry. */
+export const STARTUP_PACKAGES = [
+  '@chestnutlabs/gcode-preview-core',
+  '@chestnutlabs/gcode-preview-react',
+  '@chestnutlabs/gcode-preview-vue',
+  '@chestnutlabs/gcode-preview-svelte',
+  '@chestnutlabs/gcode-preview-element'
+];
+
+/**
+ * Import `specifier` in a fresh Node process under the startup hook, calling nothing. The element defines a
+ * custom element at import time, so `HTMLElement` and `customElements` are stubbed. Returns
+ * `{ loadsRenderer, ok, output }`: `loadsRenderer` means the hook fired.
+ */
+export function importUnderHook(specifier) {
+  const hook = pathToFileURL(path.join(__dirname, 'bundle-check', 'startup-hook.mjs')).href;
+  const script =
+    'globalThis.HTMLElement ??= class {};' +
+    'globalThis.customElements ??= { define() {}, get() { return undefined; } };' +
+    `await import(${JSON.stringify(specifier)});`;
+  const r = spawnSync(process.execPath, ['--import', hook, '--input-type=module', '-e', script], {
+    cwd: repoRoot,
+    encoding: 'utf8',
+    env: { ...process.env, BUNDLE_CHECK_HOOK_LOADED: '' }
+  });
+  const output = `${r.stdout ?? ''}${r.stderr ?? ''}`;
+  return { loadsRenderer: output.includes('STARTUP-LOADS-RENDERER'), ok: r.status === 0, output };
+}
+
+/** The runtime verdict for one package: a list of problems (empty = pass). */
+export function runtimeVerdict(specifier, { loadsRenderer, ok, output }) {
+  if (loadsRenderer) return [`${specifier}: importing it loads the renderer's main entry (three.js) at startup`];
+  if (!ok) return [`${specifier}: could not be imported in Node: ${output.trim().split('\n')[0]}`];
+  return [];
+}
+
+/** The control import of the renderer main entry MUST trip the hook; if not, the runtime check is vacuous. */
+export function controlVerdict({ loadsRenderer }) {
+  return loadsRenderer
+    ? []
+    : ['runtime control: importing the renderer main entry did not trip the hook (the check is vacuous)'];
 }
 
 async function viteChunks(entry) {
@@ -156,6 +206,19 @@ async function main() {
       }
     }
   }
+  // Runtime half: the control must trip the hook, then no startup package may.
+  for (const p of controlVerdict(importUnderHook('@chestnutlabs/gcode-renderer-three'))) {
+    failed++;
+    console.error(`FAIL ${p}`);
+  }
+  for (const pkg of STARTUP_PACKAGES) {
+    const problems = runtimeVerdict(pkg, importUnderHook(pkg));
+    if (problems.length === 0) console.log(`ok   ${pkg} [runtime]: importing it loads no renderer main entry`);
+    else {
+      failed++;
+      for (const p of problems) console.error(`FAIL ${p}`);
+    }
+  }
   if (failed > 0) {
     console.error(
       `\nbundle-check: ${failed} failure(s). A static value import of '@chestnutlabs/gcode-renderer-three'`
@@ -165,7 +228,9 @@ async function main() {
     );
     process.exit(1);
   }
-  console.log(`\nbundle-check: ${fixtures.length} fixtures x 2 bundlers, no three.js at startup.`);
+  console.log(
+    `\nbundle-check: ${fixtures.length} fixtures x 2 bundlers and ${STARTUP_PACKAGES.length} packages at runtime, no three.js at startup.`
+  );
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {

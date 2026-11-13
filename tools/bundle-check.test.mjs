@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { isThreeModule, startupChunks, threeSplit, verdict } from './bundle-check.mjs';
+import { controlVerdict, isThreeModule, runtimeVerdict, startupChunks, threeSplit, verdict } from './bundle-check.mjs';
+import { isRendererMain } from './bundle-check/startup-hook.mjs';
 
 const chunk = (name, { isEntry = false, staticImports = [], threeBytes = 0, bytes = 0 } = {}) => ({
   name,
@@ -71,5 +72,31 @@ describe('bundle-check classifier', () => {
     expect(verdict(split)).toEqual([
       'no entry chunk found (the bundle output is not understood, so the check is vacuous)'
     ]);
+  });
+
+  it('runtime: the hook matches only the renderer main entry, on both separators', () => {
+    expect(isRendererMain('file:///C:/r/node_modules/@chestnutlabs/gcode-renderer-three/dist/index.js')).toBe(true);
+    expect(isRendererMain('file:///r/packages/gcode-renderer-three/dist/index.js')).toBe(true);
+    expect(isRendererMain('C:\\r\\packages\\gcode-renderer-three\\dist\\index.js')).toBe(true);
+    expect(isRendererMain('file:///r/packages/gcode-renderer-three/dist/lite.js')).toBe(false);
+    expect(isRendererMain('file:///r/packages/gcode-preview-core/dist/index.js')).toBe(false);
+  });
+
+  it('runtime control: the main-entry import must trip the hook, or the check is vacuous', () => {
+    expect(controlVerdict({ loadsRenderer: true, ok: false, output: '' })).toEqual([]);
+    expect(controlVerdict({ loadsRenderer: false, ok: true, output: '' })).toEqual([
+      'runtime control: importing the renderer main entry did not trip the hook (the check is vacuous)'
+    ]);
+  });
+
+  it('runtime verdict: a tripped hook fails, an import error fails, a clean import passes', () => {
+    expect(runtimeVerdict('pkg', { loadsRenderer: true, ok: false, output: 'STARTUP-LOADS-RENDERER: x' })).toEqual([
+      "pkg: importing it loads the renderer's main entry (three.js) at startup"
+    ]);
+    const failed = { loadsRenderer: false, ok: false, output: 'ReferenceError: window is not defined\n  at x' };
+    expect(runtimeVerdict('pkg', failed)).toEqual([
+      'pkg: could not be imported in Node: ReferenceError: window is not defined'
+    ]);
+    expect(runtimeVerdict('pkg', { loadsRenderer: false, ok: true, output: '' })).toEqual([]);
   });
 });
