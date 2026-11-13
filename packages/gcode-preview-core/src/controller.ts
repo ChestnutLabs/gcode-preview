@@ -619,7 +619,7 @@ export function createPreviewController(options: PreviewControllerOptions = {}):
     if (e.type === 'buildComplete') {
       const decimated =
         e.decimationApplied > 1
-          ? `Showing every ${ordinal(e.decimationApplied)} extrusion segment (layer boundaries kept); ` +
+          ? `Showing every ${ordinal(e.decimationApplied)} drawn segment (layer boundaries kept); ` +
             `travel hidden. ${e.segments.toLocaleString()} segments drawn.`
           : '';
       // #518: segments a renderer skipped for an Infinity/NaN coordinate (2D: x/y; 3D: x/y/z), named by count.

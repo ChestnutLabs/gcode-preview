@@ -158,8 +158,17 @@ export class SuiteStubWorker {
   }
 }
 
+/**
+ * The suite's stub GL. Its `render` reads `camera.parent` first, as three's `WebGLRenderer.render` does, so a
+ * frame drawn before the stage has a camera throws here as it does in a browser (the pixelRatio start-up bug).
+ */
 export function makeSuiteStubGL(canvas: HTMLCanvasElement): GLRendererLike {
-  return { render: () => undefined, setSize: () => undefined, dispose: () => undefined, domElement: canvas };
+  return {
+    render: (_scene, camera) => void (camera as { parent: unknown }).parent,
+    setSize: () => undefined,
+    dispose: () => undefined,
+    domElement: canvas
+  };
 }
 
 /** A recording Canvas 2D context for the 2D cases; see {@link installSuite2DProbe}. */
@@ -1049,7 +1058,7 @@ export function runComponentConformanceSuite(name: string, api: TestApi, harness
       expect(JSON.stringify(log)).toBe(
         JSON.stringify([
           'build 9',
-          'disclosure Showing every 3rd extrusion segment (layer boundaries kept); travel hidden. 9 segments drawn.'
+          'disclosure Showing every 3rd drawn segment (layer boundaries kept); travel hidden. 9 segments drawn.'
         ])
       );
 
@@ -1059,7 +1068,7 @@ export function runComponentConformanceSuite(name: string, api: TestApi, harness
       expect(JSON.stringify(log.slice(2))).toBe(
         JSON.stringify([
           'build 7',
-          'disclosure Showing every 2nd extrusion segment (layer boundaries kept); travel hidden. 7 segments drawn.'
+          'disclosure Showing every 2nd drawn segment (layer boundaries kept); travel hidden. 7 segments drawn.'
         ])
       );
 

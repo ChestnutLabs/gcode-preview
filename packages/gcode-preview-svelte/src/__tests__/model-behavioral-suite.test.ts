@@ -32,10 +32,14 @@ runModelBehavioralSuite(
   'svelte createModelViewer',
   { describe, it, expect },
   {
-    create() {
+    create(opts) {
       const canvas = document.createElement('canvas');
       const gl = makeModelRecordingGL();
-      const viewer = createModelViewer({ createRenderer: gl.createRenderer, createControls: MODEL_STUB_CONTROLS });
+      const viewer = createModelViewer({
+        createRenderer: gl.createRenderer,
+        createControls: MODEL_STUB_CONTROLS,
+        ...(opts?.pixelRatio !== undefined ? { pixelRatio: opts.pixelRatio } : {})
+      });
       let action = viewer.canvas(canvas); // `use:viewer.canvas`
       const instance: ModelAdapterInstance = {
         controls: viewer.controls,

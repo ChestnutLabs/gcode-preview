@@ -248,7 +248,6 @@ export class InteractiveStage {
       },
       opts.interactionQuality ?? 'off'
     );
-    if (opts.pixelRatio !== undefined) this.applyPixelRatioOption(opts.pixelRatio);
 
     // Both cameras exist for the stage's lifetime; setCameraMode/frameTo keep their pose in sync so a
     // projection toggle never jumps the view (#150). The ortho frustum is placeholder until frameTo/resize.
@@ -258,6 +257,8 @@ export class InteractiveStage {
     this.orthographicCamera.position.set(-100, 200, 250);
     this.cameraModeState = opts.cameraMode ?? 'perspective';
     this.activeCameraRef = this.cameraModeState === 'orthographic' ? this.orthographicCamera : this.perspectiveCamera;
+    // After the cameras: a ratio change repaints, and a frame needs a camera.
+    if (opts.pixelRatio !== undefined) this.applyPixelRatioOption(opts.pixelRatio);
 
     const domEl = this.gl.domElement;
     // OrbitControls needs a real DOM element; an OffscreenCanvas (headless still-render) has no pointer

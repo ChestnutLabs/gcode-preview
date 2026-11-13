@@ -171,7 +171,7 @@ renderer. To get the notice, call the control after creating the preview.
 
 The `disclosure` text says what the current build leaves out. It follows every `build-complete`, in both
 renderers, and is empty when the build draws everything. In 3D it names decimation (`Showing every 3rd
-extrusion segment …`). For a toolpath you build yourself, it also counts segments skipped for an `Infinity` or
+drawn segment …`). For a toolpath you build yourself, it also counts segments skipped for an `Infinity` or
 `NaN` coordinate: `3 segments with a non-finite coordinate were not drawn.` The two renderers count
 differently. The flat 2D view checks x and y, over extrusion, Cut and travel. The 3D renderer checks x, y and z, over
 every segment it builds: extrusion, travel and wipe. A segment with only a non-finite z is drawn in 2D and
