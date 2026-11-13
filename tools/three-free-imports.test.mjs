@@ -2,18 +2,19 @@
  * DD-014 D4: the 3D renderer is loaded on demand, so nothing on the core/adapter startup path may
  * value-import the renderer's MAIN entry (one such import put all of three.js in every 2D bundle from
  * v0.18.0 to v0.23.0). Type imports are erased; three-free values come from `/lite`.
- * This source scan runs in the normal test pass; `tools/bundle-check.mjs` measures real bundles.
+ * This source scan runs in the root test pass (no build needed); `tools/bundle-check.mjs` measures real bundles.
  */
 import { readdirSync, readFileSync, statSync } from 'node:fs';
-import { join } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
-const packagesDir = fileURLToPath(new URL('../../../', import.meta.url));
+// path.resolve, not new URL(): the root suite runs under happy-dom, whose URL is not file-scheme aware.
+const packagesDir = resolve(dirname(fileURLToPath(import.meta.url)), '..', 'packages');
 
 /** Every startup-path source file: core and the four adapters' main entries (not tests, not `/model`). */
-function sourceFiles(dir: string): string[] {
-  const out: string[] = [];
+function sourceFiles(dir) {
+  const out = [];
   for (const name of readdirSync(dir)) {
     const full = join(dir, name);
     if (statSync(full).isDirectory()) {
@@ -26,7 +27,7 @@ function sourceFiles(dir: string): string[] {
 }
 
 /** The value (non-type) import/export statements that name the renderer's main entry (`import()` is allowed). */
-function mainEntryValueImports(source: string): string[] {
+function mainEntryValueImports(source) {
   const statements =
     source.match(/^[ \t]*(?:import|export)\b[^;]*?from\s*['"]@chestnutlabs\/gcode-renderer-three['"]/gms) ?? [];
   return statements.filter((s) => !/^\s*(?:import|export)\s+type\b/.test(s));
