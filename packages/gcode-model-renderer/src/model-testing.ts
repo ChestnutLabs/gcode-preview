@@ -339,6 +339,8 @@ export function runModelBehavioralSuite(name: string, api: TestApi, harness: Mod
       await a.controls.setSource(makeTwoObjectModelSource());
       await a.settle();
       expect(a.drawn().objects).toBe(2);
+      // The default background is transparent (no scene background), so 'Color' below proves the set one.
+      expect(a.drawn().background).toBe('null');
       a.controls.setRenderScope({ objectIds: ['a'] });
       a.controls.setBackground('#ff0000');
       await a.settle();
