@@ -84,6 +84,17 @@ describe('travel-only framing (#580)', () => {
     }
   }
 
+  it('an empty file frames the bed with a finite camera (no NaN)', () => {
+    const { renderer, run } = make();
+    renderer.setIR(new ToolpathIRBuilder({ parserVersion: 'test', units: 'mm', unitsSource: 'known' }).finalize());
+    run();
+    const s = renderer.getCameraState();
+    const got = [s.position.x, s.position.y, s.position.z, s.target.x, s.target.y, s.target.z];
+    const want = [-80, 240, 220, 100, 0, -50];
+    got.forEach((v, i) => expect(v).toBeCloseTo(want[i], 6)); // NaN fails toBeCloseTo
+    renderer.dispose();
+  });
+
   it("the frameContent 'object' disclosure names productive moves, not only extrusion", () => {
     const { renderer, run } = make();
     const msgs: string[] = [];

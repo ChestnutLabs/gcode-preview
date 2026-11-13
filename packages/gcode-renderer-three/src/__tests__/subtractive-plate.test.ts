@@ -2,7 +2,8 @@
 /**
  * Files with no Extrude (CNC, laser, plotter) work at or below Z 0 (#580): the plate turns see-through and
  * the contact shadow is dropped. A file with any Extrude (FDM, or a laser-head printer's Extrude + Cut)
- * keeps the opaque plate and the shadow.
+ * keeps the opaque plate and the shadow. MoveKind is a bit set: an extruding arc is stored as
+ * Extrude | ArcSegment (33), and that still counts as extrusion.
  */
 import { describe, expect, it } from 'vitest';
 import { MoveKind, ToolpathIRBuilder, type ToolpathIR } from '@chestnutlabs/toolpath-core';
@@ -91,6 +92,15 @@ describe('subtractive plate look (#580)', () => {
     renderer.dispose();
   });
 
+  it('an FDM file whose extrusions are all arcs (kinds [2, 33]) keeps the opaque plate and shadow', () => {
+    const { renderer, run, group, mat } = make();
+    renderer.setIR(ir([2 as MoveKind, 33 as MoveKind], 0.2)); // Travel, then Extrude | ArcSegment
+    run();
+    expect([mat('bedSurface').opacity, mat('bedSurface').transparent]).toEqual([1, false]);
+    expect(group().getObjectByName('contactShadow')).toBeDefined();
+    renderer.dispose();
+  });
+
   it('keeps the grid and the depth settings that stop sorting artifacts', () => {
     const { renderer, run, group, mat } = make();
     renderer.setIR(ir([MoveKind.Cut]));
@@ -110,6 +120,35 @@ describe('subtractive plate look (#580)', () => {
     run();
     expect([mat('bedSurface').opacity, mat('bedSurface').transparent]).toEqual([1, false]);
     expect(group().getObjectByName('contactShadow')).toBeDefined();
+    renderer.dispose();
+  });
+
+  it('a theme whose plate is already translucent comes back as [0.6, true] after CNC then FDM', () => {
+    const { renderer, run, mat } = make();
+    renderer.setTheme({ ...THEME, bedSurface: { ...THEME.bedSurface, opacity: 0.6 } });
+    renderer.setIR(ir([MoveKind.Cut]));
+    run();
+    expect([mat('bedSurface').opacity, mat('bedSurface').transparent]).toEqual([0.35, true]);
+    renderer.setIR(ir([MoveKind.Extrude], 0.2));
+    run();
+    expect([mat('bedSurface').opacity, mat('bedSurface').transparent]).toEqual([0.6, true]);
+    renderer.dispose();
+  });
+
+  it('asks three to recompile the plate material only when `transparent` actually flips', () => {
+    const { renderer, run, mat } = make();
+    renderer.setIR(ir([MoveKind.Extrude], 0.2));
+    run();
+    const v0 = mat('bedSurface').version;
+    renderer.setIR(ir([MoveKind.Cut]));
+    run();
+    expect(mat('bedSurface').version).toBe(v0 + 1); // opaque -> see-through
+    renderer.setIR(ir([MoveKind.Cut, MoveKind.Cut]));
+    run();
+    expect(mat('bedSurface').version).toBe(v0 + 1); // still see-through: no recompile
+    renderer.setIR(ir([MoveKind.Extrude], 0.2));
+    run();
+    expect(mat('bedSurface').version).toBe(v0 + 2); // back to opaque
     renderer.dispose();
   });
 

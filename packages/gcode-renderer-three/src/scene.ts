@@ -686,7 +686,8 @@ export class ToolpathRenderer {
   setIR(ir: ToolpathIR): void {
     if (this.disposed) return;
     this.ir = ir;
-    this.irHasExtrude = ir.segments.kind.includes(MoveKind.Extrude); // once per IR, not per frame
+    // MoveKind is a bit set (an extruding arc is Extrude | ArcSegment), so test the bit, not the exact value.
+    this.irHasExtrude = ir.segments.kind.some((k) => (k & MoveKind.Extrude) !== 0); // once per IR, not per frame
     // Layer/segment counts belong to the old IR — reset clipping to "show everything".
     this.startLayer = 0;
     this.endLayer = Infinity;
@@ -1842,7 +1843,11 @@ export class ToolpathRenderer {
         transparent: boolean;
       };
       m.opacity = subtractive ? Math.min(base.opacity, SUBTRACTIVE_PLATE_OPACITY) : base.opacity;
-      m.transparent = subtractive ? true : base.transparent;
+      const transparent = subtractive ? true : base.transparent;
+      // three does not recompile a program when `transparent` flips; ask for it so an opaque-compiled plate
+      // really turns see-through (and back).
+      if (m.transparent !== transparent) m.needsUpdate = true;
+      m.transparent = transparent;
     }
     const cs = this.resolvedTheme.contactShadow;
     if (cs === undefined || subtractive) return;
