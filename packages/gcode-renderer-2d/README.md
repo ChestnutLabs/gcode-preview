@@ -20,6 +20,17 @@ never the whole model.
 
 ## Usage
 
+In an app, you usually reach this view through the controller, which keeps the bundle three-free (about 35 KB at
+startup) and loads the 3D renderer only if a 3D view binds:
+
+```ts
+import { createPreviewController } from '@chestnutlabs/gcode-preview-core';
+
+const preview = createPreviewController({ renderer: { mode: '2d' } });
+```
+
+On the components it is `renderer="2d"`. To drive the view yourself:
+
 ```ts
 import { LayerView2D } from '@chestnutlabs/gcode-renderer-2d';
 

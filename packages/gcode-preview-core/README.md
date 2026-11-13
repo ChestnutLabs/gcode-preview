@@ -41,6 +41,24 @@ With `renderer: { mode: '2d' }`, a bad 2D option throws `RangeError` from `bindC
 `adjacentLayers` of `NaN`, or a `ghostOpacity` outside `[0, 1]` or `NaN`. A negative `adjacentLayers`
 is still valid and draws no ghost layers.
 
+If the parse worker can't be created (a strict Content Security Policy is the usual cause), `parse()` emits
+`parse-error` with code `E_WORKER_CREATE_FAILED`, sets `state.error` and returns to `parsing: false`; the next
+`parse()` tries again. The browser's original error is on `error.cause`. If the 3D renderer chunk can't load
+(offline, or a stale deploy), the controller fires an `error` event with code `E_RENDERER_LOAD`.
+
+A 2D-only app ships no three.js. This is the whole setup, and the startup bundle is about 35 KB:
+
+```ts
+import { createPreviewController } from '@chestnutlabs/gcode-preview-core';
+
+const preview = createPreviewController({ renderer: { mode: '2d' } });
+```
+
+The 3D renderer loads when a 3D view binds, not when core is imported. If your own tests wait a fixed number of
+ticks for it, preload it once in the test setup: `await import('@chestnutlabs/gcode-renderer-three')`. The
+three-free pieces (`CaptureUnsupportedError`, `studioTheme`, `STUDIO_CAMERA_FOV`) are also exported from
+`@chestnutlabs/gcode-renderer-three/lite`; you normally don't need it.
+
 A callback you pass to `onStateChange` or `onEvent` that throws cannot break the preview. The other
 callbacks still run, and `parse()` still resolves with the parse's own outcome. Your callback's error is
 re-thrown from a microtask, so it still shows up as an uncaught error in the console.
