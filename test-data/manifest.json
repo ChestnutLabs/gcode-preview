@@ -975,6 +975,29 @@
       },
       "sizeTier": "tiny",
       "limitations": "G20 is recorded (header.units = in) but coordinates are NOT converted to mm: the IR and every renderer carry inch values, so the part draws 25.4x too small on a mm bed (#578; re-pin when the parser normalizes G20 to mm). Not validated on hardware."
+    },
+    {
+      "id": "cnc-canned-cycles",
+      "path": "test-data/fixtures/cnc/canned-cycles.ngc",
+      "sha256": "db802439b41a08195b044f493e6bc3a5747b32c4c94264a117dd0504a37f33ac",
+      "bytes": 1084,
+      "origin": "Hand-written Chestnut Labs CNC fixture (#189), numbers from the LinuxCNC G81 worked examples",
+      "contributor": "chestnutlabs",
+      "redistribution": "chestnut-original-mit",
+      "slicer": "n/a (hand-written canned drilling cycles)",
+      "targetFamily": "CNC mill (G81/G82/G83, G90/G91, G98/G99, L repeats)",
+      "features": [
+        "travel",
+        "non-print",
+        "cut",
+        "canned-cycles"
+      ],
+      "expectedCapabilities": {
+        "layers": "unavailable",
+        "cutMoves": "known"
+      },
+      "sizeTier": "tiny",
+      "limitations": "Drilling only (G84-G89 are not expanded). Dwell P is not drawn. Not validated on hardware."
     }
   ]
 }

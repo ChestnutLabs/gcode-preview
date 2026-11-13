@@ -142,3 +142,37 @@ describe('cnc-router-inch-g20 (G20 inch units, #189)', () => {
     expect(unsupported.map((w) => w.message)).toEqual(["unsupported command 'm30' preserved as metadata"]);
   });
 });
+
+describe('cnc-canned-cycles (G81/G82/G83 with L repeats, #189)', () => {
+  const ir = parseFixture('canned-cycles.ngc');
+  const s = ir.segments;
+  const r = (v: number): number => Math.round(v * 1e4) / 1e4;
+  const cuts: string[] = [];
+  for (let i = 0; i < s.count; i++) {
+    if ((s.kind[i] & 128) !== 0) cuts.push(`${r(s.x1[i])},${r(s.y1[i])},${r(s.z1[i])}`);
+  }
+
+  it('drills every hole at the depth the LinuxCNC examples give', () => {
+    expect(cuts).toEqual([
+      '4,5,1.5', // Example 1
+      '5,7,4.2', // Example 2, L3: three holes stepping X4 Y5
+      '9,12,4.2',
+      '13,17,4.2',
+      '4,5,0.5', // Example 3
+      '10,0,-1', // G99 and bare X/Y repeats
+      '20,0,-1',
+      '30,0,-1',
+      '10,10,-1', // G82 L2 in place
+      '10,10,-1',
+      // G83 Q1 L3 from Z5 under G91: R plane 2, depth -2, four pecks per hole, X stepping by 10
+      ...[10, 20, 30].flatMap((x) => [1, 0, -1, -2].map((z) => `${x},20,${z}`))
+    ]);
+  });
+
+  it('reports the cycles as known and raises no repeat warning', () => {
+    expect(ir.header.capabilities.cannedCycles).toBe('known');
+    const codes = ir.header.warnings.map((w) => w.code);
+    expect(codes).not.toContain('canned-cycle-bad-repeat');
+    expect(codes).not.toContain('canned-cycle-missing-word');
+  });
+});

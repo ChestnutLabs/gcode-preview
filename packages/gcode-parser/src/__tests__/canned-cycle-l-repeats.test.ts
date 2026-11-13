@@ -34,13 +34,59 @@ describe('canned cycle L repeats', () => {
     expect(plunges(SETUP + 'G91\nG81 X4 Y5 Z-0.6 R1.8\n')).toEqual([[5, 7, 4.2]]);
   });
 
-  it('L0 and a negative L drill once', () => {
-    expect(plunges(SETUP + 'G91\nG81 X4 Y5 Z-0.6 R1.8 L0\n')).toEqual([[5, 7, 4.2]]);
-    expect(plunges(SETUP + 'G91\nG81 X4 Y5 Z-0.6 R1.8 L-2\n')).toEqual([[5, 7, 4.2]]);
+  it.each(['L0', 'L-2', 'L1.5', 'L2.9', 'L0.5'])('%s draws once and warns canned-cycle-bad-repeat', (word) => {
+    const src = SETUP + `G91\nG81 X4 Y5 Z-0.6 R1.8 ${word}\n`;
+    expect(plunges(src)).toEqual([[5, 7, 4.2]]);
+    const w = parseGcodeToIR(src).ir.header.warnings.filter((x) => x.code === 'canned-cycle-bad-repeat');
+    expect(w).toHaveLength(1);
+    expect(w[0].message).toBe(`L${word.slice(1)} is not a positive integer repeat count; the cycle runs once.`);
   });
 
-  it('a fractional L truncates (L2.9 = 2)', () => {
-    expect(plunges(SETUP + 'G91\nG81 X4 Y5 Z-0.6 R1.8 L2.9\n')).toHaveLength(2);
+  it('a valid or absent L raises no repeat warning', () => {
+    for (const src of [
+      SETUP + 'G91\nG81 X4 Y5 Z-0.6 R1.8 L3\n',
+      SETUP + 'G91\nG81 X4 Y5 Z-0.6 R1.8 L1\n',
+      SETUP + 'G91\nG81 X4 Y5 Z-0.6 R1.8\n'
+    ]) {
+      const codes = parseGcodeToIR(src).ir.header.warnings.map((x) => x.code);
+      expect(codes).not.toContain('canned-cycle-bad-repeat');
+      expect(codes).not.toContain('canned-cycle-repeat-limit');
+    }
+  });
+
+  it('the bad-repeat warning is deduped by code and counts every occurrence', () => {
+    const src = SETUP + 'G91\nG81 X4 Y5 Z-0.6 R1.8 L0\nX1 L-1\nX1 L1.5\n';
+    const w = parseGcodeToIR(src).ir.header.warnings.filter((x) => x.code === 'canned-cycle-bad-repeat');
+    expect(w).toHaveLength(1);
+    expect(w[0].count).toBe(3);
+    expect(plunges(src)).toHaveLength(3);
+  });
+
+  it('G90 L3 lifts to the R plane once, not once per repeat (LinuxCNC: only once, regardless of L)', () => {
+    // Start at Z3, below R 4.8: one preliminary rapid up to 4.8 at the old XY, then three holes.
+    const s = parseGcodeToIR(SETUP + 'G81 X5 Y7 Z4.2 R4.8 L3\n').ir.segments;
+    const rows: string[] = [];
+    for (let i = 0; i < s.count; i++) {
+      rows.push(
+        `${s.kind[i] & MoveKind.Cut ? 'C' : 'T'}:${+s.x1[i].toFixed(3)},${+s.y1[i].toFixed(3)},${+s.z1[i].toFixed(3)}`
+      );
+    }
+    // segment 0 is the G0 setup move; the rest is the cycle.
+    expect(rows.slice(1)).toEqual([
+      'T:1,2,4.8', // preliminary Z-up, old XY
+      'T:5,7,4.8', // hole 1: rapid to XY
+      'T:5,7,4.8', // rapid to R (zero length, kept)
+      'C:5,7,4.2', // plunge
+      'T:5,7,4.8', // retract
+      'T:5,7,4.8', // hole 2: XY (no move), R, plunge, retract: no second Z-up
+      'T:5,7,4.8',
+      'C:5,7,4.2',
+      'T:5,7,4.8',
+      'T:5,7,4.8',
+      'T:5,7,4.8',
+      'C:5,7,4.2',
+      'T:5,7,4.8'
+    ]);
   });
 
   it('G90 L3 repeats the same hole in place', () => {
@@ -71,8 +117,42 @@ describe('canned cycle L repeats', () => {
     expect(rows.map((p) => p[0])).toEqual([25.4, 50.8, 76.2]);
   });
 
+  it('L1e9 on a zero-length hole finishes fast, bounded by maxProgramIterations, with a warning', () => {
+    // Z == R == depth at the current XY: every move of the hole is zero-length.
+    const src = 'G90\nG0 X1 Y1 Z2\nG81 X1 Y1 Z2 R2 L1000000000\n';
+    const t0 = Date.now();
+    const r = parseGcodeToIR(src, { limits: { maxProgramIterations: 50 } } as never);
+    expect(Date.now() - t0).toBeLessThan(2000);
+    const w = r.ir.header.warnings.filter((x) => x.code === 'canned-cycle-repeat-limit');
+    expect(w).toHaveLength(1);
+    expect(w[0].message).toBe('L1000000000 exceeds the program iteration limit 50; the cycle repeats 50 times.');
+    expect(r.ir.segments.count).toBeLessThanOrEqual(1 + 50 * 4);
+  });
+
+  it('L equal to maxProgramIterations repeats fully with no limit warning; one more is clamped', () => {
+    const base = 'G90\nG0 X0 Y0 Z5\nG81 X0 Y0 Z4 R4.5 ';
+    const opts = { limits: { maxProgramIterations: 4 } } as never;
+    const at = parseGcodeToIR(base + 'L4\n', opts);
+    expect(at.ir.header.warnings.map((x) => x.code)).not.toContain('canned-cycle-repeat-limit');
+    const over = parseGcodeToIR(base + 'L5\n', opts);
+    expect(over.ir.header.warnings.map((x) => x.code)).toContain('canned-cycle-repeat-limit');
+    expect(over.ir.segments.count).toBe(at.ir.segments.count);
+  });
+
   it('a huge L stops at the segment limit instead of hanging', () => {
     const r = parseGcodeToIR(SETUP + 'G81 X5 Y7 Z4.2 R4.8 L999999999\n', { limits: { maxSegments: 100 } } as never);
     expect(r.ir.segments.count).toBeLessThanOrEqual(100);
+  });
+});
+
+describe('canned cycle L repeats: stop once the segment budget is spent', () => {
+  it('does not keep looping after emitSegment refuses (L1e9, iteration cap 1e9, 100 segments)', () => {
+    const t0 = Date.now();
+    const r = parseGcodeToIR('G90\nG0 X0 Y0 Z3\nG81 X5 Y7 Z4.2 R4.8 L1000000000\n', {
+      limits: { maxSegments: 100, maxProgramIterations: 1_000_000_000 }
+    } as never);
+    expect(Date.now() - t0).toBeLessThan(1500);
+    expect(r.ir.segments.count).toBe(100);
+    expect(r.stats.stopReason?.code).toBe('E_LIMIT_SEGMENTS');
   });
 });

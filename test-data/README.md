@@ -35,5 +35,6 @@ output is copied. Each has a manifest entry whose `limitations` names the gap it
 | `plotter-servo-pen.gcode` | servo-pen plotter (`M280 P0 S30` down, `S90` up): a rectangle and a circle | pen state is not modelled: every move is Travel, `M280` is `unsupported-command`, `bounds` is empty |
 | `plotter-z-pen.gcode` | Z-lift pen plotter (`Z0` down, `Z5` up): a triangle and one stroke | same: every move is Travel, `bounds` is empty |
 | `router-inch-g20.gcode` | inch-units (`G20`) router profile with two `G3` corners | `units: 'in'`, coordinates stay in inches (not converted to mm), inch arcs flattened finer |
+| `canned-cycles.ngc` | G81 / G82 / G83 drilling: the LinuxCNC G81 worked examples, G91, G99 with bare `X`/`Y` repeats, `P` dwell, `Q` pecks, `L` repeats, `G80` | `cannedCycles: known`; every hole is Travel moves plus one Cut plunge (or a peck run) |
 
 The literal values are pinned in `packages/gcode-parser/src/__tests__/corpus-cnc-plotter.test.ts`.
