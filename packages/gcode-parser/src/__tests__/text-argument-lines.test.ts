@@ -111,6 +111,18 @@ describe('#592: G / M / T words inside message text are text', () => {
       expect(moves(ir), line).toEqual(['(0.0,0.0)->(10.0,10.0)', '(10.0,10.0)->(20.0,10.0)']);
     }
   });
+
+  it('M117 G81 L5 is message text: no canned cycle, no L repeat, no cycle warning', () => {
+    for (const line of ['M117 G81 L5', 'M117 G81 X5 Y5 Z-1 R1 L0', 'M117 G81 Z-1 R1 L2000000']) {
+      const { ir } = parse(line);
+      expect(ir.segments.count, line).toBe(0);
+      // M117 itself is not drawn (unsupported-command) and a file with no moves has no layers; nothing canned.
+      expect(
+        ir.header.warnings.map((w) => w.code),
+        line
+      ).toEqual(['unsupported-command', 'layers-unavailable']);
+    }
+  });
 });
 
 describe('#592: what a text line still carries', () => {
