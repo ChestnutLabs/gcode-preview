@@ -136,6 +136,9 @@ export class GcodePreviewElement extends HTMLElement {
     return this._source;
   }
   set source(v: GcodePreviewSource) {
+    // The same source again is no change (as in the React, Vue and Svelte adapters): no re-parse. To reload
+    // the same bytes, pass a new array or call parse().
+    if (v === this._source) return;
     this._source = v;
     if (this.controller === null || v === null) return;
     const c = this.controller;
