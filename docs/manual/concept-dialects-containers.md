@@ -61,7 +61,8 @@ LinuxCNC) are recognized as dialects.
 cut, not to the bed, and a labelled cut counts toward `objectBounds` too (`frameContent: 'object'` frames a labelled
 cut-only file). Travel and retract moves still don't count. `modelBounds` and `nonModelClassification` still look at
 extrusion only, so a cut-only file reports `nonModelClassification: 'unavailable'`. A pen plotter that never sends
-`M3`/`M4` has no `Cut` moves, so its `bounds` stays empty and the viewer frames the bed.
+`M3`/`M4` has no `Cut` moves, so its `bounds` stays empty; the viewer then frames the drawing, travel moves
+included (`boundsWithTravel`), instead of the bed.
 
 **Canned cycles.** A `G81`/`G82`/`G83` cycle that starts below its `R` plane first rapids straight up to `R` at the old
 XY and only then moves to the hole, as LinuxCNC does, so the drawn travel doesn't cross the part at the low Z. Under
