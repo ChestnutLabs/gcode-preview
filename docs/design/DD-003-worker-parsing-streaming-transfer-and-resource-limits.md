@@ -140,6 +140,12 @@ the E2 exit.
 (`onerror`) rejects the active parse with `E_WORKER_CRASHED`; the session recreates the worker lazily on
 next use. All failure paths release buffers.
 
+**Worker creation failure (#566).** The session creates its worker lazily, inside the promise
+`parse()` returns. If the factory throws (for example `SecurityError` when a strict CSP blocks the
+worker URL), `parse()` rejects with `E_WORKER_CREATE_FAILED` (message `could not start the parse
+worker: <original message>`, the original error as `cause`); it never throws synchronously. The
+session stays idle, and the next `parse()` calls the factory again.
+
 **Instance exception.** The lazy recreation needs a worker *factory*. A caller-supplied worker *instance*
 (`SessionOptions.worker` given a `Worker` rather than a function) cannot be rebuilt: once it has been
 terminated (cancel backstop, crash, or `dispose()`), the next `parse()` rejects with

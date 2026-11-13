@@ -27,7 +27,7 @@ runBehavioralSuite(
       const canvas = document.createElement('canvas');
       const el = document.createElement('gcode-preview') as GcodePreviewElement;
       // Injectables the suite needs are JS properties (they can't be HTML attributes).
-      el.createWorker = () => new SuiteStubWorker(opts.machine);
+      el.createWorker = opts.createWorker ?? (() => new SuiteStubWorker(opts.machine));
       el.quality = 'lines';
       el.rendererOptions = {
         createRenderer: () => makeSuiteStubGL(canvas),
