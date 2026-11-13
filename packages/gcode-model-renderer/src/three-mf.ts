@@ -413,7 +413,7 @@ function expandBoundsByBox(
 }
 
 /** Parse ONE model part's XML into objects/palettes/items (no cross-part resolution). */
-function parseModelPart(xml: string, lim: ResolvedLimits): ModelPart {
+function parseModelPart(xml: string, lim: ResolvedLimits, vertexTotal: { count: number }): ModelPart {
   let unitScale = 1;
   const palettes = new Map<string, RGB[]>();
   const objects = new Map<string, ParsedObject>();
@@ -485,6 +485,16 @@ function parseModelPart(xml: string, lim: ResolvedLimits): ModelPart {
         });
       }
     } else if (name === 'vertex' && curObj !== null) {
+      // Vertices are bounded at 3 × maxTriangles (a mesh with no shared vertices) across every object and part
+      // of the scene, checked BEFORE the push so a vertices-only file fails before its arrays grow.
+      const vertexCap = lim.maxTriangles * 3;
+      if (vertexTotal.count >= vertexCap) {
+        throw new ModelParseError(
+          'E_MODEL_TOO_MANY_VERTICES',
+          `3MF holds more than ${vertexCap} vertices (3 × maxTriangles ${lim.maxTriangles})`
+        );
+      }
+      vertexTotal.count++;
       const a = attrs(raw);
       const vn = curObj.vertices.length / 3;
       curObj.vertices.push(vertexCoord(a.x, vn, 'x'), vertexCoord(a.y, vn, 'y'), vertexCoord(a.z, vn, 'z'));
@@ -1014,6 +1024,7 @@ export async function parse3mf(
   // Lazily parse model parts by absolute OPC path (production-extension components reference them).
   const partCache = new Map<string, ModelPart>();
   let objectsInScene = 0;
+  const vertexTotal = { count: 0 };
   const parseEntry = async (entry: ZipDirectory['entries'][number]): Promise<ModelPart> => {
     const key = entry.name.toLowerCase();
     const cached = partCache.get(key);
@@ -1024,7 +1035,7 @@ export async function parse3mf(
     } catch (e) {
       throw unzipFailure(e);
     }
-    const part = parseModelPart(xml, lim);
+    const part = parseModelPart(xml, lim, vertexTotal);
     // maxObjects is a scene-wide bound: the objects of every part (main + production-extension) count together.
     objectsInScene += part.objects.size;
     if (objectsInScene > lim.maxObjects) {
