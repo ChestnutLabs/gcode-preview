@@ -239,3 +239,55 @@ describe('<ModelViewer> (react) wiring: events and the handle', () => {
     expect(calls('ctl.bindCanvas').at(-1)).toBe('ctl.bindCanvas(null)');
   });
 });
+
+describe('<ModelViewer> (react) lifecycle: handle after dispose, options, canvas (react sweep 2)', () => {
+  it('dispose() disposes the controller', async () => {
+    const m = await mount();
+    m.ref.current!.dispose();
+    expect(calls('ctl.dispose')).toEqual(['ctl.dispose()']);
+    await m.unmount();
+  });
+
+  it('a controller rebuilt after dispose() gets the options of the latest render', async () => {
+    const m = await mount();
+    expect(created[0]!.options).not.toHaveProperty('interactionQuality');
+    await m.set({ interactionQuality: 'auto' });
+    m.ref.current!.dispose();
+    void m.ref.current!.controls;
+    expect(created).toHaveLength(2);
+    expect(created[1]!.options).toMatchObject({ interactionQuality: 'auto' });
+    await m.unmount();
+  });
+
+  it.each([
+    ['controls', (h: ModelViewerHandle) => void h.controls],
+    ['raw', (h: ModelViewerHandle) => void h.raw],
+    ['onEvent', (h: ModelViewerHandle) => void h.onEvent(() => undefined)]
+  ])('%s after dispose() builds a fresh controller', async (_name, touch) => {
+    const m = await mount();
+    m.ref.current!.dispose();
+    expect(created).toHaveLength(1);
+    touch(m.ref.current!);
+    expect(created).toHaveLength(2);
+    await m.unmount();
+  });
+
+  it('state is the render snapshot: reading it after dispose() builds no controller', async () => {
+    const m = await mount();
+    const before = m.ref.current!.state;
+    m.ref.current!.dispose();
+    expect(m.ref.current!.state).toBe(before);
+    expect(created).toHaveLength(1);
+    await m.unmount();
+  });
+
+  it('the canvas is full size and does not scroll the page on touch', async () => {
+    const m = await mount();
+    const c = m.host.querySelector('canvas')!;
+    expect(c.style.width).toBe('100%');
+    expect(c.style.height).toBe('100%');
+    expect(c.style.display).toBe('block');
+    expect(c.style.touchAction).toBe('none');
+    await m.unmount();
+  });
+});
