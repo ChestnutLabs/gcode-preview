@@ -79,6 +79,31 @@ const DEFAULT_TARGET = 250_000;
  */
 export const TUBE_SEGMENT_BUDGET = 400_000;
 
+/**
+ * Finite Extrude and Cut segments (the drawn toolpath that drives auto-decimation) and non-finite skips.
+ * Bit tests, so Cut|ArcSegment (160) and Cut|Seam (192) count.
+ * @internal Exported for tests only; not re-exported from the package index.
+ */
+export function countDrawnSegments(ir: ToolpathIR): {
+  extrudeCount: number;
+  cutCount: number;
+  skippedNonFinite: number;
+} {
+  const seg = ir.segments;
+  let skippedNonFinite = 0;
+  let extrudeCount = 0;
+  let cutCount = 0;
+  for (let i = 0; i < seg.count; i++) {
+    if (!Number.isFinite(seg.x0[i] + seg.y0[i] + seg.z0[i] + seg.x1[i] + seg.y1[i] + seg.z1[i])) {
+      skippedNonFinite++;
+      continue;
+    }
+    if ((seg.kind[i] & MoveKind.Extrude) !== 0) extrudeCount++;
+    else if ((seg.kind[i] & MoveKind.Cut) !== 0) cutCount++;
+  }
+  return { extrudeCount, cutCount, skippedNonFinite };
+}
+
 export function buildChunks(ir: ToolpathIR, opts: ChunkBuildOptions = {}): ChunkBuildResult {
   const seg = ir.segments;
   const target = opts.targetSegmentsPerChunk ?? DEFAULT_TARGET;
@@ -86,17 +111,7 @@ export function buildChunks(ir: ToolpathIR, opts: ChunkBuildOptions = {}): Chunk
   // A segment with any non-finite endpoint coordinate is skipped everywhere below (counted, never drawn).
   const finite = (i: number): boolean =>
     Number.isFinite(seg.x0[i] + seg.y0[i] + seg.z0[i] + seg.x1[i] + seg.y1[i] + seg.z1[i]);
-  let skippedNonFinite = 0;
-  let extrudeCount = 0;
-  for (let i = 0; i < seg.count; i++) {
-    if (!finite(i)) {
-      skippedNonFinite++;
-      continue;
-    }
-    // Cut (CNC/laser) is deliberately NOT counted: autoDecimation / the tube budget stay Extrude-driven in this
-    // change (autoDecimation-for-CNC is a follow-up). A user-chosen numeric decimation still thins Cut below.
-    if ((seg.kind[i] & MoveKind.Extrude) !== 0) extrudeCount++;
-  }
+  const { extrudeCount, cutCount, skippedNonFinite } = countDrawnSegments(ir);
   let decimation: number;
   if (typeof opts.decimation === 'number') {
     // An explicit factor must be a whole number ≥ 1 (1 = keep everything). 0, a negative, a fraction, NaN
@@ -106,7 +121,8 @@ export function buildChunks(ir: ToolpathIR, opts: ChunkBuildOptions = {}): Chunk
     }
     decimation = opts.decimation; // explicit caller override wins
   } else {
-    decimation = autoDecimation(extrudeCount);
+    // Cut (CNC/laser) counts toward auto-decimation like Extrude (both are the drawn toolpath); the tube clause below stays Extrude-only because Cut is line-only.
+    decimation = autoDecimation(extrudeCount + cutCount);
     // Tube memory budget (RR-006): raise decimation so kept segments ≤ the budget. Tubes cost ~23× lines
     // per segment, so the lines-calibrated autoDecimation thresholds alone let large forced-tube builds
     // OOM; this bounds them (and is disclosed via decimationApplied).
