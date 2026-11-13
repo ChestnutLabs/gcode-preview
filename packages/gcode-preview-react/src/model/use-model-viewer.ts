@@ -66,12 +66,9 @@ export function useModelViewer(options: UseModelViewerOptions = {}): ModelViewer
   // controller was never disposed, so in-flight setSource promises never settled and the controller
   // leaked — the toolpath hook already does this; the model hook must match.
   useEffect(() => {
-    const c = ensure();
-    // Refs attach BEFORE StrictMode's dispose/recreate cycle: rebind the delivered canvas to the fresh
-    // controller (refs never re-fire) so it renders again after a remount.
-    if (slot.current.canvas !== null && c.raw.viewer() === null) {
-      c.bindCanvas(slot.current.canvas);
-    }
+    // Refs attach BEFORE StrictMode's dispose/recreate cycle and never re-fire: `ensure()` rebuilds the
+    // disposed controller AND rebinds the canvas it already holds, so it renders again after a remount.
+    ensure();
     return () => {
       slot.current.controller?.dispose();
       slot.current.disposed = true;
