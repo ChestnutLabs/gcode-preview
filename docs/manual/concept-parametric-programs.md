@@ -71,7 +71,8 @@ A parametric program is a small program, so it is bounded like one. Two limits (
 [`ParseLimits`](concept-workers.md)) keep a hostile or buggy file from hanging the parser:
 
 - **`maxProgramIterations`** (default 1,000,000) bounds total loop work — an `o while [1]` stops with a
-  partial result and a `rs274-iteration-limit` disclosure.
+  partial result and a `rs274-iteration-limit` disclosure. Canned-cycle `L` repeats count toward the same
+  total, one per repeat, so many `L1000000000` lines cannot add up past it either.
 - **`maxCallDepth`** (default 50) bounds subroutine recursion — runaway or mutual recursion is
   disclosed (`rs274-call-depth`) and skipped, never a stack overflow.
 

@@ -52,7 +52,7 @@ drawing is approximate. These codes are new after v0.23.0 (#553):
 | `canned-cycle-missing-word` | a `G81`/`G82`/`G83` with no `Z` or `R`, and none set earlier | the cycle, with 0 for the missing word in the active distance mode (G90: plane 0; G91: an increment of 0, so the R plane is the current Z) |
 | `canned-cycle-plane` | a canned cycle while `G18`/`G19` is active | the cycle, still drilling along Z in the XY plane |
 | `canned-cycle-bad-repeat` | a canned cycle whose `L` is not a positive whole number (`L0`, a negative, a fraction such as `L1.5`) | the cycle once |
-| `canned-cycle-repeat-limit` | a canned cycle whose `L` is above the program iteration limit (`maxProgramIterations`, default 1,000,000) | the cycle, repeated that many times |
+| `canned-cycle-repeat-limit` | a canned cycle whose `L` is more than what is left of the program iteration budget (`maxProgramIterations`, default 1,000,000, shared by every cycle and O-word loop in the file) | the cycle, repeated as many times as are left (at least once) |
 | `unbalanced-paren-comment` | a `( … )` comment is never closed, or one is nested inside another (LinuxCNC rejects both) | the line as before: an unclosed `(` hides the rest of the line; a nested one closes at its matching `)`. Lines that start with a multi-letter command word (`EXCLUDE_OBJECT_START NAME=cube_(1`) or with `M117`/`M118`/`M486` (text arguments) are not checked |
 
 Under `G91`, a canned cycle's `R` and `Z` are kept as the numbers written (as LinuxCNC does): a later
@@ -128,7 +128,8 @@ and is **byte-identical**. Shipped in v0.18.0 (DD-017 phases 1–3). See the
 **Bounds & honesty.** Two `ParseLimits` fields bound execution: `maxProgramIterations` (default
 1,000,000) caps total loop work — charged per loop pass *and*, inside a loop or subroutine, per
 statement, condition test, `call` argument, entered loop and 256 characters of text, so a large body,
-a long `elseif` chain or an exponential recursive fan-out cannot exceed it — and `maxCallDepth` (default 50)
+a long `elseif` chain or an exponential recursive fan-out cannot exceed it; canned-cycle `L` repeats draw
+from the same total, one per repeat — and `maxCallDepth` (default 50)
 caps subroutine recursion. There is no `eval` and no I/O. Clean execution reports the
 `parametricProgram` capability as `known`; any disclosure above drops it to `approximated`; a
 non-parametric file reports `unavailable` — never a fabricated value. FDM / non-parametric input is
