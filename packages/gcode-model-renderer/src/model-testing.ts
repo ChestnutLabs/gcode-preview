@@ -45,6 +45,8 @@ export const MODEL_STUB_CONTROLS: NonNullable<ModelPreviewControllerOptions['cre
 export function makeModelRecordingGL(): {
   createRenderer: (canvas: RenderTargetCanvas) => GLRendererLike;
   snapshot(): { fov: number; plate: boolean; cage: boolean | null; shadow: boolean; background: string };
+  /** What the last frame drew: the number of model objects in the scene (after any render scope) + the background kind. */
+  drawn(): { objects: number; background: string };
 } {
   let last: { scene: Scene; camera: Camera } | null = null;
   return {
@@ -67,8 +69,25 @@ export function makeModelRecordingGL(): {
         shadow: scene.getObjectByName('contactShadow') !== undefined,
         background: scene.background === null ? 'null' : scene.background.constructor.name
       };
+    },
+    drawn() {
+      if (last === null) throw new Error('nothing rendered yet');
+      const { scene } = last;
+      // The model root is the unnamed Group; its children are the drawn objects.
+      const root = scene.children.find((c) => c.type === 'Group' && c.name === '');
+      return {
+        objects: root === undefined ? 0 : root.children.length,
+        background: scene.background === null ? 'null' : scene.background.constructor.name
+      };
     }
   };
+}
+
+/** Two coloured objects, ids `'a'` and `'b'` — for render-scope checks (`{ objectIds: ['a'] }` draws one). */
+export function makeTwoObjectModelSource(): ModelScene {
+  const one = makeColouredModelSource();
+  const a = one.objects[0]!;
+  return { ...one, objects: [a, { ...a, id: 'b' }] };
 }
 
 /** A one-triangle binary STL — carries no colour, so materials stays honest `unavailable`. */
@@ -126,6 +145,13 @@ export interface ModelAdapterInstance {
   dispose(): Promise<void> | void;
   /** Let microtask round-trips + framework effects settle. */
   settle(): Promise<void>;
+  /**
+   * Optional: unbind the canvas and bind a fresh one (a StrictMode remount / replaced canvas), the way the
+   * adapter does it. Provide together with `drawn` to opt in to the rebind guard.
+   */
+  rebind?(): Promise<void> | void;
+  /** Optional: what the last frame drew (see `makeModelRecordingGL().drawn`); the mount must use that recording GL. */
+  drawn?(): { objects: number; background: string };
 }
 
 export interface ModelAdapterHarness {
@@ -301,6 +327,32 @@ export function runModelBehavioralSuite(name: string, api: TestApi, harness: Mod
       await a.settle();
       expect(errorName(-1)).toBe('RangeError');
       expect(errorName(1.5)).toBe('none');
+      await a.dispose();
+    });
+
+    it('render scope and background set at runtime survive a canvas rebind (adapters that opt in)', async () => {
+      const a = await harness.create();
+      if (a.rebind === undefined || a.drawn === undefined) {
+        await a.dispose(); // this adapter does not opt in
+        return;
+      }
+      await a.controls.setSource(makeTwoObjectModelSource());
+      await a.settle();
+      expect(a.drawn().objects).toBe(2);
+      // The default background is transparent (no scene background), so 'Color' below proves the set one.
+      expect(a.drawn().background).toBe('null');
+      a.controls.setRenderScope({ objectIds: ['a'] });
+      a.controls.setBackground('#ff0000');
+      await a.settle();
+      expect(a.drawn().objects).toBe(1);
+      expect(a.drawn().background).toBe('Color');
+      await a.rebind();
+      await a.settle();
+      expect(a.drawn().objects).toBe(1); // the scope, not the initial (whole-source) option
+      expect(a.drawn().background).toBe('Color');
+      a.controls.setRenderScope(null);
+      await a.settle();
+      expect(a.drawn().objects).toBe(2);
       await a.dispose();
     });
 

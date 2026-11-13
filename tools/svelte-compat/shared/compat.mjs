@@ -18,7 +18,7 @@ import GcodePreview from '../../../packages/gcode-preview-svelte/src/GcodePrevie
 import ModelViewer from '../../../packages/gcode-preview-svelte/src/model/ModelViewer.svelte';
 import { mountComponent } from './mount-api.mjs';
 import PreviewHost from './PreviewHost.svelte';
-import { ToolpathRenderer } from '@chestnutlabs/gcode-renderer-three';
+import { CaptureUnsupportedError, ToolpathRenderer } from '@chestnutlabs/gcode-renderer-three';
 
 const PKG_DIR = resolve(dirname(fileURLToPath(import.meta.url)), '../../../packages/gcode-preview-svelte');
 
@@ -347,6 +347,95 @@ export function registerCompat({ describe, it, expect, svelte, compiler, expecte
       const created = renderersCreated;
       viewer.canvas(document.createElement('canvas'));
       expect(renderersCreated).toBe(created);
+      target.remove();
+    });
+  });
+
+  describe(`${label}: ModelViewer input errors and capture (pinned, same channel as the toolpath component)`, () => {
+    const mountModel = (props) => {
+      const target = document.body.appendChild(document.createElement('div'));
+      const handle = mountComponent(svelte, ModelViewer, {
+        target,
+        props: { createRenderer: MODEL_STUB_GL, createControls: MODEL_STUB_CONTROLS, ...props }
+      });
+      return { handle, target };
+    };
+    /**
+     * Apply a prop patch and return what it threw. Svelte 5 flushes synchronously, so the throw is catchable.
+     * Svelte 4 applies `$set` in a microtask: the same RangeError surfaces there as an unhandled promise
+     * rejection, which a test cannot catch, so the two update-path cases below run on Svelte 5 only.
+     */
+    const patchThrows = (handle, patch) => {
+      try {
+        handle.setProps(patch);
+        return null;
+      } catch (e) {
+        return e;
+      }
+    };
+    const itSync = expectedMajor === 5 ? it : it.skip;
+
+    it('renderScope null means the whole source: it mounts and draws (it used to throw a RangeError)', async () => {
+      const ready = [];
+      const target = document.body.appendChild(document.createElement('div'));
+      const handle = mountComponent(svelte, ModelViewer, {
+        target,
+        props: {
+          source: makeStlModelSource(),
+          renderScope: null,
+          createRenderer: MODEL_STUB_GL,
+          createControls: MODEL_STUB_CONTROLS
+        },
+        events: { ready: (e) => ready.push(e.detail) }
+      });
+      await settle();
+      expect(ready).toHaveLength(1);
+      handle.destroy();
+      target.remove();
+    });
+
+    it('a bad renderScope at mount throws a RangeError out of the mount', () => {
+      let error = null;
+      try {
+        mountModel({ renderScope: { objectIds: 'nope' } });
+      } catch (e) {
+        error = e;
+      }
+      expect(error).toBeInstanceOf(RangeError);
+      expect(error.message).toContain('objectIds');
+    });
+
+    itSync('a bad renderScope set after mount throws a RangeError out of the update', async () => {
+      const { handle, target } = mountModel({ renderScope: { objectIds: ['a'] } });
+      await settle();
+      const error = patchThrows(handle, { renderScope: { plateId: 1.5 } });
+      expect(error).toBeInstanceOf(RangeError);
+      expect(error.message).toContain('plateId');
+      target.remove();
+    });
+
+    itSync('the toolpath component behaves the same: a NaN layerRange after mount throws a RangeError', async () => {
+      const target = document.body.appendChild(document.createElement('div'));
+      const handle = mountComponent(svelte, GcodePreview, {
+        target,
+        props: {
+          createWorker: () => new SuiteStubWorker(),
+          rendererOptions: { createRenderer: (c) => makeSuiteStubGL(c), scheduleFrame: (cb) => cb() },
+          layerRange: [0, 1]
+        }
+      });
+      await settle();
+      const error = patchThrows(handle, { layerRange: [Number.NaN, 1] });
+      expect(error).toBeInstanceOf(RangeError);
+      expect(error.message).toContain('NaN');
+      target.remove();
+    });
+
+    it('capture rejects with CaptureUnsupportedError through the viewer handle (stub GL cannot render to a target)', async () => {
+      const { handle, target } = mountModel({});
+      await settle();
+      await expect(handle.instance.viewer.capture()).rejects.toBeInstanceOf(CaptureUnsupportedError);
+      await expect(handle.instance.viewer.controls.capture()).rejects.toBeInstanceOf(CaptureUnsupportedError);
       target.remove();
     });
   });

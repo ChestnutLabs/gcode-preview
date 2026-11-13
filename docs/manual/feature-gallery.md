@@ -39,7 +39,7 @@ source model (Prepare), each with real controls:
 
 | Color modes, capability-gated | Render diagnostics & capabilities |
 |---|---|
-| ![The Feature Lab Appearance tab: a color-by selector with the active feature-role legend; unsupported modes greyed out](../media/app-appearance.png) | ![The Feature Lab Diagnostics tab: capability badges and getRenderStats output](../media/app-diagnostics.png) |
+| ![The Feature Lab Appearance tab: a color-by selector with the active feature-role legend; unsupported modes greyed out](../media/app-appearance.png) | ![The Feature Lab Diagnostics tab: capability badges, parse notes and getRenderStats output](../media/app-diagnostics.png) |
 
 ## Studio look, lens & plate
 
@@ -131,11 +131,12 @@ clean `hold` reveal**, staged preparation progress, and **`getRenderStats()`** d
 hardware-vs-software GPU, draw calls, timings — never fabricated). See
 [workers, streaming & performance](concept-workers.md).
 
-![The Feature Lab Diagnostics tab: capability confidence badges and getRenderStats() output beside the render — backend 3d-webgl (WebGL 2), software ANGLE/SwiftShader GPU, geometry tubes, segment and draw-call counts, vertex count, tube bytes, worker pool, and timings](../media/app-diagnostics.png)
+![The Feature Lab Diagnostics tab beside the render: capability confidence badges, parse notes for a 3DBenchy (6,549 commands kept as metadata and not drawn, 1 path whose layer was inferred), and getRenderStats() output — backend 3d-webgl (WebGL 2), software ANGLE/SwiftShader GPU, geometry tubes and segment counts](../media/app-diagnostics.png)
 
-*`getRenderStats()` in context — every value read from the actual render, never fabricated; here
-reporting a software (SwiftShader) backend, `108,725 / 108,729` segments, 92 draw calls, and the
-build/first-frame timings.*
+*The Diagnostics tab in context. **Parse notes** group the `parse-complete` event's warnings by code:
+here 6,549 commands the Benchy file carries (such as `M73` progress) kept as metadata and not drawn, and
+one path whose layer was inferred. Below them, `getRenderStats()` reports values read from the actual
+render, never fabricated: here a software (SwiftShader) backend and tube geometry.*
 
 ## Cameras, framing & capture
 
