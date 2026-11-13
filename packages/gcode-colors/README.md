@@ -32,6 +32,28 @@ have no meaning: a `range` that is not two finite numbers `>= 0` in ascending or
 point range such as `[1500, 1500]` is valid and paints every segment the ramp's first colour. Call
 `checkColorMode(mode)` to validate a mode up front, before you store it.
 
+### Colours that throw
+
+Every colour in a mode is checked: `single.color`, each `palette` and `ramp` entry, `moveKind` `cut`
+and `travel`, and `fallback`. A colour is an array-like (a plain array, a tuple or a `Float32Array`)
+whose first three entries are finite numbers. Extra entries such as an alpha are ignored. Any finite
+value is accepted, so a 0-255 colour still draws (over-bright). `NaN`, `±Infinity`, fewer than three
+entries or a non-array throw a `RangeError` that names the mode, the field and the index:
+
+```text
+tool color mode palette[2] must be [r, g, b] of three finite numbers, got [0.1, NaN, 0.3]
+```
+
+| Mode | Must carry |
+| --- | --- |
+| `tool`, `feature`, `colorChange`, `object` | a `palette` array (it may be empty: every segment then draws in `fallback`) |
+| `feedrate`, `layerHeight`, `power` | a `ramp` array (it may be empty) |
+| `moveKind` | `cut` and `travel` |
+| every mode except `single`, `tool` and `filament` | a `fallback` |
+
+`createSegmentColorer`, `segmentColor`, the Canvas 2D renderer and the preview controller all run this
+check, so a bad mode throws when you set it and the previous mode stays in effect.
+
 ## Usage
 
 ```ts

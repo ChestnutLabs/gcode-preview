@@ -30,7 +30,16 @@ applied in order once it binds. A bad layer, scrub, lens, pixel-ratio or colour-
 throws to you once the renderer is bound. If that call was queued, the preview reports it instead: it
 sets `state.error` and fires an `error` event with code `E_CONTROL_REJECTED`. The message names the
 control, for example `setTheme rejected: theme gridOpacity must be a number in [0,1] (got 2)`. The
-calls queued after it still apply.
+calls queued after it still apply. The theme fields that are checked are listed in the
+[renderer-three README](../gcode-renderer-three/README.md#theme-values-that-throw).
+
+A colour mode is checked before it is stored: every colour must be `[r, g, b]` of three finite
+numbers, and each mode needs its `palette` or `ramp`. See the
+[gcode-colors README](../gcode-colors/README.md#colours-that-throw).
+
+With `renderer: { mode: '2d' }`, a bad 2D option throws `RangeError` from `bindCanvas`: an
+`adjacentLayers` of `NaN`, or a `ghostOpacity` outside `[0, 1]` or `NaN`. A negative `adjacentLayers`
+is still valid and draws no ghost layers.
 
 A callback you pass to `onStateChange` or `onEvent` that throws cannot break the preview. The other
 callbacks still run, and `parse()` still resolves with the parse's own outcome. Your callback's error is

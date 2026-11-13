@@ -102,7 +102,11 @@ viewer.dispose();
 
 Drag to orbit, scroll to zoom, right-drag to pan. `getCameraState()` / `setCameraState()` persist and
 restore a pose (the same serializable `CameraState` as the toolpath renderer), `resize(w, h)` matches a
-`ResizeObserver`, and `setInteractionQuality('auto')` trades detail for smoothness while orbiting. New
+`ResizeObserver`, and `setInteractionQuality('auto')` trades detail for smoothness while orbiting.
+A `theme` is checked like the toolpath renderer's: a value it can't draw throws a `RangeError` that
+names the field (see
+[Theme values that throw](../gcode-renderer-three/README.md#theme-values-that-throw)). The viewer
+does not apply theme lights, but it still checks the light intensities. New
 source formats become viewable by registering a `ModelLoader` for a new `kind`, with no change to the
 viewer's API (design: [DD-021](../../docs/design/DD-021-interactive-model-viewer.md)).
 

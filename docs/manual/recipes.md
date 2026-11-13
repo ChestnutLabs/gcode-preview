@@ -48,6 +48,12 @@ when you set the mode, and the previous mode stays in effect. For a reversed sca
 color. Moves with no speed in the file, or a negative one, are drawn in `fallback`. To check a mode
 built from user input before you set it, call `checkColorMode(mode)` from `@chestnutlabs/gcode-colors`.
 
+Every color in the mode is checked too: each `ramp` and `palette` entry and the `fallback` must be
+`[r, g, b]` of three finite numbers. A `NaN` from a color picker, or a two-entry array, throws a
+`RangeError` that names the field and its index, and the previous mode stays in effect. Each mode's
+required fields are listed in the
+[gcode-colors README](https://github.com/ChestnutLabs/gcode-preview/blob/dev/packages/gcode-colors/README.md#colours-that-throw).
+
 ## Camera control: preset views & saved state
 
 The imperative `controls` handle (the composable return / React ref / Svelte `bind:this` / element
