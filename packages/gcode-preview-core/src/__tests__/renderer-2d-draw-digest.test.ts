@@ -113,3 +113,27 @@ describe('2D draw-call digest goldens (FDM, #588 byte-identity)', () => {
     });
   }
 });
+
+describe('2D draws CNC Cut moves (#588)', () => {
+  // Every CNC fixture has `layers: 'unavailable'`: one layer 0 holding the whole file.
+  const CNC: Array<[string, number]> = [
+    ['gcodes/mach3.gcode', 177],
+    ['gcodes/easel.gcode', 737],
+    ['fixtures/cnc/router-inch-g20.gcode', 85]
+  ];
+  for (const [path, cuts] of CNC) {
+    it(`${path}: ${cuts} Cut strokes by default, 0 with cut: false`, () => {
+      const bytes = readFileSync(new URL(`../../../../test-data/${path}`, import.meta.url));
+      const ir = parseGcodeToIR(new Uint8Array(bytes)).ir;
+      const fit = computeLayerFit(modelBounds2D(ir), 800, 600, 8);
+      const shown = new DigestCtx();
+      const on = drawLayers(shown.ctx, ir, { layer: 0, colorMode: SINGLE, fit });
+      expect(on).toMatchObject({ extrudeDrawn: 0, travelDrawn: 0, cutDrawn: cuts, drawn: true });
+      expect(shown.strokes).toBe(cuts);
+      const hidden = new DigestCtx();
+      const off = drawLayers(hidden.ctx, ir, { layer: 0, colorMode: SINGLE, fit, cut: false });
+      expect(off).toMatchObject({ extrudeDrawn: 0, cutDrawn: 0, drawn: true });
+      expect(hidden.strokes).toBe(0);
+    });
+  }
+});

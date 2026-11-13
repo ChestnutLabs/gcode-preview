@@ -175,10 +175,11 @@ export class LayerView2DRenderer implements PreviewRenderer {
   }
 
   setKindVisible(kind: MoveKindToggle, visible: boolean): void {
-    // extrusion is the point of the 2D view (never hidden); wipe is a 3D-line concern with no
-    // distinct 2D representation, so only the travel toggle is meaningful here.
-    if (kind !== 'travel') return;
-    this.view.setTravel(visible ? this.travelStyle : false);
+    // Extrusion is the point of the 2D view (never hidden); wipe is a 3D-line concern with no distinct
+    // 2D representation. Travel and Cut (#588) are the toggles the 2D view honours.
+    if (kind === 'travel') this.view.setTravel(visible ? this.travelStyle : false);
+    else if (kind === 'cut') this.view.setCut(visible);
+    else return;
     this.redraw();
   }
 

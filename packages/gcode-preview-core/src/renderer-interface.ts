@@ -32,8 +32,8 @@ export type RendererMode = '2d' | '3d';
 
 /**
  * Move classes whose visibility can be toggled independently (DD-009 travel toggle + DD-016 wipe + #584 cut).
- * `'wipe'` and `'cut'` (CNC/laser cutting moves) are honored by the 3D renderer as their own chunks; the flat
- * 2D view treats both as a no-op (2D does not draw Cut yet).
+ * `'wipe'` and `'cut'` (CNC/laser cutting moves) are honored by the 3D renderer as their own chunks. The flat
+ * 2D view honours `'travel'` and `'cut'` (#588); `'wipe'` is a no-op there.
  */
 export type MoveKindToggle = 'extrude' | 'travel' | 'wipe' | 'cut';
 
