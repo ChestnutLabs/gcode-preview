@@ -7,7 +7,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import {
-  MODEL_STUB_GL,
+  makeModelRecordingGL,
   MODEL_STUB_CONTROLS,
   runModelBehavioralSuite,
   type ModelAdapterInstance
@@ -34,8 +34,9 @@ runModelBehavioralSuite(
   {
     create() {
       const canvas = document.createElement('canvas');
-      const viewer = createModelViewer({ createRenderer: MODEL_STUB_GL, createControls: MODEL_STUB_CONTROLS });
-      const action = viewer.canvas(canvas); // `use:viewer.canvas`
+      const gl = makeModelRecordingGL();
+      const viewer = createModelViewer({ createRenderer: gl.createRenderer, createControls: MODEL_STUB_CONTROLS });
+      let action = viewer.canvas(canvas); // `use:viewer.canvas`
       const instance: ModelAdapterInstance = {
         controls: viewer.controls,
         getState: () => current(viewer),
@@ -44,7 +45,12 @@ runModelBehavioralSuite(
           action.destroy();
           viewer.dispose();
         },
-        settle
+        settle,
+        drawn: () => gl.drawn(),
+        rebind: () => {
+          action.destroy();
+          action = viewer.canvas(document.createElement('canvas'));
+        }
       };
       return instance;
     }

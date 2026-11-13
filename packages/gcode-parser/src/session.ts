@@ -24,7 +24,11 @@ export interface WorkerLike {
 }
 
 export interface SessionOptions {
-  /** Escape hatch (DD-003 §4.4 option c): supply a Worker instance or factory. */
+  /**
+   * Escape hatch (DD-003 §4.4 option c): supply a Worker instance or factory. An instance cannot be
+   * rebuilt: after it is terminated (the cancel backstop, a crash, or `dispose()`), `parse()` rejects with
+   * `E_WORKER_TERMINATED`; pass a factory to recover.
+   */
   worker?: WorkerLike | (() => WorkerLike);
   /** Cancel-acknowledgement backstop before terminate() (default 2000 ms). */
   terminateFallbackMs?: number;
@@ -68,7 +72,6 @@ interface ActiveParse {
   id: number;
   resolve: (r: ParseResult) => void;
   reject: (e: Error) => void;
-  partialOnCancel: boolean;
   cancelTimer?: ReturnType<typeof setTimeout>;
 }
 
@@ -78,11 +81,15 @@ export class GcodeParseSession {
   private worker: WorkerLike | null = null;
   private active: ActiveParse | null = null;
   private nextId = 1;
+  /** A caller-supplied Worker INSTANCE (not a factory) cannot be rebuilt once terminated. */
+  private readonly instanceSupplied: boolean;
+  private instanceSpent = false;
   private progressListeners = new Set<(p: ParseProgress) => void>();
   private partialListeners = new Set<(slice: ToolpathIR, cumulativeSegments: number) => void>();
 
   constructor(opts: SessionOptions = {}) {
     const supplied = opts.worker;
+    this.instanceSupplied = supplied !== undefined && typeof supplied !== 'function';
     this.factory =
       supplied === undefined ? defaultWorkerFactory : typeof supplied === 'function' ? supplied : () => supplied;
     this.terminateFallbackMs = opts.terminateFallbackMs ?? 2000;
@@ -107,10 +114,20 @@ export class GcodeParseSession {
     if (this.active !== null) {
       return Promise.reject(new ParseSessionError('E_BUSY', 'a parse is already in progress on this session'));
     }
+    if (this.instanceSpent) {
+      // The instance was terminated (cancel backstop, crash or dispose). Posting to it would never be
+      // answered, leaving this parse pending forever; say so instead.
+      return Promise.reject(
+        new ParseSessionError(
+          'E_WORKER_TERMINATED',
+          'the worker instance supplied to this session was terminated; supply a worker factory to allow a new worker'
+        )
+      );
+    }
     const worker = this.ensureWorker();
     const id = this.nextId++;
     return new Promise<ParseResult>((resolve, reject) => {
-      const active: ActiveParse = { id, resolve, reject, partialOnCancel: opts.partialOnCancel === true };
+      const active: ActiveParse = { id, resolve, reject };
       this.active = active;
       // §4.2 wire strategy: Uint8Array transfers its buffer (zero-copy); a
       // ReadableStream is transferred; a Blob is a cheap cloneable handle.
@@ -193,6 +210,7 @@ export class GcodeParseSession {
       this.worker.onerror = null;
       this.worker.terminate();
       this.worker = null;
+      if (this.instanceSupplied) this.instanceSpent = true;
     }
   }
 

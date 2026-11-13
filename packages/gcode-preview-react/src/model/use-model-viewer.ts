@@ -61,17 +61,14 @@ export function useModelViewer(options: UseModelViewerOptions = {}): ModelViewer
   const getSnapshot = useCallback(() => ensure().getState(), [ensure]);
   const state = useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
 
-  // Own the controller's lifecycle: (re)create on mount (StrictMode's second setup lands here) and
-  // DISPOSE on unmount. Without this the GL engine was freed via the canvas-ref-null path but the
-  // controller was never disposed, so in-flight setSource promises never settled and the controller
-  // leaked — the toolpath hook already does this; the model hook must match.
+  // Own the controller's lifecycle: DISPOSE on unmount. Without this the GL engine was freed via the
+  // canvas-ref-null path but the controller was never disposed, so in-flight setSource promises never
+  // settled and the controller leaked — the toolpath hook already does this; the model hook must match.
+  // No rebuild here: on a StrictMode remount, useSyncExternalStore re-subscribes first (its effect is
+  // declared above), and `subscribe` calls `ensure()`, which rebuilds the disposed controller AND
+  // rebinds the canvas it already holds (refs attach before the dispose/recreate cycle and never
+  // re-fire). Every handle call goes through `ensure()` too.
   useEffect(() => {
-    const c = ensure();
-    // Refs attach BEFORE StrictMode's dispose/recreate cycle: rebind the delivered canvas to the fresh
-    // controller (refs never re-fire) so it renders again after a remount.
-    if (slot.current.canvas !== null && c.raw.viewer() === null) {
-      c.bindCanvas(slot.current.canvas);
-    }
     return () => {
       slot.current.controller?.dispose();
       slot.current.disposed = true;
