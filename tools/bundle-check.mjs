@@ -97,6 +97,14 @@ export const STARTUP_PACKAGES = [
 ];
 
 /**
+ * The verdict inputs of one finished child process: `ok` only on a clean exit (status 0; a crash, a non-zero exit
+ * and a signal kill, where status is null, all fail), `output` = stdout then stderr.
+ */
+export function childRun(r) {
+  return { ok: r.status === 0, output: `${r.stdout ?? ''}${r.stderr ?? ''}` };
+}
+
+/**
  * Import `specifier` in a fresh Node process under the startup hook, calling nothing. The element defines a
  * custom element at import time, so `HTMLElement` and `customElements` are stubbed. Returns
  * `{ loadsRenderer, ok, output }`: `loadsRenderer` means the hook fired.
@@ -112,8 +120,8 @@ export function importUnderHook(specifier) {
     encoding: 'utf8',
     env: { ...process.env, BUNDLE_CHECK_HOOK_LOADED: '' }
   });
-  const output = `${r.stdout ?? ''}${r.stderr ?? ''}`;
-  return { loadsRenderer: output.includes('STARTUP-LOADS-RENDERER'), ok: r.status === 0, output };
+  const { ok, output } = childRun(r);
+  return { loadsRenderer: output.includes('STARTUP-LOADS-RENDERER'), ok, output };
 }
 
 /** The runtime verdict for one package: a list of problems (empty = pass). */
@@ -198,8 +206,7 @@ export async function runSideEffectBundle(fixture) {
       'globalThis.customElements = { define(n) { seen.add(n); console.log("DEFINED " + n); }, get(n) { return seen.has(n) ? class {} : undefined; } };' +
       `await import(${JSON.stringify(pathToFileURL(entryFile).href)});`;
     const r = spawnSync(process.execPath, ['--input-type=module', '-e', script], { cwd: dir, encoding: 'utf8' });
-    const output = `${r.stdout ?? ''}${r.stderr ?? ''}`;
-    return { defined: parseDefined(r.stdout ?? ''), ok: r.status === 0, output };
+    return { defined: parseDefined(r.stdout ?? ''), ...childRun(r) };
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }

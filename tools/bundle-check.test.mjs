@@ -1,11 +1,14 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
   SIDE_EFFECT_IMPORTS,
+  childRun,
   cli,
   controlVerdict,
+  importUnderHook,
   isThreeModule,
   main,
   parseDefined,
+  runSideEffectBundle,
   runtimeVerdict,
   sideEffectVerdict,
   startupChunks,
@@ -198,6 +201,36 @@ describe('bundle-check side-effect imports', () => {
     } finally {
       quiet.mockRestore();
     }
+  });
+
+  it('childRun: only a clean exit is ok, and the output is stdout then stderr', () => {
+    // A bundle that registers the tag and then throws must not pass.
+    expect(childRun({ status: 1, stdout: 'DEFINED gcode-preview\n', stderr: 'Error: boom\n' })).toEqual({
+      ok: false,
+      output: 'DEFINED gcode-preview\nError: boom\n'
+    });
+    // Killed by a signal: status is null.
+    expect(childRun({ status: null, signal: 'SIGTERM', stdout: 'DEFINED gcode-preview\n', stderr: '' })).toEqual({
+      ok: false,
+      output: 'DEFINED gcode-preview\n'
+    });
+    expect(childRun({ status: 0, stdout: 'a\n', stderr: 'b\n' })).toEqual({ ok: true, output: 'a\nb\n' });
+    expect(childRun({ status: 0, stdout: null, stderr: undefined })).toEqual({ ok: true, output: '' });
+  });
+
+  it('a real bundle that registers the tag and then throws is not ok (the end-to-end S6 case)', async () => {
+    const run = await runSideEffectBundle('test-defines-then-throws.mjs');
+    expect(run.defined).toEqual(['gcode-preview']);
+    expect(run.ok).toBe(false);
+    expect(run.output).toContain('boom after define');
+    expect(sideEffectVerdict({ specifier: 'x', defines: 'gcode-preview' }, run)).toHaveLength(1);
+  }, 60_000);
+
+  it('a real import that throws is not ok (importUnderHook)', () => {
+    const run = importUnderHook('data:text/javascript,throw new Error("boom in import")');
+    expect(run.ok).toBe(false);
+    expect(run.loadsRenderer).toBe(false);
+    expect(run.output).toContain('boom in import');
   });
 
   it('a bundle that cannot run fails, even if it printed the tag first', () => {
