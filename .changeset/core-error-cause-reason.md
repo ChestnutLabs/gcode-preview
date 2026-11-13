@@ -22,3 +22,6 @@ Errors now keep the original error, and `E_RENDERER_LOAD` says whether the 3D re
 - **`E_POST_FAILED`** from `GcodeParseSession` now carries the browser's error (for example `DataCloneError`) on
   `error.cause`, as `E_WORKER_CREATE_FAILED` already did.
 - New exported types: `PreviewError` and `RendererFailureReason`, re-exported by every adapter.
+- **If your tests compare errors exactly:** an assertion like `expect(state.error).toEqual({ code, message })` now
+  fails whenever a `cause` or `reason` is present. Use `toMatchObject({ code, message })`, or compare `.code` and
+  `.message`.
