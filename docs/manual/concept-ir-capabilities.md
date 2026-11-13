@@ -21,6 +21,10 @@ operations (layer clip, scrub) index math rather than object walks.
 mapper, and any consumer read the IR, never the raw G-code. It carries a schema version so consumers
 can evolve safely.
 
+IR coordinates are always **millimetres**. A file that declares inches (`G20`) is converted by the parser, so
+`header.units` records what the file said (`'in'`) while every coordinate is in mm; a `units-converted` info
+warning marks it.
+
 ## The capability model — honest, never fabricated
 
 The stack's defining rule: **it discloses what it knows and refuses to fabricate what it doesn't.**

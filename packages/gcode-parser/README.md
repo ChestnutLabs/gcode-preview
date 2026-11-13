@@ -23,6 +23,10 @@ session.dispose();
 > each time. Passing the already-transferred bytes rejects with `E_POST_FAILED`, with the browser's
 > `DataCloneError` on `error.cause`; the session stays usable.
 
+**Coordinates are always millimetres.** A file that declares inches (`G20`) is converted while it is parsed, so
+> every renderer, the bounds and the stats see millimetres. `ir.header.units` still reads `'in'`, because it records
+> what the file declared, and the parse result carries a `units-converted` info warning.
+
 If the worker can't be created (for example, a strict Content Security Policy blocks the worker URL),
 `parse()` rejects with `E_WORKER_CREATE_FAILED`. The message keeps the browser's text, and `error.cause`
 holds the original error (a `SecurityError`, say). The session stays usable: the next `parse()` tries to

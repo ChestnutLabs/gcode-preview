@@ -78,6 +78,15 @@
       "view": "iso",
       "caption": "Plate selection on a SYNTHETIC two-plate 3MF (generated for the demo, not a slicer export): plate 2 is selected through render scope, and the placement line reads `inferred` with the one-workspace-cell offset the viewer subtracted to draw it on the bed.",
       "alt": "The Feature Lab in Prepare mode showing one block on a build plate, the plate selector set to the second synthetic plate, and the placement line reading inferred with an x offset of minus 307.2 millimetres"
+    },
+    {
+      "name": "app-cnc-cut-framing",
+      "mode": "preview",
+      "fixture": "easel",
+      "tab": "inspect",
+      "view": "iso",
+      "caption": "A CNC file with no printing moves on the Studio look: the plate is drawn see-through so the cut shows through it, there is no contact-shadow blob, and the camera centres on the work instead of the bed. Cuts have their own Cut moves toggle, so they show with Travel moves off.",
+      "alt": "The Feature Lab showing an Easel CNC carve of the letters CKC as pale blue lines seen through a translucent plate, with the inspector rail on the right"
     }
   ]
 }
