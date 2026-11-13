@@ -19,6 +19,8 @@
  * exponential recursive fan-out must not hang/OOM the worker): one shared counter is charged per loop
  * pass AND per statement executed inside any loop OR subroutine, stopping the program at
  * `maxProgramIterations` (disclosed) — this bounds both a large loop body and the total call-tree size.
+ * The counter is a `ProgramBudget` the engine can pass in, so canned-cycle `L` repeats elsewhere in the same
+ * parse draw from the same total (#598).
  * Subroutine recursion depth is separately bounded by `maxCallDepth`, and combined nesting + call-depth
  * JS recursion by `MAX_EXEC_DEPTH`; the engine's geometry limits still halt emission. There is no `eval`
  * and no I/O, so an adversarial program can waste only bounded CPU.
@@ -149,6 +151,31 @@ export function classifyOWord(rawLine: string): OwInfo | null {
   return { keyword: kw, id: id.trim().toLowerCase(), expr: body.slice(i).trim() };
 }
 
+/**
+ * The program-wide iteration budget (DD-017 §4.5, #598): ONE per parse, shared by the O-word interpreter and
+ * the engine's canned-cycle `L` repeats, so `maxProgramIterations` bounds their total, not each one alone.
+ * `used` may run past `limit` by the last charge (that charge is the one that stops the program).
+ * Internal: not exported from the package index.
+ */
+export interface ProgramBudget {
+  readonly limit: number;
+  used: number;
+}
+
+export function createProgramBudget(limit: number): ProgramBudget {
+  return { limit, used: 0 };
+}
+
+/**
+ * Grant up to `want` units from the budget and charge them; returns how many were granted (0 once it is spent).
+ * Used for canned-cycle `L` repeats: one unit per repeat, never per segment.
+ */
+export function drawFromBudget(budget: ProgramBudget, want: number): number {
+  const granted = Math.min(want, Math.max(0, budget.limit - budget.used));
+  budget.used += granted;
+  return granted;
+}
+
 /** One buffered source line with its byte offset (for `srcByte` on any geometry it emits). */
 export interface FlowLine {
   text: string;
@@ -169,6 +196,12 @@ export interface FlowHost {
   popScope(): void;
   warn: WarnFn;
   maxProgramIterations: number;
+  /**
+   * The engine's shared program budget (#598). When given, loop work is charged to it (and its `limit` is the
+   * cap), so canned-cycle repeats in the same parse draw from the same total. Absent → a private budget of
+   * `maxProgramIterations`.
+   */
+  budget?: ProgramBudget;
   /** Subroutine recursion depth cap (Phase 3); exceeding it discloses and skips the call. */
   maxCallDepth: number;
 }
@@ -530,7 +563,7 @@ export function interpretOWordProgram(lines: readonly FlowLine[], host: FlowHost
   if (!buildOk) return { degraded: true }; // nesting cap tripped — nothing executed (adversarial input)
 
   // --- execute the tree -----------------------------------------------------------------------
-  let iterations = 0;
+  const budget = host.budget ?? createProgramBudget(host.maxProgramIterations);
   let halted = false; // set by the iteration cap or a geometry stop; unwinds cleanly
   let iterationWarned = false;
   let loopDepth = 0; // > 0 anywhere inside a loop (stays elevated across calls) — gates the charge
@@ -548,13 +581,13 @@ export function interpretOWordProgram(lines: readonly FlowLine[], host: FlowHost
    * truncated.
    */
   const charge = (offset?: number, units = 1): boolean => {
-    iterations += units;
-    if (iterations > host.maxProgramIterations) {
+    budget.used += units;
+    if (budget.used > budget.limit) {
       if (!iterationWarned) {
         iterationWarned = true;
         disclose(
           RS274_FLOW_WARN.iterationLimit,
-          `program iteration limit ${host.maxProgramIterations} reached; execution stopped`,
+          `program iteration limit ${budget.limit} reached; execution stopped`,
           offset
         );
       }
