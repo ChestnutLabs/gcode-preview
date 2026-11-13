@@ -971,7 +971,18 @@ export function createEngine(input: string | Uint8Array, opts: ParseOptions): En
     cannedZ = cannedR + cannedZWord;
   };
 
+  // L repeat count (LinuxCNC §43.6): the whole hole sequence runs L times, each repeat from the XY the last one
+  // ended at, so under G91 the X/Y increment steps along a row of holes and under G90 the hole is repeated in
+  // place. Absent or < 1 → 1; a fraction truncates. The planes are NOT re-derived per repeat (the
+  // clear Z is fixed when the block starts). A huge L is bounded by emitSegment's maxSegments stop.
   const runCannedCycle = (p: Record<string, number>): boolean => {
+    const l = p.l;
+    const repeats = l !== undefined && l >= 1 ? Math.trunc(l) : 1;
+    for (let i = 0; i < repeats; i++) if (!runCannedHole(p)) return false;
+    return true;
+  };
+
+  const runCannedHole = (p: Record<string, number>): boolean => {
     // 0. Preliminary Z move. LinuxCNC g-code.html §43.6: "If the current Z position is below the R position,
     // the Z axis does a rapid move to the R position. This happens only once, regardless of the value of L."
     // It happens BEFORE the XY rapid, at the old XY (Example 2: "The first preliminary move is a maximum rapid
