@@ -52,17 +52,21 @@ export function parseStl(source: Uint8Array | ArrayBuffer, limits?: ModelLimits)
   if (declared !== null) {
     const exactBinary = 84 + declared * 50 === buf.byteLength;
     if (exactBinary || !startsWithSolid(buf)) {
-      // The loader will take its binary path.
+      // The loader will take its binary path. Capacity first, then the cap: a corrupt short file is a parse
+      // error whatever it claims (not "too large"), and once the claim fits the file it is bounded by
+      // maxSourceBytes / 50, so the cap check still runs before any allocation. three reads 48 of each facet's
+      // 50 bytes (never the trailing 2-byte attribute word), so a file up to 2 bytes short of the last facet
+      // still loads; keep the -2 or such files start failing.
+      if (84 + declared * 50 - 2 > buf.byteLength) {
+        throw new ModelParseError(
+          'E_MODEL_PARSE',
+          `STL declares ${declared} triangles but holds ${Math.floor((buf.byteLength - 82) / 50)}`
+        );
+      }
       if (declared > lim.maxTriangles) {
         throw new ModelParseError(
           'E_MODEL_TOO_MANY_TRIANGLES',
           `STL declares ${declared} triangles, exceeds limit ${lim.maxTriangles}`
-        );
-      }
-      if (84 + declared * 50 > buf.byteLength) {
-        throw new ModelParseError(
-          'E_MODEL_PARSE',
-          `STL declares ${declared} triangles but holds ${Math.floor((buf.byteLength - 84) / 50)}`
         );
       }
     }

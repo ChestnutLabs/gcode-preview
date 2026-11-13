@@ -156,13 +156,50 @@ describe('parseStl: a header that overstates its facet count allocates nothing b
     expect(r.max).toBeLessThan(1000);
   });
 
-  it('a claim over maxTriangles is E_MODEL_TOO_MANY_TRIANGLES (checked first), also at the uint32 maximum', () => {
+  it('a SHORT file whose claim is over maxTriangles is E_MODEL_PARSE (capacity is checked first), also at the uint32 maximum', () => {
     const over = maxFloat32Request(() => parseStl(small(5_000_000), { maxTriangles: 10 }));
-    expect(over.outcome).toBe('E_MODEL_TOO_MANY_TRIANGLES: STL declares 5000000 triangles, exceeds limit 10');
+    expect(over.outcome).toBe('E_MODEL_PARSE: STL declares 5000000 triangles but holds 1');
     expect(over.max).toBeLessThan(1000);
     const huge = maxFloat32Request(() => parseStl(small(4_294_967_295)));
-    expect(huge.outcome).toMatch(/^E_MODEL_TOO_MANY_TRIANGLES: STL declares 4294967295 triangles/);
+    expect(huge.outcome).toBe('E_MODEL_PARSE: STL declares 4294967295 triangles but holds 1');
     expect(huge.max).toBeLessThan(1000);
+  });
+
+  it('a FULL-length file over maxTriangles is E_MODEL_TOO_MANY_TRIANGLES, and the loader never runs', () => {
+    const spy = vi.spyOn(STLLoader.prototype, 'parse');
+    const r = maxFloat32Request(() => parseStl(binaryStl(tris(3)), { maxTriangles: 2 }));
+    expect(r.outcome).toBe('E_MODEL_TOO_MANY_TRIANGLES: STL declares 3 triangles, exceeds limit 2');
+    expect(r.max).toBeLessThan(1000);
+    expect(spy).not.toHaveBeenCalled();
+  });
+
+  it("three's tolerance: a file 1 or 2 bytes short of its last facet's attribute word still loads", () => {
+    for (const short of [1, 2]) {
+      const full = binaryStl(tris(2));
+      const src = full.slice(0, full.length - short);
+      const scene = parseStl(src);
+      expect(Array.from(scene.objects[0].geometry.positions)).toEqual([...TRI, ...TRI]);
+    }
+  });
+
+  it('a file 3 bytes short of its last facet fails with E_MODEL_PARSE (as before the guard)', () => {
+    const full = binaryStl(tris(2));
+    const src = full.slice(0, full.length - 3);
+    expect(src.byteLength).toBe(181);
+    expect(maxFloat32Request(() => parseStl(src)).outcome).toBe('E_MODEL_PARSE: STL declares 2 triangles but holds 1');
+  });
+
+  it('the "holds" count includes the tolerance: 182 bytes hold 2 facets', () => {
+    const src = binaryStl(tris(2), { declared: 3 }).slice(0, 182);
+    expect(() => parseStl(src)).toThrow('STL declares 3 triangles but holds 2');
+  });
+
+  it('the tolerance applies before the cap: 2 bytes short and over the cap is TOO_MANY, 3 bytes short is PARSE', () => {
+    const full = binaryStl(tris(3));
+    expect(codeOf(() => parseStl(full.slice(0, full.length - 2), { maxTriangles: 2 }))).toBe(
+      'E_MODEL_TOO_MANY_TRIANGLES'
+    );
+    expect(codeOf(() => parseStl(full.slice(0, full.length - 3), { maxTriangles: 2 }))).toBe('E_MODEL_PARSE');
   });
 
   it('a claim of exactly what the file holds (cap-1 / cap / cap+1 around it) passes through', () => {
@@ -185,9 +222,9 @@ describe('parseStl: a header that overstates its facet count allocates nothing b
     expect(spy).toHaveBeenCalledTimes(2);
   });
 
-  it('the over-cap claim is rejected before the loader when the capacity is also short', () => {
+  it('a claim over both the cap and the capacity is E_MODEL_PARSE, and so is one at the cap; neither reaches the loader', () => {
     const spy = vi.spyOn(STLLoader.prototype, 'parse');
-    expect(codeOf(() => parseStl(small(11), { maxTriangles: 10 }))).toBe('E_MODEL_TOO_MANY_TRIANGLES');
+    expect(codeOf(() => parseStl(small(11), { maxTriangles: 10 }))).toBe('E_MODEL_PARSE');
     expect(codeOf(() => parseStl(small(10), { maxTriangles: 10 }))).toBe('E_MODEL_PARSE');
     expect(spy).not.toHaveBeenCalled();
   });
@@ -216,11 +253,57 @@ describe('parseStl: the STLLoader ASCII-vs-binary rule we mirror (a three upgrad
   it('"solid" at offset 5 is not ASCII to the loader: binary path, so the claim is bounded first', () => {
     const spy = vi.spyOn(STLLoader.prototype, 'parse');
     const src = asciiWithCountBytes('     ');
-    expect(codeOf(() => parseStl(src))).toBe('E_MODEL_TOO_MANY_TRIANGLES'); // 2,054,847,098 > 5,000,000
+    // 2,054,847,098 claimed, far more than the file holds: the capacity check fires, before any allocation
+    expect(maxFloat32Request(() => parseStl(src)).outcome).toMatch(
+      /^E_MODEL_PARSE: STL declares 2054847098 triangles but holds \d+$/
+    );
     expect(maxFloat32Request(() => parseStl(src, { maxTriangles: 3_000_000_000 })).outcome).toMatch(
       /^E_MODEL_PARSE: STL declares 2054847098 triangles but holds \d+$/
     );
     expect(spy).not.toHaveBeenCalled();
+  });
+
+  it('"solid" at offset 5 with a claim the file holds is binary, so the cap applies without the loader', () => {
+    const spy = vi.spyOn(STLLoader.prototype, 'parse');
+    const src = binaryStl(tris(3), { trailing: 7 });
+    src.set(new TextEncoder().encode('solid'), 5);
+    expect(codeOf(() => parseStl(src, { maxTriangles: 2 }))).toBe('E_MODEL_TOO_MANY_TRIANGLES');
+    expect(spy).not.toHaveBeenCalled();
+  });
+
+  describe("three's own STLLoader rule (pinned directly: a three upgrade that widens or narrows it fails here)", () => {
+    /** 134 bytes, count field 0, "solid" at `off` followed by one ASCII facet that ends before byte 80. */
+    function solidAt(off: number): ArrayBuffer {
+      const bytes = new Uint8Array(134);
+      const text = 'solid facet vertex 0 0 0 vertex 1 0 0 vertex 0 1 0 endfacet endsolid';
+      bytes.set(new TextEncoder().encode(text), off);
+      expect(off + text.length).toBeLessThan(80);
+      return bytes.buffer;
+    }
+
+    it('"solid" at offset 4 is ASCII: one facet, three vertices', () => {
+      vi.spyOn(console, 'error').mockImplementation(() => undefined); // a facet with no normal is logged
+      const geom = new STLLoader().parse(solidAt(4));
+      expect(geom.getAttribute('position').count).toBe(3);
+    });
+
+    it('"solid" at offset 5 is binary: the count field (0) rules, so no facets', () => {
+      const geom = new STLLoader().parse(solidAt(5));
+      expect(geom.getAttribute('position').count).toBe(0);
+    });
+  });
+
+  it('S15: an ASCII facet with 4 or 2 vertices counts triangles by floor(vertices / 3)', () => {
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const facet = (n: number): Uint8Array =>
+      new TextEncoder().encode(
+        `solid t\nfacet normal 0 0 1\nouter loop\n${Array.from({ length: n }, (_, i) => `vertex ${i} 0 0\n`).join('')}endloop\nendfacet\nendsolid t\n`
+      );
+    // 4 vertices = 1 whole triangle (floor 1; ceil would be 2)
+    expect(codeOf(() => parseStl(facet(4), { maxTriangles: 1 }))).toBe('no-throw');
+    expect(codeOf(() => parseStl(facet(4), { maxTriangles: 0 }))).toBe('E_MODEL_TOO_MANY_TRIANGLES');
+    // 2 vertices = 0 whole triangles (floor 0; ceil would be 1)
+    expect(codeOf(() => parseStl(facet(2), { maxTriangles: 0 }))).toBe('no-throw');
   });
 
   it('an exact-size binary file whose header starts with "solid" is binary: the size rule wins', () => {
