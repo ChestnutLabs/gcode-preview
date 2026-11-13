@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
@@ -117,6 +118,57 @@ describe('gate CLI', () => {
     expect(r.out).not.toContain('gate GREEN');
   });
 
+  it('treats a step killed by a signal as a failure', () => {
+    // spawnStep returns the signal name when a step is killed (status null).
+    const calls = [];
+    const errs = [];
+    const status = main([], {
+      root: repoRoot,
+      env: {},
+      run: (cmd) => {
+        calls.push(cmd);
+        return cmd === 'npm run lint' ? 'SIGTERM' : 0;
+      },
+      log: () => {},
+      err: (m) => errs.push(m)
+    });
+    expect(status).toBe(1);
+    expect(calls.at(-1)).toBe('npm run lint');
+    expect(errs.join('\n')).toContain('✖ gate FAILED at lint (exit SIGTERM) after');
+  });
+
+  it('caps test workers at 8 when GATE_MAX_WORKERS is unset', () => {
+    const r = drive([], { env: {} });
+    expect(r.status).toBe(0);
+    expect(r.calls).toContain('npx vitest run --maxWorkers=8');
+    expect(r.calls).toContain('npm test --workspaces --if-present -- --maxWorkers=8');
+  });
+
+  it('builds only @chestnutlabs/* packages found under packages/, in dependency order', () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'gate-test-'));
+    try {
+      const write = (dir, manifest) => {
+        fs.mkdirSync(path.join(root, 'packages', dir), { recursive: true });
+        if (manifest) fs.writeFileSync(path.join(root, 'packages', dir, 'package.json'), JSON.stringify(manifest));
+      };
+      write('a', { name: '@chestnutlabs/a', dependencies: { '@chestnutlabs/b': '*' } });
+      write('b', { name: '@chestnutlabs/b' });
+      write('other', { name: '@other/x' });
+      write('unnamed', { version: '1.0.0' });
+      write('empty', null);
+      fs.writeFileSync(path.join(root, 'packages', 'README.md'), 'not a package');
+      const calls = [];
+      const status = main([], { root, env: {}, run: (cmd) => (calls.push(cmd), 0), log: () => {}, err: () => {} });
+      expect(status).toBe(0);
+      expect(calls.filter((c) => c.startsWith('npm run build -w '))).toEqual([
+        'npm run build -w @chestnutlabs/b',
+        'npm run build -w @chestnutlabs/a'
+      ]);
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it('passes --ci and --install through to the plan', () => {
     const r = drive(['--install', '--ci']);
     expect(r.status).toBe(0);
@@ -160,6 +212,23 @@ describe('planSteps', () => {
       'pack:check',
       'docs:build'
     ]);
+  });
+
+  it('keeps --ci and --install independent', () => {
+    const ciOnly = planSteps({ order, ci: true }).map((s) => s.name);
+    expect(ciOnly).not.toContain('install');
+    expect(ciOnly).toContain('license:check');
+    const installOnly = planSteps({ order, install: true }).map((s) => s.name);
+    expect(installOnly[0]).toBe('install');
+    for (const ci of [
+      'pack:license-check',
+      'check:no-runtime-deps',
+      'license:check',
+      'test:consumer-vue',
+      'pack:check'
+    ]) {
+      expect(installOnly).not.toContain(ci);
+    }
   });
 
   it('passes the worker cap to both test steps', () => {

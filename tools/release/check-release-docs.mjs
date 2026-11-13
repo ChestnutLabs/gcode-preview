@@ -39,7 +39,9 @@ for (const surface of SURFACES) {
   const content = fs.readFileSync(path.join(repoRoot, surface.file), 'utf8');
   const current = currentVersionOf(surface, content);
   // Every occurrence must name the release (the stamper rewrites all of them), not just the first.
-  const stale = (content.match(surface.re) ?? []).map((t) => t.match(/v(\d+\.\d+\.\d+)/)?.[1]).find((v) => v !== version);
+  const stale = (content.match(surface.re) ?? [])
+    .map((t) => t.match(/v(\d+\.\d+\.\d+)/)?.[1])
+    .find((v) => v !== version);
   if (current === null) {
     failures.push(`${surface.file}: anchor for ${surface.label} not found (doc structure drifted)`);
   } else if (stale !== undefined) {

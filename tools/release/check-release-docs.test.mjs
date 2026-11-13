@@ -50,7 +50,9 @@ describe('check-release-docs', () => {
   it('fails a surface whose anchor is gone', () => {
     const r = check({ 'docs/manual/index.md': '# Manual\n\nno version here\n' });
     expect(r.status).toBe(1);
-    expect(failures(r)).toEqual(['docs/manual/index.md: anchor for published-status line not found (doc structure drifted)']);
+    expect(failures(r)).toEqual([
+      'docs/manual/index.md: anchor for published-status line not found (doc structure drifted)'
+    ]);
   });
 
   it('fails a second, stale copy of a surface even when the first is current', () => {
@@ -102,7 +104,10 @@ describe('check-release-docs', () => {
   });
 
   it('reports every failure at once, then exits 1', () => {
-    const r = check({ 'README.md': readmeRoot('1.0.0'), 'RELEASE_NOTES_DRAFT.md': 'x' }, { drop: ['RELEASE_REVIEW.md'] });
+    const r = check(
+      { 'README.md': readmeRoot('1.0.0'), 'RELEASE_NOTES_DRAFT.md': 'x' },
+      { drop: ['RELEASE_REVIEW.md'] }
+    );
     expect(r.status).toBe(1);
     expect(failures(r)).toHaveLength(3);
     expect(r.stderr).toContain(`docs-release-check: FAIL — docs do not match v${V}:`);

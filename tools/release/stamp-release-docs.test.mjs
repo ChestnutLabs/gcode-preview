@@ -107,7 +107,7 @@ describe('stamp-release-docs: notes draft', () => {
     expect(draft).toContain(`# Release notes draft — v${NEW}\n`);
     expect(draft).toContain(`**v${NEW} shipped to npm**`);
     expect(draft).toContain(`Append: \`\` \`v${NEW}\` <short label> \`\``);
-    expect(draft).toContain('## Proposed points (deduped from this release\'s changelogs)\n- Faster parse\n');
+    expect(draft).toContain("## Proposed points (deduped from this release's changelogs)\n- Faster parse\n");
     expect(draft).toContain('## Packages changed this release\n- @chestnutlabs/toolpath-core\n');
   });
 
@@ -158,7 +158,9 @@ describe('stamp-release-docs: review', () => {
     const root = bumpedRepo({}, { tag: false });
     expect(stamp(root).status).toBe(0);
     const text = read(root, 'RELEASE_REVIEW.md');
-    expect(text).toContain('**Changed-capability inventory diffed against:** _(no previous tag — treated all packages as changed)_\n');
+    expect(text).toContain(
+      '**Changed-capability inventory diffed against:** _(no previous tag — treated all packages as changed)_\n'
+    );
     expect(text).toContain('| `@chestnutlabs/gcode-colors` | 0 |');
     expect(text).toContain('| `@chestnutlabs/toolpath-core` | 0 |');
   });
@@ -173,7 +175,9 @@ describe('stamp-release-docs: review', () => {
   });
 
   it('replaces a review left over from another version', () => {
-    const root = bumpedRepo({ 'RELEASE_REVIEW.md': `**Review version:** v${OLD}\n\n| x | 1 | y | Status: reviewed |\n` });
+    const root = bumpedRepo({
+      'RELEASE_REVIEW.md': `**Review version:** v${OLD}\n\n| x | 1 | y | Status: reviewed |\n`
+    });
     const r = stamp(root);
     expect(r.status).toBe(0);
     expect(read(root, 'RELEASE_REVIEW.md')).toContain(`**Review version:** v${NEW}\n`);

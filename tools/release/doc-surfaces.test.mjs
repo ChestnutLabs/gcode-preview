@@ -60,9 +60,7 @@ describe('deterministic surfaces', () => {
 
   it('rewrites the root README token and nothing else', () => {
     const before = 'x (currently **v0.1.0**) y\nv0.1.0 elsewhere\n';
-    expect(applySurface(byFile['README.md'], before, '0.2.0')).toBe(
-      'x (currently **v0.2.0**) y\nv0.1.0 elsewhere\n'
-    );
+    expect(applySurface(byFile['README.md'], before, '0.2.0')).toBe('x (currently **v0.2.0**) y\nv0.1.0 elsewhere\n');
   });
 
   it('rewrites the manual token', () => {
@@ -73,9 +71,7 @@ describe('deterministic surfaces', () => {
 
   it('rewrites the docs/README token and keeps the author line wrap', () => {
     const s = byFile['docs/README.md'];
-    expect(applySurface(s, 'published to npm at\n`v0.1.0`** (x)', '0.2.0')).toBe(
-      'published to npm at\n`v0.2.0`** (x)'
-    );
+    expect(applySurface(s, 'published to npm at\n`v0.1.0`** (x)', '0.2.0')).toBe('published to npm at\n`v0.2.0`** (x)');
     expect(applySurface(s, 'published to npm at  `v0.1.0`', '0.2.0')).toBe('published to npm at  `v0.2.0`');
   });
 
@@ -135,7 +131,10 @@ describe('narrativeChecks', () => {
     expect(narrativeChecks(before, '1.2.0')[1].ok).toBe(false);
     // Either anchor missing, or the end before the start.
     const noStart = base.replace('publishing from tagged', 'publishing');
-    expect(narrativeChecks(noStart, '1.2.0')[1]).toEqual({ ok: false, detail: `Release-history list ${regionMissing}` });
+    expect(narrativeChecks(noStart, '1.2.0')[1]).toEqual({
+      ok: false,
+      detail: `Release-history list ${regionMissing}`
+    });
     const noEnd = base.replace('Changesets accumulate', 'Changesets');
     expect(narrativeChecks(noEnd, '1.2.0')[1]).toEqual({ ok: false, detail: `Release-history list ${regionMissing}` });
     const swapped = 'Changesets accumulate first. publishing from tagged `v1.2.0`';
@@ -147,18 +146,21 @@ describe('narrativeChecks', () => {
 });
 
 describe('reviewChecks', () => {
-  const failing = (content, v = '1.0.0') => reviewChecks(content, v).filter((r) => !r.ok).map((r) => r.message);
+  const failing = (content, v = '1.0.0') =>
+    reviewChecks(content, v)
+      .filter((r) => !r.ok)
+      .map((r) => r.message);
 
   it('passes a fully resolved review for the version', () => {
-    expect(reviewChecks(review('1.0.0', { rows: ['reviewed', 'no-change-needed', 'not-applicable'] }), '1.0.0')).toEqual(
-      [
-        { ok: true, message: 'declares review version v1.0.0 (expected v1.0.0)' },
-        { ok: true, message: 'all 3 package disposition(s) resolved' },
-        { ok: true, message: 'Product review: resolved (expected resolved)' },
-        { ok: true, message: 'Docs review: resolved (expected resolved)' },
-        { ok: true, message: 'Visual review: resolved (expected resolved)' }
-      ]
-    );
+    expect(
+      reviewChecks(review('1.0.0', { rows: ['reviewed', 'no-change-needed', 'not-applicable'] }), '1.0.0')
+    ).toEqual([
+      { ok: true, message: 'declares review version v1.0.0 (expected v1.0.0)' },
+      { ok: true, message: 'all 3 package disposition(s) resolved' },
+      { ok: true, message: 'Product review: resolved (expected resolved)' },
+      { ok: true, message: 'Docs review: resolved (expected resolved)' },
+      { ok: true, message: 'Visual review: resolved (expected resolved)' }
+    ]);
   });
 
   it('allows exactly three disposition keywords', () => {
@@ -227,15 +229,21 @@ describe('reviewChecks', () => {
 // ---------------------------------------------------------------------------
 
 describe('aggregateChangelog', () => {
-  const cl = (sections) => '# Changelog\n' + sections.map(([v, lines]) => `\n## ${v}\n\n${lines.join('\n')}\n`).join('');
+  const cl = (sections) =>
+    '# Changelog\n' + sections.map(([v, lines]) => `\n## ${v}\n\n${lines.join('\n')}\n`).join('');
 
   it('collects this version’s bullets across packages, deduped, without dependency noise', async () => {
     const root = makeRepo({
       'packages/a/CHANGELOG.md': cl([
-        ['1.1.0', ['### Minor', '', '- abc1234: Add a thing', '- Updated dependencies [abc1234]', '  - @chestnutlabs/b@1.1.0']],
+        [
+          '1.1.0',
+          ['### Minor', '', '- abc1234: Add a thing', '- Updated dependencies [abc1234]', '  - @chestnutlabs/b@1.1.0']
+        ],
         ['1.0.0', ['- Old entry']]
       ]),
-      'packages/b/CHANGELOG.md': cl([['1.1.0', ['- 0123456789abcdef0123456789abcdef01234567 Fix a bug', '- ADD A THING']]]),
+      'packages/b/CHANGELOG.md': cl([
+        ['1.1.0', ['- 0123456789abcdef0123456789abcdef01234567 Fix a bug', '- ADD A THING']]
+      ]),
       'packages/c/CHANGELOG.md': cl([['1.1.0', ['- Updated dependencies', '- @chestnutlabs/a@1.1.0']]]),
       'packages/d/CHANGELOG.md': cl([['1.0.0', ['- Only old']]]),
       'packages/e/README.md': 'no changelog'
@@ -306,7 +314,16 @@ describe('previousReleaseTag and changedCapabilityInventory', () => {
   }
 
   it('picks the greatest clean vX.Y.Z tag strictly below the version, by number', async () => {
-    const root = repoWithTags(['v0.9.0', 'v0.10.0', 'v0.11.0', 'v0.12.0', 'v0.11.0-beta.1', 'v0.11.1', 'v2', 'legacy-v0.11.0']);
+    const root = repoWithTags([
+      'v0.9.0',
+      'v0.10.0',
+      'v0.11.0',
+      'v0.12.0',
+      'v0.11.0-beta.1',
+      'v0.11.1',
+      'v2',
+      'legacy-v0.11.0'
+    ]);
     const { previousReleaseTag } = await importFrom(root, 'doc-surfaces.mjs');
     expect(previousReleaseTag('0.11.1')).toBe('v0.11.0');
     expect(previousReleaseTag('0.12.0')).toBe('v0.11.1');
@@ -359,7 +376,8 @@ describe('previousReleaseTag and changedCapabilityInventory', () => {
       'packages/alpha/src/nested/x.ts': 'x',
       'packages/docsonly/README.md': 'changed',
       'packages/docsonly/test/src/t.ts': 'not top-level src',
-      'packages/alpha/CHANGELOG.md': '# C\n\n## 1.1.0\n\n- abc1234: Alpha changed\n- [def5678]: Alpha again\n- [#9](https://x/pull/9) [`1a2b3c4`](https://x/commit/1a2b3c4) Thanks [@dev](https://x/dev)! - Summary wins\n'
+      'packages/alpha/CHANGELOG.md':
+        '# C\n\n## 1.1.0\n\n- abc1234: Alpha changed\n- [def5678]: Alpha again\n- [#9](https://x/pull/9) [`1a2b3c4`](https://x/commit/1a2b3c4) Thanks [@dev](https://x/dev)! - Summary wins\n'
     });
     commitAll(root, 'change');
     hermeticGit(root);
@@ -402,6 +420,24 @@ describe('previousReleaseTag and changedCapabilityInventory', () => {
     expect(inv.packages.map((p) => [p.package, p.changedFiles])).toEqual([
       ['@chestnutlabs/a', []],
       ['@chestnutlabs/b', []]
+    ]);
+  });
+
+  it('sorts the inventory by code unit, whatever order the directory listing gives', async () => {
+    // NTFS lists case-insensitively (alpha, Zeta) and ext4 in hash order; the inventory is always sorted.
+    const root = makeRepo({
+      'packages/alpha/package.json': pkg('@chestnutlabs/alpha', '1.0.0'),
+      'packages/Zeta/package.json': pkg('@chestnutlabs/Zeta', '1.0.0'),
+      'packages/mid/package.json': pkg('@chestnutlabs/mid', '1.0.0')
+    });
+    gitInit(root);
+    commitAll(root, 'base');
+    hermeticGit(root);
+    const { changedCapabilityInventory } = await importFrom(root, 'doc-surfaces.mjs');
+    expect(changedCapabilityInventory('1.0.0').packages.map((p) => p.package)).toEqual([
+      '@chestnutlabs/Zeta',
+      '@chestnutlabs/alpha',
+      '@chestnutlabs/mid'
     ]);
   });
 

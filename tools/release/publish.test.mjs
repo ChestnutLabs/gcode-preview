@@ -118,7 +118,9 @@ describe('publish.mjs --dry-run', () => {
     expect(stub.calls()).toHaveLength(ORDER.length);
     expect(r.stdout).toContain('| Package | Files | Size | Internal deps (exact) |\n|---|--:|--:|---|\n');
     expect(r.stdout).toContain(`| \`${nameOf('toolpath-core')}@9.8.7\` | 3 | 1.5 kB | — |\n`);
-    expect(r.stdout).toContain(`| \`${nameOf('gcode-parser')}@9.8.7\` | 3 | 1.5 kB | @chestnutlabs/toolpath-core@9.8.7 |\n`);
+    expect(r.stdout).toContain(
+      `| \`${nameOf('gcode-parser')}@9.8.7\` | 3 | 1.5 kB | @chestnutlabs/toolpath-core@9.8.7 |\n`
+    );
     expect(r.stderr).toContain(`✓ ${nameOf('toolpath-core')}@9.8.7 (3 files, 1.5 kB)\n`);
   });
 });
