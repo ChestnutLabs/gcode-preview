@@ -183,17 +183,18 @@ promise. Each adapter surfaces them the same way.
 
 | Code | When | What to do |
 | --- | --- | --- |
-| `E_WORKER_CREATE_FAILED` | `createWorker`, or the default worker, threw: a strict Content Security Policy is the usual cause | The preview returns to `parsing: false`; the next `parse()` tries again. Read `error.cause` for the original error (`cause.name === 'SecurityError'`) |
-| `E_RENDERER_LOAD` | The 3D renderer chunk could not load: offline, or a stale deploy whose chunk now returns 404 | Reload the page, or fall back to `renderer: { mode: '2d' }` |
+| `E_WORKER_CREATE_FAILED` | `createWorker`, or the default worker, threw: a strict Content Security Policy is the usual cause | The preview returns to `parsing: false`; the next `parse()` tries again. The browser's own message is part of `message`. Only a `ParseSession` driven directly (`@chestnutlabs/gcode-parser`) also carries `error.cause` |
+| `E_RENDERER_LOAD` | The 3D renderer could not be loaded or started: offline, a stale deploy whose chunk now returns 404, or a device or browser without WebGL | Fall back to `renderer: { mode: '2d' }` (or the `/lite` entry); reloading only helps for the offline and stale-deploy cases |
+| `E_WORKER_TERMINATED` | You passed a single `Worker` instance as `createWorker` and it was terminated (a cancel that the worker did not acknowledge in time, a crash, or `dispose()`); the next parse used to hang | Pass a factory, `createWorker: () => new Worker(…)`, so each parse gets a fresh worker |
 | `E_POST_FAILED` | You re-parsed a buffer that was already handed to the worker | Pass `bytes.slice()` each time |
 | `E_CONTROL_REJECTED` | The renderer rejected a control you queued before it loaded (see above) | Fix the value named in the message |
-| `E_CAPTURE_UNSUPPORTED` | `capture()` was called before the 3D renderer is ready, or on the 2D renderer | Call it after the 3D view has bound (`ready`) |
+| `E_CAPTURE_UNSUPPORTED` | `capture()` was called before the 3D renderer is ready, or on the 2D renderer | Call it once the 3D view shows the file (the `stage` event's `ready` stage); `ready` can fire before the 3D chunk has bound, so retry on this code |
 | `E_PARSE_OPTION`, `E_MODEL_OPTION` | A `parseOptions` or model limit is not a usable number | Pass a finite whole number; there is no `Infinity` |
 
 The `/model` viewer adds codes for files it refuses: `E_MODEL_TOO_LARGE`, `E_MODEL_TOO_MANY_TRIANGLES`,
 `E_MODEL_TOO_MANY_VERTICES` and the rest. The
 [model renderer README](https://github.com/ChestnutLabs/gcode-preview/blob/dev/packages/gcode-model-renderer/README.md)
-lists each with the limit that triggers it.
+lists the limit codes and what triggers each.
 
 ### A 2D-only app
 

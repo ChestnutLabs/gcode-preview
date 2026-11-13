@@ -43,10 +43,11 @@ is still valid and draws no ghost layers.
 
 If the parse worker can't be created (a strict Content Security Policy is the usual cause), `parse()` emits
 `parse-error` with code `E_WORKER_CREATE_FAILED`, sets `state.error` and returns to `parsing: false`; the next
-`parse()` tries again. The browser's original error is on `error.cause`. If the 3D renderer chunk can't load
-(offline, or a stale deploy), the controller fires an `error` event with code `E_RENDERER_LOAD`.
+`parse()` tries again. The event, `state.error` and the rejected `parse()` carry `{ code, message }`, and the browser's message is inside `message`.
+If the 3D renderer can't be loaded or started (offline, a stale deploy, or no WebGL), the controller fires an `error` event
+with code `E_RENDERER_LOAD`; fall back to `renderer: { mode: '2d' }`.
 
-A 2D-only app ships no three.js. This is the whole setup, and the startup bundle is about 35 KB:
+A 2D-only app loads no three.js. This is the whole setup, and the startup bundle is about 35 KB:
 
 ```ts
 import { createPreviewController } from '@chestnutlabs/gcode-preview-core';

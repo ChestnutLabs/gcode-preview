@@ -132,8 +132,8 @@ or a framework adapter, which own the parse→render lifecycle.
 `@chestnutlabs/gcode-renderer-three/lite` holds the pieces that never load three.js: `CaptureUnsupportedError`,
 `studioTheme`, `STUDIO_CAMERA_FOV` and the theme, camera and capture types. You normally don't need it: the main
 entry exports the same things. It exists for packages that load the renderer on demand, like
-`@chestnutlabs/gcode-preview-core`, so a 2D-only app ships no three.js. If the main entry's chunk fails to load (offline, or a stale deploy), core reports
-`E_RENDERER_LOAD` on its `error` event. Tests that wait a fixed number of ticks for the 3D renderer to bind can preload it
+`@chestnutlabs/gcode-preview-core`, so a 2D-only app loads no three.js. If the main entry could not load (offline, or a stale deploy) or could not start (no WebGL), core reports
+`E_RENDERER_LOAD` on its `error` event; for no WebGL, use `renderer: { mode: '2d' }`. Tests that wait a fixed number of ticks for the 3D renderer to bind can preload it
 once: `await import('@chestnutlabs/gcode-renderer-three')`.
 
 Part of [Chestnut Labs G-code Preview](../../README.md) · MIT
