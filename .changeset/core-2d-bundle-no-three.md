@@ -17,3 +17,5 @@ even with `renderer: { mode: '2d' }`. The 3D renderer was meant to load on deman
 - **Your own tests:** the first 3D view now loads the renderer module when it binds, not when core is imported. A
   test that waits a fixed number of ticks for the 3D renderer to bind may need it preloaded once in its setup:
   `await import('@chestnutlabs/gcode-renderer-three')`.
+- **If that load fails** (offline, or a stale deploy whose chunk now returns 404), the preview reports an `error`
+  event with code `E_RENDERER_LOAD`, as it does for any 3D renderer that cannot start.

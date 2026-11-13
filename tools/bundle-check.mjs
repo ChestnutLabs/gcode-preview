@@ -11,7 +11,9 @@
  * built dists with the repo's Vite (rolldown) and with esbuild, then require:
  *   - no three.js module in any chunk loaded at startup (the entry chunks plus their static imports);
  *   - three.js present in a lazy chunk, so the check cannot pass vacuously (e.g. a fixture that never
- *     reaches the 3D loader, or a bundler that dropped the dynamic import).
+ *     reaches the 3D loader, or a bundler that dropped the dynamic import);
+ *   - at least one startup chunk, for the same reason (a bundler API change that hides the entry flag
+ *     would otherwise count every chunk, three included, as lazy).
  *
  * Needs the package dists (run after the package builds, as in `npm run gate -- --ci`).
  * Usage:  node tools/bundle-check.mjs
@@ -51,7 +53,7 @@ export function startupChunks(chunks) {
   return seen;
 }
 
-/** Split the three.js bytes into those loaded at startup and those in lazy chunks. */
+/** Split the three.js bytes into those loaded at startup and those in lazy chunks; count the startup chunks. */
 export function threeSplit(chunks) {
   const startup = startupChunks(chunks);
   let startupThree = 0;
@@ -63,12 +65,15 @@ export function threeSplit(chunks) {
       startupBytes += c.bytes ?? 0;
     } else lazyThree += c.threeBytes;
   }
-  return { startupThree, lazyThree, startupBytes };
+  return { startupThree, lazyThree, startupBytes, startupChunks: startup.size };
 }
 
 /** The verdict for one fixture under one bundler: a list of problems (empty = pass). */
-export function verdict({ startupThree, lazyThree }) {
+export function verdict({ startupThree, lazyThree, startupChunks: startupCount }) {
   const problems = [];
+  if (startupCount === 0) {
+    problems.push('no entry chunk found (the bundle output is not understood, so the check is vacuous)');
+  }
   if (startupThree > 0) problems.push(`${startupThree} bytes of three.js load at startup (want 0)`);
   if (lazyThree === 0) problems.push('no three.js in any lazy chunk (the 3D load is missing, so the check is vacuous)');
   return problems;

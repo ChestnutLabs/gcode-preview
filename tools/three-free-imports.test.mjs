@@ -26,11 +26,17 @@ function sourceFiles(dir) {
   return out;
 }
 
-/** The value (non-type) import/export statements that name the renderer's main entry (`import()` is allowed). */
+/**
+ * The statements that load the renderer's main entry at startup: a value (non-type) import/export, a
+ * side-effect `import '...'`, and an `import()` at module top level (column 0, so an eager load, not one
+ * inside a function). An indented `import()` is the on-demand 3D load and is allowed.
+ */
 function mainEntryValueImports(source) {
   const statements =
     source.match(/^[ \t]*(?:import|export)\b[^;]*?from\s*['"]@chestnutlabs\/gcode-renderer-three['"]/gms) ?? [];
-  return statements.filter((s) => !/^\s*(?:import|export)\s+type\b/.test(s));
+  const sideEffect = source.match(/^[ \t]*import\s*['"]@chestnutlabs\/gcode-renderer-three['"]/gm) ?? [];
+  const eager = source.match(/^\S.*\bimport\(\s*['"]@chestnutlabs\/gcode-renderer-three['"]\s*\)/gm) ?? [];
+  return [...statements.filter((s) => !/^\s*(?:import|export)\s+type\b/.test(s)), ...sideEffect, ...eager];
 }
 
 describe('three-free startup imports (DD-014 D4)', () => {
@@ -42,7 +48,14 @@ describe('three-free startup imports (DD-014 D4)', () => {
     expect(mainEntryValueImports("import type { Theme } from '@chestnutlabs/gcode-renderer-three';")).toEqual([]);
     expect(mainEntryValueImports("export type { Theme } from '@chestnutlabs/gcode-renderer-three';")).toEqual([]);
     expect(mainEntryValueImports("import { studioTheme } from '@chestnutlabs/gcode-renderer-three/lite';")).toEqual([]);
-    expect(mainEntryValueImports("const m = await import('@chestnutlabs/gcode-renderer-three');")).toEqual([]);
+    // The on-demand load inside a function is allowed; the same import() at module top level is eager.
+    expect(mainEntryValueImports("  const m = await import('@chestnutlabs/gcode-renderer-three');")).toEqual([]);
+    expect(mainEntryValueImports("void import('@chestnutlabs/gcode-renderer-three');")).toHaveLength(1);
+    expect(mainEntryValueImports("const m = await import('@chestnutlabs/gcode-renderer-three');")).toHaveLength(1);
+    // A side-effect import loads the whole entry too.
+    expect(mainEntryValueImports("import '@chestnutlabs/gcode-renderer-three';")).toHaveLength(1);
+    expect(mainEntryValueImports('  import "@chestnutlabs/gcode-renderer-three";')).toHaveLength(1);
+    expect(mainEntryValueImports("import '@chestnutlabs/gcode-renderer-three/lite';")).toEqual([]);
     // An indented one (a .svelte <script>) is caught too.
     expect(mainEntryValueImports("  import { studioTheme } from '@chestnutlabs/gcode-renderer-three';")).toHaveLength(
       1
