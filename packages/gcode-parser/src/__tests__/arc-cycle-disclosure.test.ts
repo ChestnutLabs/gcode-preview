@@ -23,6 +23,15 @@ describe('G2/G3 with R', () => {
     expect(r.codes('arc-radius-too-small')[0].count).toBe(2);
   });
 
+  it('a radius raised to half the chord stays a half circle when r² − d²/4 rounds below 0', () => {
+    // From (0,0) to (-16.51, 3.81): half the chord is 8.4721…, and 8.4721…² − d²/4 rounds to a tiny negative.
+    // Its square root was NaN, so the arc was drawn as ONE straight chord. Now: a half circle of ~0.5 mm steps.
+    const r = run('G3 X-16.51 Y3.81 R-1');
+    expect(r.s.count).toBe(1 + 54); // HEAD's G1 + ceil(π · 8.4721 / 0.5) = 54 arc segments
+    expect(r.x1[r.s.count - 1]).toBeCloseTo(-16.51, 4);
+    expect(r.codes('arc-radius-too-small')).toHaveLength(1);
+  });
+
   it('R equal to half the chord, or within tolerance of it, is not disclosed', () => {
     expect(run('G2 X10 Y0 R5').codes('arc-radius-too-small')).toHaveLength(0);
     // 5 - 0.0049 is inside 0.005 mm + 0.1% of 5

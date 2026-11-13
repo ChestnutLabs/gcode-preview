@@ -828,7 +828,9 @@ export function createEngine(input: string | Uint8Array, opts: ParseOptions): En
         ib = 0;
       } else {
         const hSquared = Math.pow(r, 2) - dSquared / 4;
-        let hDivD = Math.sqrt(hSquared / dSquared);
+        // With r raised to exactly half the chord, r² − d²/4 is 0 in exact arithmetic but can round to a tiny
+        // negative; its square root was NaN, and the half circle collapsed to one straight chord. Clamp at 0.
+        let hDivD = Math.sqrt(Math.max(0, hSquared / dSquared));
         if ((cw && r < 0.0) || (!cw && r > 0.0)) hDivD = -hDivD;
         ia = deltaA / 2 + deltaB * hDivD;
         ib = deltaB / 2 - deltaA * hDivD;
