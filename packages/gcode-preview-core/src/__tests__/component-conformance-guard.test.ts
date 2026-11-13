@@ -77,6 +77,23 @@ describe('component conformance: a harness without the Part C seams', () => {
   });
 });
 
+describe('component conformance: the #589 cases need the onError / onParseError / createGL seams', () => {
+  const cases = [...collect(unwired)].filter(([title]) => title.includes('(#589)'));
+
+  it('there are two #589 cases', () => {
+    expect(cases.length).toBe(2);
+  });
+
+  for (const [title, run] of cases) {
+    const message = title.startsWith('a renderer')
+      ? 'harness must implement createGL and onError (#589): no E_RENDERER_LOAD reached onError'
+      : 'harness must implement onParseError (#589): no parse error reached it';
+    it(`fails with the explicit message: ${title}`, async () => {
+      await expect(Promise.resolve().then(run)).rejects.toThrow(message);
+    });
+  }
+});
+
 describe('component conformance: the re-parse case needs setSource and setParseOptions', () => {
   const reparse = (h: ComponentHarness) => [...collect(h)].filter(([title]) => title.includes('(re-parse)'));
 

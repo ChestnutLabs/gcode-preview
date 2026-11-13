@@ -43,9 +43,17 @@ is still valid and draws no ghost layers.
 
 If the parse worker can't be created (a strict Content Security Policy is the usual cause), `parse()` emits
 `parse-error` with code `E_WORKER_CREATE_FAILED`, sets `state.error` and returns to `parsing: false`; the next
-`parse()` tries again. The event, `state.error` and the rejected `parse()` carry `{ code, message }`, and the browser's message is inside `message`.
-If the 3D renderer can't be loaded or started (offline, a stale deploy, or no WebGL), the controller fires an `error` event
-with code `E_RENDERER_LOAD`; fall back to `renderer: { mode: '2d' }`.
+`parse()` tries again. The event, `state.error` and the failed `parse()` outcome carry `{ code, message, cause }`,
+where `cause` is the browser's own error, so you can check `error.cause?.name === 'SecurityError'`.
+
+If the 3D renderer fails, the controller fires an `error` event with code `E_RENDERER_LOAD` and a `reason`:
+
+- `'load'`: its code could not be downloaded (offline, or a stale deploy). Reload, or fall back to
+  `renderer: { mode: '2d' }`.
+- `'start'`: it downloaded but could not start, usually because there is no WebGL. Fall back to
+  `renderer: { mode: '2d' }`; `cause` holds the browser's error.
+
+Read `cause` but don't persist it: `structuredClone(state)` throws `DataCloneError` when a cause can't be copied.
 
 A 2D-only app loads no three.js. This is the whole setup, and the startup bundle is about 35 KB:
 

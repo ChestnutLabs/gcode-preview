@@ -693,9 +693,12 @@ export class GcodePreviewElement extends HTMLElement {
       case 'camera-changed':
         emit('camerachange', e.state);
         break;
-      case 'parse-error':
-        emit('parse-error', { code: e.code, message: e.message });
+      case 'parse-error': {
+        // The whole error, `cause` and `reason` included, without the event's `type`.
+        const { type: _type, ...error } = e;
+        emit('parse-error', error);
         break;
+      }
       case 'parse-cancelled':
         emit('parse-cancelled');
         break;
@@ -721,10 +724,12 @@ export class GcodePreviewElement extends HTMLElement {
       case 'machine-geometry-discovered':
         emit('machine-geometry-discovered', { machine: e.machine });
         break;
-      case 'error':
+      case 'error': {
+        const { type: _type, ...error } = e;
         if (e.code === 'machine-geometry-mismatch') emit('machine-geometry-mismatch', { message: e.message });
-        else emit('error', { code: e.code, message: e.message });
+        else emit('error', error);
         break;
+      }
       case 'renderer-unsupported':
         // #520: the renderer cannot honour a requested setting (e.g. a lens on the 2D renderer); once per request.
         emit('renderer-unsupported', { feature: e.feature, message: e.message });

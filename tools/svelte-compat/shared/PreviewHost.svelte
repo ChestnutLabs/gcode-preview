@@ -21,4 +21,6 @@
   on:buildcomplete={forward('buildcomplete')}
   on:disclosure={forward('disclosure')}
   on:rendererunsupported={forward('rendererunsupported')}
+  on:error={forward('error')}
+  on:parseerror={forward('parseerror')}
 />

@@ -29,6 +29,7 @@ import type { FeatureRoleValue, MachineGeometry, ProgressObservation } from '@ch
 import type { WireParseOptions, WorkerLike } from '@chestnutlabs/gcode-parser';
 import {
   useGcodePreview,
+  type PreviewError,
   type PreviewEvent,
   type RendererMode,
   type UseGcodePreviewOptions
@@ -132,7 +133,7 @@ export const GcodePreview = defineComponent({
       metadata: DialectMetadata | undefined;
     }) => true,
     'camera-change': (_state: CameraState) => true,
-    'parse-error': (_e: { code: string; message: string }) => true,
+    'parse-error': (_e: PreviewError) => true,
     'parse-cancelled': () => true,
     'parse-progress': (_p: { bytesProcessed: number; totalBytes: number }) => true,
     stage: (_e: { stage: PreparationStage; progress?: number; detail?: { built: number; total: number } }) => true,
@@ -144,7 +145,7 @@ export const GcodePreview = defineComponent({
     disclosure: (_text: string) => true,
     /** #520: the renderer cannot honour a requested setting (e.g. a lens on the 2D renderer); once per request. */
     'renderer-unsupported': (_e: { feature: string; message: string }) => true,
-    error: (_e: { code: string; message: string }) => true
+    error: (_e: PreviewError) => true
   },
   setup(props, { emit, expose }) {
     const preview = useGcodePreview({
@@ -191,9 +192,12 @@ export const GcodePreview = defineComponent({
         case 'camera-changed':
           emit('camera-change', e.state);
           break;
-        case 'parse-error':
-          emit('parse-error', { code: e.code, message: e.message });
+        case 'parse-error': {
+          // The whole error, `cause` and `reason` included, without the event's `type`.
+          const { type: _type, ...error } = e;
+          emit('parse-error', error);
           break;
+        }
         case 'parse-cancelled':
           emit('parse-cancelled');
           break;
@@ -219,10 +223,12 @@ export const GcodePreview = defineComponent({
         case 'machine-geometry-discovered':
           emit('machine-geometry-discovered', e.machine);
           break;
-        case 'error':
+        case 'error': {
+          const { type: _type, ...error } = e;
           if (e.code === 'machine-geometry-mismatch') emit('machine-geometry-mismatch', e.message);
-          else emit('error', { code: e.code, message: e.message });
+          else emit('error', error);
           break;
+        }
         case 'renderer-unsupported':
           emit('renderer-unsupported', { feature: e.feature, message: e.message });
           break;
