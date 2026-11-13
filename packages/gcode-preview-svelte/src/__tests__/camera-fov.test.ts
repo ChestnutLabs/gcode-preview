@@ -16,6 +16,6 @@ describe('Svelte shell cameraFov (DD-032)', () => {
   });
   it('re-applies on change only when defined and different (#520)', () => {
     expect(SOURCE).toMatch(/\$: applyCameraFov\(cameraFov\);/);
-    expect(SOURCE).toMatch(/if \(fov === undefined \|\| fov === appliedCameraFov\) return;/);
+    expect(SOURCE).toMatch(/if \(fov == null \|\| fov === appliedCameraFov\) return;/);
   });
 });
