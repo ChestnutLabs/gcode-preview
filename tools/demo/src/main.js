@@ -29,7 +29,7 @@ import {
   placementLine
 } from '../../demo-kit/index.js';
 import { downloadToolpathStl } from './stl-export.js';
-import { groupWarnings, renderParseNotes } from './parse-notes.js';
+import { createParseNotes, PARSE_NOTES_IDLE } from './parse-notes.js';
 
 const els = {};
 for (const el of document.querySelectorAll('[id]')) els[el.id] = el;
@@ -351,11 +351,15 @@ function setParsing(on) {
 }
 
 // ============ controller events ============
+// Parse notes (Diagnostics tab): the pure reducer in parse-notes.js owns the markup; this only assigns it.
+const parseNotes = createParseNotes(count);
+els.parseNotes.innerHTML = PARSE_NOTES_IDLE;
 preview.onEvent((e) => {
+  const notesHtml = parseNotes.onEvent(e);
+  if (notesHtml !== undefined) els.parseNotes.innerHTML = notesHtml;
   switch (e.type) {
     case 'parse-started':
       fileBytes = e.bytes;
-      els.parseNotes.innerHTML = '<p class="gp-hint">Parsing…</p>';
       break;
     case 'parse-progress':
       els.progress.value = e.progress.totalBytes ? e.progress.bytesProcessed / e.progress.totalBytes : 0;
@@ -371,7 +375,6 @@ preview.onEvent((e) => {
     case 'parse-complete':
       capabilities = e.capabilities ?? {};
       applyContext();
-      els.parseNotes.innerHTML = renderParseNotes(groupWarnings(e.warnings), count);
       break;
     case 'machine-geometry-discovered':
       showMachine(e.machine);

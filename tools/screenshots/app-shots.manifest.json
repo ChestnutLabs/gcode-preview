@@ -29,7 +29,7 @@
       "color": "feature",
       "view": "iso",
       "readStats": true,
-      "caption": "The Diagnostics tab: capability confidence badges, parse notes (what the parser inferred, approximated or kept as metadata, grouped by code with a count), and getRenderStats(): backend (hardware vs software WebGL), GPU, geometry mode, segment/vertex counts, draw calls, and timings — honest nulls, never guesses.",
+      "caption": "The Diagnostics tab: capability confidence badges, parse notes (what the parser inferred, approximated or kept as metadata, grouped by code with a count), and getRenderStats(): backend (hardware vs software WebGL), GPU, geometry mode, and segment counts — honest nulls, never guesses.",
       "alt": "The Feature Lab Diagnostics tab showing capability confidence badges, parse notes for a 3DBenchy (6,549 commands kept as metadata, not drawn, and 1 path whose layer was inferred), and render diagnostics — backend 3d-webgl, the GPU renderer string, geometry tubes and segment counts"
     },
     {

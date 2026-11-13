@@ -59,3 +59,42 @@ export function renderParseNotes(groups, formatCount = String) {
   });
   return `<ul class="gp-notes">${rows.join('')}</ul>`;
 }
+
+/** What the section shows before any file has loaded (and after a cancel with nothing drawn). */
+export const PARSE_NOTES_IDLE = '<p class="gp-hint">Load a file to see its parse notes.</p>';
+export const PARSE_NOTES_PARSING = '<p class="gp-hint">Parsing…</p>';
+/** A failed parse with no earlier file on screen: say plainly that nothing loaded. */
+export const PARSE_NOTES_FAILED = '<p class="gp-hint">The file did not load, so there are no parse notes.</p>';
+
+/**
+ * The Parse notes section as a reducer over the preview controller's parse events. `onEvent(e)` returns the
+ * section's new markup, or `undefined` for an event it ignores. Every `parse-started` ends in exactly one
+ * of `parse-complete`, `parse-cancelled` or `parse-error`. A cancelled or failed parse leaves the previous
+ * file drawn, so its notes come back. A newer parse can still be running when an older one reports its
+ * cancel (a superseded parse settles after its replacement started), and then "Parsing…" stays up.
+ */
+export function createParseNotes(formatCount = String) {
+  let shown = null; // markup of the last completed parse: the file on screen
+  let inFlight = 0;
+  return {
+    onEvent(e) {
+      switch (e?.type) {
+        case 'parse-started':
+          inFlight += 1;
+          return PARSE_NOTES_PARSING;
+        case 'parse-complete':
+          inFlight = Math.max(0, inFlight - 1);
+          shown = renderParseNotes(groupWarnings(e.warnings), formatCount);
+          return inFlight > 0 ? PARSE_NOTES_PARSING : shown;
+        case 'parse-cancelled':
+        case 'parse-error':
+          inFlight = Math.max(0, inFlight - 1);
+          if (inFlight > 0) return PARSE_NOTES_PARSING;
+          if (shown !== null) return shown;
+          return e.type === 'parse-error' ? PARSE_NOTES_FAILED : PARSE_NOTES_IDLE;
+        default:
+          return undefined;
+      }
+    }
+  };
+}
