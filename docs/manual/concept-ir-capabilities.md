@@ -38,6 +38,12 @@ These live in the IR header's `capabilities` map — for example `extrusionMode`
 feature coloring only when the feature was disclosed, a layer slider only when layers are `known`, an
 uncertainty band when a position is `approximated`.
 
+**Pen plotters.** A pen-up move and a pen-down stroke look the same in G-code unless you say which
+values mean "pen down". Pass `parseOptions.pen` (a servo angle range for `M280`, or a Z height) and the
+strokes are drawn as cuts, in the cut colour and counted in the drawn extent; pen-up moves stay travel.
+Without it the parser does not guess: the whole file is travel and `penState` is `unavailable`. The
+details and the option shapes are in [Motion coverage](../compatibility/gcode-motion-coverage.md).
+
 The same rule governs computed geometry. When a file uses the RS274NGC programming layer (parameters,
 expressions, loops, subroutines — see [Parametric programs](concept-parametric-programs.md)), the
 interpreter *computes* the coordinates rather than inferring them, so a clean run reports

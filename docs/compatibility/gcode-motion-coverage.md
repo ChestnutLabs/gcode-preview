@@ -135,6 +135,28 @@ non-parametric file reports `unavailable` — never a fabricated value. FDM / no
 byte-identical (both golden suites unchanged). Design and the bounded-execution model:
 [DD-017](../design/DD-017-rs274ngc-parametric-programs.md).
 
+## Pen plotters (DD-012 D3, #579)
+
+A pen has no spindle code, so the parser cannot tell a pen-down stroke from a pen-up move on its own.
+Plotters that lift the pen with `M3`/`M5` already draw as `Cut`. Two other conventions need the caller to
+say which values mean "pen down", through `parseOptions.pen`. Without the option nothing changes:
+`M280` is still an `unsupported-command` and every move is `Travel`.
+
+| Convention | Option | Pen is down when |
+|---|---|---|
+| Hobby servo, `M280 P<n> S<angle>` | `pen: { servo: { pin?, downAngles: [min, max] } }` | the latest matching `M280` has `S` from `min` to `max`, inclusive; any other `S` is pen up. `pin` limits it to one `P` number; without `pin` every servo counts |
+| Z-lift pen | `pen: { z: { downAtOrBelow } }` | the move ends at `Z` ≤ `downAtOrBelow` |
+
+With the option set, an XY feed move made with the pen down is `Cut`. The move that plunges or lifts the
+pen, and every `G0`, stays `Travel`. `Cut` counts in `bounds`, so the drawn extent frames the drawing.
+The angles and the threshold are machine-specific and there is no standard, so nothing is guessed: a file
+that never matches gets `penState: 'unavailable'` and one `pen-state-no-match` info warning. `penState` is
+`known` only when the option is set and the file moves the pen. The Z rule never applies to a file that
+extrudes (`E`) or uses `M3`/`M4`: a first-layer travel or a CNC plunge is not a pen. A bad option throws
+`E_PARSE_OPTION`. The option is part of `parseOptions`, which every adapter hands to the worker unchanged,
+so there is no new prop. Fixtures: `cnc-plotter-servo-pen`, `cnc-plotter-z-pen`; tests:
+`pen-plotter.test.ts`, `corpus-cnc-plotter.test.ts`. Not validated on hardware.
+
 ## Remaining gaps
 
 The E10 motion-model gaps from the #154 audit are now all closed. Tracking issues: **#155** (G90/G91 +
