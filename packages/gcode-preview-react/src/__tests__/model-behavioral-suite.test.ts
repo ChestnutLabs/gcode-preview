@@ -33,13 +33,14 @@ runModelBehavioralSuite(
   'react useModelViewer',
   { describe, it, expect },
   {
-    async create() {
+    async create(opts) {
       let handle: ModelViewerHandle | null = null;
       const latest = (): ModelViewerHandle => handle as ModelViewerHandle;
       const gl = makeModelRecordingGL();
       const options: UseModelViewerOptions = {
         createRenderer: gl.createRenderer,
-        createControls: MODEL_STUB_CONTROLS
+        createControls: MODEL_STUB_CONTROLS,
+        ...(opts?.pixelRatio !== undefined ? { pixelRatio: opts.pixelRatio } : {})
       };
       const host = document.createElement('div');
       document.body.appendChild(host);

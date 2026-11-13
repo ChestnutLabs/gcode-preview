@@ -23,12 +23,16 @@ runModelBehavioralSuite(
   'vue useModelViewer',
   { describe, it, expect },
   {
-    async create() {
+    async create(opts) {
       const canvas = document.createElement('canvas');
       const scope = effectScope();
       const gl = makeModelRecordingGL();
       const viewer = scope.run(() =>
-        useModelViewer({ createRenderer: gl.createRenderer, createControls: MODEL_STUB_CONTROLS })
+        useModelViewer({
+          createRenderer: gl.createRenderer,
+          createControls: MODEL_STUB_CONTROLS,
+          ...(opts?.pixelRatio !== undefined ? { pixelRatio: opts.pixelRatio } : {})
+        })
       )!;
       viewer.canvasRef.value = canvas;
       await nextTick();

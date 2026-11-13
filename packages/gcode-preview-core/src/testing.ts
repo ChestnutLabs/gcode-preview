@@ -158,8 +158,17 @@ export class SuiteStubWorker {
   }
 }
 
+/**
+ * The suite's stub GL. Its `render` reads `camera.parent` first, as three's `WebGLRenderer.render` does, so a
+ * frame drawn before the stage has a camera throws here as it does in a browser (the pixelRatio start-up bug).
+ */
 export function makeSuiteStubGL(canvas: HTMLCanvasElement): GLRendererLike {
-  return { render: () => undefined, setSize: () => undefined, dispose: () => undefined, domElement: canvas };
+  return {
+    render: (_scene, camera) => void (camera as { parent: unknown }).parent,
+    setSize: () => undefined,
+    dispose: () => undefined,
+    domElement: canvas
+  };
 }
 
 /** A recording Canvas 2D context for the 2D cases; see {@link installSuite2DProbe}. */

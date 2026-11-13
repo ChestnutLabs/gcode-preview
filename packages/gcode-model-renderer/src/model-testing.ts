@@ -12,15 +12,18 @@
  * exported so each adapter mounts headlessly the same way.
  */
 import { Vector3, type Camera, type PerspectiveCamera, type Scene } from 'three';
-import type { GLRendererLike, RenderTargetCanvas } from '@chestnutlabs/gcode-renderer-three';
+import type { GLRendererLike, PixelRatioOption, RenderTargetCanvas } from '@chestnutlabs/gcode-renderer-three';
 import type { ModelPreviewControls, ModelPreviewControllerOptions, ModelPreviewState } from './model-preview.js';
 import type { ModelViewerEvent } from './model-viewer.js';
 import type { ModelSourceInput } from './loaders.js';
 import { IDENTITY_MAT4, type ModelScene, type RenderScope } from './scene-model.js';
 
-/** Stub GL for headless adapter mounts (no real WebGL). */
+/**
+ * Stub GL for headless adapter mounts (no real WebGL). Its `render` reads `camera.parent` first, as three does,
+ * so a frame drawn before the stage has a camera throws here as it does in a browser.
+ */
 export const MODEL_STUB_GL = (canvas: RenderTargetCanvas): GLRendererLike => ({
-  render: () => undefined,
+  render: (_scene, camera) => void (camera as Camera).parent,
   setSize: () => undefined,
   dispose: () => undefined,
   domElement: canvas
@@ -52,6 +55,7 @@ export function makeModelRecordingGL(): {
   return {
     createRenderer: (canvas) => ({
       render: (scene, camera) => {
+        void (camera as Camera).parent; // as three: a frame before the stage has a camera throws
         last = { scene, camera };
       },
       setSize: () => undefined,
@@ -155,8 +159,11 @@ export interface ModelAdapterInstance {
 }
 
 export interface ModelAdapterHarness {
-  /** Mount one model viewer bound to a fresh canvas, wired to the stub GL + stub controls. */
-  create(): Promise<ModelAdapterInstance> | ModelAdapterInstance;
+  /**
+   * Mount one model viewer bound to a fresh canvas, wired to the stub GL + stub controls. `pixelRatio`, when
+   * given, is the adapter's own pixel-ratio option at mount (prop / option / element property).
+   */
+  create(opts?: { pixelRatio?: PixelRatioOption }): Promise<ModelAdapterInstance> | ModelAdapterInstance;
 }
 
 interface Matchers {
@@ -392,6 +399,18 @@ export function runModelBehavioralSuite(name: string, api: TestApi, harness: Mod
       await a.settle();
       expect(errorName(-1)).toBe('RangeError');
       expect(errorName(1.5)).toBe('none');
+      await a.dispose();
+    });
+
+    it('starts with a pixelRatio option: no error, and a source still loads', async () => {
+      // A ratio change at start-up repaints; that frame must already have a camera (the stub GL reads it).
+      const a = await harness.create({ pixelRatio: 2 });
+      await a.settle();
+      expect(a.getState().error).toBeNull();
+      await a.controls.setSource(makeStlModelSource());
+      await a.settle();
+      expect(a.getState().ready).toBe(true);
+      expect(a.getState().error).toBeNull();
       await a.dispose();
     });
 
