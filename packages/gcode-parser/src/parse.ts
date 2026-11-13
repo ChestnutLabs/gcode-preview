@@ -262,7 +262,7 @@ const UNBALANCED_PAREN_WARN = 'unbalanced-paren-comment';
  *  command such as `EXCLUDE_OBJECT_START NAME=cube_(1`, `SET_PIN …`) or is one of Marlin's text-argument
  *  M-codes (`M117` message, `M118` echo, `M486` object name; any case). Such a line is never reported as an
  *  unbalanced comment, and its `;` comment starts at the first `;` as it always did. */
-const TEXT_ARGUMENT_LINE = /^\s*(?:[A-Za-z_][A-Za-z_]|m(?:117|118|486)(?!\d))/i;
+const TEXT_ARGUMENT_LINE = /^\s*(?:n\d+\s*)?(?:[A-Za-z_][A-Za-z_]|m(?:117|118|486)(?!\d))/i;
 
 /**
  * Lex a line into its G/M/T command words plus the axis/param words. Real CNC G-code routinely puts
@@ -957,6 +957,15 @@ export function createEngine(input: string | Uint8Array, opts: ParseOptions): En
   };
 
   const runCannedCycle = (p: Record<string, number>): boolean => {
+    // 0. Preliminary Z move. LinuxCNC g-code.html §43.6: "If the current Z position is below the R position,
+    // the Z axis does a rapid move to the R position. This happens only once, regardless of the value of L."
+    // It happens BEFORE the XY rapid, at the old XY (Example 2: "The first preliminary move is a maximum rapid
+    // move along the Z axis to (X1,Y2,Z4.8), since OLD_Z < clear Z"). Checked at every hole start: after the
+    // first hole's retract Z is at or above R, so it cannot fire again.
+    if (sz < cannedR) {
+      sz = cannedR;
+      if (!emitSegment(sx, sy, sz, 0, MoveKind.Travel)) return false;
+    }
     // 1. Rapid to the hole XY at the current Z.
     sx = nextAxis(sx, p.x, offX());
     sy = nextAxis(sy, p.y, offY());

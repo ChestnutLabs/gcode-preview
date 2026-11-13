@@ -89,9 +89,13 @@ function readManifests(root) {
   return out;
 }
 
-/** Runs one step with the user's terminal attached; returns its exit status (or the signal name). */
-function spawnStep(cmd, cwd) {
-  const r = spawnSync(cmd, { cwd, stdio: 'inherit', shell: true });
+/**
+ * Runs one step with the user's terminal attached; returns its exit status, or the signal name when
+ * the step was killed (status null), so a killed step never reads as exit 0. `spawn` is injectable
+ * for the tests.
+ */
+export function spawnStep(cmd, cwd, spawn = spawnSync) {
+  const r = spawn(cmd, { cwd, stdio: 'inherit', shell: true });
   return r.status ?? r.signal;
 }
 

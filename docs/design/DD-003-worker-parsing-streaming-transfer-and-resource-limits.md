@@ -150,7 +150,7 @@ session stays idle, and the next `parse()` calls the factory again.
 (`SessionOptions.worker` given a `Worker` rather than a function) cannot be rebuilt: once it has been
 terminated (cancel backstop, crash, or `dispose()`), the next `parse()` rejects with
 `E_WORKER_TERMINATED` instead of posting to the dead worker and never settling. Pass a factory to
-recover. (A `dispose()` before the session ever started the instance leaves it unused.)
+recover. (A `dispose()` before the session ever started the instance leaves it untouched: not terminated, and a later `parse()` starts it as normal.)
 
 ### 5.2 Cancellation (first-class) — amended
 `cancel()` posts `{type:'cancel'}`. **A flag check alone is insufficient**: a `message` event cannot be

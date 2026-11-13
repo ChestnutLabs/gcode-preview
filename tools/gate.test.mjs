@@ -1,8 +1,9 @@
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { buildOrder, main, planSteps } from './gate.mjs';
+import { buildOrder, main, planSteps, spawnStep } from './gate.mjs';
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -117,6 +118,57 @@ describe('gate CLI', () => {
     expect(r.out).not.toContain('gate GREEN');
   });
 
+  it('treats a step killed by a signal as a failure', () => {
+    // spawnStep returns the signal name when a step is killed (status null).
+    const calls = [];
+    const errs = [];
+    const status = main([], {
+      root: repoRoot,
+      env: {},
+      run: (cmd) => {
+        calls.push(cmd);
+        return cmd === 'npm run lint' ? 'SIGTERM' : 0;
+      },
+      log: () => {},
+      err: (m) => errs.push(m)
+    });
+    expect(status).toBe(1);
+    expect(calls.at(-1)).toBe('npm run lint');
+    expect(errs.join('\n')).toContain('✖ gate FAILED at lint (exit SIGTERM) after');
+  });
+
+  it('caps test workers at 8 when GATE_MAX_WORKERS is unset', () => {
+    const r = drive([], { env: {} });
+    expect(r.status).toBe(0);
+    expect(r.calls).toContain('npx vitest run --maxWorkers=8');
+    expect(r.calls).toContain('npm test --workspaces --if-present -- --maxWorkers=8');
+  });
+
+  it('builds only @chestnutlabs/* packages found under packages/, in dependency order', () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'gate-test-'));
+    try {
+      const write = (dir, manifest) => {
+        fs.mkdirSync(path.join(root, 'packages', dir), { recursive: true });
+        if (manifest) fs.writeFileSync(path.join(root, 'packages', dir, 'package.json'), JSON.stringify(manifest));
+      };
+      write('a', { name: '@chestnutlabs/a', dependencies: { '@chestnutlabs/b': '*' } });
+      write('b', { name: '@chestnutlabs/b' });
+      write('other', { name: '@other/x' });
+      write('unnamed', { version: '1.0.0' });
+      write('empty', null);
+      fs.writeFileSync(path.join(root, 'packages', 'README.md'), 'not a package');
+      const calls = [];
+      const status = main([], { root, env: {}, run: (cmd) => (calls.push(cmd), 0), log: () => {}, err: () => {} });
+      expect(status).toBe(0);
+      expect(calls.filter((c) => c.startsWith('npm run build -w '))).toEqual([
+        'npm run build -w @chestnutlabs/b',
+        'npm run build -w @chestnutlabs/a'
+      ]);
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it('passes --ci and --install through to the plan', () => {
     const r = drive(['--install', '--ci']);
     expect(r.status).toBe(0);
@@ -164,11 +216,50 @@ describe('planSteps', () => {
     ]);
   });
 
+  it('keeps --ci and --install independent', () => {
+    const ciOnly = planSteps({ order, ci: true }).map((s) => s.name);
+    expect(ciOnly).not.toContain('install');
+    expect(ciOnly).toContain('license:check');
+    const installOnly = planSteps({ order, install: true }).map((s) => s.name);
+    expect(installOnly[0]).toBe('install');
+    for (const ci of [
+      'pack:license-check',
+      'check:no-runtime-deps',
+      'license:check',
+      'test:consumer-vue',
+      'pack:check'
+    ]) {
+      expect(installOnly).not.toContain(ci);
+    }
+  });
+
   it('passes the worker cap to both test steps', () => {
     const steps = planSteps({ order, maxWorkers: 3 });
     expect(steps.find((s) => s.name === 'test (root)').cmd).toBe('npx vitest run --maxWorkers=3');
     expect(steps.find((s) => s.name === 'test:packages').cmd).toBe(
       'npm test --workspaces --if-present -- --maxWorkers=3'
     );
+  });
+});
+
+describe('spawnStep', () => {
+  it('returns the exit status, or the signal name when the step was killed', () => {
+    const seen = [];
+    const fake = (result) => (cmd, opts) => (seen.push([cmd, opts]), result);
+    expect(spawnStep('a', '/r', fake({ status: 0, signal: null }))).toBe(0);
+    expect(spawnStep('b', '/r', fake({ status: 3, signal: null }))).toBe(3);
+    expect(spawnStep('c', '/r', fake({ status: null, signal: 'SIGKILL' }))).toBe('SIGKILL');
+    expect(seen[0]).toEqual(['a', { cwd: '/r', stdio: 'inherit', shell: true }]);
+  });
+
+  it('runs a real command and reports its exit code', () => {
+    expect(spawnStep(`"${process.execPath}" -e "process.exit(3)"`, os.tmpdir())).toBe(3);
+    expect(spawnStep(`"${process.execPath}" -e "0"`, os.tmpdir())).toBe(0);
+  });
+
+  it.skipIf(process.platform === 'win32')('never reports a real signal-killed step as exit 0', () => {
+    // sh either execs node (status null, signal SIGKILL) or reports 128 + 9.
+    const r = spawnStep(`"${process.execPath}" -e "process.kill(process.pid, 'SIGKILL')"`, os.tmpdir());
+    expect(['SIGKILL', 137]).toContain(r);
   });
 });

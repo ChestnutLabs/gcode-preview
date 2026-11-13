@@ -412,8 +412,14 @@ function expandBoundsByBox(
   }
 }
 
+/** Running scene-wide geometry totals, shared by every part parsed for one 3MF. */
+interface SceneTotals {
+  vertices: number;
+  triangles: number;
+}
+
 /** Parse ONE model part's XML into objects/palettes/items (no cross-part resolution). */
-function parseModelPart(xml: string, lim: ResolvedLimits): ModelPart {
+function parseModelPart(xml: string, lim: ResolvedLimits, totals: SceneTotals): ModelPart {
   let unitScale = 1;
   const palettes = new Map<string, RGB[]>();
   const objects = new Map<string, ParsedObject>();
@@ -485,16 +491,29 @@ function parseModelPart(xml: string, lim: ResolvedLimits): ModelPart {
         });
       }
     } else if (name === 'vertex' && curObj !== null) {
+      // Vertices are bounded at 3 × maxTriangles (a mesh with no shared vertices) across every object and part
+      // of the scene, checked BEFORE the push so a vertices-only file fails before its arrays grow.
+      const vertexCap = lim.maxTriangles * 3;
+      if (totals.vertices >= vertexCap) {
+        throw new ModelParseError(
+          'E_MODEL_TOO_MANY_VERTICES',
+          `3MF holds more than ${vertexCap} vertices (3 × maxTriangles ${lim.maxTriangles})`
+        );
+      }
+      totals.vertices++;
       const a = attrs(raw);
       const vn = curObj.vertices.length / 3;
       curObj.vertices.push(vertexCoord(a.x, vn, 'x'), vertexCoord(a.y, vn, 'y'), vertexCoord(a.z, vn, 'z'));
     } else if (name === 'triangle' && curObj !== null) {
+      // Triangles are bounded at maxTriangles across every object and part of the scene (placed or not), checked
+      // BEFORE the push so hostile files fail before their arrays grow. Placement still re-checks for instancing.
+      if (totals.triangles >= lim.maxTriangles) {
+        throw new ModelParseError('E_MODEL_TOO_MANY_TRIANGLES', `3MF exceeds triangle limit ${lim.maxTriangles}`);
+      }
+      totals.triangles++;
       const a = attrs(raw);
       const tn = curObj.tris.length / 3;
       curObj.tris.push(triangleIndex(a.v1, tn, 'v1'), triangleIndex(a.v2, tn, 'v2'), triangleIndex(a.v3, tn, 'v3'));
-      if (curObj.tris.length / 3 > lim.maxTriangles) {
-        throw new ModelParseError('E_MODEL_TOO_MANY_TRIANGLES', `3MF exceeds triangle limit ${lim.maxTriangles}`);
-      }
       const pid = a.pid ?? curObj.objPid ?? null;
       curObj.triPid.push(pid);
       curObj.triPaint.push(a.paint_color ?? null);
@@ -1014,6 +1033,7 @@ export async function parse3mf(
   // Lazily parse model parts by absolute OPC path (production-extension components reference them).
   const partCache = new Map<string, ModelPart>();
   let objectsInScene = 0;
+  const totals: SceneTotals = { vertices: 0, triangles: 0 };
   const parseEntry = async (entry: ZipDirectory['entries'][number]): Promise<ModelPart> => {
     const key = entry.name.toLowerCase();
     const cached = partCache.get(key);
@@ -1024,7 +1044,7 @@ export async function parse3mf(
     } catch (e) {
       throw unzipFailure(e);
     }
-    const part = parseModelPart(xml, lim);
+    const part = parseModelPart(xml, lim, totals);
     // maxObjects is a scene-wide bound: the objects of every part (main + production-extension) count together.
     objectsInScene += part.objects.size;
     if (objectsInScene > lim.maxObjects) {

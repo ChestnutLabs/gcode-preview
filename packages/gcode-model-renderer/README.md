@@ -66,7 +66,8 @@ has the thing being counted.
 | Field | Default | Rejects with |
 | --- | --- | --- |
 | `maxSourceBytes` | 256 MiB | `E_MODEL_TOO_LARGE` |
-| `maxTriangles` | 5,000,000 | `E_MODEL_TOO_MANY_TRIANGLES` |
+| `maxTriangles` | 5,000,000 | `E_MODEL_TOO_MANY_TRIANGLES` (a 3MF is also checked while it is read: triangles are counted across every object and part, placed or not) |
+| `maxTriangles` (vertices) | 3 × `maxTriangles` = 15,000,000 | `E_MODEL_TOO_MANY_VERTICES` (a 3MF holding more vertices than three per allowed triangle, counted across every object and part; raising `maxTriangles` raises it too) |
 | `maxObjects` | 10,000 | `E_MODEL_TOO_MANY_OBJECTS` (3MF `<object>` elements across the main and any production-extension parts) |
 | `maxInstances` | 50,000 | `E_MODEL_TOO_MANY_INSTANCES` (3MF build items plus component references, counting every node of the assembly) |
 
