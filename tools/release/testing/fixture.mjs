@@ -201,8 +201,16 @@ fs.appendFileSync(process.env.RELEASE_TOOLS_STUB_LOG, JSON.stringify({
   sawToken: Boolean(process.env.NPM_TOKEN || process.env.NODE_AUTH_TOKEN),
   registry: process.env.npm_config_registry ?? null
 }) + '\\n');
-const fail = (process.env.RELEASE_TOOLS_STUB_FAIL || '').split(',').filter(Boolean);
-if (fail.includes(manifest.name)) { process.stderr.write('stub: failing ' + manifest.name + '\\n'); process.exit(1); }
+const list = (k) => (process.env[k] || '').split(',').filter(Boolean);
+if (argv[0] === 'view') {
+  // "name@version version": print a version for a "published" package, else fail like an E404.
+  const published = Object.fromEntries(list('RELEASE_TOOLS_STUB_PUBLISHED').map((e) => e.split('=')));
+  const answer = published[manifest.name];
+  if (answer === undefined) { process.stderr.write('npm error code E404\\n'); process.exit(1); }
+  process.stdout.write((answer || manifest.version) + '\\n');
+  process.exit(0);
+}
+if (list('RELEASE_TOOLS_STUB_FAIL').includes(manifest.name)) { process.stderr.write('stub: failing ' + manifest.name + '\\n'); process.exit(1); }
 process.stdout.write('npm notice total files: 3\\nnpm notice package size: 1.5 kB\\n');
 `;
 
@@ -229,8 +237,15 @@ export function isForbiddenPublishEnv(key) {
  * Installs the npm stub in a temp dir and returns { env, logFile, calls() } for spawning publish.mjs.
  * The env has the stub first on PATH, a dead registry, and every credential / OIDC / publish switch
  * removed. Throws (fail closed) unless `npm` as publish.mjs runs it resolves to the stub.
+ *
+ * - `fail`: package names whose `npm publish` exits 1.
+ * - `published`: { name: versionOrEmpty } that `npm view` reports as on the registry ('' = the
+ *   manifest's own version); every other name gets an E404.
+ * - `realBranch`: set ONLY the two workflow switches publish.mjs checks (GITHUB_ACTIONS=true,
+ *   RELEASE_CONFIRM=publish), after the credential check, so the non-dry branch runs against the
+ *   stub. No token, OIDC variable or .npmrc is ever set or read.
  */
-export function npmStub({ fail = [] } = {}) {
+export function npmStub({ fail = [], published = {}, realBranch = false } = {}) {
   const dir = tempDir('release-tools-npm-');
   const stubJs = path.join(dir, 'npm-stub.mjs');
   fs.writeFileSync(stubJs, STUB_JS);
@@ -254,6 +269,8 @@ export function npmStub({ fail = [] } = {}) {
   env.npm_config_registry = 'http://127.0.0.1:9';
   env.RELEASE_TOOLS_STUB_LOG = logFile;
   if (fail.length) env.RELEASE_TOOLS_STUB_FAIL = fail.join(',');
+  const pub = Object.entries(published).map(([n, v]) => `${n}=${v}`);
+  if (pub.length) env.RELEASE_TOOLS_STUB_PUBLISHED = pub.join(',');
 
   // Fail closed: resolve `npm` exactly the way publish.mjs does and require the stub's answer.
   const npmCmd = process.platform === 'win32' ? 'npm.cmd' : 'npm';
@@ -267,6 +284,10 @@ export function npmStub({ fail = [] } = {}) {
   }
   for (const k of Object.keys(env)) {
     if (isForbiddenPublishEnv(k)) throw new Error(`forbidden env ${k} reached the publish child`);
+  }
+  if (realBranch) {
+    env.GITHUB_ACTIONS = 'true';
+    env.RELEASE_CONFIRM = 'publish';
   }
 
   return {

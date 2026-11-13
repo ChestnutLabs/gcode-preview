@@ -1,12 +1,11 @@
 // @vitest-environment node
-// publish.mjs: ONLY the refusal guard and the --dry-run path.
-//
-// The real-publish branch (the "already on the registry" skip, the still-private stop) is NOT driven
-// here, even with npm stubbed: this suite runs inside release-publish.yml, where real publish
-// credentials are present, so exercising that branch is an owner security-boundary decision.
+// publish.mjs: the refusal guard, the --dry-run path, and (owner-approved, 2026-11-12) the non-dry
+// branch's "already on the registry" skip and still-private stop, with every npm call stubbed.
 //
 // Every spawn goes through npmStub(): a logging npm stub first on PATH (proven to be what the child
 // resolves before anything runs), a dead registry, and every token, OIDC and publish switch removed.
+// The non-dry tests then set only GITHUB_ACTIONS=true and RELEASE_CONFIRM=publish, the two switches
+// publish.mjs checks. No token, OIDC variable or .npmrc is set, read or exercised.
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, isForbiddenPublishEnv, makeRepo, npmStub, pkg, read, runScript } from './testing/fixture.mjs';
 
@@ -122,5 +121,107 @@ describe('publish.mjs --dry-run', () => {
       `| \`${nameOf('gcode-parser')}@9.8.7\` | 3 | 1.5 kB | @chestnutlabs/toolpath-core@9.8.7 |\n`
     );
     expect(r.stderr).toContain(`✓ ${nameOf('toolpath-core')}@9.8.7 (3 files, 1.5 kB)\n`);
+  });
+});
+
+describe('publish.mjs non-dry branch (stubbed npm)', () => {
+  const real = (opts = {}) => npmStub({ realBranch: true, ...opts });
+  const kinds = (calls) => calls.map((c) => `${c.argv[0]} ${c.name}`);
+
+  it('needs both workflow switches: either one alone is refused before any npm call', () => {
+    for (const drop of ['GITHUB_ACTIONS', 'RELEASE_CONFIRM']) {
+      const root = repo();
+      const stub = real();
+      delete stub.env[drop];
+      const r = runScript(root, 'publish.mjs', [], stub.env);
+      expect(r.status).toBe(1);
+      expect(r.stderr).toContain('refusing a real publish outside the protected release workflow');
+      expect(stub.calls()).toEqual([]);
+    }
+    for (const [k, v] of [
+      ['GITHUB_ACTIONS', '1'],
+      ['RELEASE_CONFIRM', 'yes']
+    ]) {
+      const root = repo();
+      const stub = real();
+      stub.env[k] = v;
+      expect(runScript(root, 'publish.mjs', [], stub.env).status).toBe(1);
+      expect(stub.calls()).toEqual([]);
+    }
+  });
+
+  it('checks the registry, then publishes every package in order without --dry-run', () => {
+    const root = repo();
+    const before = ORDER.map((d) => read(root, `packages/${d}/package.json`));
+    const stub = real();
+    const r = runScript(root, 'publish.mjs', [], stub.env);
+    expect(r.status).toBe(0);
+    const calls = stub.calls();
+    expect(kinds(calls)).toEqual(ORDER.flatMap((d) => [`view ${nameOf(d)}`, `publish ${nameOf(d)}`]));
+    for (const c of calls) {
+      if (c.argv[0] === 'view') expect(c.argv).toEqual(['view', `${c.name}@9.8.7`, 'version']);
+      else expect(c.argv).toEqual(['publish', '--access', 'public', '--provenance']);
+      expect(c.sawToken).toBe(false);
+      expect(c.registry).toBe('http://127.0.0.1:9');
+    }
+    expect(ORDER.map((d) => read(root, `packages/${d}/package.json`))).toEqual(before);
+  });
+
+  it('skips a package already on the registry at this version and publishes the rest', () => {
+    const root = repo();
+    const stub = real({ published: { [nameOf('toolpath-core')]: '', [nameOf('gcode-dialects')]: '' } });
+    const r = runScript(root, 'publish.mjs', [], stub.env);
+    expect(r.status).toBe(0);
+    const calls = kinds(stub.calls());
+    expect(calls.slice(0, 5)).toEqual([
+      `view ${nameOf('toolpath-core')}`,
+      `view ${nameOf('gcode-colors')}`,
+      `publish ${nameOf('gcode-colors')}`,
+      `view ${nameOf('gcode-dialects')}`,
+      `view ${nameOf('gcode-containers')}`
+    ]);
+    expect(calls.filter((c) => c.startsWith('publish '))).toHaveLength(ORDER.length - 2);
+    expect(r.stderr).toContain(`↷ ${nameOf('toolpath-core')}@9.8.7 already on the registry — skipping\n`);
+    expect(r.stdout).not.toContain(`\`${nameOf('toolpath-core')}@9.8.7\``);
+  });
+
+  it('publishes when the registry has the package at another version', () => {
+    const root = repo();
+    const stub = real({ published: { [nameOf('toolpath-core')]: '9.8.6' } });
+    const r = runScript(root, 'publish.mjs', [], stub.env);
+    expect(r.status).toBe(0);
+    expect(kinds(stub.calls()).slice(0, 2)).toEqual([
+      `view ${nameOf('toolpath-core')}`,
+      `publish ${nameOf('toolpath-core')}`
+    ]);
+    expect(r.stderr).not.toContain('already on the registry');
+  });
+
+  it('stops at a package that is still private, before checking or publishing it', () => {
+    const root = repo({ privateDirs: ['gcode-parser'] });
+    const stub = real();
+    const r = runScript(root, 'publish.mjs', [], stub.env);
+    expect(r.status).toBe(1);
+    const upTo = ORDER.slice(0, ORDER.indexOf('gcode-parser'));
+    expect(kinds(stub.calls())).toEqual(upTo.flatMap((d) => [`view ${nameOf(d)}`, `publish ${nameOf(d)}`]));
+    expect(r.stderr).toContain(
+      `✗ ${nameOf('gcode-parser')} is still private — the release phase removes the flag first.\n`
+    );
+    expect(read(root, 'packages/gcode-parser/package.json')).toContain('"private": true');
+  });
+
+  it('stops the line at the first failed publish', () => {
+    const root = repo();
+    const stub = real({ fail: [nameOf('gcode-colors')] });
+    const r = runScript(root, 'publish.mjs', [], stub.env);
+    expect(r.status).toBe(1);
+    expect(kinds(stub.calls())).toEqual([
+      `view ${nameOf('toolpath-core')}`,
+      `publish ${nameOf('toolpath-core')}`,
+      `view ${nameOf('gcode-colors')}`,
+      `publish ${nameOf('gcode-colors')}`
+    ]);
+    expect(r.stderr).toContain(`✗ ${nameOf('gcode-colors')}: publish failed\n`);
+    expect(r.stdout).toContain(`| \`${nameOf('toolpath-core')}@9.8.7\` | 3 | 1.5 kB | — |\n`);
   });
 });
