@@ -2,7 +2,7 @@
 
 **Status:** **Accepted** <!-- Draft | Proposed | Accepted | Superseded | Rejected -->
 **Authors/Owners:** Nathaniel Chestnut
-**Date:** 2026-07-28 · **Last revised:** 2026-07-28
+**Date:** 2026-07-28 · **Last revised:** 2026-11-12
 **Accepted:** 2026-07-28 — **D1–D8 as recommended.** `MoveKind.Cut` naming (D2); the **single shared `ModalChannel` mechanism** (D3) is owned here and #180/RR-002 consume it, so **DD-015 is retired**. Implementation unblocked per §14.
 **Owning Epic:** #189 (non-extrusion toolpath coverage) · **Milestone:** Future
 **Supersedes / Superseded by:** none
@@ -157,6 +157,10 @@ Extend `gcode-dialects` detection; each dialect **declares its validation tier**
 
 - **Renderer:** `Cut` moves render as the productive path (as `Extrude` does today); `Travel` as
   rapids. No renderer geometry change — it already keys on `MoveKind`.
+- **Bounds (amended 2026-11-12, #568):** `Cut` is productive for `ir.bounds` and `ir.objectBounds` too, so
+  a Cut-only file frames its work instead of falling back to the bed. The DD-026 classifier stays
+  `Extrude`-only: `modelBounds` stays empty and `nonModelClassification` stays `unavailable` for a
+  Cut-only file (there is no housekeeping to separate). FDM files never set `Cut` — bounds byte-identical.
 - **Colorers (`gcode-colors`, consumers of D3):** `color-by-laserPower`, `color-by-spindle`,
   `color-by-feed` (and `cut`-vs-`travel`), ramped like the `feedrate` precedent (#177), degrading to
   `fallback` on absent channels rather than fabricating.
@@ -304,3 +308,4 @@ text to copy (ISO 6983 is copyrighted; the LinuxCNC reference is GPL/GFDL; this 
 | 2026-07-28 | DD-012 drafted as **Proposed**; decision menu D1–D8 open. Follows RR-004 (scope IN, validated by real hardware) and unifies the modal-channel mechanism with RR-002/#180. | Chestnut Labs |
 | 2026-07-28 | **Accepted — D1–D8 as recommended.** D1 no new package; D2 `MoveKind.Cut` bit; **D3 one shared opt-in `ModalChannel` mechanism owned here, #180/RR-002 consume it → DD-015 retired**; D4 tool-state-driven with machine-class an `inferred` hint; D5 canned-cycle MVP (`G81`/`G82`/`G83` + `G80` + `G98`/`G99`); D6 validation-tiered dialects; D7 reuse renderer + ramped colorers; D8 synthetic fixtures + FDM byte-identical gate + real-machine acceptance. | Maintainer |
 | 2026-07-29 | **Editorial (no decision change):** added §16 reference specifications & parity sources (RS274NGC/NIST IR 6556, ISO 6983, LinuxCNC, GRBL, LightBurn, RepRap) making the **spec-anchored CNC vs. observed-only laser** split explicit — it grounds D5/phase-7 in RS274NGC and reaffirms why lasers stay hardware-gated under D6/D8. Full survey in RR-004 §9. Provenance: parity targets only, no spec text copied. | Chestnut Labs |
+| 2026-11-12 | **D7 amended (#568):** `Cut` counts as productive for `ir.bounds` / `ir.objectBounds` (was extrusion-only), completing D7's "Cut renders as the productive path". Classifier (`modelBounds`, `nonModelClassification`) unchanged. FDM corpus 23/23 byte-identical; CNC fixtures (easel, mach3, bolt-circle) now frame the cut instead of the bed. Lead decision, within DD-012 scope. | Chestnut Labs |

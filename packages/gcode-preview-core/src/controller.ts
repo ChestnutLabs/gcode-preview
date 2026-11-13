@@ -679,6 +679,9 @@ export function createPreviewController(options: PreviewControllerOptions = {}):
   async function parse(input: Uint8Array | ArrayBuffer | File, opts?: WireParseOptions): Promise<ParseOutcome> {
     if (disposed) return { ok: false, error: { code: 'E_DISPOSED', message: 'preview disposed' } };
     const gen = ++parseGen;
+    // Set before the wait below: a parse started while another is still settling (a parse-complete handler
+    // calling parse()) owns the calls made in the same tick, which would otherwise reach the outgoing file.
+    awaitingFile = true;
     if (snapshot.parsing) {
       // §5: parse-during-parse cancels then restarts (session semantics preserved).
       session.cancel();
@@ -687,7 +690,6 @@ export function createPreviewController(options: PreviewControllerOptions = {}):
       // start; an older one was superseded before it began, so it reports cancelled (no event: it never ran).
       if (gen !== parseGen || disposed) return { ok: false, cancelled: true };
     }
-    awaitingFile = true;
     mutate({ parsing: true, parseProgress: null, error: null });
     const bytes =
       typeof File !== 'undefined' && input instanceof File

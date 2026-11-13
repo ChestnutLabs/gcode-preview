@@ -5,7 +5,7 @@
  * rather than thrown from connectedCallback / attributeChangedCallback, which would stop the source from
  * ever parsing. A number (including `Infinity`) still applies; removing the attribute still clears.
  */
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { SuiteStubWorker, makeSuiteStubGL } from '@chestnutlabs/gcode-preview-core/testing';
 import { MoveKind, ToolpathIRBuilder, type ToolpathIR } from '@chestnutlabs/toolpath-core';
 import { GcodePreviewElement, defineGcodePreview } from '../index';
@@ -212,6 +212,34 @@ describe('<gcode-preview> a cut set from a ready listener', () => {
     await el.parse(new Uint8Array(1000));
     await settle();
     expect(drawCount(el)).toBe(24);
+    el.remove();
+  });
+});
+
+describe('<gcode-preview> the source property on a connected element (Part C)', () => {
+  it('a new source re-sends the scrub attribute, so the next file opens with the same cut', async () => {
+    const el = await parsed();
+    el.setAttribute('scrub', '5');
+    await settle();
+    expect(drawCount(el)).toBe(12);
+    el.source = new Uint8Array(1000);
+    await settle();
+    expect(drawCount(el)).toBe(12);
+    el.remove();
+  });
+
+  it('setting source to null parses nothing and re-sends nothing: the shown file keeps its cut', async () => {
+    const el = await parsed();
+    el.setAttribute('scrub', '5');
+    await settle();
+    const controller = (el as unknown as { controller: { parse: (...a: unknown[]) => unknown } }).controller;
+    const parse = vi.spyOn(controller, 'parse');
+    const scrub = vi.spyOn(el.controls, 'setScrubPosition');
+    el.source = null;
+    await settle();
+    expect(parse).not.toHaveBeenCalled();
+    expect(scrub).not.toHaveBeenCalled();
+    expect(drawCount(el)).toBe(12);
     el.remove();
   });
 });

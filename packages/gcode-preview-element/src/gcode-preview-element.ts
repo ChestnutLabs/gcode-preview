@@ -125,7 +125,17 @@ export class GcodePreviewElement extends HTMLElement {
   }
   set source(v: GcodePreviewSource) {
     this._source = v;
-    if (this.controller !== null && v !== null) void this.controller.parse(v, this._parseOptions);
+    if (this.controller === null || v === null) return;
+    const c = this.controller;
+    void c.parse(v, this._parseOptions);
+    // A renderer shows a new file uncut, so re-send the view attributes that still hold a value: the
+    // controller applies them to the file this parse loads. scrub-time goes last, so it wins (as at connect).
+    const r = this.layerRange;
+    if (r !== null) c.controls.setLayerRange(r[0], r[1]);
+    const scrub = this.scrub;
+    if (scrub !== null) c.controls.setScrubPosition(scrub);
+    const scrubTime = this.scrubTime;
+    if (scrubTime !== null) c.controls.setScrubTime(scrubTime);
   }
   get parseOptions(): WireParseOptions | undefined {
     return this._parseOptions;

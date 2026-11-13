@@ -213,6 +213,25 @@ describe('renderStill bytes path', () => {
     expect(setIR).not.toHaveBeenCalled();
   });
 
+  it('a worker factory that throws rejects with E_WORKER_CREATE_FAILED, the original error as cause (#566)', async () => {
+    const blocked = new Error('worker blocked');
+    blocked.name = 'SecurityError';
+    const setIR = vi.spyOn(ToolpathRenderer.prototype, 'setIR');
+    const err = (await renderStill(
+      new Uint8Array([0x47]),
+      base({
+        createWorker: () => {
+          throw blocked;
+        }
+      })
+    ).catch((e: unknown) => e)) as Error & { code?: string };
+    expect(err.name).toBe('ParseSessionError');
+    expect(err.code).toBe('E_WORKER_CREATE_FAILED');
+    expect(err.message).toBe('could not start the parse worker: worker blocked');
+    expect(err.cause).toBe(blocked);
+    expect(setIR).not.toHaveBeenCalled();
+  });
+
   it('treats a Uint8Array or ArrayBuffer as bytes even if it carries IR-shaped properties', async () => {
     for (const make of [() => new Uint8Array([0x47]), () => new ArrayBuffer(1)]) {
       const w = recordingWorker();

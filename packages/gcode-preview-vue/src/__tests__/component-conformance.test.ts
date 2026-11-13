@@ -8,7 +8,10 @@ import {
   makeSuiteStubGL,
   runComponentConformanceSuite
 } from '@chestnutlabs/gcode-preview-core/testing';
+import type { GcodePreviewControls } from '@chestnutlabs/gcode-preview-core';
 import { GcodePreview } from '../index';
+
+type Drawn = { chunkMeshes: { geometry: { drawRange: { count: number } } }[] };
 
 const settle = async (): Promise<void> => {
   for (let i = 0; i < 4; i++) await new Promise((r) => setTimeout(r, 0));
@@ -24,20 +27,25 @@ runComponentConformanceSuite(
       const comp = ref<{
         preview: {
           raw: { renderer(): unknown };
-          controls: { setCameraMode(mode: 'perspective' | 'orthographic'): void };
+          controls: GcodePreviewControls;
           parse(bytes: Uint8Array): Promise<unknown>;
         };
       } | null>(null);
+      const source = ref<Uint8Array | null>(null);
       const container = document.body.appendChild(document.createElement('div'));
       const app = createApp(
         defineComponent({
           setup: () => () =>
             h(GcodePreview, {
               ref: comp,
+              source: source.value,
               renderer: opts.renderer,
               quality: 'lines',
               cameraFov: opts.cameraFov,
               pixelRatio: opts.pixelRatio,
+              scrub: opts.scrub,
+              scrubTime: opts.scrubTime,
+              layerRange: opts.layerRange,
               createWorker: () => new SuiteStubWorker(undefined, opts.ir),
               rendererOptions: {
                 createRenderer: () => makeSuiteStubGL(canvas),
@@ -65,6 +73,13 @@ runComponentConformanceSuite(
           comp.value?.preview.controls.setCameraMode(mode);
           await nextTick();
         },
+        setSource: async (bytes) => {
+          source.value = bytes;
+          await nextTick();
+        },
+        firstChunkDrawCount: () =>
+          (comp.value!.preview.raw.renderer() as Drawn).chunkMeshes[0].geometry.drawRange.count,
+        controls: () => comp.value!.preview.controls,
         settle,
         unmount: () => {
           app.unmount();

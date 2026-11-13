@@ -28,28 +28,32 @@ runComponentConformanceSuite(
       const ref = createRef<GcodePreviewHandle>();
       const host = document.body.appendChild(document.createElement('div'));
       let root: Root | null = null;
+      let source: Uint8Array | null = null;
+      const el = () =>
+        createElement(GcodePreview, {
+          ref,
+          source,
+          renderer: opts.renderer,
+          quality: 'lines',
+          cameraFov: opts.cameraFov,
+          pixelRatio: opts.pixelRatio,
+          scrub: opts.scrub,
+          scrubTime: opts.scrubTime,
+          layerRange: opts.layerRange,
+          createWorker: () => new SuiteStubWorker(undefined, opts.ir),
+          rendererOptions: {
+            createRenderer: () => makeSuiteStubGL(canvas),
+            scheduleFrame: (f: () => void) => f(),
+            chunksPerTick: 8
+          },
+          onReady: (e) => cb.onReady(e.segments),
+          onBuildComplete: (e) => cb.onBuildComplete(e.segments),
+          onDisclosure: (text) => cb.onDisclosure(text),
+          onRendererUnsupported: (e) => cb.onRendererUnsupported?.(e.feature, e.message)
+        });
       await act(async () => {
         root = createRoot(host);
-        root.render(
-          createElement(GcodePreview, {
-            ref,
-            source: null,
-            renderer: opts.renderer,
-            quality: 'lines',
-            cameraFov: opts.cameraFov,
-            pixelRatio: opts.pixelRatio,
-            createWorker: () => new SuiteStubWorker(undefined, opts.ir),
-            rendererOptions: {
-              createRenderer: () => makeSuiteStubGL(canvas),
-              scheduleFrame: (f: () => void) => f(),
-              chunksPerTick: 8
-            },
-            onReady: (e) => cb.onReady(e.segments),
-            onBuildComplete: (e) => cb.onBuildComplete(e.segments),
-            onDisclosure: (text) => cb.onDisclosure(text),
-            onRendererUnsupported: (e) => cb.onRendererUnsupported?.(e.feature, e.message)
-          })
-        );
+        root.render(el());
       });
       return {
         emitBuild: async (decimation, segments) => {
@@ -66,6 +70,12 @@ runComponentConformanceSuite(
         setCameraMode: async (mode) => {
           await act(async () => ref.current?.controls.setCameraMode(mode));
         },
+        setSource: async (bytes) => {
+          source = bytes;
+          await act(async () => root?.render(el()));
+        },
+        firstChunkDrawCount: () => ref.current!.raw.renderer()!.chunkMeshes[0].geometry.drawRange.count,
+        controls: () => ref.current!.controls,
         settle,
         unmount: async () => {
           await act(async () => root?.unmount());

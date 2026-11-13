@@ -26,6 +26,9 @@ runComponentConformanceSuite(
       el.quality = 'lines';
       if (opts.cameraFov !== undefined) el.cameraFov = opts.cameraFov;
       if (opts.pixelRatio !== undefined) el.pixelRatio = opts.pixelRatio;
+      if (opts.scrub !== undefined) el.scrub = opts.scrub;
+      if (opts.scrubTime !== undefined) el.scrubTime = opts.scrubTime;
+      if (opts.layerRange !== undefined) el.layerRange = opts.layerRange;
       el.rendererOptions = {
         createRenderer: () => makeSuiteStubGL(canvas),
         scheduleFrame: (f) => f(),
@@ -46,6 +49,11 @@ runComponentConformanceSuite(
         emitBuild: (decimation, segments) => emitSuiteBuild(el.raw.renderer(), decimation, segments),
         parse: (bytes) => el.parse(bytes),
         setCameraMode: (mode) => el.controls.setCameraMode(mode),
+        setSource: (bytes) => {
+          el.source = bytes;
+        },
+        firstChunkDrawCount: () => el.raw.renderer()!.chunkMeshes[0].geometry.drawRange.count,
+        controls: () => el.controls,
         settle,
         unmount: () => el.remove()
       };

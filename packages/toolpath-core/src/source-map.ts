@@ -81,7 +81,10 @@ export function segmentAtSourceLine(sourceIndex: SourceIndex, lineIndex: SourceL
     if (offsets[mid] < range[0]) lo = mid + 1;
     else hi = mid;
   }
-  if (lo < offsets.length && offsets[lo] >= range[0] && offsets[lo] < range[1]) {
+  // The lower-bound search already guarantees offsets[lo] >= range[0] whenever lo < length, so only
+  // the end of the range needs checking. (`lo < offsets.length` is kept as the explicit bounds check;
+  // a typed array would read `undefined` past the end, which also fails `< range[1]`.)
+  if (lo < offsets.length && offsets[lo] < range[1]) {
     return sourceIndex.segmentIndices[lo];
   }
   // The line produced no segment (comment, blank, or a non-motion command) — honestly -1.
