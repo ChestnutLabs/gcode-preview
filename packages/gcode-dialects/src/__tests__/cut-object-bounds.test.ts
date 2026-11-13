@@ -40,6 +40,25 @@ describe('a labelled cut counts toward objectBounds through the dialect sink (#5
     expect(r.ir.header.capabilities.nonModelClassification).toBe('unavailable');
   });
 
+  it('a labelled laser ARC (Cut | ArcSegment) counts too, not only a pure Cut', () => {
+    const r = must(
+      annotate(
+        [klipper()],
+        [
+          'EXCLUDE_OBJECT_DEFINE NAME=burn',
+          'G0 X50 Y50',
+          'EXCLUDE_OBJECT_START NAME=burn',
+          'M3 S200',
+          'G2 X70 Y50 I10 J0 F800',
+          'M5',
+          'EXCLUDE_OBJECT_END NAME=burn'
+        ]
+      )
+    );
+    expect(r.ir.segments.kind[1]).toBe(160); // Cut (128) | ArcSegment (32)
+    expect(box(r.ir.objectBounds)).toEqual([50, 50, 0, 70, 59.99784, 0]);
+  });
+
   it('a printed part plus a labelled burn: objectBounds is the union, modelBounds stays the print', () => {
     const r = must(
       annotate(
