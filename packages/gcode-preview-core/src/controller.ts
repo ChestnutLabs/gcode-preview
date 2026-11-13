@@ -362,7 +362,9 @@ export interface GcodePreviewControls {
   /**
    * Marks the volume consumer-configured: file-discovered geometry stops auto-applying. Throws `RangeError`
    * at once for a volume the grid cannot draw (even before the 3D renderer has loaded, and in 2D); a rejected
-   * volume does not count as configured. A `MachineGeometry` is left to the renderer.
+   * volume does not count as configured. A `MachineGeometry` is left to the renderer. `null` or `undefined` does
+   * nothing: the current plate stays (there is no "remove the plate" on the toolpath viewer). That differs on
+   * purpose from the model viewer, whose `setBuildVolume(null)` removes its plate (DD-031).
    */
   setBuildVolume(def: BuildVolumeDef | MachineGeometry): void;
   /** Show/hide the build-volume wireframe cage independently of the bed/plate (#306/#6). */

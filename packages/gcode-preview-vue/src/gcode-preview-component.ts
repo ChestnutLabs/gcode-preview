@@ -245,11 +245,12 @@ export const GcodePreview = defineComponent({
     // built with them, so it skips this (a re-applied quality would rebuild). Subscribed above first.
     if (props.renderer === '2d') {
       if (props.quality !== 'auto') preview.controls.setQuality(props.quality);
-      if (props.cameraMode !== 'perspective') preview.controls.setCameraMode(props.cameraMode);
-      if (props.cameraFov !== undefined && props.cameraFov !== DEFAULT_LENS) {
+      if (props.cameraMode != null && props.cameraMode !== 'perspective')
+        preview.controls.setCameraMode(props.cameraMode);
+      if (props.cameraFov != null && props.cameraFov !== DEFAULT_LENS) {
         preview.controls.setCameraFov(props.cameraFov);
       }
-      if (props.pixelRatio !== undefined) preview.controls.setPixelRatio(props.pixelRatio);
+      if (props.pixelRatio != null) preview.controls.setPixelRatio(props.pixelRatio);
     }
 
     // ---- prop wiring: each prop is a thin call into the composable (D1 shell rule) ----
@@ -352,29 +353,31 @@ export const GcodePreview = defineComponent({
     watch(
       () => props.qualityMode,
       (mode) => {
-        if (mode !== undefined) preview.controls.setQualityMode(mode);
+        if (mode != null) preview.controls.setQualityMode(mode);
       }
     );
     watch(
       () => props.progressivePreview,
       (mode) => {
-        if (mode !== undefined) preview.controls.setProgressivePreview(mode);
+        if (mode != null) preview.controls.setProgressivePreview(mode);
       }
     );
     watch(
       () => props.cameraMode,
-      (mode) => preview.controls.setCameraMode(mode)
+      (mode) => {
+        if (mode != null) preview.controls.setCameraMode(mode);
+      }
     );
     watch(
       () => props.cameraFov,
       (fov) => {
-        if (fov !== undefined) preview.controls.setCameraFov(fov);
+        if (fov != null) preview.controls.setCameraFov(fov);
       }
     );
     watch(
       () => props.pixelRatio,
       (ratio) => {
-        if (ratio !== undefined) preview.controls.setPixelRatio(ratio);
+        if (ratio != null) preview.controls.setPixelRatio(ratio);
       }
     );
     watch(
@@ -388,7 +391,7 @@ export const GcodePreview = defineComponent({
     watch(
       () => props.view,
       (view) => {
-        if (view !== undefined) preview.controls.setView(view);
+        if (view != null) preview.controls.setView(view);
       },
       { immediate: true }
     );

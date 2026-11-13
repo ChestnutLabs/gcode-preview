@@ -104,8 +104,9 @@ replaced before it started emits nothing.
 
 A control you call before the 3D renderer has loaded is queued and applied when it is ready. A bad value, for
 example a theme opacity outside 0–1, is never queued: the call throws `RangeError` at once, before and after the
-load, with the same message the renderer uses. An option or prop left `null` or `undefined` means "unset"
-(the default), never an error. If the renderer still rejects a queued call (rare, since values are checked first), you get an `error`
+load, with the same message the renderer uses. An option or prop left `null` or `undefined` is not an error: before
+any value is set it means the default, and a prop cleared to `null` later leaves the current value (the one
+exception for now is `colorMode`, where `null` still throws). If the renderer still rejects a queued call (rare, since values are checked first), you get an `error`
 event and `state.error` with code `E_CONTROL_REJECTED` and a message that names the control; the other queued
 controls still apply.
 
@@ -248,6 +249,10 @@ Deliberate differences, not drift:
   property. An invalid attribute value (non-numeric or outside 10-120) is ignored and the last valid lens is kept; setting
   the property to an invalid value throws `RangeError`. `theme` and `buildVolume` are properties only (objects).
   `show-volume-cage` is an attribute too: absent or anything but `"false"` means the cage is on.
+- **Clearing the plate.** On the model viewer, `setBuildVolume(null)` (or a `buildVolume` prop cleared to `null`)
+  removes the plate. On the toolpath viewer it does nothing: the current plate stays, also after a volume was set,
+  and a bed found in a later file is reported (`machine-geometry-discovered`) but not applied. The toolpath renderer
+  has no "remove the plate" operation. Before any volume is set, `buildVolume: null` there lets a file's bed apply.
 - **Model viewer themes.** Only `background`, the grid and outline fields, `bedSurface` and `contactShadow` apply.
   `theme.background` beats the `background` prop, which is the fallback tier.
 - **2D renderer** (`renderer="2d"`). A flat top-down view: `theme` and the cage are ignored (no-ops). A lens, as a

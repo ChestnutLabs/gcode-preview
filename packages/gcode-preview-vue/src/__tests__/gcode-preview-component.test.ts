@@ -25,6 +25,8 @@ interface Mounted {
     showTravel: ReturnType<typeof ref<boolean>>;
     progress: ReturnType<typeof shallowRef<ProgressObservation | null>>;
     buildVolume: ReturnType<typeof shallowRef<{ x: number; y: number; z: number } | null | undefined>>;
+    /** Extra props that can change after mount (spread after `extra`). */
+    dyn: ReturnType<typeof shallowRef<Record<string, unknown>>>;
   };
 }
 
@@ -55,7 +57,8 @@ function mountPreview(
     progress: shallowRef<ProgressObservation | null>(null),
     buildVolume: shallowRef<{ x: number; y: number; z: number } | null | undefined>(
       'volume' in opts ? opts.volume : opts.consumerVolume === true ? { x: 220, y: 220, z: 250 } : undefined
-    )
+    ),
+    dyn: shallowRef<Record<string, unknown>>({ ...opts.extra })
   };
   const Parent = defineComponent({
     setup() {
@@ -89,7 +92,7 @@ function mountPreview(
           'onMachine-geometry-discovered': record('machine-geometry-discovered'),
           'onProgress-presentation-changed': record('progress-presentation-changed'),
           onDisclosure: record('disclosure'),
-          ...opts.extra
+          ...props.dyn.value
         });
     }
   });
@@ -208,6 +211,60 @@ describe('<GcodePreview> — a null prop means unset (#590 round A)', () => {
     m.props.buildVolume.value = null;
     await settle();
     expect(r.volumeDef).toMatchObject({ x: 100, y: 100, z: 100 });
+    expect(m.handle().state.error).toBeNull();
+    m.app.unmount();
+  });
+});
+
+describe('<GcodePreview> — a prop cleared to null after mount keeps the current value (#590 round B)', () => {
+  // Vue applies a prop default only for `undefined`, so a cleared `:camera-mode="x ?? null"` reaches the watcher
+  // as null. It must leave the current value: no setter call, no RangeError, in 2D and in 3D.
+  const CASES: Array<[prop: string, value: unknown, control: string]> = [
+    ['cameraMode', 'orthographic', 'setCameraMode'],
+    ['qualityMode', 'full', 'setQualityMode'],
+    ['progressivePreview', 'hold', 'setProgressivePreview'],
+    ['view', 'top', 'setView'],
+    ['cameraFov', 40, 'setCameraFov'],
+    ['pixelRatio', 2, 'setPixelRatio']
+  ];
+  for (const mode of ['3d', '2d'] as const) {
+    for (const [prop, value, control] of CASES) {
+      it(`${mode}: ${prop} set at mount, then null → ${control} is not called and nothing throws`, async () => {
+        const m = mountPreview({ extra: { renderer: mode, [prop]: value } });
+        const errors: unknown[] = [];
+        m.app.config.errorHandler = (err) => {
+          errors.push(err);
+        };
+        m.props.source.value = new Uint8Array(1_000);
+        await settle();
+        expect(m.emitted['ready']?.[0]).toMatchObject({ segments: 12, layers: 2, complete: true });
+        const controls = m.handle().controls as unknown as Record<string, (...a: unknown[]) => unknown>;
+        const calls: unknown[][] = [];
+        const original = controls[control];
+        controls[control] = (...a: unknown[]) => {
+          calls.push(a);
+          return original.apply(controls, a);
+        };
+        m.props.dyn.value = { renderer: mode, [prop]: null };
+        await settle();
+        controls[control] = original;
+        expect(calls).toEqual([]);
+        expect(errors).toEqual([]);
+        expect(m.handle().state.error).toBeNull();
+        m.app.unmount();
+      });
+    }
+  }
+  it('2d: cameraMode / cameraFov / pixelRatio null at mount build the viewer without a throw', async () => {
+    const m = mountPreview({ extra: { renderer: '2d', cameraMode: null, cameraFov: null, pixelRatio: null } });
+    const errors: unknown[] = [];
+    m.app.config.errorHandler = (err) => {
+      errors.push(err);
+    };
+    m.props.source.value = new Uint8Array(1_000);
+    await settle();
+    expect(m.emitted['ready']?.[0]).toMatchObject({ segments: 12, layers: 2, complete: true });
+    expect(errors).toEqual([]);
     expect(m.handle().state.error).toBeNull();
     m.app.unmount();
   });
