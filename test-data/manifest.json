@@ -906,6 +906,75 @@
       "expectedCapabilities": {},
       "sizeTier": "adversarial",
       "limitations": "Deliberately malformed for the Packet 2 bgcode guard sweep; must FAIL with the structured error in test-data/fixtures/bgcode/adversarial/README.md."
+    },
+    {
+      "id": "cnc-plotter-servo-pen",
+      "path": "test-data/fixtures/cnc/plotter-servo-pen.gcode",
+      "sha256": "9e6ce7504956e8fbadcd306bfe473183ac674d32fa29881de551157989cdff36",
+      "bytes": 552,
+      "origin": "Hand-written Chestnut Labs CNC/plotter fixture (#189)",
+      "contributor": "chestnutlabs",
+      "redistribution": "chestnut-original-mit",
+      "slicer": "n/a (hand-written servo-pen plotter program)",
+      "targetFamily": "Pen plotter (servo pen, M280)",
+      "features": [
+        "travel",
+        "non-print",
+        "arcs",
+        "pen-plotter"
+      ],
+      "expectedCapabilities": {
+        "layers": "unavailable",
+        "cutMoves": "unavailable"
+      },
+      "sizeTier": "tiny",
+      "limitations": "Pen state is not modelled: M280 is reported as unsupported-command, so pen-down strokes are Travel like pen-up moves, and bounds (drawn extent) is empty; only boundsWithTravel holds the drawing (#579, DD-012 D3 penState; framing: #580). Not validated on hardware."
+    },
+    {
+      "id": "cnc-plotter-z-pen",
+      "path": "test-data/fixtures/cnc/plotter-z-pen.gcode",
+      "sha256": "9dce733ca0df82d88a43542d36fffbbb86f47e2d9a0320565f747f660550412c",
+      "bytes": 413,
+      "origin": "Hand-written Chestnut Labs CNC/plotter fixture (#189)",
+      "contributor": "chestnutlabs",
+      "redistribution": "chestnut-original-mit",
+      "slicer": "n/a (hand-written Z-lift pen plotter program)",
+      "targetFamily": "Pen plotter (Z-lift pen)",
+      "features": [
+        "travel",
+        "non-print",
+        "pen-plotter"
+      ],
+      "expectedCapabilities": {
+        "layers": "unavailable",
+        "cutMoves": "unavailable"
+      },
+      "sizeTier": "tiny",
+      "limitations": "Pen state is not modelled: a Z-lift pen has no tool-on code, so pen-down strokes are Travel like pen-up moves, and bounds (drawn extent) is empty; only boundsWithTravel holds the drawing (#579, DD-012 D3 penState; framing: #580). Not validated on hardware."
+    },
+    {
+      "id": "cnc-router-inch-g20",
+      "path": "test-data/fixtures/cnc/router-inch-g20.gcode",
+      "sha256": "a0e3efe2209c653d00a82ab1140490f2fc601e27ecafc7777d3d82a7469e03be",
+      "bytes": 407,
+      "origin": "Hand-written Chestnut Labs CNC/plotter fixture (#189)",
+      "contributor": "chestnutlabs",
+      "redistribution": "chestnut-original-mit",
+      "slicer": "n/a (hand-written inch-units CNC router program)",
+      "targetFamily": "CNC router (inch units, G20)",
+      "features": [
+        "travel",
+        "non-print",
+        "arcs",
+        "cut",
+        "inch-units"
+      ],
+      "expectedCapabilities": {
+        "layers": "unavailable",
+        "cutMoves": "known"
+      },
+      "sizeTier": "tiny",
+      "limitations": "G20 is recorded (header.units = in) but coordinates are NOT converted to mm: the IR and every renderer carry inch values, so the part draws 25.4x too small on a mm bed (#578; re-pin when the parser normalizes G20 to mm). Not validated on hardware."
     }
   ]
 }

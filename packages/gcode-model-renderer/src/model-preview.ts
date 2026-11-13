@@ -265,9 +265,8 @@ export function createModelPreviewController(options: ModelPreviewControllerOpti
   });
 
   /** Mirror the engine's current plate placement into state after something that can change it. */
-  const syncPlacement = (): void => {
-    if (engine === null) return;
-    const p = engine.getPlacement();
+  const syncPlacement = (v: ModelViewer): void => {
+    const p = v.getPlacement();
     const o = snapshot.placementOffset;
     const same =
       p.placement === snapshot.placement &&
@@ -410,7 +409,7 @@ export function createModelPreviewController(options: ModelPreviewControllerOpti
       currentBuildVolume = def;
       if (engine !== null) {
         engine.setBuildVolume(def);
-        syncPlacement();
+        syncPlacement(engine);
       }
     },
     setBuildVolumeCage(visible) {
@@ -441,7 +440,7 @@ export function createModelPreviewController(options: ModelPreviewControllerOpti
       currentScope = scope;
       if (engine !== null) {
         engine.setRenderScope(scope);
-        syncPlacement();
+        syncPlacement(engine);
       }
     },
     frame() {

@@ -112,7 +112,9 @@ export function narrativeChecks(content, version) {
   // 2) The release-history list must include the version being shipped.
   const histStart = content.indexOf('publishing from tagged');
   const histEnd = content.indexOf('Changesets accumulate');
-  const history = histStart >= 0 && histEnd > histStart ? content.slice(histStart, histEnd) : '';
+  // substring, not slice: substring swaps reversed bounds and clamps -1 to 0, so each guard clause
+  // below is what keeps a missing or misordered anchor from reading a region outside the list.
+  const history = histStart >= 0 && histEnd > histStart ? content.substring(histStart, histEnd) : '';
   results.push({
     ok: history.includes('`v' + version + '`'),
     detail: history
@@ -292,7 +294,7 @@ export function changedCapabilityInventory(version) {
  * { ok, message } — the gate fails if any is not ok. Purely content-based (no git), so the
  * gate is deterministic regardless of tag history. It fails when:
  *   - the file does not declare the exact `version` (the "Review version:" anchor);
- *   - any per-package row's `Status:` is still `pending` (or an unrecognized keyword);
+ *   - there is no per-package row, or any row's `Status:` is still `pending` (or an unrecognized keyword);
  *   - any of the three global markers (Product/Docs/Visual review) is missing or `pending`.
  * The greppable conventions are documented in the file's own header comment.
  */
@@ -309,9 +311,11 @@ export function reviewChecks(content, version) {
   });
 
   // 2) Per-package dispositions: no row may remain `pending` (or carry an unknown keyword).
-  //    A disposition is a table cell `| Status: <keyword> |` — anchoring to the cell delimiters
-  //    keeps prose mentions of "Status: pending" (in the header comment / guidance) from matching.
-  const statusRe = /\|\s*Status:\s*([A-Za-z-]+)\s*\|/g;
+  //    A disposition is a table cell `| Status: <keyword> |`, optionally with notes after the keyword
+  //    (`| Status: reviewed — README already covers it |`, as the v0.21.2 and v0.23.0 reviews did).
+  //    Anchoring to the leading cell delimiter keeps prose mentions of "Status: pending" (in the
+  //    header comment / guidance) from matching.
+  const statusRe = /\|\s*Status:\s*([A-Za-z-]+)[^|\n]*\|/g;
   let m;
   let rows = 0;
   const unresolved = [];
@@ -320,12 +324,16 @@ export function reviewChecks(content, version) {
     const kw = m[1].toLowerCase();
     if (!REVIEW_STATUSES.includes(kw)) unresolved.push(kw);
   }
+  // Zero rows fails too: the stamper always seeds at least one (a `not-applicable` row when no
+  // package changed), so an empty table means the inventory was deleted, not reconciled.
   results.push({
-    ok: unresolved.length === 0,
+    ok: rows > 0 && unresolved.length === 0,
     message:
-      unresolved.length === 0
-        ? `all ${rows} package disposition(s) resolved`
-        : `unresolved package disposition(s): ${unresolved.join(', ')} (allowed: ${REVIEW_STATUSES.join(' / ')})`
+      rows === 0
+        ? 'no package disposition rows found (expected at least one `| Status: <keyword> |` cell)'
+        : unresolved.length === 0
+          ? `all ${rows} package disposition(s) resolved`
+          : `unresolved package disposition(s): ${unresolved.join(', ')} (allowed: ${REVIEW_STATUSES.join(' / ')})`
   });
 
   // 3) Global disposition markers — all three bold list items must say `resolved`. Anchored to
