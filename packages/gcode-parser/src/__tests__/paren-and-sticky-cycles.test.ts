@@ -13,14 +13,51 @@ function z1Of(src: string): number[] {
 }
 
 describe('G91 canned cycles keep R and Z as sticky increments', () => {
-  it('LinuxCNC G81 incremental example: each hole clears at current Z + R and drills R + Z', () => {
-    // LinuxCNC docs: from (1,2,3), `G91 G81 X4 Y5 Z-0.6 R1.8` → clear Z 4.8, hole bottom 4.2, retract to 3 (G98).
-    const src = 'G90\nG0 X1 Y2 Z3\nG91 G98\nG81 X4 Y5 Z-0.6 R1.8\nG81 X4 Y5\n';
-    const z = z1Of(src);
-    const tail = z.slice(-8);
-    const expected = [3, 4.8, 4.2, 3, 3, 4.8, 4.2, 3];
-    expect(tail).toHaveLength(8);
+  it('LinuxCNC G81 incremental example, first hole: clear 4.8, bottom 4.2, retract to 4.8 (G98, R above start Z)', () => {
+    // LinuxCNC g-code.html, G81 with `G91 G81 X4 Y5 Z-0.6 R1.8` from (1,2,3): "A rapid move parallel to the
+    // Z-axis to (X5, Y7, Z4.8)" ... "feed parallel to the Z-axis to (X5, Y7, Z4.2)" ... retract "to the original
+    // Z position (if that is above the R position and the retract mode is G98, OLD_Z), or otherwise to the R
+    // position", i.e. 4.8 here. (The L repeat count and the preliminary Z-up move are not modelled.)
+    const z = z1Of('G90\nG0 X1 Y2 Z3\nG91 G98\nG81 X4 Y5 Z-0.6 R1.8\n');
+    const tail = z.slice(-4);
+    const expected = [3, 4.8, 4.2, 4.8];
+    expect(tail).toHaveLength(4);
     tail.forEach((v, i) => expect(v).toBeCloseTo(expected[i], 4));
+  });
+
+  it('LinuxCNC G81 incremental example, next block: R is re-applied from the new current Z (4.8 + 1.8 = 6.6, depth 6.0)', () => {
+    const z = z1Of('G90\nG0 X1 Y2 Z3\nG91 G98\nG81 X4 Y5 Z-0.6 R1.8\nG81 X4 Y5\n');
+    const tail = z.slice(-4);
+    const expected = [4.8, 6.6, 6.0, 6.6];
+    expect(tail).toHaveLength(4);
+    tail.forEach((v, i) => expect(v).toBeCloseTo(expected[i], 4));
+  });
+
+  it('G98 retracts to the start Z when that is above R, and to R when R is above it (G90)', () => {
+    // start 5, R 2: retract to 5.  start 1, R 3: retract to R (3), not back down to 1.
+    expect(z1Of('G90\nG0 Z5\nG98\nG81 X1 Y0 Z-1 R2\n').slice(-4)).toEqual([5, 2, -1, 5]);
+    expect(z1Of('G90\nG0 Z1\nG98\nG81 X1 Y0 Z-1 R3\n').slice(-4)).toEqual([1, 3, -1, 3]);
+  });
+
+  it('G90 bare X/Y repeat keeps the stored absolute planes (R 2, Z -1)', () => {
+    const z = z1Of('G90\nG0 Z5\nG99\nG81 X1 Y0 Z-1 R2\nX1\n');
+    expect(z.slice(-4)).toEqual([2, 2, -1, 2]);
+  });
+
+  it('G91 with no Z ever given reads it as 0: the depth is the R plane itself, and the word is reported', () => {
+    const src = 'G90\nG0 Z5\nG91 G98\nG81 X1 Y0 R2\nX1\n';
+    expect(z1Of(src).slice(-8)).toEqual([5, 7, 7, 7, 7, 9, 9, 9]);
+    const w = parseGcodeToIR(src).ir.header.warnings.filter((x) => x.code === 'canned-cycle-missing-word');
+    expect(w).toHaveLength(1);
+    expect(w[0].message).toContain('no Z word');
+  });
+
+  it('G91 with no R ever given reads it as 0: the R plane is the current Z, depth R + Z, and the word is reported', () => {
+    const src = 'G90\nG0 Z5\nG91 G98\nG81 X1 Y0 Z-1\nX1\n';
+    expect(z1Of(src).slice(-8)).toEqual([5, 5, 4, 5, 5, 5, 4, 5]);
+    const w = parseGcodeToIR(src).ir.header.warnings.filter((x) => x.code === 'canned-cycle-missing-word');
+    expect(w).toHaveLength(1);
+    expect(w[0].message).toContain('no R word');
   });
 
   it('G99: a later G81 block without R re-applies R from its own current Z (7 + 2 = 9, depth 8)', () => {
@@ -71,6 +108,20 @@ describe('unbalanced ( comments', () => {
     expect(codes('(never closed\nG1 X1\n')).toHaveLength(1);
   });
 
+  it('Marlin text-argument M-codes (M117, M118, M486, any case) never warn; M73 and T0 still do', () => {
+    for (const line of [
+      'M117 Printing (50%',
+      'M486 AShape (copy',
+      'M118 echo (open',
+      'm117 lower case (open',
+      '  M117 a((b)',
+      'M117 Layer 3 (of 10)'
+    ])
+      expect(codes(`${line}\nG1 X5\n`), line).toHaveLength(0);
+    for (const line of ['M73 P10 R5 (estimate', '(Made with Fusion 360 (v2.0))', 'T0 (tool 0', 'M1170 (x', 'M11 (x'])
+      expect(codes(`${line}\nG1 X5\n`), line).toHaveLength(1);
+  });
+
   it('dialect extended commands with bare parentheses do not warn', () => {
     expect(codes('EXCLUDE_OBJECT_START NAME=cube_(1\nEXCLUDE_OBJECT_DEFINE NAME=a_((b))\nG1 X1\n')).toHaveLength(0);
   });
@@ -95,6 +146,19 @@ describe('onComment is paren-aware', () => {
 
   it('a ; inside an unclosed ( is swallowed like the lexer does', () => {
     expect(comments('G1 X1 (a;b')).toEqual([]);
+  });
+
+  it('extended commands and text M-codes keep the plain first-; split, so their ( is data', () => {
+    expect(comments('EXCLUDE_OBJECT_DEFINE NAME=cube_(1 CENTER=10,10 ; Klipper with comment')).toEqual([
+      [' Klipper with comment', 0]
+    ]);
+    expect(comments('M117 a(b ; real comment')).toEqual([[' real comment', 0]]);
+    expect(comments('m117 a(b ; real comment')).toEqual([[' real comment', 0]]);
+    expect(comments('M486 AShape (copy ; real comment')).toEqual([[' real comment', 0]]);
+    expect(comments('M118 x(y;z) ; c')).toEqual([['z) ; c', 0]]);
+    // not a text M-code: M1170 and M11 are paren-aware like any G-code line
+    expect(comments('M1170 a(b;c) ; real')).toEqual([[' real', 0]]);
+    expect(comments('M11 a(b;c) ; real')).toEqual([[' real', 0]]);
   });
 
   it('a ; before any ( is unchanged, and later parens stay in the comment text', () => {
