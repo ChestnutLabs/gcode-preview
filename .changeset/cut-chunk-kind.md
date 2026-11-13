@@ -12,7 +12,7 @@ CNC and laser Cut moves are now their own toggleable move kind (`'cut'`), no lon
 - **Fixes:** a Cut segment used to land in the travel chunk. Hiding travel hid the cuts (so a CNC file looked empty),
   and under decimation the cuts were dropped along with travel.
 - **Decimation:** cuts now follow the same rule as extrusion (kept if first/last of a layer or every Nth), so a large
-  CNC file thins out instead of disappearing. Cuts do not count toward the automatic decimation threshold yet.
+  CNC file thins out instead of disappearing.
 - **New toggle:** `setKindVisible('cut', visible)`, `showCut` on Vue, React, Svelte and `renderStill` (default `true`),
   and `show-cut` / `showCut` on `<gcode-preview>`.
 - **2D view:** unchanged. It does not draw Cut moves yet.
