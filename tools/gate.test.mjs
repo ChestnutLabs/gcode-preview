@@ -122,6 +122,7 @@ describe('gate CLI', () => {
     expect(r.status).toBe(0);
     expect(r.calls[0]).toBe('npm ci');
     expect(r.calls).toContain('npm run pack:check');
+    expect(r.calls).toContain('npm run bundle:check');
   });
 });
 
@@ -158,6 +159,7 @@ describe('planSteps', () => {
       'docs:links',
       'test:consumer-vue',
       'pack:check',
+      'bundle:check',
       'docs:build'
     ]);
   });

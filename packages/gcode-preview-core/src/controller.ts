@@ -36,7 +36,9 @@ import type {
   Theme,
   TubeOptions
 } from '@chestnutlabs/gcode-renderer-three';
-import { CaptureUnsupportedError } from '@chestnutlabs/gcode-renderer-three';
+// Static value imports come from the three-free `./lite` entry only; the main entry is reached through
+// import() (bindCanvas, renderStill) so a 2D-only bundle never ships three.js (DD-014 D4).
+import { CaptureUnsupportedError } from '@chestnutlabs/gcode-renderer-three/lite';
 import { LayerView2DRenderer } from './renderer-2d-adapter.js';
 import { checkColorMode } from '@chestnutlabs/gcode-renderer-2d';
 import type { MoveKindToggle, PreviewRenderer, PreviewRendererEvent, RendererMode } from './renderer-interface.js';
