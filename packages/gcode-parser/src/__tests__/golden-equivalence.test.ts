@@ -54,7 +54,15 @@ const equivalenceFixtures = manifest.fixtures.filter((f) => f.sizeTier !== 'adve
 // a handful of bounded segments where the inherited first-word lexer yielded zero. Bounded and
 // harmless (the real path decodes the container first); excluded from strict adapter-equivalence and
 // pinned by its native golden, like the CNC motion corrections above.
-const INTENTIONAL_MOTION_CORRECTION = new Set(['demo-mach3', 'demo-easel', 'container-adv-traversal-names']);
+// cnc-router-inch-g20 (#189) is a CNC file like demo-easel (`M3` … `M5`): its spindle-engaged moves are
+// `Cut`, which the inherited adapter called Travel. Its positions DO match the adapter (neither engine
+// converts G20 inches to mm); only the masked-kind digest diverges. Pinned in corpus-cnc-plotter.test.ts.
+const INTENTIONAL_MOTION_CORRECTION = new Set([
+  'demo-mach3',
+  'demo-easel',
+  'container-adv-traversal-names',
+  'cnc-router-inch-g20'
+]);
 
 /**
  * #522: demo-3dbenchy has G2/G3 arcs that omit I or J. The inherited engine read the missing word as
