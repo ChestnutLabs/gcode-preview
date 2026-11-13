@@ -18,11 +18,11 @@ export {
 // Re-export the theme contract so core consumers get it three-free (#153, DD-009 D4).
 export type { Theme, MaterialPreset, ThemeColor } from '@chestnutlabs/gcode-renderer-three';
 // The Studio look (DD-032 §4.4): the preset theme + its lens, so a consumer needs no renderer import.
-export { studioTheme, STUDIO_CAMERA_FOV } from '@chestnutlabs/gcode-renderer-three';
+export { studioTheme, STUDIO_CAMERA_FOV } from '@chestnutlabs/gcode-renderer-three/lite';
 // Camera contracts (three-free type re-exports): projection + preset views + serializable state (#268).
 export type { CameraMode, CameraView, CameraState } from '@chestnutlabs/gcode-renderer-three';
 // The interactive canvas's resting pixel ratio: a number in (0, 4] or 'device'.
 export type { PixelRatioOption } from '@chestnutlabs/gcode-renderer-three';
 // Interactive view capture (DD-030 D1): the options type + the typed unsupported error for consumers.
 export type { CaptureOptions } from '@chestnutlabs/gcode-renderer-three';
-export { CaptureUnsupportedError } from '@chestnutlabs/gcode-renderer-three';
+export { CaptureUnsupportedError } from '@chestnutlabs/gcode-renderer-three/lite';

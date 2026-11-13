@@ -10,6 +10,10 @@ export default defineConfig({
       '@chestnutlabs/gcode-colors': fileURLToPath(new URL('../gcode-colors/src/index.ts', import.meta.url)),
       '@chestnutlabs/gcode-renderer-2d': fileURLToPath(new URL('../gcode-renderer-2d/src/index.ts', import.meta.url)),
       '@chestnutlabs/gcode-parser': fileURLToPath(new URL('../gcode-parser/src/index.ts', import.meta.url)),
+      // Before the bare name: a string alias also matches `<name>/...`, which would map `/lite` to index.ts/lite.
+      '@chestnutlabs/gcode-renderer-three/lite': fileURLToPath(
+        new URL('../gcode-renderer-three/src/lite.ts', import.meta.url)
+      ),
       '@chestnutlabs/gcode-renderer-three': fileURLToPath(
         new URL('../gcode-renderer-three/src/index.ts', import.meta.url)
       )
@@ -18,6 +22,7 @@ export default defineConfig({
   test: {
     include: ['src/__tests__/**/*.test.ts'],
     environment: 'node',
+    setupFiles: ['./vitest.setup.ts'],
     globals: false
   }
 });
