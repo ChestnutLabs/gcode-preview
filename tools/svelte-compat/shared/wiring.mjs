@@ -398,4 +398,88 @@ export function registerWiring({ describe, it, expect, beforeEach, svelte, expec
       m.unmount();
     });
   });
+
+  describe(`${label}: GcodePreview wiring: lens, projection, pixel ratio, tube and the 2D mount (#520)`, () => {
+    const lens = () => log.filter((l) => /^set(CameraMode|CameraFov|PixelRatio|Tube|Quality)\(/.test(l));
+    beforeEach(reset);
+
+    it('3D: construction values are the controller options and are NOT re-applied at mount; tube is construction-only', async () => {
+      const tube = { radialSegments: 5 };
+      const m = mountP({ cameraMode: 'orthographic', cameraFov: 35, pixelRatio: 1.5, tube, quality: 'lines' });
+      await settle();
+      expect(created[0].options.renderer).toMatchObject({
+        cameraMode: 'orthographic',
+        cameraFov: 35,
+        pixelRatio: 1.5,
+        tube: { radialSegments: 5 },
+        quality: 'lines'
+      });
+      expect(lens()).toEqual([]);
+      await m.set({ tube: { radialSegments: 9 } });
+      expect(lens()).toEqual([]);
+      m.unmount();
+    });
+
+    it('3D: a changed cameraMode / cameraFov / pixelRatio applies once with the literal value; same or unset applies nothing', async () => {
+      const m = mountP({ cameraMode: 'orthographic', cameraFov: 35, pixelRatio: 1.5 });
+      await settle();
+      await m.set({ cameraMode: 'perspective' });
+      expect(lens()).toEqual(['setCameraMode("perspective")']);
+      log.length = 0;
+      await m.set({ cameraFov: 60, pixelRatio: 'device' });
+      expect(lens()).toEqual(['setCameraFov(60)', 'setPixelRatio("device")']);
+      log.length = 0;
+      await m.set({ cameraMode: 'perspective', cameraFov: 60, pixelRatio: 'device' });
+      expect(lens()).toEqual([]);
+      await m.set({ cameraFov: undefined, pixelRatio: undefined });
+      expect(lens()).toEqual([]);
+      await m.set({ cameraFov: 35 });
+      expect(lens()).toEqual(['setCameraFov(35)']);
+      m.unmount();
+    });
+
+    it('2D: a mount at the documented defaults applies nothing, and the mode reaches the controller', async () => {
+      const m = mountP({ renderer: '2d', cameraMode: 'perspective', cameraFov: 50, quality: 'auto' });
+      await settle();
+      expect(created[0].options.renderer.mode).toBe('2d');
+      expect(lens()).toEqual([]);
+      m.unmount();
+    });
+
+    it('2D: a non-default mount value is applied once; 3D builds with it and applies nothing', async () => {
+      const m = mountP({ renderer: '2d', cameraMode: 'orthographic', cameraFov: 35, pixelRatio: 2, quality: 'lines' });
+      await settle();
+      expect(lens().sort()).toEqual(
+        ['setCameraFov(35)', 'setCameraMode("orthographic")', 'setPixelRatio(2)', 'setQuality("lines")'].sort()
+      );
+      // The applied value is now the mount value: setting it again sends nothing, a change sends one call.
+      log.length = 0;
+      await m.set({ cameraMode: 'orthographic', cameraFov: 35, pixelRatio: 2 });
+      expect(lens()).toEqual([]);
+      await m.set({ cameraMode: 'perspective' });
+      expect(lens()).toEqual(['setCameraMode("perspective")']);
+      m.unmount();
+    });
+  });
+
+  describe(`${label}: wiring coverage guard (every public prop is asserted with a literal)`, () => {
+    // A prop counts as covered when a wiring file passes it as `name: <value>` (not `undefined`) or a shorthand
+    // `name,` line in a mount / set call; the "never called when unset" lists are stripped first.
+    it.each([
+      ['GcodePreview.svelte', '../../../packages/gcode-preview-svelte/src/GcodePreview.svelte', 'wiring.mjs'],
+      ['ModelViewer.svelte', '../../../packages/gcode-preview-svelte/src/model/ModelViewer.svelte', 'model-wiring.mjs']
+    ])('%s', async (_name, rel, wiringFile) => {
+      const { readFileSync } = await import('node:fs');
+      const { resolve } = await import('node:path');
+      const shared = resolve(process.cwd(), '../shared'); // vitest runs from the leg dir (svelte4 / svelte5)
+      const props = [...readFileSync(resolve(shared, rel), 'utf8').matchAll(/^\s*export let (\w+)/gm)].map((x) => x[1]);
+      const wiring = readFileSync(resolve(shared, wiringFile), 'utf8').replace(
+        /for \(const never of \[[^\]]*\]\)/g,
+        ''
+      );
+      expect(props.length).toBeGreaterThan(10);
+      const uncovered = props.filter((p) => !new RegExp(`\\b${p}(: [^u\\s]|,\\n)`).test(wiring));
+      expect(uncovered).toEqual([]);
+    });
+  });
 }
