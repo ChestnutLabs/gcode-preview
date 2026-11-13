@@ -26,7 +26,10 @@
     "node": ">=22"
   },
   "type": "module",
-  "sideEffects": false,
+  "sideEffects": [
+    "./dist/define.js",
+    "./dist/model/define.js"
+  ],
   "main": "./dist/index.js",
   "module": "./dist/index.js",
   "types": "./dist/index.d.ts",

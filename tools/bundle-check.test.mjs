@@ -1,5 +1,17 @@
-import { describe, expect, it } from 'vitest';
-import { controlVerdict, isThreeModule, runtimeVerdict, startupChunks, threeSplit, verdict } from './bundle-check.mjs';
+import { describe, expect, it, vi } from 'vitest';
+import {
+  SIDE_EFFECT_IMPORTS,
+  cli,
+  controlVerdict,
+  isThreeModule,
+  main,
+  parseDefined,
+  runtimeVerdict,
+  sideEffectVerdict,
+  startupChunks,
+  threeSplit,
+  verdict
+} from './bundle-check.mjs';
 import { isRendererMain } from './bundle-check/startup-hook.mjs';
 
 const chunk = (name, { isEntry = false, staticImports = [], threeBytes = 0, bytes = 0 } = {}) => ({
@@ -98,5 +110,101 @@ describe('bundle-check classifier', () => {
       'pkg: could not be imported in Node: ReferenceError: window is not defined'
     ]);
     expect(runtimeVerdict('pkg', { loadsRenderer: false, ok: true, output: '' })).toEqual([]);
+  });
+});
+
+describe('bundle-check side-effect imports', () => {
+  it('checks both element registration entries, each for its own tag', () => {
+    expect(SIDE_EFFECT_IMPORTS.map((s) => [s.fixture, s.specifier, s.defines])).toEqual([
+      ['element-define.mjs', '@chestnutlabs/gcode-preview-element/define', 'gcode-preview'],
+      ['element-model-define.mjs', '@chestnutlabs/gcode-preview-element/model/define', 'gcode-model-viewer']
+    ]);
+  });
+
+  it('reads one name per DEFINED line, only whole lines', () => {
+    expect(parseDefined('DEFINED gcode-preview\nnoise DEFINED x\nDEFINED gcode-model-viewer\n')).toEqual([
+      'gcode-preview',
+      'gcode-model-viewer'
+    ]);
+    expect(parseDefined('')).toEqual([]);
+  });
+
+  it('passes only when the bundle registered the expected tag', () => {
+    const s = { specifier: 'pkg/define', defines: 'gcode-preview' };
+    expect(sideEffectVerdict(s, { defined: ['gcode-preview'], ok: true, output: '' })).toEqual([]);
+    expect(sideEffectVerdict(s, { defined: [], ok: true, output: '' })).toEqual([
+      'pkg/define: the production bundle never registers <gcode-preview> (registered: nothing); ' +
+        'the bundler dropped the side-effect import, so check "sideEffects" in the package.json'
+    ]);
+    // Registering a different tag does not count.
+    expect(sideEffectVerdict(s, { defined: ['gcode-model-viewer'], ok: true, output: '' })).toEqual([
+      'pkg/define: the production bundle never registers <gcode-preview> (registered: gcode-model-viewer); ' +
+        'the bundler dropped the side-effect import, so check "sideEffects" in the package.json'
+    ]);
+  });
+
+  it('main counts a dropped side-effect import as a failure (and a kept one as none)', async () => {
+    const quiet = [
+      vi.spyOn(console, 'log').mockImplementation(() => {}),
+      vi.spyOn(console, 'error').mockImplementation(() => {})
+    ];
+    try {
+      const opts = {
+        fixtures: [],
+        importUnder: () => ({ loadsRenderer: true, ok: false, output: '' }),
+        startupPackages: []
+      };
+      const imports = [{ fixture: 'x.mjs', specifier: 'pkg/define', defines: 'gcode-preview' }];
+      const dropped = async () => ({ defined: [], ok: true, output: '' });
+      const kept = async () => ({ defined: ['gcode-preview'], ok: true, output: '' });
+      expect(await main({ ...opts, sideEffectImports: imports, runSideEffect: dropped })).toBe(1);
+      expect(await main({ ...opts, sideEffectImports: [...imports, ...imports], runSideEffect: dropped })).toBe(2);
+      expect(await main({ ...opts, sideEffectImports: imports, runSideEffect: kept })).toBe(0);
+      // The runtime control still runs (and counts) when the side-effect half is all that's driven.
+      const untripped = () => ({ loadsRenderer: false, ok: true, output: '' });
+      expect(await main({ ...opts, importUnder: untripped, sideEffectImports: [] })).toBe(1);
+    } finally {
+      for (const s of quiet) s.mockRestore();
+    }
+  });
+
+  it('main checks the default lists: 5 startup packages and 2 side-effect imports', async () => {
+    const quiet = [
+      vi.spyOn(console, 'log').mockImplementation(() => {}),
+      vi.spyOn(console, 'error').mockImplementation(() => {})
+    ];
+    try {
+      // Every import "loads the renderer" (the control passes, each package fails) and every bundle registers nothing.
+      const tripped = () => ({ loadsRenderer: true, ok: false, output: '' });
+      const dropped = async () => ({ defined: [], ok: true, output: '' });
+      expect(await main({ fixtures: [], importUnder: tripped, runSideEffect: dropped })).toBe(7);
+    } finally {
+      for (const s of quiet) s.mockRestore();
+    }
+  });
+
+  it('cli exits 1 on failures or a crash, 0 when clean', async () => {
+    const quiet = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      const codes = [];
+      const exit = (c) => codes.push(c);
+      await cli(async () => 2, exit);
+      await cli(async () => 1, exit);
+      await cli(async () => 0, exit);
+      await cli(async () => {
+        throw new Error('boom');
+      }, exit);
+      expect(codes).toEqual([1, 1, 0, 1]);
+    } finally {
+      quiet.mockRestore();
+    }
+  });
+
+  it('a bundle that cannot run fails, even if it printed the tag first', () => {
+    const s = { specifier: 'pkg/define', defines: 'gcode-preview' };
+    const crashed = { defined: ['gcode-preview'], ok: false, output: 'ReferenceError: window is not defined\n  at x' };
+    expect(sideEffectVerdict(s, crashed)).toEqual([
+      'pkg/define: the production bundle could not be run in Node: ReferenceError: window is not defined'
+    ]);
   });
 });

@@ -26,6 +26,7 @@
  */
 import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
@@ -129,6 +130,81 @@ export function controlVerdict({ loadsRenderer }) {
     : ['runtime control: importing the renderer main entry did not trip the hook (the check is vacuous)'];
 }
 
+/**
+ * Documented side-effect imports: a consumer writes the one line and expects the side effect in a PRODUCTION
+ * bundle. A package.json `"sideEffects": false` that doesn't list these files lets the bundler drop the line,
+ * so no element is registered (shipped that way through v0.23.0; a dev server never tree-shakes, so only a
+ * production build shows it). Each fixture in tools/bundle-check/side-effects imports one specifier and nothing else.
+ */
+export const SIDE_EFFECT_IMPORTS = [
+  { fixture: 'element-define.mjs', specifier: '@chestnutlabs/gcode-preview-element/define', defines: 'gcode-preview' },
+  {
+    fixture: 'element-model-define.mjs',
+    specifier: '@chestnutlabs/gcode-preview-element/model/define',
+    defines: 'gcode-model-viewer'
+  }
+];
+
+/** The side-effect verdict for one import: `defined` is the custom-element names the bundle registered when run. */
+export function sideEffectVerdict({ specifier, defines }, { defined, ok, output }) {
+  if (!ok) return [`${specifier}: the production bundle could not be run in Node: ${output.trim().split('\n')[0]}`];
+  if (!defined.includes(defines)) {
+    return [
+      `${specifier}: the production bundle never registers <${defines}> (registered: ${defined.join(', ') || 'nothing'}); ` +
+        'the bundler dropped the side-effect import, so check "sideEffects" in the package.json'
+    ];
+  }
+  return [];
+}
+
+/** The `DEFINED <name>` lines a run printed, one per customElements.define call. */
+export function parseDefined(output) {
+  return [...output.matchAll(/^DEFINED (\S+)$/gm)].map((m) => m[1]);
+}
+
+/**
+ * Bundle a side-effect fixture with Vite in production mode (minified, tree-shaken, as a consumer's
+ * `vite build`), write it to a temp dir, and import the entry in Node with a `customElements` stub that
+ * prints each define. Returns `{ defined, ok, output }`.
+ */
+export async function runSideEffectBundle(fixture) {
+  const { build } = await import(pathToFileURL(path.join(repoRoot, 'node_modules/vite/dist/node/index.js')).href);
+  const entry = path.join(__dirname, 'bundle-check', 'side-effects', fixture);
+  const result = await build({
+    configFile: false,
+    logLevel: 'error',
+    mode: 'production',
+    root: path.dirname(entry),
+    build: {
+      write: false,
+      minify: true,
+      rollupOptions: { input: entry, external: EXTERNAL, preserveEntrySignatures: 'strict' }
+    }
+  });
+  const outputs = (Array.isArray(result) ? result : [result]).flatMap((r) => r.output);
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'bundle-check-side-effects-'));
+  try {
+    let entryFile = null;
+    for (const o of outputs) {
+      const file = path.join(dir, o.fileName);
+      fs.mkdirSync(path.dirname(file), { recursive: true });
+      fs.writeFileSync(file, o.type === 'chunk' ? o.code : o.source);
+      if (o.type === 'chunk' && o.isEntry) entryFile = file;
+    }
+    if (entryFile === null) return { defined: [], ok: false, output: 'no entry chunk in the Vite output' };
+    const script =
+      'globalThis.HTMLElement ??= class {};' +
+      'const seen = new Set();' +
+      'globalThis.customElements = { define(n) { seen.add(n); console.log("DEFINED " + n); }, get(n) { return seen.has(n) ? class {} : undefined; } };' +
+      `await import(${JSON.stringify(pathToFileURL(entryFile).href)});`;
+    const r = spawnSync(process.execPath, ['--input-type=module', '-e', script], { cwd: dir, encoding: 'utf8' });
+    const output = `${r.stdout ?? ''}${r.stderr ?? ''}`;
+    return { defined: parseDefined(r.stdout ?? ''), ok: r.status === 0, output };
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+}
+
 async function viteChunks(entry) {
   const { build } = await import(pathToFileURL(path.join(repoRoot, 'node_modules/vite/dist/node/index.js')).href);
   const result = await build({
@@ -183,11 +259,20 @@ async function esbuildChunks(entry) {
     }));
 }
 
-async function main() {
-  const fixtures = fs
+/**
+ * Run every check and return the number of failures (the CLI exits 1 when it is above 0). The options exist
+ * for the unit test, which drives the runtime control and the side-effect half with fakes and skips the slow bundles.
+ */
+export async function main({
+  fixtures = fs
     .readdirSync(fixturesDir)
     .filter((f) => f.endsWith('.mjs'))
-    .sort();
+    .sort(),
+  importUnder = importUnderHook,
+  startupPackages = STARTUP_PACKAGES,
+  sideEffectImports = SIDE_EFFECT_IMPORTS,
+  runSideEffect = runSideEffectBundle
+} = {}) {
   let failed = 0;
   for (const f of fixtures) {
     const entry = path.join(fixturesDir, f);
@@ -207,35 +292,49 @@ async function main() {
     }
   }
   // Runtime half: the control must trip the hook, then no startup package may.
-  for (const p of controlVerdict(importUnderHook('@chestnutlabs/gcode-renderer-three'))) {
+  for (const p of controlVerdict(importUnder('@chestnutlabs/gcode-renderer-three'))) {
     failed++;
     console.error(`FAIL ${p}`);
   }
-  for (const pkg of STARTUP_PACKAGES) {
-    const problems = runtimeVerdict(pkg, importUnderHook(pkg));
+  for (const pkg of startupPackages) {
+    const problems = runtimeVerdict(pkg, importUnder(pkg));
     if (problems.length === 0) console.log(`ok   ${pkg} [runtime]: importing it loads no renderer main entry`);
     else {
       failed++;
       for (const p of problems) console.error(`FAIL ${p}`);
     }
   }
+  // Side-effect half: each documented registration import must still register its element in a production bundle.
+  for (const s of sideEffectImports) {
+    const problems = sideEffectVerdict(s, await runSideEffect(s.fixture));
+    if (problems.length === 0) console.log(`ok   ${s.specifier} [vite production]: registers <${s.defines}>`);
+    else {
+      failed++;
+      for (const p of problems) console.error(`FAIL ${p}`);
+    }
+  }
   if (failed > 0) {
+    console.error(`\nbundle-check: ${failed} failure(s); each FAIL line above names its cause.`);
     console.error(
-      `\nbundle-check: ${failed} failure(s). A static value import of '@chestnutlabs/gcode-renderer-three'`
+      "three.js at startup: import three-free pieces from '@chestnutlabs/gcode-renderer-three/lite'. " +
+        'A dropped side-effect import: list its file in the package.json "sideEffects".'
     );
-    console.error(
-      "pulls three.js into startup; import three-free pieces from '@chestnutlabs/gcode-renderer-three/lite'."
-    );
-    process.exit(1);
+    return failed;
   }
   console.log(
-    `\nbundle-check: ${fixtures.length} fixtures x 2 bundlers and ${STARTUP_PACKAGES.length} packages at runtime, no three.js at startup.`
+    `\nbundle-check: ${fixtures.length} fixtures x 2 bundlers and ${startupPackages.length} packages at runtime, no three.js at startup; ${sideEffectImports.length} side-effect imports kept.`
   );
+  return 0;
 }
 
-if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  main().catch((err) => {
+/** The CLI: exit 1 on any failure or a crash, else 0. `run` / `exit` are injectable for the unit test. */
+export async function cli(run = main, exit = process.exit) {
+  try {
+    exit((await run()) > 0 ? 1 : 0);
+  } catch (err) {
     console.error(err);
-    process.exit(1);
-  });
+    exit(1);
+  }
 }
+
+if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) cli();
