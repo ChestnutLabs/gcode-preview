@@ -126,6 +126,17 @@ describe('#592: what a text line still carries', () => {
     expect(eventsOn('M486 S0 G28 X5', 'M486')).toEqual(['m486 {"s":0}']);
   });
 
+  it('M486 reads its words up to the first A, and a ; comment never counts', () => {
+    expect(eventsOn('M486 S1 ; Aname S9', 'M486')).toEqual(['m486 {"s":1}']);
+    expect(eventsOn('M486 S1 ; S9', 'M486')).toEqual(['m486 {"s":1}']);
+    expect(eventsOn('M486 P4 U5 C6 Aname S9', 'M486')).toEqual(['m486 {"p":4,"u":5,"c":6}']);
+  });
+
+  it('an M486 number too big for float32 is dropped and reported', () => {
+    const { ir } = parse(`M486 S1${'0'.repeat(40)}`);
+    expect(ir.header.warnings.map((w) => w.code)).toContain('number-out-of-range');
+  });
+
   it('M486 S0 G20 does not switch to inches', () => {
     const { ir } = parse('M486 S0 G20\nG0 X1 Y2');
     expect(moves(ir)).toEqual(['(0.0,0.0)->(1.0,2.0)']);
@@ -177,9 +188,10 @@ describe('#592 property: text in text lines never changes the parse', () => {
       onCommand: (e) => ev.push(`${e.gcode} ${JSON.stringify(e.params)} ${e.segIndex}`)
     });
     const s = ir.segments as unknown as Record<string, unknown>;
-    // A digest per buffer: a failing deep diff of 3DBenchy-sized arrays takes minutes to print.
+    // A digest per buffer: a failing deep diff of 3DBenchy-sized arrays takes minutes to print. srcByte is
+    // left out: the injected text moves every later line's byte offset.
     const buffers: Record<string, string> = {};
-    for (const [k, v] of Object.entries(s)) if (ArrayBuffer.isView(v)) buffers[k] = fnv1a(v);
+    for (const [k, v] of Object.entries(s)) if (ArrayBuffer.isView(v) && k !== 'srcByte') buffers[k] = fnv1a(v);
     return {
       ir: {
         count: ir.segments.count,
