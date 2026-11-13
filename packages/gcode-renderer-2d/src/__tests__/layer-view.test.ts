@@ -11,6 +11,7 @@ import { MoveKind, ToolpathIRBuilder, type ToolpathIR } from '@chestnutlabs/tool
 import { createSegmentColorer, type ColorMode } from '@chestnutlabs/gcode-colors';
 import {
   LayerView2D,
+  checkColorMode,
   computeLayerFit,
   describe2DDisclosures,
   drawLayer,
@@ -1053,5 +1054,231 @@ describe('LayerView2D: layer requests past the end and option checks (core 2D ad
     expect(JSON.stringify(view.render().ghostLayers)).toBe('[]');
     view.setAdjacentLayers(2);
     expect(JSON.stringify(view.render().ghostLayers)).toBe('[0,1]');
+  });
+});
+
+// ---------------------------------------------------------------------------------------------
+// Second-pass sweep gap tests (2026-11-13): each pins a clause a base mutant survived.
+// ---------------------------------------------------------------------------------------------
+
+describe('second-pass sweep gaps', () => {
+  it('layerBounds2D: content with zero X span (one vertical segment) still has content', () => {
+    const ir = irOf([{ x0: 5, y0: 0, x1: 5, y1: 10 }]);
+    expect(layerBounds2D(ir, 0)).toEqual({ minX: 5, minY: 0, maxX: 5, maxY: 10, hasContent: true });
+  });
+
+  it('modelBounds2D: content with zero X span (one vertical segment) still has content', () => {
+    const ir = irOf([{ x0: 5, y0: 0, x1: 5, y1: 10 }]);
+    expect(modelBounds2D(ir)).toEqual({ minX: 5, minY: 0, maxX: 5, maxY: 10, hasContent: true });
+  });
+
+  it('drawLayers: ghost layers use the given colour mode', () => {
+    const m = new MockCtx();
+    drawLayers(m.ctx, makeIR(2, 2), {
+      layer: 1,
+      adjacentLayers: 1,
+      colorMode: { mode: 'single', color: [0, 0, 1] },
+      fit: scaleFit
+    });
+    // ghost layer 0 ×2 (0.25), active layer 1 ×2 (1): all blue
+    expect(m.strokes.map((s) => [s.style, s.alpha])).toEqual([
+      ['rgb(0, 0, 255)', 0.25],
+      ['rgb(0, 0, 255)', 0.25],
+      ['rgb(0, 0, 255)', 1],
+      ['rgb(0, 0, 255)', 1]
+    ]);
+  });
+
+  it('LayerView2D.setToolpath(null) clears the toolpath: the next render draws nothing', () => {
+    const m = new MockCtx();
+    const view = new LayerView2D(fakeCanvas(100, 100, m));
+    view.setToolpath(makeIR(2, 2));
+    expect(view.render()).toMatchObject({ drawn: true, extrudeDrawn: 2 });
+    const before = m.strokes.length;
+    view.setToolpath(null);
+    expect(view.render()).toMatchObject({ drawn: false, layerCount: 0, extrudeDrawn: 0 });
+    expect(m.strokes.length).toBe(before);
+    expect(view.layerCount).toBe(0);
+  });
+
+  it('index re-exports checkColorMode from the colour package', () => {
+    expect(() => checkColorMode({ mode: 'single', color: [0, 1, 0] })).not.toThrow();
+    expect(() =>
+      checkColorMode({ mode: 'feedrate', ramp: [[0, 0, 1]], range: [0, Number.NaN], fallback: [0, 0, 0] })
+    ).toThrow('feedrate color range must be two finite numbers >= 0, got [0, NaN]');
+  });
+});
+
+// ---------------------------------------------------------------------------------------------
+// #588: the 2D view draws CNC/laser Cut moves (bit tests: a cut arc is kind 160, an extruding arc 33).
+// ---------------------------------------------------------------------------------------------
+
+describe('Cut moves (#588)', () => {
+  const single: ColorMode = { mode: 'single', color: [1, 0, 0] };
+  const CUT_ARC = MoveKind.Cut | MoveKind.ArcSegment;
+
+  /** Layer 0: travel, cut, cut arc, extrude+cut, extrude. */
+  const mixed = () =>
+    irOf([
+      { x0: 0, y0: 0, x1: 1, y1: 0, kind: MoveKind.Travel },
+      { x0: 1, y0: 0, x1: 2, y1: 0, kind: MoveKind.Cut },
+      { x0: 2, y0: 0, x1: 3, y1: 0, kind: CUT_ARC },
+      { x0: 3, y0: 0, x1: 4, y1: 0, kind: MoveKind.Extrude | MoveKind.Cut },
+      { x0: 4, y0: 0, x1: 5, y1: 0, kind: MoveKind.Extrude }
+    ]);
+
+  it('drawLayer draws Cut moves by default, in file order with extrusion; Extrude|Cut counts once, as extrusion', () => {
+    const m = new MockCtx();
+    const res = drawLayer(m.ctx, mixed(), { layer: 0, colorMode: single, fit: scaleFit });
+    expect(res).toEqual({
+      layer: 0,
+      layerCount: 1,
+      extrudeDrawn: 2,
+      travelDrawn: 0,
+      cutDrawn: 2,
+      skippedNonFinite: 0,
+      drawn: true
+    });
+    expect(m.strokes.map((s) => s.from[0])).toEqual([10, 20, 30, 40]);
+    expect(m.strokes.map((s) => [s.style, s.width, s.alpha])).toEqual([
+      ['rgb(255, 0, 0)', 1, 1],
+      ['rgb(255, 0, 0)', 1, 1],
+      ['rgb(255, 0, 0)', 1, 1],
+      ['rgb(255, 0, 0)', 1, 1]
+    ]);
+  });
+
+  it('drawLayer with cut: false hides Cut-only moves but keeps Extrude|Cut (extrusion is never hidden)', () => {
+    const m = new MockCtx();
+    const res = drawLayer(m.ctx, mixed(), { layer: 0, colorMode: single, fit: scaleFit, cut: false });
+    expect(res).toMatchObject({ extrudeDrawn: 2, cutDrawn: 0 });
+    expect(m.strokes.map((s) => s.from[0])).toEqual([30, 40]);
+  });
+
+  it('cut: true is the same as the default', () => {
+    const m = new MockCtx();
+    expect(drawLayer(m.ctx, mixed(), { layer: 0, colorMode: single, fit: scaleFit, cut: true })).toMatchObject({
+      cutDrawn: 2
+    });
+  });
+
+  it('Cut moves take the shared colorer (moveKind mode → the cut colour) and the extrusion width', () => {
+    const m = new MockCtx();
+    const ir = irOf([{ x0: 0, y0: 0, x1: 1, y1: 0, kind: CUT_ARC }]);
+    drawLayer(m.ctx, ir, {
+      layer: 0,
+      colorMode: { mode: 'moveKind', cut: [0, 0, 1], travel: [0, 1, 0], fallback: [0, 0, 0] },
+      fit: scaleFit,
+      lineWidth: 3
+    });
+    expect(m.strokes.map((s) => [s.style, s.width])).toEqual([['rgb(0, 0, 255)', 3]]);
+  });
+
+  it('a non-finite Cut move is skipped and counted, not drawn', () => {
+    const ir = irOf([
+      { x0: 0, y0: 0, x1: 1, y1: 0, kind: MoveKind.Cut },
+      { x0: 1, y0: 0, x1: 2, y1: 0, kind: MoveKind.Cut }
+    ]);
+    ir.segments.x1[0] = Number.NaN;
+    const m = new MockCtx();
+    expect(drawLayer(m.ctx, ir, { layer: 0, colorMode: single, fit: scaleFit })).toMatchObject({
+      cutDrawn: 1,
+      skippedNonFinite: 1
+    });
+    expect(m.strokes).toHaveLength(1);
+  });
+
+  it('the progress cut dims not-yet-cut Cut moves on the active layer', () => {
+    const m = new MockCtx();
+    const ir = irOf([
+      { x0: 0, y0: 0, x1: 1, y1: 0, kind: MoveKind.Cut },
+      { x0: 1, y0: 0, x1: 2, y1: 0, kind: MoveKind.Cut },
+      { x0: 2, y0: 0, x1: 3, y1: 0, kind: MoveKind.Cut }
+    ]);
+    drawLayers(m.ctx, ir, { layer: 0, colorMode: single, fit: scaleFit, progress: { segIndex: 0, layerIndex: 0 } });
+    expect(m.strokes.map((s) => s.alpha)).toEqual([1, 0.15, 0.15]);
+  });
+
+  /** Two layers, each one Cut and one Extrude. */
+  const twoLayers = () =>
+    irOf([
+      { x0: 0, y0: 0, x1: 1, y1: 0, kind: MoveKind.Cut, layer: 0 },
+      { x0: 1, y0: 0, x1: 2, y1: 0, kind: MoveKind.Extrude, layer: 0 },
+      { x0: 0, y0: 1, x1: 1, y1: 1, kind: MoveKind.Cut, layer: 1 },
+      { x0: 1, y0: 1, x1: 2, y1: 1, kind: MoveKind.Extrude, layer: 1 }
+    ]);
+
+  it('drawLayers draws Cut on ghosts and the active layer, and sums cutDrawn', () => {
+    const m = new MockCtx();
+    const res = drawLayers(m.ctx, twoLayers(), { layer: 1, adjacentLayers: 1, colorMode: single, fit: scaleFit });
+    expect(res).toEqual({
+      layer: 1,
+      layerCount: 2,
+      ghostLayers: [0],
+      extrudeDrawn: 2,
+      travelDrawn: 0,
+      cutDrawn: 2,
+      skippedNonFinite: 0,
+      drawn: true
+    });
+    expect(m.strokes.map((s) => s.alpha)).toEqual([0.25, 0.25, 1, 1]);
+  });
+
+  it('drawLayers with cut: false hides Cut on the ghosts AND the active layer', () => {
+    const m = new MockCtx();
+    const res = drawLayers(m.ctx, twoLayers(), {
+      layer: 1,
+      adjacentLayers: 1,
+      colorMode: single,
+      fit: scaleFit,
+      cut: false
+    });
+    expect(res).toMatchObject({ extrudeDrawn: 2, cutDrawn: 0 });
+    expect(m.strokes.map((s) => [s.from[0], s.alpha])).toEqual([
+      [10, 0.25],
+      [10, 1]
+    ]);
+  });
+
+  it('drawLayers out of range reports cutDrawn 0', () => {
+    expect(drawLayers(new MockCtx().ctx, twoLayers(), { layer: 5, colorMode: single, fit: scaleFit })).toMatchObject({
+      cutDrawn: 0,
+      drawn: false
+    });
+  });
+
+  it('LayerView2D: Cut shown by default; the cut option and setCut toggle it', () => {
+    const m = new MockCtx();
+    const view = new LayerView2D(fakeCanvas(100, 100, m), { adjacentLayers: 0 });
+    view.setToolpath(mixed());
+    expect(view.render()).toMatchObject({ cutDrawn: 2, extrudeDrawn: 2 });
+    view.setCut(false);
+    expect(view.render()).toMatchObject({ cutDrawn: 0, extrudeDrawn: 2 });
+    view.setCut(true);
+    expect(view.render()).toMatchObject({ cutDrawn: 2 });
+    const hidden = new LayerView2D(fakeCanvas(100, 100, new MockCtx()), { cut: false });
+    hidden.setToolpath(mixed());
+    expect(hidden.render()).toMatchObject({ cutDrawn: 0, extrudeDrawn: 2 });
+  });
+
+  it('LayerView2D: an empty render reports cutDrawn 0', () => {
+    const view = new LayerView2D(fakeCanvas(100, 100, new MockCtx()));
+    expect(view.render()).toEqual({
+      layer: 0,
+      layerCount: 0,
+      ghostLayers: [],
+      extrudeDrawn: 0,
+      travelDrawn: 0,
+      cutDrawn: 0,
+      skippedNonFinite: 0,
+      drawn: false
+    });
+  });
+
+  it('summarize2DDrawable counts Cut moves (finite and non-finite)', () => {
+    const ir = mixed();
+    expect(summarize2DDrawable(ir)).toEqual({ drawable: 5, skippedNonFinite: 0 });
+    ir.segments.y0[2] = Infinity; // the cut arc
+    expect(summarize2DDrawable(ir)).toEqual({ drawable: 4, skippedNonFinite: 1 });
   });
 });

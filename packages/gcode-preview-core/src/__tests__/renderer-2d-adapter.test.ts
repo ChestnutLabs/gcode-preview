@@ -151,7 +151,7 @@ describe('LayerView2DRenderer layer range', () => {
 });
 
 describe('LayerView2DRenderer travel toggle', () => {
-  it('only travel is toggled; extrusion and wipe are no-ops that do not redraw', () => {
+  it('travel is toggled; extrusion and wipe are no-ops that do not redraw', () => {
     const { rec, r } = make();
     r.setIR(irWithTravel());
     r.setLayerRange(0, 0);
@@ -180,6 +180,72 @@ describe('LayerView2DRenderer travel toggle', () => {
     r.setKindVisible('travel', true);
     expect(rec.strokes.length).toBe(7);
     expect(JSON.stringify(rec.strokes[0])).toBe(JSON.stringify({ style: 'red', width: 2, alpha: 1 }));
+  });
+});
+
+/** 4 Cut moves (one a cut arc, kind 160), 1 travel and 1 extrusion, all on layer 0. */
+function irWithCut(): ToolpathIR {
+  const b = new ToolpathIRBuilder({ parserVersion: 't', units: 'mm', unitsSource: 'known' });
+  const kinds = [
+    MoveKind.Travel,
+    MoveKind.Cut,
+    MoveKind.Cut,
+    MoveKind.Cut | MoveKind.ArcSegment,
+    MoveKind.Cut,
+    MoveKind.Extrude
+  ];
+  kinds.forEach((kind, s) => {
+    b.addSegment({
+      x0: s,
+      y0: 0,
+      z0: 0,
+      x1: s + 1,
+      y1: 1,
+      z1: 0,
+      e: kind === MoveKind.Extrude ? 1 : 0,
+      kind,
+      layer: 0,
+      srcByte: s
+    });
+  });
+  return b.finalize();
+}
+
+describe('LayerView2DRenderer cut toggle (#588)', () => {
+  it('Cut moves draw by default; the cut toggle hides and restores them, redrawing each time', () => {
+    const { rec, r } = make();
+    r.setIR(irWithCut());
+    r.setLayerRange(0, 0);
+    // 4 cuts + 1 extrusion; travel hidden by default
+    expect(rec.strokes.length).toBe(5);
+    const before = rec.frames;
+    r.setKindVisible('cut', false);
+    expect(rec.frames).toBe(before + 1);
+    expect(rec.strokes.length).toBe(1);
+    r.setKindVisible('cut', true);
+    expect(rec.frames).toBe(before + 2);
+    expect(rec.strokes.length).toBe(5);
+  });
+
+  it('the cut toggle leaves travel alone, and the travel toggle leaves cuts alone', () => {
+    const { rec, r } = make();
+    r.setIR(irWithCut());
+    r.setLayerRange(0, 0);
+    r.setKindVisible('travel', true);
+    expect(rec.strokes.length).toBe(6);
+    r.setKindVisible('cut', false);
+    expect(rec.strokes.length).toBe(2);
+    r.setKindVisible('travel', false);
+    expect(rec.strokes.length).toBe(1);
+  });
+
+  it('buildComplete counts Cut moves as drawable segments', async () => {
+    const { r, events } = make();
+    r.setIR(irWithCut());
+    await Promise.resolve();
+    const done = events.filter((e) => e.type === 'buildComplete');
+    expect(done).toHaveLength(1);
+    expect(done[0]).toMatchObject({ segments: 6, skippedNonFinite: 0 });
   });
 });
 

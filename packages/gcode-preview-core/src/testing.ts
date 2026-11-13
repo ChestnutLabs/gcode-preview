@@ -48,6 +48,24 @@ export function makeTestIR(): ToolpathIR {
 }
 
 /**
+ * A CNC-shaped IR for the 2D Cut case (#588): one layer of one travel and four Cut moves, one of them a
+ * cut arc (`Cut | ArcSegment`, kind 160). Source byteLength 1000.
+ */
+function makeCutTestIR(): ToolpathIR {
+  const b = new ToolpathIRBuilder({
+    parserVersion: 'behavioral-suite',
+    units: 'mm',
+    unitsSource: 'known',
+    source: { byteLength: 1_000 }
+  });
+  const kinds = [MoveKind.Travel, MoveKind.Cut, MoveKind.Cut | MoveKind.ArcSegment, MoveKind.Cut, MoveKind.Cut];
+  kinds.forEach((kind, s) => {
+    b.addSegment({ x0: 100 + s, y0: 100, z0: -1, x1: 101 + s, y1: 101, z1: -1, e: 0, kind, layer: 0, srcByte: s * 10 });
+  });
+  return b.finalize();
+}
+
+/**
  * {@link makeTestIR}'s 12 extrusion segments plus one travel, with non-finite coordinates (#518), for
  * the renderers' skip-and-disclose path. Three segments have a non-finite x/y (layer 0 extrusion 1 with
  * `x1: Infinity`, the travel with `y0: NaN`, layer 1 extrusion 2 with `x0: -Infinity`), so both renderers
@@ -1104,6 +1122,40 @@ export function runComponentConformanceSuite(name: string, api: TestApi, harness
       );
       expect(JSON.stringify(log.filter((l) => l.startsWith('ready ')))).toBe('["ready 13"]');
       await m.unmount();
+    });
+
+    it("2D: a Cut-only (CNC) file draws its Cut moves, and the 'cut' toggle hides and restores them (#588)", async () => {
+      const probe = installSuite2DProbe();
+      try {
+        const builds: number[] = [];
+        const m = await harness.mount(
+          {
+            onReady: () => undefined,
+            onBuildComplete: (segments) => builds.push(segments),
+            onDisclosure: () => undefined
+          },
+          { renderer: '2d', ir: makeCutTestIR }
+        );
+        if (m.controls === undefined) throw new Error('harness must implement controls (#588)');
+        await m.parse(new Uint8Array(1_000));
+        await m.settle();
+        if (!probe.used()) throw new Error("harness.mount must honour opts.renderer '2d' (no 2D renderer drew)");
+        // The components show travel by default; hide it so the count is the 4 Cut strokes alone.
+        m.controls().setKindVisible('travel', false);
+        await m.settle();
+        // build-complete counts all 5 drawable segments, travel included, whether or not it is shown.
+        expect(probe.strokes()).toBe(4);
+        expect(JSON.stringify(builds)).toBe('[5]');
+        m.controls().setKindVisible('cut', false);
+        await m.settle();
+        expect(probe.strokes()).toBe(0);
+        m.controls().setKindVisible('cut', true);
+        await m.settle();
+        expect(probe.strokes()).toBe(4);
+        await m.unmount();
+      } finally {
+        probe.restore();
+      }
     });
 
     it('2D: 3D-only settings at mount each report renderer-unsupported once; 3D reports none (#520)', async () => {
