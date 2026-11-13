@@ -55,7 +55,8 @@
     limits,
     filamentPalette,
     loaders,
-    renderScope,
+    // null = "whole source" (the documented prop value); the controller option only accepts a scope or undefined.
+    renderScope: renderScope ?? undefined,
     buildVolume,
     theme,
     cameraFov,

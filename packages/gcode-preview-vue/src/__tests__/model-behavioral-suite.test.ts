@@ -7,7 +7,7 @@
 import { describe, expect, it } from 'vitest';
 import { effectScope, nextTick } from 'vue';
 import {
-  MODEL_STUB_GL,
+  makeModelRecordingGL,
   MODEL_STUB_CONTROLS,
   runModelBehavioralSuite,
   type ModelAdapterInstance
@@ -26,8 +26,9 @@ runModelBehavioralSuite(
     async create() {
       const canvas = document.createElement('canvas');
       const scope = effectScope();
+      const gl = makeModelRecordingGL();
       const viewer = scope.run(() =>
-        useModelViewer({ createRenderer: MODEL_STUB_GL, createControls: MODEL_STUB_CONTROLS })
+        useModelViewer({ createRenderer: gl.createRenderer, createControls: MODEL_STUB_CONTROLS })
       )!;
       viewer.canvasRef.value = canvas;
       await nextTick();
@@ -38,7 +39,14 @@ runModelBehavioralSuite(
         dispose: () => {
           scope.stop();
         },
-        settle
+        settle,
+        drawn: () => gl.drawn(),
+        rebind: async () => {
+          viewer.canvasRef.value = null;
+          await nextTick();
+          viewer.canvasRef.value = document.createElement('canvas');
+          await nextTick();
+        }
       };
       return instance;
     }
