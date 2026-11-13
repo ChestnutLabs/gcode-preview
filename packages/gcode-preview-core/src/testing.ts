@@ -1049,7 +1049,7 @@ export function runComponentConformanceSuite(name: string, api: TestApi, harness
       expect(JSON.stringify(log)).toBe(
         JSON.stringify([
           'build 9',
-          'disclosure Showing every 3rd extrusion segment (layer boundaries kept); travel hidden. 9 segments drawn.'
+          'disclosure Showing every 3rd drawn segment (layer boundaries kept); travel hidden. 9 segments drawn.'
         ])
       );
 
@@ -1059,7 +1059,7 @@ export function runComponentConformanceSuite(name: string, api: TestApi, harness
       expect(JSON.stringify(log.slice(2))).toBe(
         JSON.stringify([
           'build 7',
-          'disclosure Showing every 2nd extrusion segment (layer boundaries kept); travel hidden. 7 segments drawn.'
+          'disclosure Showing every 2nd drawn segment (layer boundaries kept); travel hidden. 7 segments drawn.'
         ])
       );
 

@@ -210,13 +210,13 @@ describe('3D: non-finite disclosure (#518)', () => {
 
     emit({ skippedNonFinite: 2, decimationApplied: 3, travelHidden: true });
     expect(c.getState().disclosure).toBe(
-      'Showing every 3rd extrusion segment (layer boundaries kept); travel hidden. 9 segments drawn. ' +
+      'Showing every 3rd drawn segment (layer boundaries kept); travel hidden. 9 segments drawn. ' +
         '2 segments with a non-finite coordinate were not drawn.'
     );
 
     emit({ decimationApplied: 2 });
     expect(c.getState().disclosure).toBe(
-      'Showing every 2nd extrusion segment (layer boundaries kept); travel hidden. 9 segments drawn.'
+      'Showing every 2nd drawn segment (layer boundaries kept); travel hidden. 9 segments drawn.'
     );
 
     // Grouped like the decimation sentence (toLocaleString). Any host grouping separator is accepted; on a

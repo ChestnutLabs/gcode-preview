@@ -267,7 +267,7 @@ describe('renderer events into state', () => {
     for (const [n, word] of cases) {
       emitSuiteBuild(r, n, 5);
       expect(controller.getState().disclosure).toBe(
-        'Showing every ' + word + ' extrusion segment (layer boundaries kept); travel hidden. 5 segments drawn.'
+        'Showing every ' + word + ' drawn segment (layer boundaries kept); travel hidden. 5 segments drawn.'
       );
     }
     controller.dispose();
