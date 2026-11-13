@@ -23,7 +23,7 @@ session.dispose();
 > each time. Passing the already-transferred bytes rejects with `E_POST_FAILED`, with the browser's
 > `DataCloneError` on `error.cause`; the session stays usable.
 
-**Coordinates are always millimetres.** A file that declares inches (`G20`) is converted while it is parsed, so
+> **Coordinates are always millimetres.** A file that declares inches (`G20`) is converted while it is parsed, so
 > every renderer, the bounds and the stats see millimetres. `ir.header.units` still reads `'in'`, because it records
 > what the file declared, and the parse result carries a `units-converted` info warning.
 
