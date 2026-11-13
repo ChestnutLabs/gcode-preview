@@ -207,3 +207,69 @@ describe('explicit range validation boundaries', () => {
     }).toThrow(RangeError);
   });
 });
+
+/** The exact message `fn` throws, asserting it is a RangeError. */
+function rangeErrorMessage(fn: () => void): string {
+  try {
+    fn();
+  } catch (e) {
+    expect(e).toBeInstanceOf(RangeError);
+    return (e as Error).message;
+  }
+  throw new Error('expected a RangeError, nothing was thrown');
+}
+
+describe('falsy but non-null values are not "unset" (only null / undefined are)', () => {
+  const FALLBACK_MODES = [{ mode: 'tool', palette: [R] }, { mode: 'filament' }] as const;
+  for (const base of FALLBACK_MODES) {
+    for (const bad of [false, 0] as const) {
+      it(`${base.mode} fallback ${String(bad)} throws the literal RangeError`, () => {
+        const mode = { ...base, fallback: bad } as unknown as ColorMode;
+        expect(rangeErrorMessage(() => checkColorMode(mode))).toBe(
+          `${base.mode} color mode fallback must be [r, g, b] of three finite numbers, got ${String(bad)}`
+        );
+        expect(() => createSegmentColorer(ir(1), mode)).toThrow(RangeError);
+      });
+    }
+  }
+
+  for (const rangeMode of ['feedrate', 'layerHeight', 'power'] as const) {
+    it(`${rangeMode} range '' throws the literal RangeError`, () => {
+      const mode = { mode: rangeMode, ramp: [R, G], range: '', fallback: FB } as unknown as ColorMode;
+      expect(rangeErrorMessage(() => checkColorMode(mode))).toBe(
+        `${rangeMode} color range must be two finite numbers >= 0, got `
+      );
+    });
+  }
+});
+
+describe('a range that is not a two-element array is a RangeError, never a TypeError', () => {
+  const cases: [string, unknown, string][] = [
+    ['false', false, 'false'],
+    ['0', 0, '0'],
+    ['5', 5, '5'],
+    ['NaN', NaN, 'NaN'],
+    ['an object', {}, '[object Object]'],
+    ['a string', 'ab', 'ab'],
+    ['an empty array', [], '[]'],
+    ['a one-element array', [1], '[1]'],
+    ['a one-element array holding null', [null], '[null]'],
+    ['a one-element array holding undefined', [undefined], '[undefined]'],
+    ['a three-element array', [1, 2, 3], '[1, 2, 3]']
+  ];
+  for (const [label, range, shown] of cases) {
+    it(`feedrate range ${label}`, () => {
+      const mode = { mode: 'feedrate', ramp: [R, G], range, fallback: FB } as unknown as ColorMode;
+      expect(rangeErrorMessage(() => checkColorMode(mode))).toBe(
+        `feedrate color range must be two finite numbers >= 0, got ${shown}`
+      );
+    });
+  }
+
+  it('null and undefined ranges still mean auto-range', () => {
+    for (const range of [null, undefined]) {
+      const mode = { mode: 'feedrate', ramp: [R, G], range, fallback: FB } as unknown as ColorMode;
+      expect(() => checkColorMode(mode)).not.toThrow();
+    }
+  });
+});
