@@ -16,12 +16,23 @@ function toArrayBuffer(bytes: Uint8Array | ArrayBuffer): ArrayBuffer {
   return bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
 }
 
-/** Binary-STL triangle count from its header (bytes 80..84, little-endian), or null if not binary-shaped. */
-function binaryTriangleCount(buf: ArrayBuffer): number | null {
-  if (buf.byteLength < 84) return null;
-  const n = new DataView(buf).getUint32(80, true);
-  // Binary STL is exactly 84 + 50·n bytes. If that doesn't hold, it's ASCII (or malformed).
-  return 84 + n * 50 === buf.byteLength ? n : null;
+/** The facet count a binary STL header claims (bytes 80..84, little-endian); null when there is no header. */
+function declaredTriangleCount(buf: ArrayBuffer): number | null {
+  return buf.byteLength < 84 ? null : new DataView(buf).getUint32(80, true);
+}
+
+/**
+ * Mirrors three's `STLLoader` ASCII-vs-binary choice for a file that is not exact-size binary: it is ASCII
+ * only if "solid" starts at one of the first five byte offsets (a BOM may precede it); anything else is
+ * parsed as binary. Pinned by tests, so a three upgrade that changes the rule fails them.
+ */
+function startsWithSolid(buf: ArrayBuffer): boolean {
+  const head = new Uint8Array(buf, 0, Math.min(buf.byteLength, 10));
+  const solid = [115, 111, 108, 105, 100]; // "solid"
+  for (let off = 0; off < 5; off++) {
+    if (solid.every((c, i) => head[off + i] === c)) return true;
+  }
+  return false;
 }
 
 /** Parse STL bytes into a single-object {@link ModelScene}. Throws {@link ModelParseError} on failure. */
@@ -35,13 +46,30 @@ export function parseStl(source: Uint8Array | ArrayBuffer, limits?: ModelLimits)
       `STL source ${buf.byteLength} bytes exceeds limit ${lim.maxSourceBytes}`
     );
   }
-  // Pre-check binary triangle count before the loader allocates buffers for it.
-  const preTris = binaryTriangleCount(buf);
-  if (preTris !== null && preTris > lim.maxTriangles) {
-    throw new ModelParseError(
-      'E_MODEL_TOO_MANY_TRIANGLES',
-      `STL declares ${preTris} triangles, exceeds limit ${lim.maxTriangles}`
-    );
+  // Bound the header's claim BEFORE the loader runs: on its binary path it allocates 2 × 36 bytes per claimed
+  // facet up front, so a tiny file with a huge count would otherwise cost gigabytes before any limit applies.
+  const declared = declaredTriangleCount(buf);
+  if (declared !== null) {
+    const exactBinary = 84 + declared * 50 === buf.byteLength;
+    if (exactBinary || !startsWithSolid(buf)) {
+      // The loader will take its binary path. Capacity first, then the cap: a corrupt short file is a parse
+      // error whatever it claims (not "too large"), and once the claim fits the file it is bounded by
+      // maxSourceBytes / 50, so the cap check still runs before any allocation. three reads 48 of each facet's
+      // 50 bytes (never the trailing 2-byte attribute word), so a file up to 2 bytes short of the last facet
+      // still loads; keep the -2 or such files start failing.
+      if (84 + declared * 50 - 2 > buf.byteLength) {
+        throw new ModelParseError(
+          'E_MODEL_PARSE',
+          `STL declares ${declared} triangles but holds ${Math.floor((buf.byteLength - 82) / 50)}`
+        );
+      }
+      if (declared > lim.maxTriangles) {
+        throw new ModelParseError(
+          'E_MODEL_TOO_MANY_TRIANGLES',
+          `STL declares ${declared} triangles, exceeds limit ${lim.maxTriangles}`
+        );
+      }
+    }
   }
 
   let geom;
