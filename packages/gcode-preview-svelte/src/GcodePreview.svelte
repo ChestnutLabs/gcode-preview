@@ -75,7 +75,8 @@
   export let rendererOptions = undefined;
 
   const dispatch = createEventDispatcher();
-  const isMachine = buildVolume !== undefined && 'bed' in buildVolume;
+  // `!= null`: a `buildVolume={null}` binding means no volume, never `'bed' in null` (#590).
+  const isMachine = buildVolume != null && 'bed' in buildVolume;
 
   /** The full store/action handle — reachable via `bind:this={c}` then `c.preview`. */
   export const preview = createGcodePreview({
@@ -84,8 +85,9 @@
       mode: renderer,
       buildVolume: isMachine ? undefined : buildVolume,
       quality,
-      qualityMode,
-      progressivePreview,
+      // An empty value is unset, as in the reactive setters below (`$: if (qualityMode)`), never a bad value.
+      qualityMode: qualityMode || undefined,
+      progressivePreview: progressivePreview || undefined,
       cameraMode,
       cameraFov,
       pixelRatio,
@@ -229,19 +231,19 @@
   }
   let appliedCameraMode = is2D ? 'perspective' : cameraMode;
   function applyCameraMode(mode) {
-    if (mode === appliedCameraMode) return;
+    if (mode == null || mode === appliedCameraMode) return;
     appliedCameraMode = mode;
     preview.controls.setCameraMode(mode);
   }
   let appliedCameraFov = is2D ? 50 : cameraFov; // 50: the default lens
   function applyCameraFov(fov) {
-    if (fov === undefined || fov === appliedCameraFov) return;
+    if (fov == null || fov === appliedCameraFov) return;
     appliedCameraFov = fov;
     preview.controls.setCameraFov(fov);
   }
   let appliedPixelRatio = is2D ? undefined : pixelRatio;
   function applyPixelRatio(ratio) {
-    if (ratio === undefined || ratio === appliedPixelRatio) return;
+    if (ratio == null || ratio === appliedPixelRatio) return;
     appliedPixelRatio = ratio;
     preview.controls.setPixelRatio(ratio);
   }
@@ -253,7 +255,7 @@
   $: applyPixelRatio(pixelRatio);
   $: preview.controls.setFrameContent(frameContent);
   $: preview.controls.setInteractionQuality(interactionQuality);
-  $: if (view !== undefined) preview.controls.setView(view);
+  $: if (view != null) preview.controls.setView(view);
   $: if (cameraState !== undefined && cameraState !== null) preview.controls.setCameraState(cameraState);
   $: if (theme !== undefined) preview.controls.setTheme(theme);
   $: if (progress === null || progress === undefined) preview.clearProgress();

@@ -24,7 +24,9 @@ interface Mounted {
     layerRange: ReturnType<typeof shallowRef<[number, number] | null>>;
     showTravel: ReturnType<typeof ref<boolean>>;
     progress: ReturnType<typeof shallowRef<ProgressObservation | null>>;
-    buildVolume: ReturnType<typeof shallowRef<{ x: number; y: number; z: number } | undefined>>;
+    buildVolume: ReturnType<typeof shallowRef<{ x: number; y: number; z: number } | null | undefined>>;
+    /** Extra props that can change after mount (spread after `extra`). */
+    dyn: ReturnType<typeof shallowRef<Record<string, unknown>>>;
   };
 }
 
@@ -34,6 +36,10 @@ function mountPreview(
     consumerVolume?: boolean;
     /** Initial (mount-time) prop values — to test that runtime props are honored on first render. */
     initial?: { showTravel?: boolean; showWipe?: boolean; layerRange?: [number, number] | null };
+    /** Mount-time `buildVolume` (overrides `consumerVolume`); `null` is what a cleared optional prop passes. */
+    volume?: { x: number; y: number; z: number } | null;
+    /** Extra props passed through verbatim. */
+    extra?: Record<string, unknown>;
   } = {}
 ): Mounted {
   const { gl, calls } = makeStubGL();
@@ -49,7 +55,10 @@ function mountPreview(
     layerRange: shallowRef<[number, number] | null>(opts.initial?.layerRange ?? null),
     showTravel: ref(opts.initial?.showTravel ?? true),
     progress: shallowRef<ProgressObservation | null>(null),
-    buildVolume: shallowRef(opts.consumerVolume === true ? { x: 220, y: 220, z: 250 } : undefined)
+    buildVolume: shallowRef<{ x: number; y: number; z: number } | null | undefined>(
+      'volume' in opts ? opts.volume : opts.consumerVolume === true ? { x: 220, y: 220, z: 250 } : undefined
+    ),
+    dyn: shallowRef<Record<string, unknown>>({ ...opts.extra })
   };
   const Parent = defineComponent({
     setup() {
@@ -82,7 +91,8 @@ function mountPreview(
           'onBuild-complete': record('build-complete'),
           'onMachine-geometry-discovered': record('machine-geometry-discovered'),
           'onProgress-presentation-changed': record('progress-presentation-changed'),
-          onDisclosure: record('disclosure')
+          onDisclosure: record('disclosure'),
+          ...props.dyn.value
         });
     }
   });
@@ -177,6 +187,85 @@ describe('<GcodePreview> — full prop surface (D4)', () => {
     m.props.source.value = new Uint8Array(1_000);
     await settle();
     expect(m.emitted['machine-geometry-discovered']?.[0]).toMatchObject({ confidence: 'known' });
+    m.app.unmount();
+  });
+});
+
+describe('<GcodePreview> — a null prop means unset (#590 round A)', () => {
+  // A non-required Vue Object/String prop accepts `null` without a warning, and its default applies only to
+  // `undefined`. `:build-volume="printer?.volume ?? null"` used to throw a TypeError (`'bed' in null`) at mount.
+  it(':build-volume="null" (with null frame-content / interaction-quality) mounts, loads, and the file bed applies', async () => {
+    const m = mountPreview({ machine: MACHINE, volume: null, extra: { frameContent: null, interactionQuality: null } });
+    m.props.source.value = new Uint8Array(1_000);
+    await settle();
+    expect(m.emitted['ready']?.[0]).toMatchObject({ segments: 12, layers: 2, complete: true });
+    expect(m.handle().state.error).toBeNull();
+    // null is no consumer volume: the file's bed is applied, not merely reported.
+    expect(m.emitted['machine-geometry-discovered']).toBeUndefined();
+    const r = m.handle().raw.renderer() as unknown as { volumeDef: { x: number; y: number; z: number } | null };
+    expect(r.volumeDef).toMatchObject({ x: 256, y: 256, z: 256 });
+    // Set, then cleared back to null: the watcher passes null, which is a no-op (the last volume stays).
+    m.props.buildVolume.value = { x: 100, y: 100, z: 100 };
+    await settle();
+    expect(r.volumeDef).toMatchObject({ x: 100, y: 100, z: 100 });
+    m.props.buildVolume.value = null;
+    await settle();
+    expect(r.volumeDef).toMatchObject({ x: 100, y: 100, z: 100 });
+    expect(m.handle().state.error).toBeNull();
+    m.app.unmount();
+  });
+});
+
+describe('<GcodePreview> — a prop cleared to null after mount keeps the current value (#590 round B)', () => {
+  // Vue applies a prop default only for `undefined`, so a cleared `:camera-mode="x ?? null"` reaches the watcher
+  // as null. It must leave the current value: no setter call, no RangeError, in 2D and in 3D.
+  const CASES: Array<[prop: string, value: unknown, control: string]> = [
+    ['cameraMode', 'orthographic', 'setCameraMode'],
+    ['qualityMode', 'full', 'setQualityMode'],
+    ['progressivePreview', 'hold', 'setProgressivePreview'],
+    ['view', 'top', 'setView'],
+    ['cameraFov', 40, 'setCameraFov'],
+    ['pixelRatio', 2, 'setPixelRatio']
+  ];
+  for (const mode of ['3d', '2d'] as const) {
+    for (const [prop, value, control] of CASES) {
+      it(`${mode}: ${prop} set at mount, then null → ${control} is not called and nothing throws`, async () => {
+        const m = mountPreview({ extra: { renderer: mode, [prop]: value } });
+        const errors: unknown[] = [];
+        m.app.config.errorHandler = (err) => {
+          errors.push(err);
+        };
+        m.props.source.value = new Uint8Array(1_000);
+        await settle();
+        expect(m.emitted['ready']?.[0]).toMatchObject({ segments: 12, layers: 2, complete: true });
+        const controls = m.handle().controls as unknown as Record<string, (...a: unknown[]) => unknown>;
+        const calls: unknown[][] = [];
+        const original = controls[control];
+        controls[control] = (...a: unknown[]) => {
+          calls.push(a);
+          return original.apply(controls, a);
+        };
+        m.props.dyn.value = { renderer: mode, [prop]: null };
+        await settle();
+        controls[control] = original;
+        expect(calls).toEqual([]);
+        expect(errors).toEqual([]);
+        expect(m.handle().state.error).toBeNull();
+        m.app.unmount();
+      });
+    }
+  }
+  it('2d: cameraMode / cameraFov / pixelRatio null at mount build the viewer without a throw', async () => {
+    const m = mountPreview({ extra: { renderer: '2d', cameraMode: null, cameraFov: null, pixelRatio: null } });
+    const errors: unknown[] = [];
+    m.app.config.errorHandler = (err) => {
+      errors.push(err);
+    };
+    m.props.source.value = new Uint8Array(1_000);
+    await settle();
+    expect(m.emitted['ready']?.[0]).toMatchObject({ segments: 12, layers: 2, complete: true });
+    expect(errors).toEqual([]);
+    expect(m.handle().state.error).toBeNull();
     m.app.unmount();
   });
 });

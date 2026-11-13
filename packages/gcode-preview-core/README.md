@@ -25,13 +25,31 @@ via `parse(bytes, { plate: 1 })`), keep your own copy and pass `bytes.slice()` e
 the already-transferred bytes fails with `E_POST_FAILED`, and the preview keeps working.
 
 Controls you call before the renderer is ready (the 3D renderer loads on demand) are queued and
-applied in order once it binds. A bad layer, scrub, lens, pixel-ratio or colour-mode value throws
-`RangeError` to you at once, queued or not. A theme or build volume only the 3D renderer can check
-throws to you once the renderer is bound. If that call was queued, the preview reports it instead: it
-sets `state.error` and fires an `error` event with code `E_CONTROL_REJECTED`. The message names the
-control, for example `setTheme rejected: theme gridOpacity must be a number in [0,1] (got 2)`. The
-calls queued after it still apply. The theme fields that are checked are listed in the
-[renderer-three README](../gcode-renderer-three/README.md#theme-values-that-throw).
+applied in order once it binds. A bad value throws `RangeError` to you at once, queued or not, and
+nothing is queued. The same goes for the renderer options you pass to `createPreviewController`: a bad
+one throws from the constructor, in 2D as well as 3D. These are checked up front, with the renderer's
+own rules and messages:
+
+| Option | Setter | Accepts |
+| --- | --- | --- |
+| `mode` | (none) | `'2d'`, `'3d'` |
+| `theme` | `setTheme` | the fields listed under [theme values that throw](../gcode-renderer-three/README.md#theme-values-that-throw) |
+| `buildVolume` | `setBuildVolume` | a volume the grid can draw (see the [renderer-three README](../gcode-renderer-three/README.md)) |
+| `cameraMode` | `setCameraMode` | `'perspective'`, `'orthographic'` |
+| (none) | `setView` | `'top'`, `'bottom'`, `'front'`, `'back'`, `'left'`, `'right'`, `'iso'` |
+| (none) | `setCameraState` | finite `position` / `target`, `zoom` > 0, a valid `cameraMode` |
+| `cameraFov` | `setCameraFov` | 10 to 120 degrees |
+| `pixelRatio` | `setPixelRatio` | `'device'`, or a number in (0, 4] |
+| `qualityMode` | `setQualityMode` | `'full'`, `'adaptive'`, `'fast'` |
+| `progressivePreview` | `setProgressivePreview` | `'auto'`, `'lines'`, `'hold'`, `'off'` |
+| `frameContent` | `setFrameContent` | `'object'`, `'all'` |
+| `interactionQuality` | `setInteractionQuality` | `'off'`, `'auto'` |
+
+Layer, scrub and colour-mode values are checked the same way. A queued call that the renderer still
+rejects once it binds is reported instead of thrown: the preview sets `state.error` and fires an `error`
+event with code `E_CONTROL_REJECTED`, and the message names the control (`setTheme rejected: ...`). The
+calls queued after it still apply. A bed discovered in the file is not checked here: the renderer
+reports a bad one as an event.
 
 A colour mode is checked before it is stored: every colour must be `[r, g, b]` of three finite
 numbers, and each mode needs its `palette` or `ramp`. See the

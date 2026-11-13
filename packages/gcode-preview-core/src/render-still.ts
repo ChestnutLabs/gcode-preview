@@ -35,7 +35,7 @@ import type {
   TubeOptions
 } from '@chestnutlabs/gcode-renderer-three';
 import { type MachineGeometry, type ToolpathIR } from '@chestnutlabs/toolpath-core';
-import { checkCameraFov } from './lens.js';
+import { checkCameraFov } from '@chestnutlabs/gcode-renderer-three/lite';
 
 /** Explicit camera pose (scene coordinates), overriding the deterministic frame(). */
 export interface StillCameraPose {

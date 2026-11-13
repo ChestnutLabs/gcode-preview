@@ -166,6 +166,22 @@ describe('<gcode-preview> property setters', () => {
     el2.buildVolume = machine;
     expect(spy.mock.calls).toEqual([[machine]]);
   });
+  it('buildVolume = null before connect is no volume: connect builds the controller (#590)', async () => {
+    const el = makePreview();
+    el.buildVolume = null as never;
+    const errors: unknown[] = [];
+    el.addEventListener('error', (e) => errors.push((e as CustomEvent).detail));
+    await connected(el);
+    expect(el.controls).not.toBeNull();
+    expect(el.buildVolume).toBeNull();
+    expect(errors).toEqual([]);
+  });
+  it('buildVolume = null once connected does not throw and calls nothing (#590)', async () => {
+    const el = await connected(makePreview());
+    const spy = vi.spyOn(el.controls, 'setBuildVolume').mockImplementation(() => undefined);
+    expect(() => (el.buildVolume = null as never)).not.toThrow();
+    expect(spy).not.toHaveBeenCalled();
+  });
   it('colorMode and theme: undefined is stored but not applied; a value is applied', async () => {
     const el = await connected(makePreview());
     const cm = vi.spyOn(el.controls, 'setColorMode').mockImplementation(() => undefined);

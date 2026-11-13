@@ -15,6 +15,8 @@
  * and the origin tripod (RGB axes) — are intentionally not themeable.
  */
 
+import { checkTheme } from './validate.js';
+
 /** A color three's `Color` accepts: `0xRRGGBB` or a CSS string. */
 export type ThemeColor = number | string;
 
@@ -136,56 +138,6 @@ export const DEFAULT_THEME: ResolvedTheme = {
   bedSurface: { mode: 'none' } // bare grid by default — no behavior change
 };
 
-// ─── Theme value checks ───────────────────────────────────────────────────────────────────────────
-// Three-free and self-contained (no imports, no three types): a shared theme validator can lift this
-// block as-is. Colour strings are NOT checked here. A theme is a consumer option, so a bad value throws
-// `RangeError` instead of reaching three as NaN or a silent fallback.
-
-/** NaN or an out-of-range opacity would render nonsense silently — reject it (RangeError, as tubes.ts). */
-function checkOpacity(name: string, value: number | undefined): void {
-  if (value === undefined) return;
-  if (!(value >= 0 && value <= 1)) {
-    throw new RangeError(`theme ${name} must be a number in [0,1] (got ${String(value)})`);
-  }
-}
-
-/** A light intensity or a plate thickness: a finite number, at least 0 (NaN/Infinity would reach three as is). */
-function checkNonNegative(name: string, value: number | undefined): void {
-  if (value === undefined) return;
-  if (!(Number.isFinite(value) && value >= 0)) {
-    throw new RangeError(`theme ${name} must be a finite number >= 0 (got ${String(value)})`);
-  }
-}
-
-/** A named choice: an unknown string (a typo) used to fall back silently to the default. */
-function checkOneOf(name: string, value: unknown, allowed: readonly string[]): void {
-  if (!allowed.includes(value as string)) {
-    throw new RangeError(
-      `theme ${name} must be one of ${allowed.map((a) => `'${a}'`).join(', ')} (got ${String(value)})`
-    );
-  }
-}
-
-/** Every numeric / named theme value, checked before anything is resolved. */
-function checkThemeValues(t: Theme): void {
-  checkOpacity('gridOpacity', t.gridOpacity);
-  checkOpacity('gridMajor.opacity', t.gridMajor?.opacity);
-  checkOpacity('bedOutline.opacity', t.bedOutline?.opacity);
-  checkOpacity('contactShadow.opacity', t.contactShadow?.opacity);
-  if (t.gridMajor !== undefined && !(Number.isFinite(t.gridMajor.every) && t.gridMajor.every > 0)) {
-    throw new RangeError(`theme gridMajor.every must be a positive number (got ${String(t.gridMajor.every)})`);
-  }
-  checkNonNegative('hemisphereIntensity', t.hemisphereIntensity);
-  checkNonNegative('directionalIntensity', t.directionalIntensity);
-  if (t.materialPreset !== undefined) checkOneOf('materialPreset', t.materialPreset, ['matte', 'glossy']);
-  const s = t.bedSurface;
-  if (s !== undefined) {
-    checkOneOf('bedSurface.mode', s.mode, ['none', 'solid']);
-    checkOpacity('bedSurface.opacity', s.opacity);
-    checkNonNegative('bedSurface.thickness', s.thickness);
-  }
-}
-
 /**
  * Resolve a partial theme over {@link DEFAULT_THEME} (replace semantics). Throws `RangeError` for an
  * opacity outside [0,1] (or NaN; grid, major, outline, shadow and plate opacities), a non-finite /
@@ -196,7 +148,7 @@ function checkThemeValues(t: Theme): void {
  */
 export function resolveTheme(theme?: Theme): ResolvedTheme {
   const t = theme ?? {};
-  checkThemeValues(t);
+  checkTheme(t);
   return {
     ...DEFAULT_THEME,
     ...(t.background !== undefined ? { background: t.background } : {}),

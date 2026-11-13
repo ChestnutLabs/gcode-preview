@@ -152,6 +152,28 @@ export function registerWiring({ describe, it, expect, beforeEach, svelte, expec
       m.unmount();
     });
 
+    for (const renderer of ['3d', '2d']) {
+      it(`${renderer}: view / cameraMode / cameraFov / pixelRatio cleared to null after mount apply nothing (#590 round B)`, async () => {
+        const m = mountP({ renderer, view: 'top', cameraMode: 'orthographic', cameraFov: 40, pixelRatio: 2 });
+        await settle();
+        log.length = 0;
+        await m.set({ view: null, cameraMode: null, cameraFov: null, pixelRatio: null });
+        for (const never of ['setView', 'setCameraMode', 'setCameraFov', 'setPixelRatio']) {
+          expect(calls(never)).toEqual([]);
+        }
+        m.unmount();
+      });
+    }
+
+    it('2d: cameraMode / cameraFov / pixelRatio / view null at mount apply nothing (#590 round B)', async () => {
+      const m = mountP({ renderer: '2d', view: null, cameraMode: null, cameraFov: null, pixelRatio: null });
+      await settle();
+      for (const never of ['setView', 'setCameraMode', 'setCameraFov', 'setPixelRatio']) {
+        expect(calls(never)).toEqual([]);
+      }
+      m.unmount();
+    });
+
     it('changes after mount apply, and clearing layerRange / progress resets them', async () => {
       const m = mountP({ layerRange: [1, 2], progress: { v: 1, timestampMs: 1, position: { byte: 1 } } });
       await settle();

@@ -39,7 +39,31 @@ function valueGraph(entry: string): { files: string[]; externals: string[] } {
 
 describe('the ./lite entry', () => {
   it('exports exactly the three-free values core needs', () => {
-    expect(Object.keys(lite).sort()).toEqual(['CaptureUnsupportedError', 'STUDIO_CAMERA_FOV', 'studioTheme']);
+    expect(Object.keys(lite).sort()).toEqual([
+      'CAMERA_MODES',
+      'CAMERA_VIEWS',
+      'CaptureUnsupportedError',
+      'FRAME_CONTENT_MODES',
+      'INTERACTION_QUALITY_MODES',
+      'MAX_GRID_LINES_PER_AXIS',
+      'PROGRESSIVE_PREVIEW_MODES',
+      'QUALITY_POLICIES',
+      'RENDERER_MODES',
+      'STUDIO_CAMERA_FOV',
+      'checkBuildVolume',
+      'checkCameraFov',
+      'checkCameraMode',
+      'checkCameraState',
+      'checkCameraView',
+      'checkFrameContent',
+      'checkInteractionQuality',
+      'checkPixelRatio',
+      'checkProgressivePreview',
+      'checkQualityMode',
+      'checkRendererMode',
+      'checkTheme',
+      'studioTheme'
+    ]);
     expect(lite.STUDIO_CAMERA_FOV).toBe(32);
     expect(new lite.CaptureUnsupportedError('x')).toBeInstanceOf(Error);
   });
@@ -51,7 +75,7 @@ describe('the ./lite entry', () => {
 
   it('reaches no value import of three (or of any package) through its whole module graph', () => {
     const graph = valueGraph('lite.ts');
-    expect(graph.files).toEqual(['capture.ts', 'lite.ts', 'theme.ts']);
+    expect(graph.files).toEqual(['capture.ts', 'lite.ts', 'theme.ts', 'validate.ts']);
     expect(graph.externals).toEqual([]);
   });
 

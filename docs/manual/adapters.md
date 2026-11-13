@@ -102,9 +102,13 @@ Each fires the same events (naming follows each framework's idiom): parse lifecy
 `parse-error` or `parse-cancelled`; a parse replaced by a newer source reports `parse-cancelled`, and one
 replaced before it started emits nothing.
 
-A control you call before the 3D renderer has loaded is queued and applied when it is ready. If the renderer
-rejects one of those calls, for example a theme opacity outside 0–1, you get an `error` event and `state.error`
-with code `E_CONTROL_REJECTED` and a message that names the control; the other queued controls still apply.
+A control you call before the 3D renderer has loaded is queued and applied when it is ready. A bad value, for
+example a theme opacity outside 0–1, is never queued: the call throws `RangeError` at once, before and after the
+load, with the same message the renderer uses. An option or prop left `null` or `undefined` is not an error: before
+any value is set it means the default, and a prop cleared to `null` later leaves the current value (the one
+exception for now is `colorMode`, where `null` still throws). If the renderer still rejects a queued call (rare, since values are checked first), you get an `error`
+event and `state.error` with code `E_CONTROL_REJECTED` and a message that names the control; the other queued
+controls still apply.
 
 `setLayerRange`, `setScrubPosition` and `setScrubTime` throw `RangeError` at once for a value that is not a
 number, or is `NaN`, even before the renderer has loaded. `null` (clear, on `setScrubPosition` and
@@ -126,6 +130,11 @@ finishes.
 The `theme` and `colorMode` props also throw `RangeError` for a value the renderer can't use, in every adapter:
 see [theme values that throw](https://github.com/ChestnutLabs/gcode-preview/blob/dev/packages/gcode-renderer-three/README.md#theme-values-that-throw)
 and [colours that throw](https://github.com/ChestnutLabs/gcode-preview/blob/dev/packages/gcode-colors/README.md#colours-that-throw).
+So do `buildVolume`, `cameraMode`, `qualityMode`, `progressivePreview`, `frameContent`, `interactionQuality` and
+`renderer`, and the matching `controls` calls (`setView` and `setCameraState` too). The throw comes at once, from
+mounting or from the call, even before the 3D renderer has loaded and on a 2D viewer. On `<gcode-preview>` this
+applies to the properties; a bad attribute value is ignored instead. The allowed values are listed in the
+[core README](https://github.com/ChestnutLabs/gcode-preview/blob/dev/packages/gcode-preview-core/README.md).
 
 Two of the events tell your users what the view is not showing. They answer different questions:
 
@@ -196,7 +205,7 @@ Every error is `{ code, message }`, plus two optional fields:
 | `E_RENDERER_LOAD` with `reason: 'start'` | The 3D renderer downloaded but could not start, usually because the device or browser has no WebGL. Read `cause` for the browser's error: a renderer option the renderer rejects lands here too | Fall back to `renderer: { mode: '2d' }`; reloading won't help |
 | `E_WORKER_TERMINATED` | You passed a single `Worker` instance as `createWorker` and it was terminated (a cancel that the worker did not acknowledge in time, a crash, or `dispose()`); the next parse used to hang | Pass a factory, `createWorker: () => new Worker(…)`, so each parse gets a fresh worker |
 | `E_POST_FAILED` | You re-parsed a buffer that was already handed to the worker | Pass `bytes.slice()` each time. The browser's `DataCloneError` is on `cause` |
-| `E_CONTROL_REJECTED` | The renderer rejected a control you queued before it loaded (see above) | Fix the value named in the message |
+| `E_CONTROL_REJECTED` | The renderer rejected a control you queued before it loaded. Rare: a bad value throws `RangeError` from the call instead (see above) | Fix the value named in the message |
 | `E_CAPTURE_UNSUPPORTED` | `capture()` was called before the 3D renderer is ready, or on the 2D renderer | Call it once the 3D view shows the file (the `stage` event's `ready` stage); `ready` can fire before the 3D chunk has bound, so retry on this code |
 | `E_PARSE_OPTION`, `E_MODEL_OPTION` | A `parseOptions` or model limit is not a usable number | Pass a finite whole number; there is no `Infinity` |
 
@@ -240,6 +249,10 @@ Deliberate differences, not drift:
   property. An invalid attribute value (non-numeric or outside 10-120) is ignored and the last valid lens is kept; setting
   the property to an invalid value throws `RangeError`. `theme` and `buildVolume` are properties only (objects).
   `show-volume-cage` is an attribute too: absent or anything but `"false"` means the cage is on.
+- **Clearing the plate.** On the model viewer, `setBuildVolume(null)` (or a `buildVolume` prop cleared to `null`)
+  removes the plate. On the toolpath viewer it does nothing: the current plate stays, also after a volume was set,
+  and a bed found in a later file is reported (`machine-geometry-discovered`) but not applied. The toolpath renderer
+  has no "remove the plate" operation. Before any volume is set, `buildVolume: null` there lets a file's bed apply.
 - **Model viewer themes.** Only `background`, the grid and outline fields, `bedSurface` and `contactShadow` apply.
   `theme.background` beats the `background` prop, which is the fallback tier.
 - **2D renderer** (`renderer="2d"`). A flat top-down view: `theme` and the cage are ignored (no-ops). A lens, as a

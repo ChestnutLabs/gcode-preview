@@ -164,7 +164,7 @@ export class GcodePreviewElement extends HTMLElement {
   }
   set buildVolume(v: BuildVolumeDef | MachineGeometry | undefined) {
     this._buildVolume = v;
-    if (this.controller !== null && v !== undefined && 'bed' in v) this.controller.controls.setBuildVolume(v);
+    if (this.controller !== null && v != null && 'bed' in v) this.controller.controls.setBuildVolume(v);
   }
   get colorMode(): ColorMode | undefined {
     return this._colorMode;
@@ -437,7 +437,7 @@ export class GcodePreviewElement extends HTMLElement {
     root.append(style, canvas);
     this.canvasEl = canvas;
 
-    const isMachine = this._buildVolume !== undefined && 'bed' in this._buildVolume;
+    const isMachine = this._buildVolume != null && 'bed' in this._buildVolume;
     // An enum attribute that is not exactly one of its values is bad markup: ignored (the default), never a throw.
     const mode: RendererMode | undefined = pickEnum(RENDERERS, this.getAttribute('renderer'));
     const quality = pickEnum(QUALITIES, this.getAttribute('quality')) ?? 'auto';
