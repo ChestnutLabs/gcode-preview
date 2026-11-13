@@ -30,7 +30,7 @@ runBehavioralSuite(
       el.createWorker = opts.createWorker ?? (() => new SuiteStubWorker(opts.machine));
       el.quality = 'lines';
       el.rendererOptions = {
-        createRenderer: () => makeSuiteStubGL(canvas),
+        createRenderer: opts.createGL ?? (() => makeSuiteStubGL(canvas)),
         scheduleFrame: (cb) => cb(),
         chunksPerTick: 8
       };

@@ -396,6 +396,22 @@ const INITIAL_STATE: GcodePreviewState = {
   error: null
 };
 
+/**
+ * The input's size for `parse-started`: a File's `size`, else `byteLength`; 0 when there is none or reading it
+ * throws (a null input, a hostile getter). Never throws, so it can run before the parse's try.
+ */
+function inputSize(input: unknown): number {
+  try {
+    const n =
+      typeof File !== 'undefined' && input instanceof File
+        ? input.size
+        : (input as { byteLength?: unknown }).byteLength;
+    return typeof n === 'number' ? n : 0;
+  } catch {
+    return 0;
+  }
+}
+
 function toBytes(input: Uint8Array | ArrayBuffer): Uint8Array {
   return input instanceof Uint8Array ? input : new Uint8Array(input);
 }
@@ -693,15 +709,18 @@ export function createPreviewController(options: PreviewControllerOptions = {}):
       if (gen !== parseGen || disposed) return { ok: false, cancelled: true };
     }
     mutate({ parsing: true, parseProgress: null, error: null });
-    const bytes =
-      typeof File !== 'undefined' && input instanceof File
-        ? input.size
-        : (input as Uint8Array | ArrayBuffer).byteLength;
+    const bytes = inputSize(input);
     emit({ type: 'parse-started', bytes });
-    const wire = { ...options.parseDefaults, ...opts };
-    const run = session.parse(input instanceof ArrayBuffer ? toBytes(input) : input, wire);
-    activeParse = run;
+    // Everything after parse-started runs inside the try: a synchronous throw (a null input, a hostile
+    // getter) still ends in exactly one terminal event, and the finally resets `parsing`.
+    let run: Promise<ParseResult> | null = null;
     try {
+      if (typeof input !== 'object' || input === null) {
+        throw new TypeError(`parse input must be a Uint8Array, ArrayBuffer or File (got ${String(input)})`);
+      }
+      const wire = { ...options.parseDefaults, ...opts };
+      run = session.parse(input instanceof ArrayBuffer ? toBytes(input) : input, wire);
+      activeParse = run;
       const result = await run;
       // #529: a newer parse() was issued while this one ran (its cancel can lose the race to completion).
       // Its result is for a file the caller has replaced: never apply it.

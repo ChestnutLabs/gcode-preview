@@ -52,6 +52,9 @@ runComponentConformanceSuite(
         setSource: (bytes) => {
           el.source = bytes;
         },
+        setParseOptions: (o) => {
+          el.parseOptions = o;
+        },
         firstChunkDrawCount: () => el.raw.renderer()!.chunkMeshes[0].geometry.drawRange.count,
         controls: () => el.controls,
         settle,

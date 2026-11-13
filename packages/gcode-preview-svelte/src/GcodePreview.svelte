@@ -167,7 +167,14 @@
   // renderer shows the new file uncut, and the controller applies them to the file this parse loads. scrubTime
   // goes last, so it wins over scrub (as at mount). The first parse needs none: the blocks below send them.
   let sourceParsed = false;
+  // The source last parsed. Svelte counts any object prop as changed whenever it is set again, even to the same
+  // value (a spread `{...props}`, or a parent re-setting `source={file}`), so the same bytes again would re-parse.
+  // The same source again is no change, as in the React, Vue and Web Component adapters; to reload the same
+  // bytes, pass a new array or call `parse()`. Clearing `source` resets it.
+  let lastSource = null;
   function parseSource(bytes) {
+    if (bytes === lastSource) return;
+    lastSource = bytes;
     void preview.parse(bytes, parseOptions);
     const first = !sourceParsed;
     sourceParsed = true;
@@ -191,6 +198,7 @@
     preview.controls.setScrubTime(v);
   }
   $: if (source !== null && source !== undefined) parseSource(source);
+  else lastSource = null;
   $: if (layerRange === null || layerRange === undefined) preview.controls.setLayerRange(0, Number.POSITIVE_INFINITY);
   else preview.controls.setLayerRange(layerRange[0], layerRange[1]);
   $: sendScrub(scrub ?? null);

@@ -136,4 +136,25 @@ describe('GcodeParseSession — postMessage failure (#453)', () => {
     expect(b.ir.segments.count).toBe(2);
     session.dispose();
   });
+
+  it('a getReader getter that throws while the transfer list is built rejects with E_POST_FAILED, not a wedge', async () => {
+    const worker = cloningWorker();
+    const session = new GcodeParseSession({ worker });
+    const hostile = {
+      get getReader(): never {
+        throw new Error('hostile getter');
+      }
+    };
+    await expect(session.parse(hostile as never)).rejects.toMatchObject({
+      code: 'E_POST_FAILED',
+      message: 'could not send the parse to the worker: hostile getter'
+    });
+    expect(worker.posted.length).toBe(0);
+    // The session is idle again: the next parse is posted, not refused with E_BUSY.
+    const next = session.parse('G1 X1');
+    expect(worker.posted.map((m) => m.type).join(',')).toBe('parse');
+    worker.onmessage?.(done(worker.posted[0]!.id));
+    await expect(next).resolves.toMatchObject({ ir: { header: { complete: true } } });
+    session.dispose();
+  });
 });

@@ -147,16 +147,17 @@ export class GcodeParseSession {
       const id = this.nextId++;
       const active: ActiveParse = { id, resolve, reject };
       this.active = active;
-      // §4.2 wire strategy: Uint8Array transfers its buffer (zero-copy); a
-      // ReadableStream is transferred; a Blob is a cheap cloneable handle.
-      let transfer: unknown[] | undefined;
-      if (input instanceof Uint8Array) transfer = [input.buffer];
-      else if (isReadableStreamLike(input) && typeof input !== 'string') transfer = [input];
       try {
+        // §4.2 wire strategy: Uint8Array transfers its buffer (zero-copy); a
+        // ReadableStream is transferred; a Blob is a cheap cloneable handle.
+        let transfer: unknown[] | undefined;
+        if (input instanceof Uint8Array) transfer = [input.buffer];
+        else if (isReadableStreamLike(input) && typeof input !== 'string') transfer = [input];
         worker.postMessage({ v: PROTOCOL_VERSION, type: 'parse', id, input, opts }, transfer);
       } catch (err) {
         // The worker never got this parse (e.g. DataCloneError: the bytes' buffer was already
-        // transferred by an earlier parse). Settle it here, or `active` stays set and every later
+        // transferred by an earlier parse, or a hostile `getReader` getter threw while the transfer
+        // list was built). Settle it here, or `active` stays set and every later
         // parse() fails with E_BUSY (#453). The worker itself is untouched and stays usable.
         this.settle(
           active,

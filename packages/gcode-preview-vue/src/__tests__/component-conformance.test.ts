@@ -6,10 +6,13 @@ import {
   SuiteStubWorker,
   emitSuiteBuild,
   makeSuiteStubGL,
-  runComponentConformanceSuite
+  runComponentConformanceSuite,
+  type MountedComponent
 } from '@chestnutlabs/gcode-preview-core/testing';
 import type { GcodePreviewControls } from '@chestnutlabs/gcode-preview-core';
 import { GcodePreview } from '../index';
+
+type ParseOptions = Parameters<NonNullable<MountedComponent['setParseOptions']>>[0];
 
 type Drawn = { chunkMeshes: { geometry: { drawRange: { count: number } } }[] };
 
@@ -32,6 +35,7 @@ runComponentConformanceSuite(
         };
       } | null>(null);
       const source = ref<Uint8Array | null>(null);
+      const parseOptions = ref<ParseOptions>(undefined);
       const container = document.body.appendChild(document.createElement('div'));
       const app = createApp(
         defineComponent({
@@ -39,6 +43,7 @@ runComponentConformanceSuite(
             h(GcodePreview, {
               ref: comp,
               source: source.value,
+              parseOptions: parseOptions.value,
               renderer: opts.renderer,
               quality: 'lines',
               cameraFov: opts.cameraFov,
@@ -75,6 +80,10 @@ runComponentConformanceSuite(
         },
         setSource: async (bytes) => {
           source.value = bytes;
+          await nextTick();
+        },
+        setParseOptions: async (o) => {
+          parseOptions.value = o;
           await nextTick();
         },
         firstChunkDrawCount: () =>

@@ -39,17 +39,22 @@ export interface ModelViewerHandle {
 interface Slot {
   controller: ModelPreviewController | null;
   disposed: boolean;
+  /**
+   * True once the unmount cleanup ran and nothing re-subscribed since. A handle call then reaches the disposed
+   * controller (setSource rejects `E_MODEL_PREVIEW_DISPOSED`) instead of rebuilding one that no canvas will bind.
+   */
+  unmounted: boolean;
   canvas: HTMLCanvasElement | null;
 }
 
 export function useModelViewer(options: UseModelViewerOptions = {}): ModelViewerHandle {
   const optionsRef = useRef(options);
   optionsRef.current = options;
-  const slot = useRef<Slot>({ controller: null, disposed: false, canvas: null });
+  const slot = useRef<Slot>({ controller: null, disposed: false, unmounted: false, canvas: null });
 
   const ensure = useCallback((): ModelPreviewController => {
     const s = slot.current;
-    if (s.controller === null || s.disposed) {
+    if (s.controller === null || (s.disposed && !s.unmounted)) {
       s.controller = createModelPreviewController(optionsRef.current);
       s.disposed = false;
       if (s.canvas !== null) s.controller.bindCanvas(s.canvas);
@@ -57,7 +62,14 @@ export function useModelViewer(options: UseModelViewerOptions = {}): ModelViewer
     return s.controller;
   }, []);
 
-  const subscribe = useCallback((cb: () => void) => ensure().onStateChange(() => cb()), [ensure]);
+  // A (re-)subscribe means the component is mounted (again, under StrictMode): rebuild from here on.
+  const subscribe = useCallback(
+    (cb: () => void) => {
+      slot.current.unmounted = false;
+      return ensure().onStateChange(() => cb());
+    },
+    [ensure]
+  );
   const getSnapshot = useCallback(() => ensure().getState(), [ensure]);
   const state = useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
 
@@ -68,10 +80,12 @@ export function useModelViewer(options: UseModelViewerOptions = {}): ModelViewer
   // declared above), and `subscribe` calls `ensure()`, which rebuilds the disposed controller AND
   // rebinds the canvas it already holds (refs attach before the dispose/recreate cycle and never
   // re-fire). Every handle call goes through `ensure()` too.
+  // After a real unmount nothing re-subscribes, so `unmounted` stays set and a late handle call is refused.
   useEffect(() => {
     return () => {
       slot.current.controller?.dispose();
       slot.current.disposed = true;
+      slot.current.unmounted = true;
     };
   }, [ensure]);
 
