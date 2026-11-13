@@ -1140,7 +1140,10 @@ export function runComponentConformanceSuite(name: string, api: TestApi, harness
         await m.parse(new Uint8Array(1_000));
         await m.settle();
         if (!probe.used()) throw new Error("harness.mount must honour opts.renderer '2d' (no 2D renderer drew)");
-        // 4 Cut strokes (travel hidden by default); build-complete counts all 5 drawable segments.
+        // The components show travel by default; hide it so the count is the 4 Cut strokes alone.
+        m.controls().setKindVisible('travel', false);
+        await m.settle();
+        // build-complete counts all 5 drawable segments, travel included, whether or not it is shown.
         expect(probe.strokes()).toBe(4);
         expect(JSON.stringify(builds)).toBe('[5]');
         m.controls().setKindVisible('cut', false);
