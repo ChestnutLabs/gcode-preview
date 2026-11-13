@@ -24,7 +24,11 @@ export interface WorkerLike {
 }
 
 export interface SessionOptions {
-  /** Escape hatch (DD-003 §4.4 option c): supply a Worker instance or factory. */
+  /**
+   * Escape hatch (DD-003 §4.4 option c): supply a Worker instance or factory. An instance cannot be
+   * rebuilt: after it is terminated (the cancel backstop, a crash, or `dispose()`), `parse()` rejects with
+   * `E_WORKER_TERMINATED`; pass a factory to recover.
+   */
   worker?: WorkerLike | (() => WorkerLike);
   /** Cancel-acknowledgement backstop before terminate() (default 2000 ms). */
   terminateFallbackMs?: number;

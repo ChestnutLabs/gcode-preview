@@ -177,6 +177,114 @@ describe('streaming driver — limits, cancel, hooks', () => {
     expect(spy.releases).toBe(1);
   });
 
+  const manyMoves = (): Uint8Array => {
+    const lines = ['G0 X0 Y0 Z0'];
+    for (let i = 1; i <= 50; i++) lines.push(`G1 X${i} E${i}`);
+    return enc.encode(lines.join('\n') + '\n');
+  };
+
+  it('a REAL ReadableStream stopped by a limit has its underlying source cancelled once and its lock released', async () => {
+    let cancels = 0;
+    let pulls = 0;
+    const stream = new ReadableStream<Uint8Array>(
+      {
+        pull(c) {
+          pulls++;
+          c.enqueue(pulls === 1 ? manyMoves() : enc.encode('G1 X99 E99\n'));
+        },
+        cancel() {
+          cancels++;
+        }
+      },
+      { highWaterMark: 0 }
+    );
+    const r = await parseGcodeStreamToIR(stream, { limits: { maxSegments: 10 } });
+    expect(r.stats.stopReason?.code).toBe('E_LIMIT_SEGMENTS');
+    expect(r.ir.segments.count).toBe(10);
+    await new Promise((res) => setTimeout(res, 10)); // the cancel is fire-and-forget
+    expect(cancels).toBe(1);
+    expect(stream.locked).toBe(false);
+  });
+
+  it('a REAL ReadableStream that errors mid-read rejects with the source error and raises no unhandled rejection', async () => {
+    const unhandled: unknown[] = [];
+    const onUnhandled = (reason: unknown): void => {
+      unhandled.push(reason);
+    };
+    process.on('unhandledRejection', onUnhandled);
+    try {
+      let pulls = 0;
+      const stream = new ReadableStream<Uint8Array>(
+        {
+          pull(c) {
+            pulls++;
+            if (pulls === 1) c.enqueue(enc.encode('G0 X0 Y0 Z0\n'));
+            else c.error(new Error('source broke'));
+          }
+        },
+        { highWaterMark: 0 }
+      );
+      await expect(parseGcodeStreamToIR(stream)).rejects.toThrow('source broke');
+      expect(stream.locked).toBe(false);
+      await new Promise((res) => setTimeout(res, 50));
+      expect(unhandled).toEqual([]);
+    } finally {
+      process.off('unhandledRejection', onUnhandled);
+    }
+  });
+
+  it('a source whose cancel() never settles does not hold the parse: it still resolves E_LIMIT_SEGMENTS', async () => {
+    const stream = new ReadableStream<Uint8Array>(
+      {
+        pull(c) {
+          c.enqueue(manyMoves());
+        },
+        cancel() {
+          return new Promise<void>(() => undefined);
+        }
+      },
+      { highWaterMark: 0 }
+    );
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const outcome = await Promise.race([
+      parseGcodeStreamToIR(stream, { limits: { maxSegments: 10 } }),
+      new Promise<'hung'>((res) => {
+        timer = setTimeout(() => res('hung'), 3000);
+      })
+    ]);
+    clearTimeout(timer);
+    expect(outcome).not.toBe('hung');
+    expect((outcome as Awaited<ReturnType<typeof parseGcodeStreamToIR>>).stats.stopReason?.code).toBe(
+      'E_LIMIT_SEGMENTS'
+    );
+  });
+
+  it('a reader whose cancel() THROWS synchronously still yields the result and releases the lock once', async () => {
+    const spy = { releases: 0, cancels: 0 };
+    let sent = false;
+    const stream = {
+      getReader: () => ({
+        read: (): Promise<{ done: boolean; value?: Uint8Array }> => {
+          if (sent) return Promise.resolve({ done: true });
+          sent = true;
+          return Promise.resolve({ done: false, value: manyMoves() });
+        },
+        releaseLock: () => {
+          spy.releases++;
+        },
+        cancel: (): Promise<void> => {
+          spy.cancels++;
+          throw new Error('sync cancel failure');
+        }
+      })
+    };
+    const r = await parseGcodeStreamToIR(stream as never, { limits: { maxSegments: 10 } });
+    expect(r.stats.stopReason?.code).toBe('E_LIMIT_SEGMENTS');
+    expect(r.ir.segments.count).toBe(10);
+    expect(spy.cancels).toBe(1);
+    expect(spy.releases).toBe(1);
+  });
+
   it('tripping maxInputBytes mid-stream cancels the source', async () => {
     const { stream, spy } = spyStream([
       enc.encode('G0 X0 Y0 Z0\n'),
@@ -544,6 +652,34 @@ describe('GcodeParseSession', () => {
     expect(w.terminated).toBe(1);
   });
 
+  it('a supplied worker INSTANCE is spent after a crash (onerror) too: the next parse rejects, nothing is posted', async () => {
+    const w = rigWorker();
+    const s = new GcodeParseSession({ worker: w });
+    const p = s.parse('x');
+    const first = p.catch((e: unknown) => e);
+    w.onerror?.(new Error('boom'));
+    expect(((await first) as ParseSessionError).code).toBe('E_WORKER_CRASHED');
+    expect(w.terminated).toBe(1);
+    const again = (await s.parse('y').catch((e: unknown) => e)) as ParseSessionError;
+    expect(again).toBeInstanceOf(ParseSessionError);
+    expect(again.code).toBe('E_WORKER_TERMINATED');
+    expect(w.posted).toHaveLength(1); // the first parse only
+  });
+
+  it('a supplied worker INSTANCE is spent after dispose() too: the next parse rejects, nothing is posted', async () => {
+    const w = rigWorker();
+    const s = new GcodeParseSession({ worker: w });
+    const first = s.parse('x');
+    w.reply({ type: 'done', id: 1, ir: DONE_IR, stats: {} });
+    await first;
+    s.dispose();
+    expect(w.terminated).toBe(1);
+    const again = (await s.parse('y').catch((e: unknown) => e)) as ParseSessionError;
+    expect(again).toBeInstanceOf(ParseSessionError);
+    expect(again.code).toBe('E_WORKER_TERMINATED');
+    expect(w.posted).toHaveLength(1); // the first parse only
+  });
+
   it('a supplied worker INSTANCE that was terminated is not reused: parse rejects instead of hanging', async () => {
     vi.useFakeTimers();
     const w = rigWorker();
@@ -823,6 +959,22 @@ describe('worker handler — containers (synthetic adapter)', () => {
   it('plate must be an integer inside the plate list: -1, NaN, 1.5 and N are refused before openPlate', async () => {
     for (const plate of [-1, Number.NaN, 1.5, 1, 2]) {
       const a = adapter();
+      const h = harness({ containers: a.containers });
+      h.parse(1, new Uint8Array(16).fill(32), { plate });
+      const r = await h.settled(1);
+      expect(r.error?.code, `plate ${plate}`).toBe('E_CONTAINER_NO_PAYLOAD');
+      expect(a.openPlate).not.toHaveBeenCalled();
+    }
+  });
+
+  it('a fractional plate that is INSIDE the list (0.5 of 1, 1.5 of 3) is refused before openPlate', async () => {
+    const three = [0, 1, 2].map((index) => ({ index, name: `p${index}`, estimatedBytes: 1 }));
+    for (const [plates, plate] of [
+      [undefined, 0.5],
+      [three, 1.5],
+      [three, 0.5]
+    ] as const) {
+      const a = adapter(plates === undefined ? {} : { plates });
       const h = harness({ containers: a.containers });
       h.parse(1, new Uint8Array(16).fill(32), { plate });
       const r = await h.settled(1);
