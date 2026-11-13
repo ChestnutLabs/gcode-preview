@@ -288,18 +288,41 @@ function GcodePreviewImpl(props: GcodePreviewProps, ref: ForwardedRef<GcodePrevi
     hiddenFeatureRoles,
     progress
   } = props;
+  // The scrub values last sent from the props. A nullish prop is sent (as a clear) only when it replaces a sent
+  // number, so an unset `scrubTime` at mount no longer clears the `scrub` cut. StrictMode's second effect run
+  // reads the same record, so it sends nothing extra.
+  const scrubSentRef = useRef<{ scrub: number | null; scrubTime: number | null }>({ scrub: null, scrubTime: null });
+  const sourceParsedRef = useRef(false);
   useEffect(() => {
-    if (source !== null && source !== undefined) void preview.parse(source, cbRef.current.parseOptions);
+    if (source === null || source === undefined) return;
+    void preview.parse(source, cbRef.current.parseOptions);
+    // On a source change a renderer shows the new file uncut, so re-send the view props that still hold a
+    // value: the controller applies them to the file that parse loads. scrubTime goes last, so it wins over
+    // scrub (as at mount). The first parse needs none: the prop effects below send them at mount.
+    const first = !sourceParsedRef.current;
+    sourceParsedRef.current = true;
+    if (first) return;
+    const p = cbRef.current;
+    if (p.layerRange !== null && p.layerRange !== undefined)
+      preview.controls.setLayerRange(p.layerRange[0], p.layerRange[1]);
+    if (p.scrub !== null && p.scrub !== undefined) preview.controls.setScrubPosition(p.scrub);
+    if (p.scrubTime !== null && p.scrubTime !== undefined) preview.controls.setScrubTime(p.scrubTime);
   }, [source]);
   useEffect(() => {
     if (layerRange === null || layerRange === undefined) preview.controls.setLayerRange(0, Number.POSITIVE_INFINITY);
     else preview.controls.setLayerRange(layerRange[0], layerRange[1]);
   }, [layerRange]);
   useEffect(() => {
-    preview.controls.setScrubPosition(scrub ?? null);
+    const v = scrub ?? null;
+    if (v === null && scrubSentRef.current.scrub === null) return;
+    scrubSentRef.current.scrub = v;
+    preview.controls.setScrubPosition(v);
   }, [scrub]);
   useEffect(() => {
-    preview.controls.setScrubTime(scrubTime ?? null);
+    const v = scrubTime ?? null;
+    if (v === null && scrubSentRef.current.scrubTime === null) return;
+    scrubSentRef.current.scrubTime = v;
+    preview.controls.setScrubTime(v);
   }, [scrubTime]);
   useEffect(() => {
     preview.controls.setKindVisible('travel', showTravel ?? true);

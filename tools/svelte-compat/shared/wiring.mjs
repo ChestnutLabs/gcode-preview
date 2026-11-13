@@ -54,8 +54,6 @@ export function registerWiring({ describe, it, expect, beforeEach, svelte, expec
           'setKindVisible("travel",true)',
           'setKindVisible("wipe",true)',
           'setLayerRange(0,"Infinity")',
-          'setScrubPosition(null)',
-          'setScrubTime(null)',
           'setShowRetractions(false)'
         ].sort()
       );
@@ -351,6 +349,53 @@ export function registerWiring({ describe, it, expect, beforeEach, svelte, expec
       m.unmount();
       expect(calls('ctl.dispose')).toEqual(['ctl.dispose()']);
       expect(calls('ctl.bindCanvas').at(-1)).toBe('ctl.bindCanvas(null)');
+    });
+  });
+
+  describe(`${label}: GcodePreview wiring: scrub props and a source change (Part C)`, () => {
+    const view = () => log.filter((l) => /^set(LayerRange|ScrubPosition|ScrubTime)\(/.test(l));
+    beforeEach(reset);
+    it('an unset scrub prop sends nothing, so scrub at mount is not cleared; a cleared sent value sends null', async () => {
+      const m = mountP({ scrub: 5 });
+      await settle();
+      expect(view()).toEqual(['setLayerRange(0,"Infinity")', 'setScrubPosition(5)']);
+      log.length = 0;
+      await m.set({ scrubTime: 7 });
+      expect(view()).toEqual(['setScrubTime(7)']);
+      log.length = 0;
+      await m.set({ scrub: null, scrubTime: null });
+      expect(view()).toEqual(['setScrubPosition(null)', 'setScrubTime(null)']);
+      log.length = 0;
+      // From null to unset is a change the adapter sees, but nothing was sent since the clear: no second null.
+      await m.set({ scrub: undefined, scrubTime: undefined });
+      expect(view()).toEqual([]);
+      log.length = 0;
+      await m.set({ scrubTime: 4 });
+      expect(view()).toEqual(['setScrubTime(4)']);
+      m.unmount();
+    });
+
+    it('a source change re-sends the view props that hold a value, after the parse; the first parse does not', async () => {
+      const m = mountP({ source: new Uint8Array(40), layerRange: [2, 5], scrub: 3, scrubTime: 9 });
+      await settle();
+      expect(view()).toEqual(['setLayerRange(2,5)', 'setScrubPosition(3)', 'setScrubTime(9)']);
+      log.length = 0;
+      await m.set({ source: new Uint8Array(41) });
+      expect(log.filter((l) => l.startsWith('ctl.parse') || view().includes(l))).toEqual([
+        'ctl.parse("Uint8Array(41)","undefined")',
+        'setLayerRange(2,5)',
+        'setScrubPosition(3)',
+        'setScrubTime(9)'
+      ]);
+      log.length = 0;
+      // Cleared in the same update: nothing is re-sent for the new file, and each clear is sent once.
+      await m.set({ source: new Uint8Array(42), layerRange: null, scrub: null, scrubTime: null });
+      expect(view()).toEqual(['setLayerRange(0,"Infinity")', 'setScrubPosition(null)', 'setScrubTime(null)']);
+      log.length = 0;
+      await m.set({ source: new Uint8Array(43) });
+      expect(view()).toEqual([]);
+      expect(calls('ctl.parse')).toEqual(['ctl.parse("Uint8Array(43)","undefined")']);
+      m.unmount();
     });
   });
 }

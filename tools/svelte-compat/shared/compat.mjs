@@ -266,21 +266,25 @@ export function registerCompat({ describe, it, expect, svelte, compiler, expecte
     {
       mount(cb, opts = {}) {
         const target = document.body.appendChild(document.createElement('div'));
+        const base = {
+          renderer: opts.renderer,
+          quality: 'lines',
+          cameraFov: opts.cameraFov,
+          pixelRatio: opts.pixelRatio,
+          scrub: opts.scrub,
+          scrubTime: opts.scrubTime,
+          layerRange: opts.layerRange,
+          createWorker: () => new SuiteStubWorker(undefined, opts.ir),
+          rendererOptions: {
+            createRenderer: (canvas) => makeSuiteStubGL(canvas),
+            scheduleFrame: (f) => f(),
+            chunksPerTick: 8
+          }
+        };
         const handle = mountComponent(svelte, PreviewHost, {
           target,
           props: {
-            props: {
-              renderer: opts.renderer,
-              quality: 'lines',
-              cameraFov: opts.cameraFov,
-              pixelRatio: opts.pixelRatio,
-              createWorker: () => new SuiteStubWorker(undefined, opts.ir),
-              rendererOptions: {
-                createRenderer: (canvas) => makeSuiteStubGL(canvas),
-                scheduleFrame: (f) => f(),
-                chunksPerTick: 8
-              }
-            },
+            props: base,
             handlers: {
               ready: (e) => cb.onReady(e.detail.segments),
               buildcomplete: (e) => cb.onBuildComplete(e.detail.segments),
@@ -295,6 +299,9 @@ export function registerCompat({ describe, it, expect, svelte, compiler, expecte
           emitBuild: (decimation, segments) => emitSuiteBuild(preview.raw.renderer(), decimation, segments),
           parse: (bytes) => preview.parse(bytes),
           setCameraMode: (mode) => preview.controls.setCameraMode(mode),
+          setSource: (bytes) => handle.setProps({ props: { ...base, source: bytes } }),
+          firstChunkDrawCount: () => preview.raw.renderer().chunkMeshes[0].geometry.drawRange.count,
+          controls: () => preview.controls,
           settle,
           unmount: () => {
             handle.destroy();

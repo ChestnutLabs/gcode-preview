@@ -3,7 +3,7 @@
  * A harness that never wires it must fail with an explicit message, not pass vacuously or with a bare diff.
  */
 import { describe, expect, it } from 'vitest';
-import { runComponentConformanceSuite, type ComponentHarness } from '../testing';
+import { runComponentConformanceSuite, type ComponentHarness, type MountedComponent } from '../testing';
 
 type Case = () => Promise<void> | void;
 
@@ -46,4 +46,33 @@ describe('component conformance: an unwired renderer-unsupported harness (#520)'
       );
     });
   }
+});
+
+describe('component conformance: a harness without the Part C seams', () => {
+  const partC = (h: ComponentHarness) => [...collect(h)].filter(([title]) => title.includes('(Part C)'));
+
+  it('there are four Part C cases', () => {
+    expect(partC(unwired).length).toBe(4);
+  });
+
+  for (const [title, run] of partC(unwired)) {
+    const message = title.startsWith('a ready-time')
+      ? 'harness must implement setSource and firstChunkDrawCount and controls (Part C)'
+      : 'harness must implement setSource and firstChunkDrawCount (Part C)';
+    it(`fails with the explicit message: ${title}`, async () => {
+      await expect(Promise.resolve().then(run)).rejects.toThrow(message);
+    });
+  }
+
+  it('the ready-time case also names controls alone when only it is missing', async () => {
+    const noControls: ComponentHarness = {
+      mount: () => ({
+        ...(unwired.mount({} as never) as MountedComponent),
+        setSource: () => undefined,
+        firstChunkDrawCount: () => 0
+      })
+    };
+    const [, run] = partC(noControls).find(([title]) => title.startsWith('a ready-time'))!;
+    await expect(Promise.resolve().then(run)).rejects.toThrow('harness must implement controls (Part C)');
+  });
 });
