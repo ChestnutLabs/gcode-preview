@@ -29,7 +29,8 @@
   },
   "warningCodes": [
     "layers-unavailable",
-    "rs274-bad-expression"
+    "rs274-bad-expression",
+    "unbalanced-paren-comment"
   ],
   "bufferDigests": {
     "x0": "811c9dc5",

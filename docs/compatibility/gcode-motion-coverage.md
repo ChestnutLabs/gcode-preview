@@ -49,6 +49,11 @@ drawing is approximate. These codes are new after v0.23.0 (#553):
 | `arc-turns-ignored` | a `P` turn count other than 1 | a single sweep |
 | `canned-cycle-missing-word` | a `G81`/`G82`/`G83` with no `Z` or `R`, and none set earlier | the cycle, with 0 for the missing word |
 | `canned-cycle-plane` | a canned cycle while `G18`/`G19` is active | the cycle, still drilling along Z in the XY plane |
+| `unbalanced-paren-comment` | a `( … )` comment is never closed, or one is nested inside another (LinuxCNC rejects both) | the line as before: an unclosed `(` hides the rest of the line; a nested one closes at its matching `)`. Lines that start with a multi-letter command word (`EXCLUDE_OBJECT_START NAME=cube_(1`) are not checked |
+
+Under `G91`, a canned cycle's `R` and `Z` are kept as the numbers written (as LinuxCNC does): a later
+`G81` block, or a bare `X`/`Y` repeat, that leaves one out applies it again from its own current Z, so
+with `G99` each hole's plane moves up by `R`.
 
 The existing `arc-missing-center` warning (no I/J/K and no R: drawn as a straight move) is unchanged.
 The bundled `mach3` demo file raises `arc-radius-too-small` for its `G02 … R0.255` arcs; its geometry

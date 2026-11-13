@@ -28,7 +28,8 @@
     "coordinateSystem": "inferred"
   },
   "warningCodes": [
-    "layers-unavailable"
+    "layers-unavailable",
+    "unbalanced-paren-comment"
   ],
   "bufferDigests": {
     "x0": "4c0deeb5",
