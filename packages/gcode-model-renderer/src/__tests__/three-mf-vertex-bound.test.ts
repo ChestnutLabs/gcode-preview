@@ -108,4 +108,86 @@ describe('3MF vertex bound (3 × maxTriangles)', () => {
     }
     expect(longest).toBe(36);
   });
+
+  // An external production-extension part reached by TWO build items (Bambu/Orca instancing): it is parsed once
+  // (partCache), so its vertices count once. Double counting would cross the cap.
+  const twoItemsOnePart = (extObject: string): Uint8Array => {
+    const comp = (id: number): string =>
+      `<object id="${id}"><components><component p:path="/3D/Objects/a.model" objectid="2"/></components></object>`;
+    return makeZip([
+      { name: '3D/3dmodel.model', data: enc(modelXml(comp(8) + comp(9), '<item objectid="8"/><item objectid="9"/>')) },
+      { name: '3D/Objects/a.model', data: enc(modelXml(extObject)) }
+    ]);
+  };
+
+  it('an external part reached by two build items counts its vertices once', async () => {
+    // maxTriangles 4 -> cap 12. 7 vertices once = 7 (loads); counted twice would be 14 > 12.
+    const m = await parse3mf(twoItemsOnePart(vertexOnly(2, 7)), { maxTriangles: 4 });
+    expect(m.objects).toHaveLength(1);
+    // ...and 13 vertices in the part alone still crosses the cap once.
+    await expect(parse3mf(twoItemsOnePart(vertexOnly(2, 13)), { maxTriangles: 4 })).rejects.toEqual(tooMany(12, 4));
+  });
+});
+
+/** An object over 3 shared vertices with `t` triangles (all v1=0 v2=1 v3=2). */
+const triOnly = (id: number, t: number): string =>
+  `<object id="${id}"><mesh>${vertices(3)}<triangles>${'<triangle v1="0" v2="1" v3="2"/>'.repeat(t)}</triangles></mesh></object>`;
+const triTooMany = (tris: number) =>
+  expect.objectContaining({ code: 'E_MODEL_TOO_MANY_TRIANGLES', message: `3MF exceeds triangle limit ${tris}` });
+
+describe('3MF triangle bound (scene-wide, at parse time)', () => {
+  it('six objects of maxTriangles triangles with only one placed is rejected (6x the cap is not parsed)', async () => {
+    const objs = [1, 2, 3, 4, 5, 6].map((id) => triOnly(id, 10)).join('');
+    const bytes = makeZip([{ name: '3D/3dmodel.model', data: enc(modelXml(objs, '<item objectid="1"/>')) }]);
+    await expect(parse3mf(bytes, { maxTriangles: 10 })).rejects.toEqual(triTooMany(10));
+  });
+
+  it('a file exactly at the cap loads, one triangle more across two objects rejects', async () => {
+    const both = '<item objectid="1"/><item objectid="2"/>';
+    const at = makeZip([{ name: '3D/3dmodel.model', data: enc(modelXml(triOnly(1, 5) + triOnly(2, 5), both)) }]);
+    const over = makeZip([{ name: '3D/3dmodel.model', data: enc(modelXml(triOnly(1, 6) + triOnly(2, 5), both)) }]);
+    const m = await parse3mf(at, { maxTriangles: 10 });
+    expect(m.objects).toHaveLength(2);
+    await expect(parse3mf(over, { maxTriangles: 10 })).rejects.toEqual(triTooMany(10));
+  });
+
+  it('maxTriangles 0 rejects the very first triangle (cap 0, before its indices are read)', async () => {
+    // No vertices, so only the triangle bound can fire; the triangle's indices are out of range and must not be read.
+    const noVerts = '<object id="1"><mesh><triangles><triangle v1="0" v2="1" v3="2"/></triangles></mesh></object>';
+    await expect(parse3mf(mainOnly(noVerts), { maxTriangles: 0 })).rejects.toEqual(triTooMany(0));
+  });
+
+  it('a single object at the cap loads and cap + 1 rejects', async () => {
+    await expect(parse3mf(mainOnly(triOnly(1, 10)), { maxTriangles: 10 })).resolves.toBeDefined();
+    await expect(parse3mf(mainOnly(triOnly(1, 11)), { maxTriangles: 10 })).rejects.toEqual(triTooMany(10));
+  });
+
+  it('an external part reached by two build items counts its triangles once', async () => {
+    const comp = (id: number): string =>
+      `<object id="${id}"><components><component p:path="/3D/Objects/a.model" objectid="2"/></components></object>`;
+    const bytes = makeZip([
+      { name: '3D/3dmodel.model', data: enc(modelXml(comp(8) + comp(9), '<item objectid="8"/><item objectid="9"/>')) },
+      { name: '3D/Objects/a.model', data: enc(modelXml(triOnly(2, 7))) }
+    ]);
+    // 7 triangles once = 7 <= 10 (loads); counted twice would be 14 > 10.
+    const m = await parse3mf(bytes, { maxTriangles: 10 });
+    expect(m.objects).toHaveLength(1);
+  });
+
+  it('throws before the triangle array grows past the cap (array-length spy)', async () => {
+    let longest = 0;
+    const bytes = mainOnly(triOnly(1, 11));
+    const realPush = Array.prototype.push;
+    Array.prototype.push = function (this: unknown[], ...items: unknown[]): number {
+      const n = realPush.apply(this, items);
+      if (n > longest) longest = n;
+      return n;
+    };
+    try {
+      await expect(parse3mf(bytes, { maxTriangles: 10 })).rejects.toEqual(triTooMany(10));
+    } finally {
+      Array.prototype.push = realPush;
+    }
+    expect(longest).toBe(30);
+  });
 });
