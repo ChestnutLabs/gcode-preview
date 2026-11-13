@@ -176,6 +176,39 @@ source-mapping (`pickSegment`), the color-mode capability gate (`isColorModeAvai
 `capture`. Capability-aware state (`availableColorModes`, `hasRetractions`, `hasColorChanges`) lets
 your UI offer and *explain* controls honestly rather than guessing.
 
+### Error codes you can handle
+
+These codes arrive on the `error` and `parse-error` events, in `state.error`, or as the `code` of a rejected
+promise. Each adapter surfaces them the same way.
+
+| Code | When | What to do |
+| --- | --- | --- |
+| `E_WORKER_CREATE_FAILED` | `createWorker`, or the default worker, threw: a strict Content Security Policy is the usual cause | The preview returns to `parsing: false`; the next `parse()` tries again. The browser's own message is part of `message`. Only a `ParseSession` driven directly (`@chestnutlabs/gcode-parser`) also carries `error.cause` |
+| `E_RENDERER_LOAD` | The 3D renderer could not be loaded or started: offline, a stale deploy whose chunk now returns 404, or a device or browser without WebGL | Fall back to `renderer: { mode: '2d' }` (or the `/lite` entry); reloading only helps for the offline and stale-deploy cases |
+| `E_WORKER_TERMINATED` | You passed a single `Worker` instance as `createWorker` and it was terminated (a cancel that the worker did not acknowledge in time, a crash, or `dispose()`); the next parse used to hang | Pass a factory, `createWorker: () => new Worker(…)`, so each parse gets a fresh worker |
+| `E_POST_FAILED` | You re-parsed a buffer that was already handed to the worker | Pass `bytes.slice()` each time |
+| `E_CONTROL_REJECTED` | The renderer rejected a control you queued before it loaded (see above) | Fix the value named in the message |
+| `E_CAPTURE_UNSUPPORTED` | `capture()` was called before the 3D renderer is ready, or on the 2D renderer | Call it once the 3D view shows the file (the `stage` event's `ready` stage); `ready` can fire before the 3D chunk has bound, so retry on this code |
+| `E_PARSE_OPTION`, `E_MODEL_OPTION` | A `parseOptions` or model limit is not a usable number | Pass a finite whole number; there is no `Infinity` |
+
+The `/model` viewer adds codes for files it refuses: `E_MODEL_TOO_LARGE`, `E_MODEL_TOO_MANY_TRIANGLES`,
+`E_MODEL_TOO_MANY_VERTICES` and the rest. The
+[model renderer README](https://github.com/ChestnutLabs/gcode-preview/blob/dev/packages/gcode-model-renderer/README.md)
+lists the limit codes and what triggers each.
+
+### A 2D-only app
+
+`renderer: { mode: '2d' }` (`renderer="2d"` on the components) loads no three.js: the startup bundle for a 2D-only
+controller is about 35 KB, against about 630 KB when three.js is bundled. The 3D renderer loads only when a 3D view
+binds. If your own tests wait a fixed number of ticks for the 3D renderer to bind, preload it once in your test
+setup:
+
+```ts
+await import('@chestnutlabs/gcode-renderer-three');
+```
+
+`@chestnutlabs/gcode-renderer-three/lite` is the three-free entry; most apps never import it.
+
 ## Look, lens and plate (opt-in)
 
 The **Studio look** (`studioTheme('dark' | 'light')`, a gradient backdrop, a solid build plate with grid and

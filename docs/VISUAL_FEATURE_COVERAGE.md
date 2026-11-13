@@ -267,6 +267,8 @@ are now closed:
 | Canned drilling cycles (G81/82/83) | ✅ | ❌ | — | mention | gallery (CNC) | motion-coverage | needs screenshot |
 | Arc / canned-cycle drawing warnings (`arc-radius-too-small`, `canned-cycle-plane`, …, #553) | ✅ | validate page (All parser warnings), Feature Lab Diagnostics (Parse notes) | `app-diagnostics` (as notes) | — | — | motion-coverage | not visually meaningful: warning text in `ir.header.warnings`; the drawn approximation looks like an ordinary arc or cycle |
 | `( … )` comments ignored on plain lines (#544) | ✅ | ❌ | — | — | — | motion-coverage | not visually meaningful: a parse correctness fix (no stray move), nothing new to show |
+| Cut moves frame the work (CNC/laser/plotter `bounds`, #575) | ✅ | validate page | — | — | — | concept-dialects-containers | needs screenshot: a cut-only file framed on the work, not the bed. Waits on the CNC screenshot regeneration (#580) so the two don't collide |
+| Canned-cycle preliminary Z-up move (#569) | ✅ | ❌ | — | — | — | concept-dialects-containers | not visually meaningful: one short vertical travel segment at a hole's start, no new control or panel |
 | Validation tiers (validated vs experimental) | ✅ | validate page | — | ✅ (prose) | gallery (CNC) | compatibility | not visually meaningful (prose/table) |
 | Parametric RS274NGC programs (params/expr/O-word/subs) | ✅ | ✅ (fixture) | `parametric-bolt-circle` | ✅ | gallery (CNC) | concept-parametric-programs | covered — demo fixture + media + README + gallery (program paired with geometry) |
 
