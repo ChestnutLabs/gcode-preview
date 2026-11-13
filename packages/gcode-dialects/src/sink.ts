@@ -229,8 +229,8 @@ export class BufferedAnnotationSink implements AnnotationSink {
     // `objectBounds` was computed by the parse core before any object labels existed (empty then). Now
     // that this adapter has populated the object channel, refresh the object-only bounds so
     // `frameContent:'object'` (#306/#6) frames the printed object rather than falling back to `'all'`.
-    // Mirrors toolpath-core's parse-time objectBounds pass (extruded segments with object != 0), in
-    // absolute coordinates; empty (Infinity) stays empty when nothing qualifies — the honest default.
+    // Mirrors toolpath-core's parse-time objectBounds pass (productive segments, Extrude or Cut since #568, with
+    // object != 0), in absolute coordinates; empty (Infinity) stays empty when nothing qualifies — the honest default.
     if (touched.object) {
       const seg = ir.segments;
       const o = ir.header.originOffset;
@@ -238,7 +238,7 @@ export class BufferedAnnotationSink implements AnnotationSink {
       b.min.x = b.min.y = b.min.z = Infinity;
       b.max.x = b.max.y = b.max.z = -Infinity;
       for (let i = 0; i < count; i++) {
-        if ((seg.kind[i] & MoveKind.Extrude) === 0 || seg.object[i] === 0) continue;
+        if ((seg.kind[i] & (MoveKind.Extrude | MoveKind.Cut)) === 0 || seg.object[i] === 0) continue;
         const sx = o.x + seg.x0[i];
         const sy = o.y + seg.y0[i];
         const sz = o.z + seg.z0[i];
