@@ -42,6 +42,7 @@ import {
   Vector2,
   Vector3
 } from 'three';
+import { MoveKind } from '@chestnutlabs/toolpath-core';
 import type { FeatureRoleValue, MachineGeometry, MappedProgress, ToolpathIR } from '@chestnutlabs/toolpath-core';
 import { autoDecimation, buildChunks, type ChunkBuildResult, type GeometryChunk } from './chunks.js';
 import { checkColorMode } from '@chestnutlabs/gcode-colors';
@@ -277,6 +278,24 @@ function isFiniteBox(b: {
   return Number.isFinite(b.min.x + b.min.y + b.min.z + b.max.x + b.max.y + b.max.z);
 }
 
+/** Plate opacity cap for files with no Extrude, so work below Z 0 shows through (#580). */
+const SUBTRACTIVE_PLATE_OPACITY = 0.35;
+
+/** The builder's empty-bounds sentinel (min +Infinity, max -Infinity on every axis): no productive move. */
+function isEmptyBox(b: {
+  min: { x: number; y: number; z: number };
+  max: { x: number; y: number; z: number };
+}): boolean {
+  return (
+    b.min.x === Infinity &&
+    b.min.y === Infinity &&
+    b.min.z === Infinity &&
+    b.max.x === -Infinity &&
+    b.max.y === -Infinity &&
+    b.max.z === -Infinity
+  );
+}
+
 const DEFAULT_COLOR: ColorMode = { mode: 'single', color: [0.9, 0.4, 0.7] };
 
 /** Discovered machine geometry → renderable volume (bounding volume for circular/polygon beds, v1). */
@@ -374,6 +393,8 @@ export class ToolpathRenderer {
   private resolvedTheme: ResolvedTheme;
 
   private ir: ToolpathIR | null = null;
+  /** Whether the retained IR has any Extrude move (computed in `setIR`); gates the subtractive plate look. */
+  private irHasExtrude = false;
   private readonly raycaster = new Raycaster();
   private readonly pointer = new Vector2();
   private buildResult: ChunkBuildResult | null = null;
@@ -665,6 +686,8 @@ export class ToolpathRenderer {
   setIR(ir: ToolpathIR): void {
     if (this.disposed) return;
     this.ir = ir;
+    // MoveKind is a bit set (an extruding arc is Extrude | ArcSegment), so test the bit, not the exact value.
+    this.irHasExtrude = ir.segments.kind.some((k) => (k & MoveKind.Extrude) !== 0); // once per IR, not per frame
     // Layer/segment counts belong to the old IR — reset clipping to "show everything".
     this.startLayer = 0;
     this.endLayer = Infinity;
@@ -1638,7 +1661,11 @@ export class ToolpathRenderer {
       if (isFiniteBox(ir.modelBounds)) return ir.modelBounds;
       if (isFiniteBox(ir.objectBounds)) return ir.objectBounds;
     }
-    return isFiniteBox(ir.bounds) ? ir.bounds : null;
+    if (isFiniteBox(ir.bounds)) return ir.bounds;
+    // A travel-only file (a pen plotter: no Extrude, no Cut) has EMPTY productive bounds; frame its
+    // drawing, travel included, rather than the bed (#580). Only the empty sentinel qualifies: bounds
+    // poisoned with Infinity/NaN keep the bed fallback (#501).
+    return isEmptyBox(ir.bounds) && isFiniteBox(ir.boundsWithTravel) ? ir.boundsWithTravel : null;
   }
 
   /** Fit the camera to the toolpath bounds (falls back to the preview bounds, then the build volume). */
@@ -1740,7 +1767,7 @@ export class ToolpathRenderer {
       this.emit({
         type: 'error',
         code: 'E_FRAME_CONTENT_UNAVAILABLE',
-        message: `frameContent 'object' cannot isolate the model (nonModelClassification: ${confidence}); framing all extrusion`
+        message: `frameContent 'object' cannot isolate the model (nonModelClassification: ${confidence}); framing all productive moves (extrusion or cut)`
       });
     }
     this.frame();
@@ -1803,8 +1830,27 @@ export class ToolpathRenderer {
       disposeBuildVolume(old); // frees geometry, material and its alpha map
       group.remove(old);
     }
+    // A file with content but no Extrude (CNC, laser, plotter) works at or below Z 0, where an opaque plate
+    // and a shadow decal would hide it (#580): the plate turns see-through and the shadow is dropped.
+    const subtractive = this.ir !== null && this.ir.segments.count > 0 && !this.irHasExtrude;
+    for (const name of ['bedSurface', 'bedSurfaceEdge']) {
+      const mesh = group.getObjectByName(name) as Mesh | undefined;
+      const m = mesh?.material as MeshBasicMaterial | undefined;
+      if (mesh === undefined || m === undefined) continue;
+      // The themed look is remembered on first change, so a later FDM file on the same volume restores it.
+      const base = (mesh.userData.plateBase ??= { opacity: m.opacity, transparent: m.transparent }) as {
+        opacity: number;
+        transparent: boolean;
+      };
+      m.opacity = subtractive ? Math.min(base.opacity, SUBTRACTIVE_PLATE_OPACITY) : base.opacity;
+      const transparent = subtractive ? true : base.transparent;
+      // three does not recompile a program when `transparent` flips; ask for it so an opaque-compiled plate
+      // really turns see-through (and back).
+      if (m.transparent !== transparent) m.needsUpdate = true;
+      m.transparent = transparent;
+    }
     const cs = this.resolvedTheme.contactShadow;
-    if (cs === undefined) return;
+    if (cs === undefined || subtractive) return;
     const shadow = createContactShadow(this.shadowFootprint(), cs.opacity);
     if (shadow !== null) group.add(shadow);
   }
