@@ -133,7 +133,12 @@ describe('unbalanced ( comments', () => {
   });
 
   it('an N line-number prefix does not hide a text-argument line: N10 M117 / N20 EXCLUDE_OBJECT_START stay quiet', () => {
-    for (const line of ['N10 M117 Printing (50%', 'n10 m117 x (open', 'N10M486 AShape (copy', 'N20 EXCLUDE_OBJECT_START NAME=a_(1'])
+    for (const line of [
+      'N10 M117 Printing (50%',
+      'n10 m117 x (open',
+      'N10M486 AShape (copy',
+      'N20 EXCLUDE_OBJECT_START NAME=a_(1'
+    ])
       expect(codes(`${line}\nG1 X5\n`), line).toHaveLength(0);
     // an N word before an ordinary code still warns, and a bare N word does not count as a letter pair
     for (const line of ['N10 M73 P10 (estimate', 'N10 G1 X1 (open', 'N10 T0 (tool 0'])

@@ -46,7 +46,7 @@ describe('canned cycle preliminary Z-up move (LinuxCNC §43.6)', () => {
       [5, 7, 4.8, 'T'], // rapid XY to (X5, Y7) at the clear Z
       [5, 7, 4.8, 'T'], // Z to R: already there
       [5, 7, 4.2, 'C'], // feed to Z4.2
-      [5, 7, 4.8, 'T'], // rapid to Z4.8
+      [5, 7, 4.8, 'T'] // rapid to Z4.8
     ]);
   });
 
@@ -65,7 +65,7 @@ describe('canned cycle preliminary Z-up move (LinuxCNC §43.6)', () => {
       [13, 17, 4.8, 'T'], // third hole
       [13, 17, 4.8, 'T'],
       [13, 17, 4.2, 'C'],
-      [13, 17, 4.8, 'T'],
+      [13, 17, 4.8, 'T']
     ]);
   });
 
@@ -76,7 +76,7 @@ describe('canned cycle preliminary Z-up move (LinuxCNC §43.6)', () => {
       [4, 5, 2.8, 'T'],
       [4, 5, 2.8, 'T'],
       [4, 5, 1.5, 'C'],
-      [4, 5, 2.8, 'T'],
+      [4, 5, 2.8, 'T']
     ]);
   });
 
@@ -85,7 +85,7 @@ describe('canned cycle preliminary Z-up move (LinuxCNC §43.6)', () => {
       [4, 5, 5, 'T'],
       [4, 5, 2, 'T'],
       [4, 5, -1, 'C'],
-      [4, 5, 5, 'T'],
+      [4, 5, 5, 'T']
     ]);
   });
 
@@ -94,7 +94,7 @@ describe('canned cycle preliminary Z-up move (LinuxCNC §43.6)', () => {
       [4, 5, 5, 'T'],
       [4, 5, 2, 'T'],
       [4, 5, -1, 'C'],
-      [4, 5, 2, 'T'],
+      [4, 5, 2, 'T']
     ]);
   });
 
@@ -107,7 +107,7 @@ describe('canned cycle preliminary Z-up move (LinuxCNC §43.6)', () => {
     expect(rows.slice(0, 3)).toEqual([
       [1, 2, 3, 'T'],
       [4, 5, 3, 'T'],
-      [4, 5, 3, 'T'],
+      [4, 5, 3, 'T']
     ]);
   });
 });
