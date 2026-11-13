@@ -971,7 +971,38 @@ export function createEngine(input: string | Uint8Array, opts: ParseOptions): En
     cannedZ = cannedR + cannedZWord;
   };
 
+  // L repeat count (LinuxCNC §43.6): the whole hole sequence runs L times, each repeat from the XY the last one
+  // ended at, so under G91 the X/Y increment steps along a row of holes and under G90 the hole is repeated in
+  // place. Absent → 1. An L that is not a positive integer (0, negative, a fraction, NaN) draws once and warns
+  // (`canned-cycle-bad-repeat`, deduped by code). The planes are NOT re-derived per repeat (the clear Z is
+  // fixed when the block starts). The repeat count is bounded by `maxProgramIterations` (DD-017), independent
+  // of how many segments a hole emits, and disclosed (`canned-cycle-repeat-limit`) when it bites.
   const runCannedCycle = (p: Record<string, number>): boolean => {
+    const l = p.l;
+    let repeats = 1;
+    if (l !== undefined) {
+      if (Number.isInteger(l) && l >= 1) {
+        repeats = Math.min(l, limits.maxProgramIterations);
+        if (repeats < l) {
+          warn(
+            'canned-cycle-repeat-limit',
+            `L${l} exceeds the program iteration limit ${limits.maxProgramIterations}; the cycle repeats ${repeats} times.`,
+            currentSrcByte
+          );
+        }
+      } else {
+        warn(
+          'canned-cycle-bad-repeat',
+          `L${String(l)} is not a positive integer repeat count; the cycle runs once.`,
+          currentSrcByte
+        );
+      }
+    }
+    for (let i = 0; i < repeats; i++) if (!runCannedHole(p)) return false;
+    return true;
+  };
+
+  const runCannedHole = (p: Record<string, number>): boolean => {
     // 0. Preliminary Z move. LinuxCNC g-code.html §43.6: "If the current Z position is below the R position,
     // the Z axis does a rapid move to the R position. This happens only once, regardless of the value of L."
     // It happens BEFORE the XY rapid, at the old XY (Example 2: "The first preliminary move is a maximum rapid

@@ -62,7 +62,9 @@ const INTENTIONAL_MOTION_CORRECTION = new Set([
   'demo-mach3',
   'demo-easel',
   'container-adv-traversal-names',
-  'cnc-router-inch-g20'
+  'cnc-router-inch-g20',
+  // Canned cycles (#189) expand to Cut/Travel sub-moves the inherited engine never drew.
+  'cnc-canned-cycles'
 ]);
 
 /**
