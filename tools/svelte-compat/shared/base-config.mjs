@@ -16,6 +16,7 @@ const ALIASES = {
   '@chestnutlabs/gcode-colors': pkg('gcode-colors/src/index.ts'),
   '@chestnutlabs/gcode-renderer-2d': pkg('gcode-renderer-2d/src/index.ts'),
   '@chestnutlabs/gcode-parser': pkg('gcode-parser/src/index.ts'),
+  '@chestnutlabs/gcode-renderer-three/lite': pkg('gcode-renderer-three/src/lite.ts'),
   '@chestnutlabs/gcode-renderer-three': pkg('gcode-renderer-three/src/index.ts')
 };
 
