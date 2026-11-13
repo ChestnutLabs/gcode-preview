@@ -21,15 +21,14 @@
     "seamMoves": "unavailable",
     "cutMoves": "unavailable",
     "cannedCycles": "unavailable",
-    "parametricProgram": "known",
+    "parametricProgram": "unavailable",
     "extrusionMode": "inferred",
     "positioningMode": "inferred",
     "arcPlanes": "inferred",
     "coordinateSystem": "inferred"
   },
   "warningCodes": [
-    "layers-partially-inferred",
-    "rs274-bad-expression"
+    "layers-partially-inferred"
   ],
   "bufferDigests": {
     "x0": "63aaf591",

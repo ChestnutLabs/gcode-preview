@@ -266,11 +266,48 @@ const INCH_LENGTH_WORDS = ['x', 'y', 'z', 'i', 'j', 'k', 'r', 'q', 'f', 'e'] as 
 
 /** Warning code: a `(` comment that is never closed or is nested (LinuxCNC errors on both). */
 const UNBALANCED_PAREN_WARN = 'unbalanced-paren-comment';
-/** A line whose parentheses are DATA, not a comment: it starts with a multi-letter word (a dialect/macro
- *  command such as `EXCLUDE_OBJECT_START NAME=cube_(1`, `SET_PIN …`) or is one of Marlin's text-argument
- *  M-codes (`M117` message, `M118` echo, `M486` object name; any case). Such a line is never reported as an
- *  unbalanced comment, and its `;` comment starts at the first `;` as it always did. */
-const TEXT_ARGUMENT_LINE = /^\s*(?:n\d+\s*)?(?:[A-Za-z_][A-Za-z_]|m(?:117|118|486)(?!\d))/i;
+/** A text-argument line (#592): everything after its leading command word is TEXT, not G-code. It starts
+ *  (after an optional `N` line number) with a multi-letter word (a dialect/macro command such as
+ *  `EXCLUDE_OBJECT_START NAME=cube_(1`, `RESPOND MSG=…`, `SET_PIN …`) or with one of Marlin's text-argument
+ *  M-codes: `M117` message, `M118` echo, `M486` object name, `M23` / `M28` / `M32` / `M33` / `M928` file name
+ *  (any case). Such a line is lexed by {@link lexTextLine}, never by the plain or the parametric lexer; it is
+ *  never reported as an unbalanced comment, and its `;` comment starts at the first `;` as it always did.
+ *  Group 1 is the M-code number; it is absent for a multi-letter command. */
+const TEXT_ARGUMENT_LINE = /^\s*(?:n\d+\s*)?(?:[A-Za-z_][A-Za-z_]|m(117|118|486|23|28|32|33|928)(?!\d))/i;
+/** The M486 words that are numbers (object index, count, cancel, un-cancel, current); `A` starts the name. */
+const M486_NUMERIC_WORDS = ['s', 't', 'p', 'u', 'c'] as const;
+
+/** True for a {@link TEXT_ARGUMENT_LINE}. A line that starts `G<digit>` (most FDM lines) or `;` is never
+ *  one, and skips the regex. */
+function isTextArgumentLine(line: string): boolean {
+  const c0 = line.charCodeAt(0);
+  if (c0 === 59) return false; // ';'
+  if (c0 === 71 || c0 === 103) {
+    const c1 = line.charCodeAt(1);
+    if (c1 >= 48 && c1 <= 57) return false; // 'G' / 'g' + digit
+  }
+  return TEXT_ARGUMENT_LINE.test(line);
+}
+
+/**
+ * Lex a text-argument line (#592): only its leading command word counts. A multi-letter command has no
+ * code and no words (dialects still match its raw line); M117 / M118 / M23 / M28 / M32 / M33 / M928 are
+ * their code alone; M486 is its code plus the numeric S / T / P / U / C words written before the first `A`.
+ * No letter inside the text is ever read as a G / M / T word or a parameter.
+ */
+function lexTextLine(line: string, onOutOfRange?: (key: string) => void): Cmd {
+  const m = TEXT_ARGUMENT_LINE.exec(line)!;
+  if (m[1] === undefined) return { codes: [], params: {} };
+  const code = `m${m[1]}`;
+  if (code !== 'm486') return { codes: [code], params: {} };
+  const rest = line.slice(m[0].length); // lexLine drops any `;` comment itself
+  const a = rest.search(/a/i);
+  // Lexed after the M486 word so a T is its count, not a tool change; any code in it is dropped.
+  const { params: all } = lexLine('M486' + (a === -1 ? rest : rest.slice(0, a)), onOutOfRange);
+  const params: Record<string, number> = {};
+  for (const k of M486_NUMERIC_WORDS) if (all[k] !== undefined) params[k] = all[k];
+  return { codes: [code], params };
+}
 
 /**
  * Lex a line into its G/M/T command words plus the axis/param words. Real CNC G-code routinely puts
@@ -1059,15 +1096,10 @@ export function createEngine(input: string | Uint8Array, opts: ParseOptions): En
   // the modal F latch, the observer and every handler; the stored state (position, G92/G10 offsets, canned
   // planes) is therefore mm and a later G21 needs no rescale. FDM files never declare G20: their lines
   // take only the `codes` scan and the units test below, so the corpus stays byte-identical.
-  // A `G20`/`G21` inside message text (`M117 Printing G20 part`, M118, M486, a Klipper `RESPOND MSG=…`) is
-  // text, not a units switch: such a line (TEXT_ARGUMENT_LINE) never changes units. The line test runs only
-  // when a units code is on the line, so the FDM hot path is unchanged.
+  // A `G20`/`G21` inside message text (`M117 Printing G20 part`) is text: lexTextLine never yields it (#592).
   let unitsConvertedWarned = false;
-  const applyUnits = (cmd: Cmd, rawLine: string): void => {
-    let textLine: boolean | undefined;
+  const applyUnits = (cmd: Cmd): void => {
     for (const code of cmd.codes) {
-      if (code !== 'g20' && code !== 'g21') continue;
-      if ((textLine ??= TEXT_ARGUMENT_LINE.test(rawLine))) continue;
       if (code === 'g20') {
         units = 'in';
         unitsSeen = true;
@@ -1109,10 +1141,12 @@ export function createEngine(input: string | Uint8Array, opts: ParseOptions): En
       warn('line-too-long', `line exceeds maxLineLength=${limits.maxLineLength}; skipped`, offset);
       return;
     }
+    // A text-argument line (#592) is decided once, here, before the comment scan, units and both lexers.
+    const textLine = isTextArgumentLine(rawLine);
     // DD-005 §4.3 read-only observation points — no effect on lexing or state.
     // A `;` inside `( … )` is part of that paren comment, not the start of a `;` comment — the same split
     // the lexer makes. A line without `(` (every FDM line) keeps the plain `indexOf` and skips the scan.
-    const parens = rawLine.indexOf('(') === -1 || TEXT_ARGUMENT_LINE.test(rawLine) ? null : scanParenComments(rawLine);
+    const parens = textLine || rawLine.indexOf('(') === -1 ? null : scanParenComments(rawLine);
     if (onComment !== undefined) {
       const ci = parens === null ? rawLine.indexOf(';') : parens.semi;
       if (ci !== -1) onComment(rawLine.slice(ci + 1), offset);
@@ -1124,14 +1158,17 @@ export function createEngine(input: string | Uint8Array, opts: ParseOptions): En
     // Hot-path gate: a cheap `#`/`[` scan of the RAW line — no allocation. Every FDM line fails this and
     // takes the untouched lexer (byte-identical). A `#`/`[` that turns out to be only inside a comment
     // routes through the resolver, which strips comments and returns 'plain' → the normal lexer.
-    if (lineUsesParametric(rawLine)) {
+    // A text-argument line carries only its leading command word; a `#`/`[` in its text is not parametric.
+    if (textLine) {
+      cmd = lexTextLine(rawLine, warnOutOfRange);
+    } else if (lineUsesParametric(rawLine)) {
       const r = rs274.lexLine(rawLine, offset);
       if (r.kind === 'assign' || r.kind === 'empty') return; // assignment applied / nothing to do
       cmd = r.kind === 'cmd' ? { codes: r.codes, params: r.params } : lexLine(rawLine, warnOutOfRange); // 'plain' → normal
     } else {
       cmd = lexLine(rawLine, warnOutOfRange);
     }
-    applyUnits(cmd, rawLine);
+    applyUnits(cmd);
     // LinuxCNC rejects an unclosed or nested `(` comment; the plain lexer tolerates both (an unclosed `(`
     // swallows the rest of the line). Disclose it, once per file. Dialect extended commands (Klipper
     // `EXCLUDE_OBJECT_START NAME=cube_(1`) legitimately carry bare parentheses and are not checked.

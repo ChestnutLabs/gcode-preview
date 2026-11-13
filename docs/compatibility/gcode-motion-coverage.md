@@ -53,7 +53,14 @@ drawing is approximate. These codes are new after v0.23.0 (#553):
 | `canned-cycle-plane` | a canned cycle while `G18`/`G19` is active | the cycle, still drilling along Z in the XY plane |
 | `canned-cycle-bad-repeat` | a canned cycle whose `L` is not a positive whole number (`L0`, a negative, a fraction such as `L1.5`) | the cycle once |
 | `canned-cycle-repeat-limit` | a canned cycle whose `L` is above the program iteration limit (`maxProgramIterations`, default 1,000,000) | the cycle, repeated that many times |
-| `unbalanced-paren-comment` | a `( … )` comment is never closed, or one is nested inside another (LinuxCNC rejects both) | the line as before: an unclosed `(` hides the rest of the line; a nested one closes at its matching `)`. Lines that start with a multi-letter command word (`EXCLUDE_OBJECT_START NAME=cube_(1`) or with `M117`/`M118`/`M486` (text arguments) are not checked |
+| `unbalanced-paren-comment` | a `( … )` comment is never closed, or one is nested inside another (LinuxCNC rejects both) | the line as before: an unclosed `(` hides the rest of the line; a nested one closes at its matching `)`. Lines that start with a multi-letter command word (`EXCLUDE_OBJECT_START NAME=cube_(1`) or with a text-argument M-code (see below) are not checked |
+
+**Text-argument lines.** A line that starts with a multi-letter command word (Klipper/RepRapFirmware
+commands and macros such as `RESPOND MSG=…` or `EXCLUDE_OBJECT_START NAME=…`) or with `M117`, `M118`,
+`M486`, `M23`, `M28`, `M32`, `M33` or `M928` carries only that leading command. The rest of the line is
+text: `M117 Homing G28` does not home and `NAME=part2` is not a tool change. `M486` keeps its numeric
+`S`/`T`/`P`/`U`/`C` words; its `A` object name is text. A `[` or `#` in such a line does not make the
+file a parametric program.
 
 Under `G91`, a canned cycle's `R` and `Z` are kept as the numbers written (as LinuxCNC does): a later
 `G81` block, or a bare `X`/`Y` repeat, that leaves one out applies it again from its own current Z, so
