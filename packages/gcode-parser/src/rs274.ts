@@ -58,18 +58,33 @@ export function lineUsesParametric(codeSection: string): boolean {
   return codeSection.indexOf('#') !== -1 || codeSection.indexOf('[') !== -1;
 }
 
+/** The one paren scanner behind {@link stripParenComments} and {@link scanParenComments}, so they cannot drift. */
+function walkParens(
+  s: string,
+  stopAtSemi: boolean,
+  keep: boolean
+): { semi: number; unclosed: boolean; nested: boolean; text: string } {
+  let text = '';
+  let depth = 0;
+  let nested = false;
+  for (let i = 0; i < s.length; i++) {
+    const c = s.charCodeAt(i);
+    if (c === 40) {
+      depth++;
+      if (depth > 1) nested = true;
+    } else if (c === 41) {
+      if (depth > 0) depth--; // a stray ')' at depth 0 is ignored
+    } else if (depth === 0) {
+      if (stopAtSemi && c === 59) return { semi: i, unclosed: false, nested, text };
+      if (keep) text += s[i];
+    }
+  }
+  return { semi: -1, unclosed: depth > 0, nested, text };
+}
+
 /** Strip RS274NGC `( … )` comments from a code section (they are comments, never expressions). */
 export function stripParenComments(s: string): string {
-  let out = '';
-  let depth = 0;
-  for (let i = 0; i < s.length; i++) {
-    const c = s[i];
-    if (c === '(') depth++;
-    else if (c === ')') {
-      if (depth > 0) depth--;
-    } else if (depth === 0) out += c;
-  }
-  return out;
+  return walkParens(s, false, true).text;
 }
 
 /**
@@ -80,20 +95,8 @@ export function stripParenComments(s: string): string {
  *   LinuxCNC rejects both; the parser warns and carries on. Nothing after the `;` is examined.
  */
 export function scanParenComments(s: string): { semi: number; unclosed: boolean; nested: boolean } {
-  let depth = 0;
-  let nested = false;
-  for (let i = 0; i < s.length; i++) {
-    const c = s.charCodeAt(i);
-    if (c === 40) {
-      depth++;
-      if (depth > 1) nested = true;
-    } else if (c === 41) {
-      if (depth > 0) depth--;
-    } else if (c === 59 && depth === 0) {
-      return { semi: i, unclosed: false, nested };
-    }
-  }
-  return { semi: -1, unclosed: depth > 0, nested };
+  const r = walkParens(s, true, false);
+  return { semi: r.semi, unclosed: r.unclosed, nested: r.nested };
 }
 
 /** The result of lexing one parametric line. */

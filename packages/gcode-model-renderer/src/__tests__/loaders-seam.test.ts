@@ -75,7 +75,8 @@ describe('registered loaders forward limits and the palette', () => {
   it('threeMfLoader passes limits to the parser', async () => {
     await expect(
       Promise.resolve(threeMfLoader.parse(zip('<triangle v1="0" v2="1" v3="2"/>'), { maxTriangles: 0 }))
-    ).rejects.toMatchObject({ code: 'E_MODEL_TOO_MANY_TRIANGLES' });
+    ).rejects.toMatchObject({ code: 'E_MODEL_TOO_MANY_VERTICES' });
+    // The fixture's vertices come before its triangle, so with maxTriangles 0 the vertex bound (3 × 0) fires first.
   });
 
   it('threeMfLoader passes the filament palette override (paint_color 8 = slot 2 = red)', async () => {
