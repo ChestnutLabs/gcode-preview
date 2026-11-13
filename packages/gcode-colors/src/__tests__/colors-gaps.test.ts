@@ -5,7 +5,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import { MoveKind, ToolpathIRBuilder, type ToolpathIR } from '@chestnutlabs/toolpath-core';
-import { checkColorMode, createSegmentColorer, type ColorMode, type RGB } from '../index.js';
+import { checkColorMode, createSegmentColorer, rampColor, type ColorMode, type RGB } from '../index.js';
 
 const R: RGB = [1, 0, 0];
 const G: RGB = [0, 1, 0];
@@ -189,6 +189,16 @@ describe('explicit range validation boundaries', () => {
     expect(() => {
       checkColorMode(ranged([5, 4.5]));
     }).toThrow(RangeError);
+  });
+
+  it('a negative lower bound with a valid upper bound is rejected', () => {
+    expect(() => {
+      checkColorMode(ranged([-1, 5]));
+    }).toThrow(RangeError);
+  });
+
+  it('rampColor on an empty ramp returns the 0.7 default grey', () => {
+    expect(rampColor([], 0.5)).toEqual([0.7, 0.7, 0.7]);
   });
 
   it('object `only` above 2**53 is rejected (not a safe integer)', () => {
