@@ -172,9 +172,10 @@ export const GcodePreview = defineComponent({
       parseDefaults: props.parseOptions
     });
 
-    // A MachineGeometry buildVolume prop applies post-construction (same consumer-wins effect).
+    // A MachineGeometry buildVolume prop applies post-construction (same consumer-wins effect). `!= null`: an
+    // optional Vue prop can be `null` (a cleared value), which means no volume, never `'bed' in null`.
     onMounted(() => {
-      if (props.buildVolume !== undefined && 'bed' in props.buildVolume) {
+      if (props.buildVolume != null && 'bed' in props.buildVolume) {
         preview.controls.setBuildVolume(props.buildVolume);
       }
     });

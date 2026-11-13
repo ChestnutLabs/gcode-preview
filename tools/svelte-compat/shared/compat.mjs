@@ -186,6 +186,36 @@ export function registerCompat({ describe, it, expect, svelte, compiler, expecte
       expect(SuiteStubWorker.terminated - terminated0).toBe(1);
       target.remove();
     });
+
+    // #590 round A: the `$:` statements hand frameContent / interactionQuality to core unguarded. A binding
+    // that is (or becomes) null or undefined means the default, as before core checked values: never a throw.
+    it('frameContent / interactionQuality null, then undefined, mean the defaults (no throw)', async () => {
+      const { target, handle } = mountPreview({
+        source: new Uint8Array(1_000),
+        frameContent: null,
+        interactionQuality: null
+      });
+      await settle();
+      const preview = handle.instance.preview;
+      let state;
+      preview.state.subscribe((s) => (state = s))();
+      expect(state.error).toBe(null);
+      const r = preview.raw.renderer();
+      expect(r.frameContentMode).toBe('all');
+      const applied = [];
+      const fc = r.setFrameContent.bind(r);
+      const iq = r.setInteractionQuality.bind(r);
+      r.setFrameContent = (m) => (applied.push(`frameContent ${m}`), fc(m));
+      r.setInteractionQuality = (m) => (applied.push(`interactionQuality ${m}`), iq(m));
+      handle.setProps({ frameContent: undefined, interactionQuality: undefined });
+      await settle();
+      expect(JSON.stringify(applied.sort())).toBe('["frameContent all","interactionQuality off"]');
+      expect(r.frameContentMode).toBe('all');
+      preview.state.subscribe((s) => (state = s))();
+      expect(state.error).toBe(null);
+      handle.destroy();
+      target.remove();
+    });
   });
 
   // #520: the mount pass for the four 3D-only construction props. 2D applies a non-default value once (and

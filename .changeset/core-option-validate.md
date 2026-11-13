@@ -1,6 +1,7 @@
 ---
 '@chestnutlabs/gcode-preview-core': minor
 '@chestnutlabs/gcode-renderer-three': minor
+'@chestnutlabs/gcode-preview-vue': patch
 ---
 
 A bad viewer option now throws at once, not after the 3D renderer loads. Until now, a typo such as
@@ -12,6 +13,11 @@ passed to a setter before the load came back later as `E_CONTROL_REJECTED`.
   `theme`, `buildVolume`, `cameraMode`, `qualityMode`, `progressivePreview`, `frameContent`,
   `interactionQuality` and `renderer.mode`, and for `setView` and `setCameraState`. Nothing is queued. Every value
   that works today still works.
+- **`null` and `undefined` mean "unset".** An option left `null` (a cleared Vue prop or Svelte binding, say) gets the
+  default, as before. `setFrameContent` and `setInteractionQuality` with `null` or `undefined` apply `'all'` and
+  `'off'`. `setBuildVolume(null)` does nothing, and a `buildVolume: null` option lets a bed found in the file apply.
+  Before, `setBuildVolume(null)` threw a `TypeError` from inside the renderer.
+- **Vue:** `:build-volume="null"` no longer throws a `TypeError` at mount.
 - **2D viewers check too.** A bad 3D option on a `renderer: { mode: '2d' }` viewer used to be ignored. It now throws,
   as `cameraFov`, `pixelRatio` and `colorMode` already did. `frameContent`, `interactionQuality`, `setView` and
   `renderer.mode` had no check at all before, so a typo there now throws in every mode.

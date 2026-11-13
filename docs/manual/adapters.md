@@ -102,9 +102,12 @@ Each fires the same events (naming follows each framework's idiom): parse lifecy
 `parse-error` or `parse-cancelled`; a parse replaced by a newer source reports `parse-cancelled`, and one
 replaced before it started emits nothing.
 
-A control you call before the 3D renderer has loaded is queued and applied when it is ready. If the renderer
-rejects one of those calls, for example a theme opacity outside 0–1, you get an `error` event and `state.error`
-with code `E_CONTROL_REJECTED` and a message that names the control; the other queued controls still apply.
+A control you call before the 3D renderer has loaded is queued and applied when it is ready. A bad value, for
+example a theme opacity outside 0–1, is never queued: the call throws `RangeError` at once, before and after the
+load, with the same message the renderer uses. An option or prop left `null` or `undefined` means "unset"
+(the default), never an error. If the renderer still rejects a queued call (rare, since values are checked first), you get an `error`
+event and `state.error` with code `E_CONTROL_REJECTED` and a message that names the control; the other queued
+controls still apply.
 
 `setLayerRange`, `setScrubPosition` and `setScrubTime` throw `RangeError` at once for a value that is not a
 number, or is `NaN`, even before the renderer has loaded. `null` (clear, on `setScrubPosition` and
@@ -201,7 +204,7 @@ Every error is `{ code, message }`, plus two optional fields:
 | `E_RENDERER_LOAD` with `reason: 'start'` | The 3D renderer downloaded but could not start, usually because the device or browser has no WebGL. Read `cause` for the browser's error: a renderer option the renderer rejects lands here too | Fall back to `renderer: { mode: '2d' }`; reloading won't help |
 | `E_WORKER_TERMINATED` | You passed a single `Worker` instance as `createWorker` and it was terminated (a cancel that the worker did not acknowledge in time, a crash, or `dispose()`); the next parse used to hang | Pass a factory, `createWorker: () => new Worker(…)`, so each parse gets a fresh worker |
 | `E_POST_FAILED` | You re-parsed a buffer that was already handed to the worker | Pass `bytes.slice()` each time. The browser's `DataCloneError` is on `cause` |
-| `E_CONTROL_REJECTED` | The renderer rejected a control you queued before it loaded (see above) | Fix the value named in the message |
+| `E_CONTROL_REJECTED` | The renderer rejected a control you queued before it loaded. Rare: a bad value throws `RangeError` from the call instead (see above) | Fix the value named in the message |
 | `E_CAPTURE_UNSUPPORTED` | `capture()` was called before the 3D renderer is ready, or on the 2D renderer | Call it once the 3D view shows the file (the `stage` event's `ready` stage); `ready` can fire before the 3D chunk has bound, so retry on this code |
 | `E_PARSE_OPTION`, `E_MODEL_OPTION` | A `parseOptions` or model limit is not a usable number | Pass a finite whole number; there is no `Infinity` |
 

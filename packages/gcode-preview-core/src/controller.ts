@@ -504,24 +504,30 @@ function notifyAll<T>(subscribers: Set<(value: T) => void>, value: T): void {
  * throws `RangeError` from the constructor instead of failing the on-demand 3D load later. A volume shaped
  * like a file-discovered `MachineGeometry` (`bed`) is left to the renderer, which reports a bad one as an
  * event instead of throwing.
+ *
+ * `null` and `undefined` both mean "unset" (the renderer default), as they did before these checks: a Vue
+ * prop or Svelte binding can hand over `null` for an option the consumer left empty.
  */
 function checkRendererOptions(r: PreviewControllerOptions['renderer']): void {
-  if (r === undefined) return;
-  if (r.mode !== undefined) checkRendererMode(r.mode);
-  if (r.buildVolume !== undefined && !isDiscoveredVolume(r.buildVolume)) checkBuildVolume(r.buildVolume);
-  if (r.qualityMode !== undefined) checkQualityMode(r.qualityMode);
-  if (r.progressivePreview !== undefined) checkProgressivePreview(r.progressivePreview);
-  if (r.cameraMode !== undefined) checkCameraMode(r.cameraMode);
-  if (r.cameraFov !== undefined) checkCameraFov(r.cameraFov);
-  if (r.pixelRatio !== undefined) checkPixelRatio(r.pixelRatio);
-  if (r.frameContent !== undefined) checkFrameContent(r.frameContent);
-  if (r.interactionQuality !== undefined) checkInteractionQuality(r.interactionQuality);
-  if (r.theme !== undefined) checkTheme(r.theme);
+  if (r == null) return;
+  if (r.mode != null) checkRendererMode(r.mode);
+  if (r.buildVolume != null && !isDiscoveredVolume(r.buildVolume)) checkBuildVolume(r.buildVolume);
+  if (r.qualityMode != null) checkQualityMode(r.qualityMode);
+  if (r.progressivePreview != null) checkProgressivePreview(r.progressivePreview);
+  if (r.cameraMode != null) checkCameraMode(r.cameraMode);
+  if (r.cameraFov != null) checkCameraFov(r.cameraFov);
+  if (r.pixelRatio != null) checkPixelRatio(r.pixelRatio);
+  if (r.frameContent != null) checkFrameContent(r.frameContent);
+  if (r.interactionQuality != null) checkInteractionQuality(r.interactionQuality);
+  if (r.theme != null) checkTheme(r.theme);
 }
 
-/** A `MachineGeometry` (the renderer's setBuildVolume also takes one) rather than a consumer volume. */
+/**
+ * A `MachineGeometry` (the renderer's setBuildVolume also takes one) rather than a consumer volume. Callers
+ * handle `null` first; a non-object reaches `checkBuildVolume` (a `RangeError`), never `'bed' in` (a `TypeError`).
+ */
 function isDiscoveredVolume(def: BuildVolumeDef | MachineGeometry): def is MachineGeometry {
-  return 'bed' in def;
+  return typeof def === 'object' && 'bed' in def;
 }
 
 /**
@@ -565,14 +571,15 @@ export function createPreviewController(options: PreviewControllerOptions = {}):
   if (options.renderer?.colorMode !== undefined) checkColorMode(options.renderer.colorMode);
   let requestedColorMode: ColorMode | undefined = options.renderer?.colorMode;
   let lastMetadata: DialectMetadata | undefined;
-  let consumerVolumeSet = options.renderer?.buildVolume !== undefined;
+  // `buildVolume: null` is "no consumer volume", so a bed discovered in a file still applies.
+  let consumerVolumeSet = options.renderer?.buildVolume != null;
   // Every renderer option the 3D renderer checks (lens and pixel ratio included), checked here first.
   checkRendererOptions(options.renderer);
   // The lens (DD-032): passed to every 3D renderer this controller binds, so a canvas rebind or renderer
   // reload keeps the last lens the consumer set.
-  let cameraFov: number | undefined = options.renderer?.cameraFov;
+  let cameraFov: number | undefined = options.renderer?.cameraFov ?? undefined;
   // The pixel ratio, kept the same way (passed to every 3D renderer bound).
-  let pixelRatio: PixelRatioOption | undefined = options.renderer?.pixelRatio;
+  let pixelRatio: PixelRatioOption | undefined = options.renderer?.pixelRatio ?? undefined;
   let activeParse: Promise<unknown> | null = null;
   // Bumped by every parse() call: a call that is no longer the newest after an await was superseded (#529).
   let parseGen = 0;
@@ -733,9 +740,11 @@ export function createPreviewController(options: PreviewControllerOptions = {}):
           canvas,
           buildVolume: r.buildVolume,
           quality: r.quality ?? 'auto',
-          qualityMode: r.qualityMode,
-          progressivePreview: r.progressivePreview,
-          cameraMode: r.cameraMode,
+          // An unset (`null`) option reaches the renderer as `undefined`: its own checks treat only `undefined`
+          // as unset (the rest already default a `null` with `??` or a truthiness test).
+          qualityMode: r.qualityMode ?? undefined,
+          progressivePreview: r.progressivePreview ?? undefined,
+          cameraMode: r.cameraMode ?? undefined,
           cameraFov,
           ...(pixelRatio !== undefined ? { pixelRatio } : {}),
           frameContent: r.frameContent,
@@ -1018,19 +1027,26 @@ export function createPreviewController(options: PreviewControllerOptions = {}):
       withRenderer('setTheme', (r) => r.setTheme(t));
     },
     setBuildVolume: (def) => {
+      // Unset (`null` / `undefined`, e.g. a Vue prop or Svelte binding cleared): nothing to apply, and it does
+      // not count as a consumer volume. Before these checks the renderer threw a TypeError (`'bed' in null`).
+      if (def == null) return;
       // A bad volume throws before it counts as consumer-set, so a later discovered bed still applies.
       if (!isDiscoveredVolume(def)) checkBuildVolume(def);
       consumerVolumeSet = true;
       withRenderer('setBuildVolume', (r) => r.setBuildVolume(def));
     },
     setBuildVolumeCage: (v) => withRenderer('setBuildVolumeCage', (r) => r.setBuildVolumeCage(v)),
+    // Unset (`null` / `undefined`) is the default, as before these checks (a stored unset value framed all
+    // and never reduced detail), so a Vue watcher or Svelte reactive statement that clears it keeps working.
     setFrameContent: (m) => {
-      checkFrameContent(m);
-      withRenderer('setFrameContent', (r) => r.setFrameContent(m));
+      const mode = m ?? 'all';
+      checkFrameContent(mode);
+      withRenderer('setFrameContent', (r) => r.setFrameContent(mode));
     },
     setInteractionQuality: (m) => {
-      checkInteractionQuality(m);
-      withRenderer('setInteractionQuality', (r) => r.setInteractionQuality(m));
+      const mode = m ?? 'off';
+      checkInteractionQuality(mode);
+      withRenderer('setInteractionQuality', (r) => r.setInteractionQuality(mode));
     },
     frame: () => withRenderer('frame', (r) => r.frame())
   };
