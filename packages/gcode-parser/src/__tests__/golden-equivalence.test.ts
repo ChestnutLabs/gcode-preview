@@ -55,8 +55,9 @@ const equivalenceFixtures = manifest.fixtures.filter((f) => f.sizeTier !== 'adve
 // harmless (the real path decodes the container first); excluded from strict adapter-equivalence and
 // pinned by its native golden, like the CNC motion corrections above.
 // cnc-router-inch-g20 (#189) is a CNC file like demo-easel (`M3` … `M5`): its spindle-engaged moves are
-// `Cut`, which the inherited adapter called Travel. Its positions DO match the adapter (neither engine
-// converts G20 inches to mm); only the masked-kind digest diverges. Pinned in corpus-cnc-plotter.test.ts.
+// `Cut`, which the inherited adapter called Travel. Since #578 the native parser also converts its G20
+// inches to mm (the inherited engine never did), so its positions diverge too. demo-mach3 is a G20 file as
+// well. Both are pinned by their native goldens; the inch fixture also in corpus-cnc-plotter.test.ts.
 const INTENTIONAL_MOTION_CORRECTION = new Set([
   'demo-mach3',
   'demo-easel',

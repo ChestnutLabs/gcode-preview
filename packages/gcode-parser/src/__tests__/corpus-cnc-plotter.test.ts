@@ -2,14 +2,14 @@
  * #189 corpus: servo-pen plotter, Z-lift pen plotter and inch-units (G20) router fixtures.
  *
  * These pin what the parser does TODAY, in literal values, so a change in behaviour is a visible,
- * reviewed re-pin rather than a silent drift. Two of the pinned behaviours are known gaps:
+ * reviewed re-pin rather than a silent drift. One of the pinned behaviours is a known gap:
  *
  * - Pen state is not modelled (DD-012 D3 `penState`, #579). `M280` is an `unsupported-command`, and a
  *   Z-lift pen has no tool-on code, so a pen-down stroke is `Travel` (kind 2) exactly like a pen-up move,
  *   and `bounds` (the drawn extent) is empty. Only `boundsWithTravel` holds the drawing.
- * - G20 is recorded, not converted. `header.units` is `'in'`, but the coordinates stay in inches. The
- *   arc count is the one geometric effect: inch arcs are flattened finer (parse.ts arc tolerance), so
- *   G20 → G21 turns 80 arc segments into 4. When G20 → mm conversion lands (#578), re-pin the inch block below.
+ *
+ * G20 is converted (#578): IR coordinates are always mm, and `header.units` is `'in'`, the file's
+ * declaration. The inch block below pins the converted values.
  *
  * Kind values are literal bits (Travel = 2, ArcSegment = 32, Cut = 128), never the module's constants.
  */
@@ -110,25 +110,34 @@ describe('cnc-router-inch-g20 (G20 inch units, #189)', () => {
     expect(ir.header.unitsSource).toBe('known');
   });
 
-  it('flattens each inch quarter-arc into 40 segments (G21 would give 2)', () => {
+  it('flattens each 0.5 in (12.7 mm) quarter-arc into 40 segments, one per 0.5 mm, as the same arc in mm would', () => {
     expect(ir.segments.count).toBe(89);
     // 4 Travel, 5 straight Cut, 80 arc Cut (Cut | ArcSegment).
     expect(kindHistogram(ir)).toEqual({ 2: 4, 128: 5, 160: 80 });
     expect(ir.header.capabilities.cutMoves).toBe('known');
   });
 
-  it('keeps the coordinates in inches: they are not converted to mm', () => {
-    expect(seg(ir, 2)).toBe('128 (0.5000,0.5000,0.2500)->(0.5000,0.5000,-0.0500)'); // plunge 0.05 in
-    expect(seg(ir, 3)).toBe('128 (0.5000,0.5000,-0.0500)->(2.5000,0.5000,-0.0500)'); // not 12.7 → 63.5 mm
-    expect(seg(ir, 4)).toBe('160 (2.5000,0.5000,-0.0500)->(2.5200,0.5004,-0.0500)'); // first G3 corner segment
-    expect(seg(ir, 85)).toBe('128 (2.5000,2.5000,-0.0500)->(0.5000,2.5000,-0.0500)');
-    expect(seg(ir, 88)).toBe('2 (0.5000,0.5000,0.2500)->(0.0000,0.0000,0.2500)');
-    // boundsWithTravel, not bounds: #568 makes Cut count toward bounds, which would re-pin bounds here.
-    expect(box(ir.boundsWithTravel)).toBe('(0.0000,0.0000,-0.0500)-(3.0000,2.5000,0.2500)');
+  it('converts the inch coordinates to mm (#578)', () => {
+    expect(seg(ir, 2)).toBe('128 (12.7000,12.7000,6.3500)->(12.7000,12.7000,-1.2700)'); // plunge 0.05 in = 1.27 mm
+    expect(seg(ir, 3)).toBe('128 (12.7000,12.7000,-1.2700)->(63.5000,12.7000,-1.2700)'); // X0.5 → X2.5 in
+    expect(seg(ir, 4)).toBe('160 (63.5000,12.7000,-1.2700)->(63.9999,12.7098,-1.2700)'); // first G3 corner segment
+    expect(seg(ir, 85)).toBe('128 (63.5000,63.5000,-1.2700)->(12.7000,63.5000,-1.2700)');
+    expect(seg(ir, 88)).toBe('2 (12.7000,12.7000,6.3500)->(0.0000,0.0000,6.3500)');
+    // boundsWithTravel: the 3 x 2.5 in envelope is 76.2 x 63.5 mm.
+    expect(box(ir.boundsWithTravel)).toBe('(0.0000,0.0000,-1.2700)-(76.2000,63.5000,6.3500)');
   });
 
-  it('reports only M30 as unsupported', () => {
-    expect(warningCodes(ir)).toEqual(['layers-unavailable', 'unsupported-command']);
+  it('converts the feedrate from in/min to mm/min', () => {
+    // F10 (plunge) and F30 in/min; the first two segments are rapids before any F.
+    expect(Array.from(ir.segments.feedrate!.slice(2, 4))).toEqual([254, 762]);
+  });
+
+  it('reports M30 as unsupported and the conversion once, as info', () => {
+    const converted = ir.header.warnings.filter((w) => w.code === 'units-converted');
+    expect(converted).toHaveLength(1);
+    expect(converted[0].severity).toBe('info');
+    expect(converted[0].count).toBe(1);
+    expect(warningCodes(ir)).toEqual(['layers-unavailable', 'units-converted', 'unsupported-command']);
     const unsupported = ir.header.warnings.filter((w) => w.code === 'unsupported-command');
     expect(unsupported.map((w) => w.message)).toEqual(["unsupported command 'm30' preserved as metadata"]);
   });
