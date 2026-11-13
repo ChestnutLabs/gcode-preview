@@ -1,0 +1,167 @@
+// @vitest-environment happy-dom
+// Scratch probe (not committed): null/undefined handling + lifecycle + listener isolation.
+import { describe, expect, it } from 'vitest';
+import { appendFileSync } from 'node:fs';
+const log = (...a: unknown[]) => appendFileSync('F:/ab-scratch/g3/model-sweep/probe.out', a.map(String).join(' ') + String.fromCharCode(10));
+import { PerspectiveCamera, Vector3 } from 'three';
+import type { ControlsLike, GLRendererLike } from '@chestnutlabs/gcode-renderer-three';
+import { createModelPreviewController } from '../model-preview.js';
+import { createModelViewer } from '../model-viewer.js';
+import { renderModelStill } from '../render-model-still.js';
+import { IDENTITY_MAT4, type ModelScene } from '../scene-model.js';
+
+function stubControls(camera: PerspectiveCamera) {
+  const c = {
+    object: camera,
+    target: new Vector3(),
+    enabled: true,
+    update: () => undefined,
+    dispose: () => undefined,
+    addEventListener: () => undefined,
+    listenToKeyEvents: () => undefined
+  };
+  return c as unknown as ControlsLike;
+}
+const gl = (canvas: unknown): GLRendererLike =>
+  ({ render: () => undefined, setSize: () => undefined, setPixelRatio: () => undefined, dispose: () => undefined, domElement: canvas as never }) as GLRendererLike;
+const base = { createRenderer: gl, createControls: (cam: unknown) => stubControls(cam as PerspectiveCamera) };
+const TRI = (): ModelScene => ({
+  objects: [{ id: 'a', geometry: { positions: new Float32Array([0, 0, 0, 10, 0, 0, 0, 10, 5]) }, transform: IDENTITY_MAT4 }],
+  bounds: { min: [0, 0, 0], max: [10, 10, 5] },
+  capabilities: { materials: 'unavailable', transforms: 'unavailable', multiObject: 'unavailable', instanced: 'unavailable', plates: 'unavailable' }
+});
+const canvas = () => {
+  const c = document.createElement('canvas');
+  c.width = 64;
+  c.height = 48;
+  return c;
+};
+const tryIt = (f: () => unknown): string => {
+  try {
+    f();
+    return 'ok';
+  } catch (e) {
+    return `${(e as Error).name}: ${(e as Error).message}`;
+  }
+};
+
+describe('probe', () => {
+  it('null ctor options', () => {
+    const out: Record<string, string> = {};
+    for (const k of ['theme', 'cameraFov', 'pixelRatio', 'renderScope', 'background', 'interactionQuality', 'buildVolume', 'showVolumeCage', 'cameraMode', 'autoFrameOnResize']) {
+      out[`ctrl-unbound:${k}`] = tryIt(() => createModelPreviewController({ ...base, [k]: null } as never));
+      out[`ctrl-bound:${k}`] = tryIt(() => createModelPreviewController({ ...base, [k]: null } as never).bindCanvas(canvas()));
+      out[`viewer:${k}`] = tryIt(() => createModelViewer(canvas(), { ...base, [k]: null } as never));
+    }
+    log('CTOR', JSON.stringify(out, null, 1));
+  });
+
+  it('null / undefined setters', async () => {
+    const out: Record<string, string> = {};
+    for (const v of [null, undefined]) {
+      for (const bound of [false, true]) {
+        for (const m of ['setTheme', 'setCameraFov', 'setPixelRatio', 'setRenderScope', 'setBackground', 'setInteractionQuality', 'setBuildVolume', 'setBuildVolumeCage', 'setView', 'setCameraState']) {
+          const c = createModelPreviewController(base);
+          if (bound) {
+            c.bindCanvas(canvas());
+            await c.controls.setSource(TRI());
+          }
+          out[`${String(v)}:${bound ? 'bound' : 'unbound'}:${m}`] = tryIt(() => (c.controls as never as Record<string, (x: unknown) => void>)[m](v));
+          // does a later bind survive a queued/remembered null?
+          if (!bound) out[`${String(v)}:bind-after:${m}`] = tryIt(() => c.bindCanvas(canvas()));
+          c.dispose();
+        }
+      }
+    }
+    log('SET', JSON.stringify(out, null, 1));
+  });
+
+  it('a throwing state listener vs setSource', async () => {
+    const c = createModelPreviewController(base);
+    c.bindCanvas(canvas());
+    let n = 0;
+    c.onStateChange(() => {
+      n++;
+      if (n === 2) throw new Error('listener boom');
+    });
+    const events: string[] = [];
+    c.onEvent((e) => events.push(e.type + ('code' in e ? `:${e.code}` : '')));
+    let res = 'pending';
+    await c.controls.setSource(TRI()).then(
+      () => (res = 'resolved'),
+      (e) => (res = `rejected ${(e as Error).message}`)
+    );
+    log('LISTENER', res, JSON.stringify(events), JSON.stringify({ ready: c.getState().ready, loading: c.getState().loading, error: c.getState().error }));
+    c.dispose();
+  });
+
+  it('a throwing event listener vs setSource (engine)', async () => {
+    const v = createModelViewer(canvas(), base);
+    const seen: string[] = [];
+    v.onEvent((e) => {
+      seen.push(e.type);
+      if (e.type === 'ready') throw new Error('event boom');
+    });
+    let res = 'pending';
+    await v.setSource(TRI()).then(
+      () => (res = 'resolved'),
+      (e) => (res = `rejected ${(e as Error).message}`)
+    );
+    log('EVLISTENER', res, JSON.stringify(seen));
+    v.dispose();
+  });
+
+  it('superseded and disposed loads', async () => {
+    const v = createModelViewer(canvas(), base);
+    const a = v.setSource(TRI());
+    const b = v.setSource(TRI());
+    const ra = await a.then((i) => `resolved objs=${i.objectCount}`, (e) => `rejected ${String(e)}`);
+    await b;
+    const c = v.setSource(TRI());
+    v.dispose();
+    const rc = await c.then((i) => `resolved objs=${i.objectCount}`, (e) => `rejected ${String(e)}`);
+    log('SUPERSEDE', ra, '| disposed-mid-load:', rc);
+
+    const ctl = createModelPreviewController(base);
+    ctl.bindCanvas(canvas());
+    const p = ctl.controls.setSource(TRI());
+    ctl.dispose();
+    const rp = await p.then((i) => `resolved objs=${i.objectCount}`, (e) => `rejected ${String(e)}`);
+    log('CTRL-DISPOSE-MID', rp, JSON.stringify({ loading: ctl.getState().loading, ready: ctl.getState().ready }));
+
+    const ctl2 = createModelPreviewController(base);
+    ctl2.bindCanvas(canvas());
+    const p2 = ctl2.controls.setSource(TRI());
+    ctl2.bindCanvas(canvas()); // rebind mid-load
+    const rp2 = await p2.then((i) => `resolved objs=${i.objectCount}`, (e) => `rejected ${String(e)}`);
+    await new Promise((r) => setTimeout(r, 0));
+    log('CTRL-REBIND-MID', rp2, JSON.stringify({ loading: ctl2.getState().loading, ready: ctl2.getState().ready }));
+    ctl2.dispose();
+
+    return;
+    const ctl3 = createModelPreviewController(base);
+    ctl3.bindCanvas(canvas());
+    await ctl3.controls.setSource(TRI());
+    ctl3.bindCanvas(null);
+    const r3 = await ctl3.controls.setSource(TRI()).then(() => 'resolved', (e) => `rejected ${String(e)}`);
+    log('CTRL-UNBOUND-AFTER-NULL', r3);
+  });
+
+  it('renderModelStill with null-ish options and limits on a scene', async () => {
+    const out: Record<string, string> = {};
+    for (const k of ['cameraFov', 'renderScope', 'theme', 'buildVolume', 'background', 'width']) {
+      out[k] = await renderModelStill(TRI(), { canvas: canvas() as never, createRenderer: gl, [k]: null } as never).then(
+        (r) => `ok ${r.width}x${r.height} ${r.cacheKey}`,
+        (e) => `${(e as Error).name}: ${(e as Error).message}`
+      );
+    }
+    out.limits = await renderModelStill(TRI(), { canvas: canvas() as never, createRenderer: gl, limits: { maxTriangles: 0 } } as never).then(
+      () => 'ok (scene bypasses limits)',
+      (e) => String(e)
+    );
+    const k1 = (await renderModelStill(TRI(), { canvas: canvas() as never, createRenderer: gl, renderScope: { objectIds: ['a'], plateId: undefined } as never })).cacheKey;
+    const k2 = (await renderModelStill(TRI(), { canvas: canvas() as never, createRenderer: gl, renderScope: { objectIds: ['a'] } })).cacheKey;
+    out.scopeUndefKeyEqual = String(k1 === k2);
+    log('STILL', JSON.stringify(out, null, 1));
+  });
+});
