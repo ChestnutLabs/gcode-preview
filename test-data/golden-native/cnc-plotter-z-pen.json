@@ -1,0 +1,47 @@
+{
+  "segmentCount": 12,
+  "layerCount": 1,
+  "toolCount": 1,
+  "points": 12,
+  "extrusionDistance": 0,
+  "capabilities": {
+    "geometry": "known",
+    "moveKind": "known",
+    "tools": "known",
+    "layers": "unavailable",
+    "extrusionDelta": "known",
+    "feedrate": "known",
+    "sourcePositions": "known",
+    "featureRoles": "unavailable",
+    "objects": "unavailable",
+    "nonModelClassification": "unavailable",
+    "retractions": "unavailable",
+    "colorChanges": "unavailable",
+    "wipeMoves": "unavailable",
+    "seamMoves": "unavailable",
+    "cutMoves": "unavailable",
+    "cannedCycles": "unavailable",
+    "parametricProgram": "unavailable",
+    "extrusionMode": "inferred",
+    "positioningMode": "known",
+    "arcPlanes": "inferred",
+    "coordinateSystem": "inferred"
+  },
+  "warningCodes": [
+    "layers-unavailable"
+  ],
+  "bufferDigests": {
+    "x0": "c3dc6c95",
+    "y0": "a30700cd",
+    "z0": "5364fd25",
+    "x1": "e371d215",
+    "y1": "d330420d",
+    "z1": "a1284f85",
+    "e": "c655ff85",
+    "feedrate": "c0e2412c",
+    "kind": "5feaf9c5",
+    "tool": "e2ba14a5",
+    "layer": "c655ff85",
+    "srcByte": "143c04b4"
+  }
+}
