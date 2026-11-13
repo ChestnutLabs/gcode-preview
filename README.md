@@ -47,7 +47,7 @@ The controls and capabilities are front-and-centre, not hidden behind a render:
 
 | Color modes, capability-gated | Render diagnostics & capabilities |
 |---|---|
-| ![The Appearance tab: a color-by selector (single / tool / feature / speed / object / layer height) with the active feature-role legend; modes the file can't support are greyed out](docs/media/app-appearance.png) | ![The Diagnostics tab: capability confidence badges and getRenderStats() output — backend, GPU, geometry mode, segment and draw-call counts, worker pool](docs/media/app-diagnostics.png) |
+| ![The Appearance tab: a color-by selector (single / tool / feature / speed / object / layer height) with the active feature-role legend; modes the file can't support are greyed out](docs/media/app-appearance.png) | ![The Diagnostics tab: capability confidence badges, parse notes grouped by code (commands kept as metadata, layers inferred), and getRenderStats() output — backend, GPU, geometry mode, segment counts](docs/media/app-diagnostics.png) |
 
 You can drive all of this yourself in the **[live demos](https://chestnutlabs.github.io/gcode-preview/demos/)**. A cropped beauty render — the same engine, no UI:
 
