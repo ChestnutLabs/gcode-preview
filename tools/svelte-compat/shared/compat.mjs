@@ -281,6 +281,7 @@ export function registerCompat({ describe, it, expect, svelte, compiler, expecte
             chunksPerTick: 8
           }
         };
+        let current = base;
         const handle = mountComponent(svelte, PreviewHost, {
           target,
           props: {
@@ -299,7 +300,15 @@ export function registerCompat({ describe, it, expect, svelte, compiler, expecte
           emitBuild: (decimation, segments) => emitSuiteBuild(preview.raw.renderer(), decimation, segments),
           parse: (bytes) => preview.parse(bytes),
           setCameraMode: (mode) => preview.controls.setCameraMode(mode),
-          setSource: (bytes) => handle.setProps({ props: { ...base, source: bytes } }),
+          // Each prop change keeps the others: the re-parse case sets source, then parseOptions alone.
+          setSource: (bytes) => {
+            current = { ...current, source: bytes };
+            handle.setProps({ props: current });
+          },
+          setParseOptions: (parseOptions) => {
+            current = { ...current, parseOptions };
+            handle.setProps({ props: current });
+          },
           firstChunkDrawCount: () => preview.raw.renderer().chunkMeshes[0].geometry.drawRange.count,
           controls: () => preview.controls,
           settle,
@@ -311,6 +320,41 @@ export function registerCompat({ describe, it, expect, svelte, compiler, expecte
       }
     }
   );
+
+  // Svelte counts an object prop as changed whenever it is set again, even to the same array: the component
+  // itself must treat the same source as no change, as the React, Vue and Web Component adapters do.
+  describe(`${label}: GcodePreview source identity`, () => {
+    it('the same source again does not re-parse; null and back, or a new array, does', async () => {
+      const target = document.body.appendChild(document.createElement('div'));
+      let ready = 0;
+      const base = {
+        quality: 'lines',
+        createWorker: () => new SuiteStubWorker(),
+        rendererOptions: { createRenderer: (c) => makeSuiteStubGL(c), scheduleFrame: (f) => f(), chunksPerTick: 8 }
+      };
+      const handle = mountComponent(svelte, PreviewHost, {
+        target,
+        props: { props: base, handlers: { ready: () => ready++ } }
+      });
+      const set = async (source) => {
+        handle.setProps({ props: { ...base, source } });
+        svelte.flushSync?.();
+        await settle();
+      };
+      const file = new Uint8Array(1_000);
+      await set(file);
+      expect(ready).toBe(1);
+      await set(file);
+      expect(ready).toBe(1);
+      await set(null);
+      await set(file); // cleared and set again: a change
+      expect(ready).toBe(2);
+      await set(new Uint8Array(1_000));
+      expect(ready).toBe(3);
+      handle.destroy();
+      target.remove();
+    });
+  });
 
   describe(`${label}: mount ModelViewer`, () => {
     it('renders the canvas, fires `ready` for a source, and unmount disposes the renderer', async () => {
