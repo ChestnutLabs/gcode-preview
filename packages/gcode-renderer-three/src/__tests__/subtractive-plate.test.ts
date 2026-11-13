@@ -26,7 +26,7 @@ function ir(kinds: MoveKind[], z = -0.8): ToolpathIR {
       x1: 20 + i * 10,
       y1: 30,
       z1: z,
-      e: kind === MoveKind.Extrude ? 1 : 0,
+      e: (kind & MoveKind.Extrude) !== 0 ? 1 : 0,
       tool: 0,
       layer: 0,
       kind,
@@ -95,6 +95,24 @@ describe('subtractive plate look (#580)', () => {
   it('an FDM file whose extrusions are all arcs (kinds [2, 33]) keeps the opaque plate and shadow', () => {
     const { renderer, run, group, mat } = make();
     renderer.setIR(ir([2 as MoveKind, 33 as MoveKind], 0.2)); // Travel, then Extrude | ArcSegment
+    run();
+    expect([mat('bedSurface').opacity, mat('bedSurface').transparent]).toEqual([1, false]);
+    expect(group().getObjectByName('contactShadow')).toBeDefined();
+    renderer.dispose();
+  });
+
+  it('a CNC file whose cuts are all arcs (kinds [2, 160]) gets the see-through plate and no shadow', () => {
+    const { renderer, run, group, mat } = make();
+    renderer.setIR(ir([2 as MoveKind, 160 as MoveKind])); // Travel, then Cut | ArcSegment
+    run();
+    expect([mat('bedSurface').opacity, mat('bedSurface').transparent]).toEqual([0.35, true]);
+    expect(group().getObjectByName('contactShadow')).toBeUndefined();
+    renderer.dispose();
+  });
+
+  it('an FDM file whose only extrusion is a seam move (kinds [2, 65]) keeps the opaque plate and shadow', () => {
+    const { renderer, run, group, mat } = make();
+    renderer.setIR(ir([2 as MoveKind, 65 as MoveKind], 0.2)); // Travel, then Extrude | Seam
     run();
     expect([mat('bedSurface').opacity, mat('bedSurface').transparent]).toEqual([1, false]);
     expect(group().getObjectByName('contactShadow')).toBeDefined();
