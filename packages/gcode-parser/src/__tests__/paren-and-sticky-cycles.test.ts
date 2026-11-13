@@ -141,7 +141,15 @@ describe('unbalanced ( comments', () => {
     ])
       expect(codes(`${line}\nG1 X5\n`), line).toHaveLength(0);
     // an N word before an ordinary code still warns, and a bare N word does not count as a letter pair
-    for (const line of ['N10 M73 P10 (estimate', 'N10 G1 X1 (open', 'N10 T0 (tool 0'])
+    // only ONE leading N word is skipped: an M117 after G-words, a second N word or a bare N is not a text line
+    for (const line of [
+      'N10 M73 P10 (estimate',
+      'N10 G1 X1 (open',
+      'N10 T0 (tool 0',
+      'N10 G1 X1 M117 (x',
+      'N10 N20 M117 x (y',
+      'N M117 x (y'
+    ])
       expect(codes(`${line}\nG1 X5\n`), line).toHaveLength(1);
   });
 
