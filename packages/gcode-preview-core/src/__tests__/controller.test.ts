@@ -26,6 +26,7 @@ function makeController(
     consumerVolume?: boolean;
     renderer?: '2d';
     createWorker?: () => SuiteStubWorker;
+    createGL?: (canvas: HTMLCanvasElement) => ReturnType<typeof makeSuiteStubGL>;
   } = {}
 ) {
   const canvas = document.createElement('canvas');
@@ -36,7 +37,7 @@ function makeController(
       buildVolume: opts.consumerVolume === true ? { x: 220, y: 220, z: 250 } : undefined,
       quality: 'lines',
       chunksPerTick: 8,
-      createRenderer: () => makeSuiteStubGL(canvas),
+      createRenderer: opts.createGL ?? (() => makeSuiteStubGL(canvas)),
       scheduleFrame: (cb) => cb()
     }
   });

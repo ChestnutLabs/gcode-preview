@@ -44,7 +44,7 @@ runBehavioralSuite(
           buildVolume: opts.consumerVolume === true ? { x: 220, y: 220, z: 250 } : undefined,
           quality: 'lines',
           chunksPerTick: 8,
-          createRenderer: () => makeSuiteStubGL(canvas),
+          createRenderer: opts.createGL ?? (() => makeSuiteStubGL(canvas)),
           scheduleFrame: (cb) => cb()
         }
       };

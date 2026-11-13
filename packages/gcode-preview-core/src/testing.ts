@@ -15,7 +15,8 @@ import {
   type ProgressObservation,
   type ToolpathIR
 } from '@chestnutlabs/toolpath-core';
-import type { ColorMode, GLRendererLike } from '@chestnutlabs/gcode-renderer-three';
+import type { ColorMode, GLRendererLike, RenderTargetCanvas } from '@chestnutlabs/gcode-renderer-three';
+import type { WireParseOptions } from '@chestnutlabs/gcode-parser';
 import type { GcodePreviewControls, GcodePreviewState, PreviewEvent } from './controller.js';
 
 /** 2 layers × 6 extrude segments; srcByte = i*10; source byteLength 1000. */
@@ -262,13 +263,15 @@ export interface AdapterHarness {
    * Construct one preview bound to a fresh canvas, wired to a SuiteStubWorker + stub GL. `renderer: '2d'`
    * selects the 2D renderer (the adapter's own renderer-mode option); omitted means the 3D default.
    * `createWorker`, when given, replaces the SuiteStubWorker factory (passed through the adapter's own
-   * `createWorker` option), e.g. a factory that throws.
+   * `createWorker` option), e.g. a factory that throws. `createGL`, when given, replaces {@link makeSuiteStubGL} as
+   * the 3D renderer's GL factory (the adapter's `createRenderer` renderer option), e.g. one that throws.
    */
   create(opts?: {
     machine?: MachineGeometry;
     consumerVolume?: boolean;
     renderer?: '2d';
     createWorker?: () => SuiteStubWorker;
+    createGL?: (canvas: RenderTargetCanvas) => GLRendererLike;
   }): Promise<AdapterInstance> | AdapterInstance;
 }
 
@@ -302,9 +305,68 @@ interface TestApi {
   expect: (actual: unknown) => Matchers & { not: Matchers };
 }
 
+/**
+ * Check the parse event contract on one instance's event log: every `parse-started` is followed by exactly
+ * one terminal event (`parse-complete` / `parse-error` / `parse-cancelled`) before the next `parse-started`,
+ * and no terminal comes without one. Returns '' when it holds, else what went wrong (with the sequence).
+ */
+export function parseLifecycleViolation(types: readonly string[]): string {
+  const seq = types.filter((t) => t === 'parse-started' || TERMINAL_PARSE_EVENTS.includes(t));
+  let open = false;
+  for (const t of seq) {
+    if (t === 'parse-started') {
+      if (open) return `parse-started before the previous parse ended: ${seq.join(',')}`;
+      open = true;
+    } else {
+      if (!open) return `${t} without a parse-started: ${seq.join(',')}`;
+      open = false;
+    }
+  }
+  return open ? `a parse-started never ended: ${seq.join(',')}` : '';
+}
+
+const TERMINAL_PARSE_EVENTS: readonly string[] = ['parse-complete', 'parse-error', 'parse-cancelled'];
+
+/**
+ * Wrap a harness so every instance records its events from creation, and its dispose first checks the parse
+ * event contract ({@link parseLifecycleViolation}) and that `state.parsing` is false. {@link runBehavioralSuite}
+ * applies it to every case; an adapter's own suites can wrap their harness the same way.
+ */
+export function withParseLifecycleGuard(harness: AdapterHarness): AdapterHarness {
+  return {
+    async create(opts) {
+      const a = await harness.create(opts);
+      const types: string[] = [];
+      a.onEvent((e) => types.push(e.type));
+      return {
+        parse: (bytes) => a.parse(bytes),
+        getState: () => a.getState(),
+        // A getter, so an adapter that re-reads its latest handle (React) keeps doing so.
+        get controls() {
+          return a.controls;
+        },
+        observeProgress: (obs) => a.observeProgress(obs),
+        clearProgress: () => a.clearProgress(),
+        onEvent: (cb) => a.onEvent(cb),
+        firstChunkDrawCount: () => a.firstChunkDrawCount(),
+        settle: () => a.settle(),
+        async dispose() {
+          // Read before disposing: an adapter may reset its state on dispose.
+          const violation = parseLifecycleViolation(types);
+          const parsing = a.getState().parsing;
+          await a.dispose();
+          if (violation !== '') throw new Error(`parse lifecycle: ${violation}`);
+          if (parsing) throw new Error(`parse lifecycle: state.parsing still true after ${types.join(',')}`);
+        }
+      };
+    }
+  };
+}
+
 /** The parity contract every adapter must pass (DD-007 §4.6 amendment). */
-export function runBehavioralSuite(name: string, api: TestApi, harness: AdapterHarness): void {
+export function runBehavioralSuite(name: string, api: TestApi, rawHarness: AdapterHarness): void {
   const { describe, it, expect } = api;
+  const harness = withParseLifecycleGuard(rawHarness);
   describe(`behavioral suite — ${name}`, () => {
     it('parses and reports the standard state summary', async () => {
       const a = await harness.create();
@@ -635,6 +697,151 @@ export function runBehavioralSuite(name: string, api: TestApi, harness: AdapterH
       await a.dispose();
     });
 
+    // The parse event contract on inputs that throw (the harness wrapper above also checks it on every case).
+    const parseLog = (a: AdapterInstance): string[] => {
+      const log: string[] = [];
+      a.onEvent((e) => {
+        if (e.type === 'parse-error') log.push(`parse-error:${e.code}`);
+        else if (e.type.startsWith('parse-') && e.type !== 'parse-progress') log.push(e.type);
+      });
+      return log;
+    };
+
+    it('parse(null) ends with parse-error and parsing false, and the next parse completes', async () => {
+      const a = await harness.create();
+      const log = parseLog(a);
+      await a.parse(null as unknown as Uint8Array);
+      await a.settle();
+      expect(log.join(',')).toBe('parse-started,parse-error:E_UNKNOWN');
+      expect(a.getState().parsing).toBe(false);
+      await a.parse(new Uint8Array(1_000));
+      await a.settle();
+      expect(log.join(',')).toBe('parse-started,parse-error:E_UNKNOWN,parse-started,parse-complete');
+      expect(a.getState().summary).toMatchObject({ segments: 12, layers: 2, complete: true });
+      await a.dispose();
+    });
+
+    it('an input whose getReader getter throws fails that parse only: the next one completes (no E_BUSY)', async () => {
+      const a = await harness.create();
+      const log = parseLog(a);
+      const hostile = {
+        byteLength: 10,
+        get getReader(): never {
+          throw new Error('hostile getter');
+        }
+      };
+      await a.parse(hostile as unknown as Uint8Array);
+      await a.settle();
+      await a.parse(new Uint8Array(1_000));
+      await a.settle();
+      expect(log.join(',')).toBe('parse-started,parse-error:E_POST_FAILED,parse-started,parse-complete');
+      expect(a.getState().parsing).toBe(false);
+      expect(a.getState().error).toBeNull();
+      await a.dispose();
+    });
+
+    it('a renderer-checked bad control is reported exactly one way: a RangeError, or E_CONTROL_REJECTED when queued', async () => {
+      // A call made before the renderer binds is queued and replayed; whether an adapter has bound by the time
+      // create() returns is its own timing (React's act() flushes the 3D load). Either path is the contract,
+      // never both and never neither.
+      const a = await harness.create();
+      const errors: string[] = [];
+      a.onEvent((e) => {
+        if (e.type === 'error') errors.push(`${e.code}: ${e.message}`);
+      });
+      let thrown: unknown = null;
+      try {
+        a.controls.setTheme({ gridOpacity: 2 });
+      } catch (e) {
+        thrown = e;
+      }
+      await a.parse(new Uint8Array(1_000));
+      await a.settle();
+      const reason = 'theme gridOpacity must be a number in [0,1] (got 2)';
+      if (thrown !== null) {
+        expect(thrown instanceof RangeError).toBe(true);
+        expect((thrown as Error).message).toBe(reason);
+        expect(errors.join('|')).toBe('');
+        expect(a.getState().error).toBeNull();
+      } else {
+        expect(errors.join('|')).toBe(`E_CONTROL_REJECTED: setTheme rejected: ${reason}`);
+        expect(a.getState().error).toMatchObject({
+          code: 'E_CONTROL_REJECTED',
+          message: `setTheme rejected: ${reason}`
+        });
+      }
+      // The file still loaded: a rejected control is not a load failure.
+      expect(a.getState().summary).toMatchObject({ segments: 12, layers: 2, complete: true });
+      await a.dispose();
+    });
+
+    it('bad control values after bind throw RangeError and leave state.error alone (#542, #547, #559)', async () => {
+      const a = await harness.create();
+      await a.parse(new Uint8Array(1_000));
+      await a.settle();
+      const thrown = (fn: () => unknown): string => {
+        try {
+          fn();
+          return 'none';
+        } catch (e) {
+          return (e as Error).name;
+        }
+      };
+      const c = a.controls;
+      const results = {
+        layerEndNaN: thrown(() => c.setLayerRange(0, Number.NaN)),
+        layerStartNaN: thrown(() => c.setLayerRange(Number.NaN, 1)),
+        scrubNaN: thrown(() => c.setScrubPosition(Number.NaN)),
+        scrubTimeNaN: thrown(() => c.setScrubTime(Number.NaN)),
+        lensNaN: thrown(() => c.setCameraFov(Number.NaN)),
+        themeOpacity: thrown(() => c.setTheme({ gridOpacity: 2 })),
+        themeIntensity: thrown(() => c.setTheme({ hemisphereIntensity: Number.NaN })),
+        colourNaN: thrown(() => c.setColorMode({ mode: 'single', color: [Number.NaN, 0, 0] } as ColorMode)),
+        colourShort: thrown(() => c.setColorMode({ mode: 'single', color: [1, 0] } as unknown as ColorMode))
+      };
+      expect(JSON.stringify(results)).toBe(
+        JSON.stringify({
+          layerEndNaN: 'RangeError',
+          layerStartNaN: 'RangeError',
+          scrubNaN: 'RangeError',
+          scrubTimeNaN: 'RangeError',
+          lensNaN: 'RangeError',
+          themeOpacity: 'RangeError',
+          themeIntensity: 'RangeError',
+          colourNaN: 'RangeError',
+          colourShort: 'RangeError'
+        })
+      );
+      expect(a.getState().error).toBeNull();
+      // The draw is untouched: none of the rejected calls reached the renderer.
+      expect(a.firstChunkDrawCount()).toBe(24);
+      await a.dispose();
+    });
+
+    it('a 3D renderer that fails to load is E_RENDERER_LOAD in state and on the error event (#576)', async () => {
+      const a = await harness.create({
+        createGL: () => {
+          throw new Error('no webgl');
+        }
+      });
+      // React's act() finishes the on-demand 3D load inside create(), before anyone can subscribe. So: when the
+      // failure is already in state at subscribe time, no further event may follow; otherwise exactly one does.
+      const failedBeforeSubscribe = a.getState().error !== null;
+      const errors: string[] = [];
+      a.onEvent((e) => {
+        if (e.type === 'error') errors.push(`${e.code}: ${e.message}`);
+      });
+      await a.settle();
+      expect(a.getState().error).toMatchObject({ code: 'E_RENDERER_LOAD', message: 'no webgl' });
+      expect(errors.join('|')).toBe(failedBeforeSubscribe ? '' : 'E_RENDERER_LOAD: no webgl');
+      // A file still parses without a renderer; its parse clears the stale load error.
+      await a.parse(new Uint8Array(1_000));
+      await a.settle();
+      expect(a.getState().summary).toMatchObject({ segments: 12, layers: 2, complete: true });
+      expect(a.getState().error).toBeNull();
+      await a.dispose();
+    });
+
     it('disposes cleanly: 10 lifecycles leak no workers', async () => {
       const created0 = SuiteStubWorker.created;
       const terminated0 = SuiteStubWorker.terminated;
@@ -716,6 +923,8 @@ export interface MountedComponent {
    * fail with an explicit message without it.
    */
   setSource?(bytes: Uint8Array): Promise<void> | void;
+  /** Set the component's `parseOptions` prop/property, inside the framework's update scope (re-parse parity). */
+  setParseOptions?(opts: WireParseOptions | undefined): Promise<void> | void;
   /** The bound renderer's first chunk draw count, as {@link AdapterInstance.firstChunkDrawCount} (Part C). */
   firstChunkDrawCount?(): number;
   /** The component's own preview handle's `controls` (Part C: a ready-time call, as a consumer makes it). */
@@ -986,6 +1195,28 @@ export function runComponentConformanceSuite(name: string, api: TestApi, harness
       await m.settle();
       expect(calls).toBe(1);
       expect(view.firstChunkDrawCount()).toBe(24);
+      await m.unmount();
+    });
+
+    it('only a new source re-parses: the same source again or a parseOptions change alone does not (re-parse)', async () => {
+      let ready = 0;
+      const m = await harness.mount({ ...quiet, onReady: () => ready++ });
+      if (m.setSource === undefined || m.setParseOptions === undefined) {
+        throw new Error('harness must implement setSource and setParseOptions (re-parse)');
+      }
+      const file = new Uint8Array(1_000);
+      await m.setSource(file);
+      await m.settle();
+      expect(ready).toBe(1);
+      await m.setSource(file); // the same array again: nothing changed, so no parse
+      await m.settle();
+      expect(ready).toBe(1);
+      await m.setParseOptions({ dialects: false }); // options apply to the next parse only (#557)
+      await m.settle();
+      expect(ready).toBe(1);
+      await m.setSource(new Uint8Array(1_000));
+      await m.settle();
+      expect(ready).toBe(2);
       await m.unmount();
     });
   });

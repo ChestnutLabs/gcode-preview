@@ -16,7 +16,7 @@ import type { GLRendererLike, RenderTargetCanvas } from '@chestnutlabs/gcode-ren
 import type { ModelPreviewControls, ModelPreviewControllerOptions, ModelPreviewState } from './model-preview.js';
 import type { ModelViewerEvent } from './model-viewer.js';
 import type { ModelSourceInput } from './loaders.js';
-import { IDENTITY_MAT4, type ModelScene } from './scene-model.js';
+import { IDENTITY_MAT4, type ModelScene, type RenderScope } from './scene-model.js';
 
 /** Stub GL for headless adapter mounts (no real WebGL). */
 export const MODEL_STUB_GL = (canvas: RenderTargetCanvas): GLRendererLike => ({
@@ -209,6 +209,71 @@ export const REQUIRED_MODEL_STATE_KEYS: (keyof ModelPreviewState)[] = [
   'error'
 ];
 
+/**
+ * Every declarative option the `/model` components take (React/Vue/Svelte props, the Web Component's properties),
+ * in one framework-neutral list. An adapter's surface test passes its own prop names to
+ * {@link modelViewerSurfaceGaps}: a prop missing from an adapter, or one only some adapters have, fails CI. Add a
+ * new prop here and to every adapter.
+ */
+export const MODEL_VIEWER_PROP_KEYS = [
+  'source',
+  'view',
+  'cameraState',
+  'background',
+  'interactionQuality',
+  'cameraMode',
+  'renderScope',
+  'limits',
+  'filamentPalette',
+  'loaders',
+  'buildVolume',
+  'showVolumeCage',
+  'theme',
+  'cameraFov',
+  'pixelRatio',
+  'createRenderer',
+  'createControls'
+] as const;
+
+/** The `/model` components' events, by a neutral name; each adapter maps them to its idiom (`onReady`, `ready`…). */
+export const MODEL_VIEWER_EVENT_KEYS = [
+  'ready',
+  'cameraChange',
+  'error',
+  'rendererUnsupported',
+  'contextLost',
+  'contextRestored',
+  'progress'
+] as const;
+
+export type ModelViewerPropKey = (typeof MODEL_VIEWER_PROP_KEYS)[number];
+export type ModelViewerEventKey = (typeof MODEL_VIEWER_EVENT_KEYS)[number];
+
+/**
+ * Compare an adapter's component surface with {@link MODEL_VIEWER_PROP_KEYS} / {@link MODEL_VIEWER_EVENT_KEYS}.
+ * `props` and `events` are the names the adapter actually declares; `eventNames` maps each neutral event to the
+ * adapter's own name. Returns '' when they match, else each missing and extra name.
+ */
+export function modelViewerSurfaceGaps(surface: {
+  props: Iterable<string>;
+  events: Iterable<string>;
+  eventNames: Record<ModelViewerEventKey, string>;
+}): string {
+  const diff = (label: string, want: readonly string[], have: Iterable<string>): string[] => {
+    const got = new Set(have);
+    const missing = want.filter((k) => !got.has(k));
+    const extra = [...got].filter((k) => !want.includes(k)).sort();
+    return [
+      ...(missing.length > 0 ? [`missing ${label}: ${missing.join(', ')}`] : []),
+      ...(extra.length > 0 ? [`extra ${label}: ${extra.join(', ')}`] : [])
+    ];
+  };
+  const wantEvents = MODEL_VIEWER_EVENT_KEYS.map((k) => surface.eventNames[k]);
+  return [...diff('props', MODEL_VIEWER_PROP_KEYS, surface.props), ...diff('events', wantEvents, surface.events)].join(
+    '; '
+  );
+}
+
 /** The model-viewer parity contract every adapter must pass (DD-031). */
 export function runModelBehavioralSuite(name: string, api: TestApi, harness: ModelAdapterHarness): void {
   const { describe, it, expect } = api;
@@ -354,6 +419,63 @@ export function runModelBehavioralSuite(name: string, api: TestApi, harness: Mod
       await a.settle();
       expect(a.drawn().objects).toBe(2);
       await a.dispose();
+    });
+
+    it('a bad render scope throws RangeError before and after a source; null is the whole source', async () => {
+      const a = await harness.create();
+      const errorOf = (scope: unknown): string => {
+        try {
+          a.controls.setRenderScope(scope as RenderScope | null);
+          return 'none';
+        } catch (e) {
+          return `${(e as Error).name}: ${(e as Error).message}`;
+        }
+      };
+      const empty = 'RangeError: renderScope must have exactly one of objectIds, plateId, instanceFilter';
+      expect(errorOf({})).toBe(empty);
+      expect(errorOf({ objectIds: ['a'], plateId: 1 })).toBe(empty);
+      expect(errorOf(null)).toBe('none');
+      await a.controls.setSource(makeTwoObjectModelSource());
+      await a.settle();
+      expect(errorOf({ plateId: 1.5 })).toBe('RangeError: renderScope.plateId must be an integer');
+      expect(errorOf({ objectIds: [1] })).toBe('RangeError: renderScope.objectIds must be an array of strings');
+      if (a.drawn !== undefined) {
+        // The opt-in adapters show what was drawn: a rejected scope changed nothing, and null restores all.
+        expect(a.drawn().objects).toBe(2);
+        a.controls.setRenderScope({ objectIds: ['a'] });
+        await a.settle();
+        expect(a.drawn().objects).toBe(1);
+        a.controls.setRenderScope(null);
+        await a.settle();
+        expect(a.drawn().objects).toBe(2);
+      }
+      await a.dispose();
+    });
+
+    it('overlapping setSource calls: the last one wins', async () => {
+      const a = await harness.create();
+      const first = a.controls.setSource(makeStlModelSource()); // one object
+      const second = a.controls.setSource(makeTwoObjectModelSource()); // two objects
+      await Promise.allSettled([first, second]);
+      await a.settle();
+      expect(a.getState().objectCount).toBe(2);
+      expect(a.getState().ready).toBe(true);
+      await a.dispose();
+    });
+
+    it('setSource after dispose rejects E_MODEL_PREVIEW_DISPOSED (it never hangs)', async () => {
+      const a = await harness.create();
+      await a.controls.setSource(makeStlModelSource());
+      await a.settle();
+      await a.dispose();
+      const outcome = await Promise.race([
+        a.controls.setSource(makeStlModelSource()).then(
+          () => 'resolved',
+          (e: unknown) => (e as Error).message
+        ),
+        new Promise<string>((r) => setTimeout(() => r('still pending after 1.5 s'), 1_500))
+      ]);
+      expect(outcome).toBe('E_MODEL_PREVIEW_DISPOSED');
     });
 
     it('exposes the full model controls contract on every adapter (parity guard)', async () => {

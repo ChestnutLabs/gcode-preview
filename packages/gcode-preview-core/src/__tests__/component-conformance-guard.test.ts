@@ -76,3 +76,28 @@ describe('component conformance: a harness without the Part C seams', () => {
     await expect(Promise.resolve().then(run)).rejects.toThrow('harness must implement controls (Part C)');
   });
 });
+
+describe('component conformance: the re-parse case needs setSource and setParseOptions', () => {
+  const reparse = (h: ComponentHarness) => [...collect(h)].filter(([title]) => title.includes('(re-parse)'));
+
+  it('there is one re-parse case', () => {
+    expect(reparse(unwired).length).toBe(1);
+  });
+
+  const variants: Array<[string, Partial<MountedComponent>]> = [
+    ['neither', {}],
+    ['setSource only', { setSource: () => undefined }],
+    ['setParseOptions only', { setParseOptions: () => undefined }]
+  ];
+  for (const [label, extra] of variants) {
+    it(`fails with the explicit message (${label})`, async () => {
+      const h: ComponentHarness = {
+        mount: () => ({ ...(unwired.mount({} as never) as MountedComponent), ...extra })
+      };
+      const [, run] = reparse(h)[0]!;
+      await expect(Promise.resolve().then(run)).rejects.toThrow(
+        'harness must implement setSource and setParseOptions (re-parse)'
+      );
+    });
+  }
+});

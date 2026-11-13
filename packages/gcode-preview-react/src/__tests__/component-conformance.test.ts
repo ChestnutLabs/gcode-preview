@@ -7,9 +7,12 @@ import {
   SuiteStubWorker,
   emitSuiteBuild,
   makeSuiteStubGL,
-  runComponentConformanceSuite
+  runComponentConformanceSuite,
+  type MountedComponent
 } from '@chestnutlabs/gcode-preview-core/testing';
 import { GcodePreview, type GcodePreviewHandle } from '../index';
+
+type ParseOptions = Parameters<NonNullable<MountedComponent['setParseOptions']>>[0];
 
 (globalThis as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -29,10 +32,12 @@ runComponentConformanceSuite(
       const host = document.body.appendChild(document.createElement('div'));
       let root: Root | null = null;
       let source: Uint8Array | null = null;
+      let parseOptions: ParseOptions;
       const el = () =>
         createElement(GcodePreview, {
           ref,
           source,
+          parseOptions,
           renderer: opts.renderer,
           quality: 'lines',
           cameraFov: opts.cameraFov,
@@ -72,6 +77,10 @@ runComponentConformanceSuite(
         },
         setSource: async (bytes) => {
           source = bytes;
+          await act(async () => root?.render(el()));
+        },
+        setParseOptions: async (o) => {
+          parseOptions = o;
           await act(async () => root?.render(el()));
         },
         firstChunkDrawCount: () => ref.current!.raw.renderer()!.chunkMeshes[0].geometry.drawRange.count,
