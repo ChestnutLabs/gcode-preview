@@ -166,6 +166,15 @@ describe('#592: what a text line still carries', () => {
     expect(ev.map((e) => [e.gcode, e.params, e.rawLine])).toEqual([['', {}, 'EXCLUDE_OBJECT_START NAME=part2 X=5']]);
   });
 
+  it('a multi-letter command that starts with G (GO_PARK, G_MACRO) is text: no move, no tool change', () => {
+    // The fast path for G-code lines needs a digit after the G; without that check these would be read as words.
+    for (const line of ['GO_PARK X50', 'go_park x50', 'G_MACRO T2']) {
+      const { ir } = parse(`T0\nG1 X10 Y10\n${line}\nG1 X20 E1`);
+      expect(moves(ir)).toEqual(['(0.0,0.0)->(10.0,10.0)', '(10.0,10.0)->(20.0,10.0)']);
+      expect(Array.from(ir.segments.tool)).toEqual([0, 0]);
+    }
+  });
+
   it('a code that only starts like a text code is not one (M1170, M11, M4860)', () => {
     expect(eventsOn('M1170 X5', 'M1170')).toEqual(['m1170 {"x":5}']);
     expect(eventsOn('M4860 S1 G28', 'M4860')).toEqual(['m4860 {"s":1}', 'g28 {"s":1}']);
