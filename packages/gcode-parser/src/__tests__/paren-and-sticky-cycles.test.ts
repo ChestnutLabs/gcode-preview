@@ -5,7 +5,15 @@
  */
 import { describe, expect, it } from 'vitest';
 import { parseGcodeToIR } from '../index';
-import { scanParenComments } from '../rs274';
+import { scanParenComments, stripParenComments } from '../rs274';
+
+describe('stripParenComments', () => {
+  it('removes ( … ) only; a ; is ordinary text to it and does not end the scan', () => {
+    expect(stripParenComments('X1 ;a (b) c')).toBe('X1 ;a  c');
+    expect(stripParenComments('X(a(b)c)1 ) Y')).toBe('X1  Y');
+    expect(stripParenComments('X1 (never closed ; Y2')).toBe('X1 ');
+  });
+});
 
 function z1Of(src: string): number[] {
   const { ir } = parseGcodeToIR(src);
