@@ -146,12 +146,15 @@ describe('canned cycle L repeats', () => {
 });
 
 describe('canned cycle L repeats: stop once the segment budget is spent', () => {
-  it('does not keep looping after emitSegment refuses (L1e9, iteration cap 1e9, 100 segments)', () => {
+  // The output is the same whether or not the loop stops early, so this pins the cost. At a 1e7 iteration cap, a
+  // loop that keeps going after the budget is spent takes ~3 s; stopping takes a few ms. The cap stays at 1e7, not
+  // 1e9, so a regression fails this bound instead of hanging the (synchronous) test past vitest's timeout.
+  it('does not keep looping after emitSegment refuses (L1e9, iteration cap 1e7, 100 segments)', () => {
     const t0 = Date.now();
     const r = parseGcodeToIR('G90\nG0 X0 Y0 Z3\nG81 X5 Y7 Z4.2 R4.8 L1000000000\n', {
-      limits: { maxSegments: 100, maxProgramIterations: 1_000_000_000 }
+      limits: { maxSegments: 100, maxProgramIterations: 10_000_000 }
     } as never);
-    expect(Date.now() - t0).toBeLessThan(1500);
+    expect(Date.now() - t0).toBeLessThan(1000);
     expect(r.ir.segments.count).toBe(100);
     expect(r.stats.stopReason?.code).toBe('E_LIMIT_SEGMENTS');
   });
