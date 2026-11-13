@@ -165,7 +165,14 @@ function rampOrFallback(ramp: RGB[], v: number, lo: number, span: number, fallba
 export function checkColorMode(mode: ColorMode): void {
   checkModeColors(mode);
   if (mode.mode === 'feedrate' || mode.mode === 'layerHeight' || mode.mode === 'power') {
-    if (mode.range === undefined) return;
+    if (mode.range == null) return;
+    // A non-array (or wrong-length) range is a RangeError like every other bad range, not the TypeError
+    // that destructuring a number or an object would throw.
+    const range: unknown = mode.range;
+    if (!Array.isArray(range) || range.length !== 2) {
+      const shown = Array.isArray(range) ? `[${range.map(String).join(', ')}]` : String(range);
+      throw new RangeError(`${mode.mode} color range must be two finite numbers >= 0, got ${shown}`);
+    }
     const [lo, hi] = mode.range;
     if (!Number.isFinite(lo) || !Number.isFinite(hi) || lo < 0 || hi < 0) {
       throw new RangeError(
@@ -251,7 +258,7 @@ function checkModeColors(mode: ColorMode): void {
     case 'filament':
       break;
   }
-  if ((mode.mode === 'tool' || mode.mode === 'filament') && mode.fallback === undefined) return;
+  if ((mode.mode === 'tool' || mode.mode === 'filament') && mode.fallback == null) return;
   checkColor(m, 'fallback', mode.fallback);
 }
 
