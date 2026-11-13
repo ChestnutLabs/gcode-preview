@@ -10,6 +10,7 @@
  * parity (the extraction must be behavior-preserving for the toolpath side).
  */
 import { Camera, Scene, Vector3, WebGLRenderer, type WebGLRenderTarget } from 'three';
+import { checkCameraFov as checkFov } from './validate.js';
 
 /**
  * Render target: a DOM canvas (interactive hosts) or an OffscreenCanvas (workers / headless
@@ -111,10 +112,8 @@ export function framingFromCenterRadius(center: Vector3, radius: number, fov = 5
   return { target, position, viewHalfHeight };
 }
 
-/** A perspective vertical fov must be a number in [10, 120] degrees (extreme lenses put the camera absurdly far/near). */
-export function checkFov(fov: number): void {
-  if (!(fov >= 10 && fov <= 120)) throw new RangeError(`fov must be in [10, 120] degrees (got ${String(fov)})`);
-}
+// The lens checks live in the three-free validate.ts (one source of truth with gcode-preview-core).
+export { checkCameraFov as checkFov, checkPixelRatio } from './validate.js';
 
 /**
  * The interactive canvas's resting pixel ratio (drawing-buffer pixels per CSS pixel). A number in (0, 4],
@@ -125,17 +124,6 @@ export type PixelRatioOption = number | 'device';
 
 /** The `'device'` ratio cap: past ×2 the fill cost (ratio² fragments) buys little visible detail. */
 export const DEVICE_PIXEL_RATIO_CAP = 2;
-
-/**
- * A pixel ratio must be `'device'` (the exact string, case-sensitive) or a number in (0, 4]. Throws
- * `RangeError` otherwise — it never clamps.
- */
-export function checkPixelRatio(ratio: PixelRatioOption): void {
-  if (ratio === 'device') return;
-  if (!(typeof ratio === 'number' && ratio > 0 && ratio <= 4)) {
-    throw new RangeError(`pixelRatio must be 'device' or a number in (0, 4] (got ${String(ratio)})`);
-  }
-}
 
 /**
  * How far the framing pose backs off at `fov` relative to the 50° pose: the larger of

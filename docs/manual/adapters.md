@@ -126,6 +126,11 @@ finishes.
 The `theme` and `colorMode` props also throw `RangeError` for a value the renderer can't use, in every adapter:
 see [theme values that throw](https://github.com/ChestnutLabs/gcode-preview/blob/dev/packages/gcode-renderer-three/README.md#theme-values-that-throw)
 and [colours that throw](https://github.com/ChestnutLabs/gcode-preview/blob/dev/packages/gcode-colors/README.md#colours-that-throw).
+So do `buildVolume`, `cameraMode`, `qualityMode`, `progressivePreview`, `frameContent`, `interactionQuality` and
+`renderer`, and the matching `controls` calls (`setView` and `setCameraState` too). The throw comes at once, from
+mounting or from the call, even before the 3D renderer has loaded and on a 2D viewer. On `<gcode-preview>` this
+applies to the properties; a bad attribute value is ignored instead. The allowed values are listed in the
+[core README](https://github.com/ChestnutLabs/gcode-preview/blob/dev/packages/gcode-preview-core/README.md).
 
 Two of the events tell your users what the view is not showing. They answer different questions:
 

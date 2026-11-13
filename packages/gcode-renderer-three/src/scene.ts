@@ -72,6 +72,7 @@ import { estimateTubeBuildMs, POOL_ENGAGE_MS, SINGLE_REVEAL_MS } from './render-
 import { resolveTheme, type Theme, type ResolvedTheme } from './theme.js';
 import { InteractiveStage, type CameraMode, type CameraView, type CameraState } from './interactive-stage.js';
 import type { CaptureOptions } from './capture.js';
+import { checkProgressivePreview } from './validate.js';
 
 /** §4.3 quality tiers. `auto` picks by segment count (chooseQuality). */
 export type QualityMode = 'lines' | 'tubes';
@@ -94,13 +95,6 @@ export type QualityMode = 'lines' | 'tubes';
  *     supplies its own loading/progress treatment until the final build is revealed.
  */
 export type ProgressivePreview = 'auto' | 'lines' | 'hold' | 'off';
-
-/** `progressivePreview` must be exactly one of the four modes; anything else would silently act like `'hold'`. */
-function checkProgressivePreview(mode: unknown): asserts mode is ProgressivePreview {
-  if (mode !== 'auto' && mode !== 'lines' && mode !== 'hold' && mode !== 'off') {
-    throw new RangeError(`progressivePreview must be 'auto', 'lines', 'hold' or 'off' (got ${String(mode)})`);
-  }
-}
 
 // Camera types + the preset-view table live in the shared interactive stage (DD-021 Phase 0);
 // re-exported here so existing import paths (index re-exports them from './scene.js') keep working.

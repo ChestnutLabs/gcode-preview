@@ -38,7 +38,21 @@ import type {
 } from '@chestnutlabs/gcode-renderer-three';
 // Static value imports come from the three-free `./lite` entry only; the main entry is reached through
 // import() (bindCanvas, renderStill) so a 2D-only bundle never ships three.js (DD-014 D4).
-import { CaptureUnsupportedError } from '@chestnutlabs/gcode-renderer-three/lite';
+import {
+  CaptureUnsupportedError,
+  checkBuildVolume,
+  checkCameraFov,
+  checkCameraMode,
+  checkCameraState,
+  checkCameraView,
+  checkFrameContent,
+  checkInteractionQuality,
+  checkPixelRatio,
+  checkProgressivePreview,
+  checkQualityMode,
+  checkRendererMode,
+  checkTheme
+} from '@chestnutlabs/gcode-renderer-three/lite';
 import { LayerView2DRenderer } from './renderer-2d-adapter.js';
 import { checkColorMode } from '@chestnutlabs/gcode-renderer-2d';
 import type { MoveKindToggle, PreviewRenderer, PreviewRendererEvent, RendererMode } from './renderer-interface.js';
@@ -58,7 +72,6 @@ import {
   type Warning
 } from '@chestnutlabs/toolpath-core';
 import { resolveColorMode } from './color-resolve.js';
-import { checkCameraFov, checkPixelRatio } from './lens.js';
 
 /** Session/renderer events, re-emitted, plus the controller's own lifecycle events. */
 export type PreviewEvent =
@@ -99,7 +112,10 @@ export interface PreviewControllerOptions {
     /**
      * Renderer implementation (DD-014 D5): `'3d'` (default) is the Three.js renderer; `'2d'` is the
      * low-resource Canvas 2D layer view. The 3D renderer is loaded on demand, so a `'2d'` consumer's
-     * bundle never pulls Three.js. 3D-only options below are ignored (and disclosed) in `'2d'`.
+     * bundle never pulls Three.js. 3D-only options below are ignored (and disclosed) in `'2d'`, but they
+     * are still checked: {@link createPreviewController} throws `RangeError` for a bad `mode`, `buildVolume`,
+     * `qualityMode`, `progressivePreview`, `cameraMode`, `cameraFov`, `pixelRatio`, `frameContent`,
+     * `interactionQuality` or `theme`, in every mode, with the 3D renderer's own message.
      */
     mode?: RendererMode;
     buildVolume?: BuildVolumeDef;
@@ -262,12 +278,12 @@ export const ALL_COLOR_MODES: readonly ColorModeName[] = [
 
 /**
  * Preview controls. A call made before the renderer is ready (the 3D renderer loads on demand) is queued
- * and replayed in order once it binds. Where a control validates its argument in core (the layer, scrub
- * and lens controls, `setPixelRatio`, `setColorMode`), a bad argument throws `RangeError` to the caller at
- * once, queued or not. A value only the renderer can check (`setTheme`, `setBuildVolume`) throws to the
- * caller when the renderer is bound; if the call was queued, the replay reports it as `state.error` plus
- * an `error` event with code `E_CONTROL_REJECTED` (the message names the control), and the calls queued
- * after it still apply.
+ * and replayed in order once it binds. Every control that takes a value core can check (the layer, scrub,
+ * lens, pixel-ratio, colour-mode, theme, build-volume, camera, view, quality, progressive-preview, frame-content
+ * and interaction-quality controls) throws `RangeError` to the caller at once for a bad one, queued or not,
+ * in every mode, with the 3D renderer's own message (its `/lite` checks). A queued call the renderer still
+ * rejects when it binds is reported as `state.error` plus an `error` event with code `E_CONTROL_REJECTED`
+ * (the message names the control), and the calls queued after it still apply.
  *
  * Scrub and layer-range calls made before a file is shown (before the first parse completes, or while a
  * parse is in flight) apply to the file that parse loads: loading a file does not wipe them. The latest
@@ -332,16 +348,21 @@ export interface GcodePreviewControls {
   /** Read the current camera as a serializable snapshot (#268), or null before the renderer is ready
    *  / on the 2D renderer (which has no 3D pose). */
   getCameraState(): CameraState | null;
-  /** Restore a camera snapshot verbatim (#268) — no re-fit to the current model. 2D discloses. */
+  /**
+   * Restore a camera snapshot verbatim (#268) — no re-fit to the current model. Throws `RangeError` at once
+   * for a non-finite pose, a `zoom` that is not > 0, or a bad `cameraMode`. 2D discloses.
+   */
   setCameraState(state: CameraState): void;
   /**
-   * Apply a bounded declarative theme (#153, DD-009 D4). The 3D renderer throws `RangeError` for an
-   * out-of-range opacity or `gridMajor.every`; queued before bind, that is `E_CONTROL_REJECTED` instead.
+   * Apply a bounded declarative theme (#153, DD-009 D4). Throws `RangeError` at once (even before the 3D
+   * renderer has loaded, and in 2D) for an out-of-range opacity, `gridMajor.every`, light intensity or plate
+   * thickness, or an unknown `materialPreset` / `bedSurface.mode`.
    */
   setTheme(theme: Theme): void;
   /**
-   * Marks the volume consumer-configured: file-discovered geometry stops auto-applying. The 3D renderer
-   * throws `RangeError` for a volume it cannot draw; queued before bind, that is `E_CONTROL_REJECTED`.
+   * Marks the volume consumer-configured: file-discovered geometry stops auto-applying. Throws `RangeError`
+   * at once for a volume the grid cannot draw (even before the 3D renderer has loaded, and in 2D); a rejected
+   * volume does not count as configured. A `MachineGeometry` is left to the renderer.
    */
   setBuildVolume(def: BuildVolumeDef | MachineGeometry): void;
   /** Show/hide the build-volume wireframe cage independently of the bed/plate (#306/#6). */
@@ -478,6 +499,32 @@ function notifyAll<T>(subscribers: Set<(value: T) => void>, value: T): void {
 }
 
 /**
+ * The renderer options the 3D renderer would reject, checked up front in EVERY mode (2D included) with the
+ * renderer's own rules and messages (`validate.ts`, reached through the three-free `/lite` entry). A bad one
+ * throws `RangeError` from the constructor instead of failing the on-demand 3D load later. A volume shaped
+ * like a file-discovered `MachineGeometry` (`bed`) is left to the renderer, which reports a bad one as an
+ * event instead of throwing.
+ */
+function checkRendererOptions(r: PreviewControllerOptions['renderer']): void {
+  if (r === undefined) return;
+  if (r.mode !== undefined) checkRendererMode(r.mode);
+  if (r.buildVolume !== undefined && !isDiscoveredVolume(r.buildVolume)) checkBuildVolume(r.buildVolume);
+  if (r.qualityMode !== undefined) checkQualityMode(r.qualityMode);
+  if (r.progressivePreview !== undefined) checkProgressivePreview(r.progressivePreview);
+  if (r.cameraMode !== undefined) checkCameraMode(r.cameraMode);
+  if (r.cameraFov !== undefined) checkCameraFov(r.cameraFov);
+  if (r.pixelRatio !== undefined) checkPixelRatio(r.pixelRatio);
+  if (r.frameContent !== undefined) checkFrameContent(r.frameContent);
+  if (r.interactionQuality !== undefined) checkInteractionQuality(r.interactionQuality);
+  if (r.theme !== undefined) checkTheme(r.theme);
+}
+
+/** A `MachineGeometry` (the renderer's setBuildVolume also takes one) rather than a consumer volume. */
+function isDiscoveredVolume(def: BuildVolumeDef | MachineGeometry): def is MachineGeometry {
+  return 'bed' in def;
+}
+
+/**
  * A layer index, segment index or print time: any number but NaN (±Infinity is an open end). Checked
  * before anything is stored or queued, so a call made before the renderer is ready throws to its caller.
  */
@@ -519,12 +566,12 @@ export function createPreviewController(options: PreviewControllerOptions = {}):
   let requestedColorMode: ColorMode | undefined = options.renderer?.colorMode;
   let lastMetadata: DialectMetadata | undefined;
   let consumerVolumeSet = options.renderer?.buildVolume !== undefined;
-  // The lens (DD-032): validated up front, and passed to every 3D renderer this controller binds, so a
-  // canvas rebind or renderer reload keeps the last lens the consumer set.
-  if (options.renderer?.cameraFov !== undefined) checkCameraFov(options.renderer.cameraFov);
+  // Every renderer option the 3D renderer checks (lens and pixel ratio included), checked here first.
+  checkRendererOptions(options.renderer);
+  // The lens (DD-032): passed to every 3D renderer this controller binds, so a canvas rebind or renderer
+  // reload keeps the last lens the consumer set.
   let cameraFov: number | undefined = options.renderer?.cameraFov;
-  // The pixel ratio, kept the same way (validated up front, passed to every 3D renderer bound).
-  if (options.renderer?.pixelRatio !== undefined) checkPixelRatio(options.renderer.pixelRatio);
+  // The pixel ratio, kept the same way (passed to every 3D renderer bound).
   let pixelRatio: PixelRatioOption | undefined = options.renderer?.pixelRatio;
   let activeParse: Promise<unknown> | null = null;
   // Bumped by every parse() call: a call that is no longer the newest after an await was superseded (#529).
@@ -923,11 +970,21 @@ export function createPreviewController(options: PreviewControllerOptions = {}):
       return true;
     },
     setQuality: (q) => withRenderer('setQuality', (r) => r.setQuality(q)),
-    setQualityMode: (m) => withRenderer('setQualityMode', (r) => r.setQualityMode(m)),
-    setProgressivePreview: (m) => withRenderer('setProgressivePreview', (r) => r.setProgressivePreview(m)),
-    setCameraMode: (m) => withRenderer('setCameraMode', (r) => r.setCameraMode(m)),
+    // The checks below run synchronously, before anything is stored or queued (as for setCameraFov): a call
+    // made before the on-demand 3D load throws to its caller, not later as E_CONTROL_REJECTED.
+    setQualityMode: (m) => {
+      checkQualityMode(m);
+      withRenderer('setQualityMode', (r) => r.setQualityMode(m));
+    },
+    setProgressivePreview: (m) => {
+      checkProgressivePreview(m);
+      withRenderer('setProgressivePreview', (r) => r.setProgressivePreview(m));
+    },
+    setCameraMode: (m) => {
+      checkCameraMode(m);
+      withRenderer('setCameraMode', (r) => r.setCameraMode(m));
+    },
     setCameraFov: (fov) => {
-      // Synchronous, so a call made before the on-demand 3D load throws here, not later in the replay.
       checkCameraFov(fov);
       cameraFov = fov;
       withRenderer('setCameraFov', (r) => r.setCameraFov?.(fov));
@@ -937,7 +994,10 @@ export function createPreviewController(options: PreviewControllerOptions = {}):
       pixelRatio = ratio;
       withRenderer('setPixelRatio', (r) => r.setPixelRatio?.(ratio));
     },
-    setView: (v) => withRenderer('setView', (r) => r.setView(v)),
+    setView: (v) => {
+      checkCameraView(v);
+      withRenderer('setView', (r) => r.setView(v));
+    },
     // Returns a value, so it can't queue: before the renderer is ready (or on 2D) there is no pose → null.
     getCameraState: () => (renderer !== null ? renderer.getCameraState() : null),
     capture: (opts) =>
@@ -949,15 +1009,29 @@ export function createPreviewController(options: PreviewControllerOptions = {}):
     getRenderStats: () => (renderer !== null ? renderer.getRenderStats() : null),
     pickSegment: (ndcX, ndcY, threshold) => (renderer !== null ? renderer.pickSegment(ndcX, ndcY, threshold) : null),
     isColorModeAvailable: (mode) => (renderer !== null ? renderer.isColorModeAvailable(mode) : true),
-    setCameraState: (s) => withRenderer('setCameraState', (r) => r.setCameraState(s)),
-    setTheme: (t) => withRenderer('setTheme', (r) => r.setTheme(t)),
+    setCameraState: (s) => {
+      checkCameraState(s);
+      withRenderer('setCameraState', (r) => r.setCameraState(s));
+    },
+    setTheme: (t) => {
+      checkTheme(t);
+      withRenderer('setTheme', (r) => r.setTheme(t));
+    },
     setBuildVolume: (def) => {
+      // A bad volume throws before it counts as consumer-set, so a later discovered bed still applies.
+      if (!isDiscoveredVolume(def)) checkBuildVolume(def);
       consumerVolumeSet = true;
       withRenderer('setBuildVolume', (r) => r.setBuildVolume(def));
     },
     setBuildVolumeCage: (v) => withRenderer('setBuildVolumeCage', (r) => r.setBuildVolumeCage(v)),
-    setFrameContent: (m) => withRenderer('setFrameContent', (r) => r.setFrameContent(m)),
-    setInteractionQuality: (m) => withRenderer('setInteractionQuality', (r) => r.setInteractionQuality(m)),
+    setFrameContent: (m) => {
+      checkFrameContent(m);
+      withRenderer('setFrameContent', (r) => r.setFrameContent(m));
+    },
+    setInteractionQuality: (m) => {
+      checkInteractionQuality(m);
+      withRenderer('setInteractionQuality', (r) => r.setInteractionQuality(m));
+    },
     frame: () => withRenderer('frame', (r) => r.frame())
   };
 

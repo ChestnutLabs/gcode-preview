@@ -34,6 +34,7 @@ import {
   type CaptureOptions
 } from './capture.js';
 import { InteractionQualityController } from './interaction-quality.js';
+import { checkCameraMode, checkCameraState } from './validate.js';
 
 /**
  * Camera projection (#150, DD-009 D3). `perspective` is the default interactive view; `orthographic`
@@ -71,34 +72,8 @@ export const VIEW_DIRECTIONS: Record<CameraView, readonly [number, number, numbe
   iso: [1, 1, 1]
 };
 
-/** A camera mode must be exactly `'perspective'` or `'orthographic'`. Throws `RangeError` otherwise. */
-export function checkCameraMode(mode: unknown): asserts mode is CameraMode {
-  if (mode !== 'perspective' && mode !== 'orthographic') {
-    throw new RangeError(`cameraMode must be 'perspective' or 'orthographic' (got ${String(mode)})`);
-  }
-}
-
-const isFiniteVec3 = (v: unknown): boolean => {
-  const o = v as Partial<Vec3> | null | undefined;
-  return typeof o === 'object' && o !== null && Number.isFinite(o.x) && Number.isFinite(o.y) && Number.isFinite(o.z);
-};
-
-/**
- * A restored {@link CameraState} (typically parsed from persisted JSON) must have finite `position` / `target`
- * coordinates, a finite `zoom` > 0 and a valid `cameraMode`. Throws `RangeError` otherwise, before the camera is
- * touched — a NaN pose would blank the view for good and a garbage mode would wedge the projection state.
- */
-export function checkCameraState(state: CameraState): void {
-  const s = state as Partial<CameraState> | null | undefined;
-  if (typeof s !== 'object' || s === null) throw new RangeError('camera state must be an object');
-  checkCameraMode(s.cameraMode);
-  if (!isFiniteVec3(s.position)) throw new RangeError('camera state position must be {x, y, z} finite numbers');
-  if (!isFiniteVec3(s.target)) throw new RangeError('camera state target must be {x, y, z} finite numbers');
-  // `Number.isFinite` does not coerce, so it already rejects strings/undefined/null.
-  if (!Number.isFinite(s.zoom) || (s.zoom as number) <= 0) {
-    throw new RangeError(`camera state zoom must be a finite number > 0 (got ${String(s.zoom)})`);
-  }
-}
+// The camera checks live in the three-free validate.ts (one source of truth with gcode-preview-core).
+export { checkCameraMode, checkCameraState } from './validate.js';
 
 /** The subset of three's `OrbitControls` the stage drives — injectable for headless control-wiring tests. */
 export interface ControlsLike {

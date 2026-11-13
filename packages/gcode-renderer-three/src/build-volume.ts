@@ -27,6 +27,7 @@ import {
 } from 'three';
 import type { Point2, Region2 } from '@chestnutlabs/toolpath-core';
 import type { BedSurface, ThemeBedOutline, ThemeColor, ThemeGridMajor } from './theme.js';
+import { checkBuildVolume, MAX_GRID_LINES_PER_AXIS } from './validate.js';
 
 /**
  * The bed's true outline (DD-030 D3). Omitted (or `'rect'`) ⇒ the rectangular `[min .. min+size]` bed —
@@ -113,85 +114,11 @@ export function disposeBuildVolume(group: Object3D): void {
 }
 
 /**
- * Most grid lines drawn along one axis. A real bed is a few hundred lines at most (1 m at a 1 mm pitch is
- * 1001); 10 000 per axis (20 000 segments in all) is ~10× that, far past any printer, yet small enough to
- * build instantly. It bounds the grid loops BY CONSTRUCTION: the count is computed up front from the
- * extent and pitch, so a huge but finite volume (1e9 mm at a 10 mm pitch ≈ 1e8 lines) throws instead of
- * hanging or running out of memory.
- */
-const MAX_GRID_LINES_PER_AXIS = 10_000;
-
-/**
- * Reject a build volume the grid loops cannot draw. Throws `RangeError` for a non-finite or non-positive
- * pitch, a non-finite extent / origin / height, or a grid of more than `MAX_GRID_LINES_PER_AXIS`
- * lines on an axis. Runs before any geometry is allocated. Before this check such a volume (Infinity
- * extent, zero pitch, absurd extent) never returned: the synchronous grid loop ran until memory ran out.
- */
-function validateBuildVolume(def: BuildVolumeDef): void {
-  const pitch = def.grid ?? 10;
-  if (!(Number.isFinite(pitch) && pitch > 0)) {
-    throw new RangeError(`buildVolume.grid must be a positive finite number (got ${String(pitch)})`);
-  }
-  const fields: [string, number][] = [
-    ['x', def.x],
-    ['y', def.y],
-    ['z', def.z],
-    ['min.x', def.min?.x ?? 0],
-    ['min.y', def.min?.y ?? 0]
-  ];
-  for (const [name, v] of fields) {
-    if (!Number.isFinite(v)) throw new RangeError(`buildVolume.${name} must be a finite number (got ${String(v)})`);
-  }
-  for (const [axis, extent] of [
-    ['x', def.x],
-    ['y', def.y]
-  ] as const) {
-    const lines = Math.floor(extent / pitch) + 1;
-    if (lines > MAX_GRID_LINES_PER_AXIS) {
-      throw new RangeError(
-        `buildVolume.${axis} of ${extent} mm at a ${pitch} mm grid needs ${lines} grid lines (> ${MAX_GRID_LINES_PER_AXIS} per axis)`
-      );
-    }
-  }
-  // The count above is pure arithmetic on the EXTENT; the loops step the ORIGIN. At |origin| ≥ ~2^53·pitch
-  // `v + pitch === v`, so a stepping loop never advances (1e20 + 10 === 1e20). Reject that at either edge.
-  for (const [axis, lo, hi] of [
-    ['x', def.min?.x ?? 0, (def.min?.x ?? 0) + def.x],
-    ['y', def.min?.y ?? 0, (def.min?.y ?? 0) + def.y]
-  ] as const) {
-    if (lo + pitch === lo || hi + pitch === hi) {
-      throw new RangeError(
-        `buildVolume ${axis} range ${lo}..${hi} is too large for a ${pitch} mm grid (the grid pitch is below the coordinate precision)`
-      );
-    }
-  }
-  const shape = def.shape;
-  if (shape?.kind === 'circular') {
-    for (const v of [shape.center.x, shape.center.y, shape.diameter]) {
-      if (!Number.isFinite(v)) throw new RangeError(`buildVolume.shape (circular) must be finite (got ${String(v)})`);
-    }
-  } else if (shape?.kind === 'polygon') {
-    for (const p of shape.points) {
-      if (!(Number.isFinite(p.x) && Number.isFinite(p.y))) {
-        throw new RangeError(`buildVolume.shape (polygon) points must be finite (got ${String(p.x)}, ${String(p.y)})`);
-      }
-    }
-  }
-  for (const region of def.excludedRegions ?? []) {
-    for (const p of region.points) {
-      if (!(Number.isFinite(p.x) && Number.isFinite(p.y))) {
-        throw new RangeError(`buildVolume.excludedRegions points must be finite (got ${String(p.x)}, ${String(p.y)})`);
-      }
-    }
-  }
-}
-
-/**
  * Build the volume group. Caller owns disposal ({@link disposeBuildVolume}). Throws `RangeError` for a
- * volume that cannot be drawn (see `validateBuildVolume`).
+ * volume that cannot be drawn (see `checkBuildVolume`).
  */
 export function createBuildVolume(def: BuildVolumeDef, style?: BuildVolumeStyle): Group {
-  validateBuildVolume(def);
+  checkBuildVolume(def);
   const group = new Group();
   group.name = 'buildVolume';
   const gridColor = style?.gridColor ?? 0x448844;

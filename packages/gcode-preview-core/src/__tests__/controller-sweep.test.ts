@@ -92,10 +92,40 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
+/**
+ * Make the 3D renderer reject `setTheme` with `message`. Core checks a theme's values itself now (validate.ts),
+ * so a renderer-side rejection of a theme core accepted is the case the replay path still has to report.
+ * Assigned on the prototype: `afterEach` puts back every SPIED original.
+ */
+function rejectTheme(message: string): void {
+  (ToolpathRenderer.prototype as unknown as Record<string, unknown>).setTheme = () => {
+    throw new RangeError(message);
+  };
+}
+
 describe('queued control replay (E_CONTROL_REJECTED)', () => {
+  it('a value core rejects throws to its caller before the 3D load and is never queued', async () => {
+    const { controller, events } = make3d();
+    expect(controller.raw.renderer()).toBeNull();
+    expect(() => controller.controls.setTheme({ gridOpacity: 2 })).toThrow(
+      'theme gridOpacity must be a number in [0,1] (got 2)'
+    );
+    expect(() => controller.controls.setBuildVolume({ x: Number.NaN, y: 220, z: 250 })).toThrow(
+      'buildVolume.x must be a finite number (got NaN)'
+    );
+    controller.controls.setCameraMode('orthographic');
+    await settle();
+    expect(controller.raw.renderer()).not.toBeNull();
+    expect(log).toEqual(['setCameraMode:["orthographic"]']);
+    expect(controller.getState().error).toBeNull();
+    expect(errorEvents(events)).toEqual([]);
+    controller.dispose();
+  });
+
   it('a queued call the 3D renderer rejects is reported by name; later queued calls still apply', async () => {
     const { controller, events } = make3d();
-    controller.controls.setTheme({ gridOpacity: 2 });
+    rejectTheme('theme gridOpacity must be a number in [0,1] (got 2)');
+    controller.controls.setTheme({ gridOpacity: 0.5 });
     controller.controls.setCameraMode('orthographic');
     controller.controls.setView('top');
     await settle();
@@ -116,15 +146,19 @@ describe('queued control replay (E_CONTROL_REJECTED)', () => {
 
   it('each rejected call reports once, in queue order; a rebind replays nothing again', async () => {
     const { controller, events } = make3d();
-    controller.controls.setTheme({ gridOpacity: -1 });
+    rejectTheme('no theme');
+    vi.spyOn(ToolpathRenderer.prototype, 'setBuildVolume').mockImplementation(() => {
+      throw new RangeError('no volume');
+    });
+    controller.controls.setTheme({ gridOpacity: 0.5 });
     controller.controls.setFrameContent('object');
-    controller.controls.setBuildVolume({ x: Number.NaN, y: 220, z: 250 });
+    controller.controls.setBuildVolume({ x: 220, y: 220, z: 250 });
     await settle();
     expect(errorEvents(events).map((e) => e.message.split(':')[0])).toEqual([
       'setTheme rejected',
       'setBuildVolume rejected'
     ]);
-    expect(controller.getState().error?.message.startsWith('setBuildVolume rejected: ')).toBe(true);
+    expect(controller.getState().error?.message).toBe('setBuildVolume rejected: no volume');
     expect(log).toEqual(['setFrameContent:["object"]']);
     controller.bindCanvas(document.createElement('canvas'));
     await settle();
@@ -147,7 +181,8 @@ describe('queued control replay (E_CONTROL_REJECTED)', () => {
     const outcome = await controller.parse(new Uint8Array(1_000));
     expect(outcome.ok).toBe(true);
     expect(controller.getState().availableColorModes).toEqual([]);
-    controller.controls.setTheme({ gridOpacity: 9 });
+    rejectTheme('no theme');
+    controller.controls.setTheme({ gridOpacity: 0.5 });
     controller.bindCanvas(canvas);
     await settle();
     expect(controller.getState().availableColorModes).toContain('single');
@@ -181,7 +216,8 @@ describe('queued control replay (E_CONTROL_REJECTED)', () => {
 
   it('a state subscriber that disposes during replay stops it: the next queued call never reaches the old renderer', async () => {
     const { controller } = make3d();
-    controller.controls.setTheme({ gridOpacity: 2 }); // rejected on replay -> state.error -> subscriber disposes
+    rejectTheme('no theme');
+    controller.controls.setTheme({ gridOpacity: 0.5 }); // rejected on replay -> state.error -> subscriber disposes
     controller.controls.setCameraMode('orthographic');
     let disposals = 0;
     let afterDispose = 0;
@@ -271,7 +307,8 @@ describe('queued control replay (E_CONTROL_REJECTED)', () => {
 
   it('a subscriber that rebinds during replay stops it on the old renderer', async () => {
     const { controller } = make3d();
-    controller.controls.setTheme({ gridOpacity: 2 });
+    rejectTheme('no theme');
+    controller.controls.setTheme({ gridOpacity: 0.5 });
     controller.controls.setCameraMode('orthographic');
     let rebinds = 0;
     controller.onEvent((e) => {
@@ -556,6 +593,16 @@ describe('replay property (fixed seeds)', () => {
       return s % n;
     };
   };
+  // A bad call core accepts and the 3D renderer rejects (core rejects a bad theme VALUE itself, synchronously).
+  const REJECTED = '#rejected-by-renderer';
+  beforeEach(() => {
+    const proto = ToolpathRenderer.prototype as unknown as Record<string, (...a: unknown[]) => unknown>;
+    const logged = proto.setTheme; // the SPIED wrapper; afterEach puts the original back
+    proto.setTheme = function (this: unknown, t: unknown) {
+      if ((t as { background?: unknown }).background === REJECTED) throw new RangeError('renderer rejects this theme');
+      return logged.call(this, t);
+    };
+  });
   type Op = { label: string; good: boolean; call: (c: ReturnType<typeof make3d>['controller']) => void };
   const OPS: Op[] = [
     { label: 'setCameraMode:["orthographic"]', good: true, call: (c) => c.controls.setCameraMode('orthographic') },
@@ -565,7 +612,7 @@ describe('replay property (fixed seeds)', () => {
     { label: 'setShowRetractions:[false]', good: true, call: (c) => c.controls.setShowRetractions(false) },
     { label: 'setFrameContent:["all"]', good: true, call: (c) => c.controls.setFrameContent('all') },
     { label: 'setTheme:[{"gridOpacity":0.5}]', good: true, call: (c) => c.controls.setTheme({ gridOpacity: 0.5 }) },
-    { label: 'bad-theme', good: false, call: (c) => c.controls.setTheme({ gridOpacity: 3 }) }
+    { label: 'bad-theme', good: false, call: (c) => c.controls.setTheme({ background: REJECTED }) }
   ];
 
   for (const seed of [1, 7, 42, 99, 1234, 2026, 31337, 65_521]) {

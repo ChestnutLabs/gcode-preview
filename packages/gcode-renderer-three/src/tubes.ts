@@ -18,6 +18,7 @@
  * in BufferGeometry), fully testable in Node — same stance as chunks.ts.
  */
 import type { GeometryChunk } from './chunks.js';
+import { checkQualityMode } from './validate.js';
 
 export interface TubeOptions {
   /** Extrusion width in mm (inherited default 0.6). */
@@ -83,12 +84,7 @@ export function checkTubeOptions(tube: TubeOptions | undefined): void {
   }
 }
 
-/** A quality policy must be exactly `'full'`, `'adaptive'` or `'fast'` (no `undefined` here: a setter needs a value). */
-export function checkQualityMode(q: unknown): void {
-  if (q !== 'full' && q !== 'adaptive' && q !== 'fast') {
-    throw new RangeError(`qualityMode must be 'full', 'adaptive' or 'fast' (got ${String(q)})`);
-  }
-}
+export { checkQualityMode } from './validate.js';
 
 /** Validate the renderer's tube/pool budget options (same policy as {@link checkTubeOptions}). */
 export function checkBudgetOptions(opts: {
