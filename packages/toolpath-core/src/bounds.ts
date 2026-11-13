@@ -18,8 +18,10 @@ function expand(b: ToolpathBounds, x: number, y: number, z: number): void {
 
 /**
  * Compute bounds over segment endpoints, converting Float32 deltas back to absolute coordinates via
- * `origin`. Returns extrude-only bounds, travel-inclusive bounds, and **object-only** bounds — the
- * extrusion of labeled objects (`object != 0`), excluding skirt/prime/purge (which are `object 0`).
+ * `origin`. Returns productive-move bounds (`Extrude` or `Cut` — a CNC/laser/plotter cut is the work, DD-012
+ * D7, #568), travel-inclusive bounds, and **object-only** bounds — the productive moves of labeled objects
+ * (`object != 0`), excluding skirt/prime/purge (which are `object 0`). FDM files never set `Cut`, so their
+ * bounds are unchanged.
  * `objectBounds` is empty (Infinity/-Infinity) when the file carries no object labels; a consumer
  * that wants "frame the printed object, not the skirt" (#306/#6) uses it only when finite.
  */
@@ -39,7 +41,7 @@ export function computeSegmentBounds(
     const ez = origin.z + seg.z1[i];
     expand(boundsWithTravel, sx, sy, sz);
     expand(boundsWithTravel, ex, ey, ez);
-    if ((seg.kind[i] & MoveKind.Extrude) !== 0) {
+    if ((seg.kind[i] & (MoveKind.Extrude | MoveKind.Cut)) !== 0) {
       expand(bounds, sx, sy, sz);
       expand(bounds, ex, ey, ez);
       if (seg.object[i] !== 0) {
