@@ -128,3 +128,10 @@ Most applications should consume this through [`@chestnutlabs/gcode-preview-core
 or a framework adapter, which own the parse→render lifecycle.
 
 Part of [Chestnut Labs G-code Preview](../../README.md) · MIT
+
+## The three-free `/lite` entry
+
+`@chestnutlabs/gcode-renderer-three/lite` holds the pieces that never load three.js: `CaptureUnsupportedError`,
+`studioTheme`, `STUDIO_CAMERA_FOV` and the theme, camera and capture types. You normally don't need it: the main
+entry exports the same things. It exists for packages that load the renderer on demand, like
+`@chestnutlabs/gcode-preview-core`, so a 2D-only app ships no three.js.

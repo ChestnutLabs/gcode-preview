@@ -36,8 +36,7 @@ export type {
 } from './scene.js';
 export { createBuildVolume, disposeBuildVolume } from './build-volume.js';
 export type { BuildVolumeDef, BuildVolumeStyle, BedShape } from './build-volume.js';
-export { CaptureUnsupportedError } from './capture.js';
-export type { CaptureOptions } from './capture.js';
+// CaptureUnsupportedError, studioTheme and STUDIO_CAMERA_FOV come from the three-free `./lite` entry (below).
 export {
   framingFromCenterRadius,
   createDefaultGLRenderer,
@@ -50,7 +49,7 @@ export { InteractionQualityController } from './interaction-quality.js';
 export type { InteractionQualityDeps } from './interaction-quality.js';
 export { InteractiveStage } from './interactive-stage.js';
 export type { InteractiveStageOptions, ControlsLike, DisplayEnv, MediaQueryListLike } from './interactive-stage.js';
-export { DEFAULT_THEME, resolveTheme, studioTheme, STUDIO_CAMERA_FOV } from './theme.js';
+export { DEFAULT_THEME, resolveTheme } from './theme.js';
 export type {
   Theme,
   MaterialPreset,
@@ -83,3 +82,5 @@ export type {
   RendererInfoContext,
   DetectedCapability
 } from './capability.js';
+// The three-free subpath, re-exported so no main-entry import changes (`./lite`).
+export * from './lite.js';

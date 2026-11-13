@@ -55,6 +55,9 @@ jobs:
       # DD-008 §8/§9 packaged-artifact gate: pack-content snapshots ×9 +
       # publint + arethetypeswrong (issue #128).
       - run: npm run pack:check
+      # DD-014 D4: a 2D-only bundle of core and the four adapters loads no three.js at startup
+      # (Vite + esbuild over the dists pack:check just built).
+      - run: npm run bundle:check
 
   node-24:
 

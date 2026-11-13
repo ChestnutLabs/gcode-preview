@@ -19,22 +19,20 @@
  * identity is NOT promised (antialiasing varies); cache by job identity.
  */
 import { GcodeParseSession, type SessionOptions, type WireParseOptions } from '@chestnutlabs/gcode-parser';
-import {
-  ToolpathRenderer,
-  createDefaultGLRenderer,
-  createBrowserGeometryWorker,
-  machineToVolume,
-  type BuildVolumeDef,
-  type CameraMode,
-  type ColorMode,
-  type GeometryWorkerLike,
-  type GLRendererLike,
-  type QualityMode,
-  type QualityPolicy,
-  type RenderTargetCanvas,
-  type Theme,
-  type ThemeColor,
-  type TubeOptions
+// Type-only: the renderer itself is loaded with `await import()` inside renderStill, so this module
+// adds no static value import of the main entry (a 2D-only bundle must not ship three.js; see `./lite`).
+import type {
+  BuildVolumeDef,
+  CameraMode,
+  ColorMode,
+  GeometryWorkerLike,
+  GLRendererLike,
+  QualityMode,
+  QualityPolicy,
+  RenderTargetCanvas,
+  Theme,
+  ThemeColor,
+  TubeOptions
 } from '@chestnutlabs/gcode-renderer-three';
 import { type MachineGeometry, type ToolpathIR } from '@chestnutlabs/toolpath-core';
 import { checkCameraFov } from './lens.js';
@@ -190,7 +188,10 @@ function isToolpathIR(v: unknown): v is ToolpathIR {
   );
 }
 
-function toVolume(def: BuildVolumeDef | MachineGeometry): BuildVolumeDef {
+function toVolume(
+  def: BuildVolumeDef | MachineGeometry,
+  machineToVolume: (m: MachineGeometry) => BuildVolumeDef
+): BuildVolumeDef {
   return 'bed' in def ? machineToVolume(def) : def;
 }
 
@@ -270,6 +271,12 @@ export async function renderStill(
     }
   }
 
+  // Loaded on demand, like the controller's 3D renderer: a static import here would put three.js in
+  // every bundle that imports core, 2D-only ones included.
+  const { ToolpathRenderer, createDefaultGLRenderer, createBrowserGeometryWorker, machineToVolume } = await import(
+    '@chestnutlabs/gcode-renderer-three'
+  );
+
   // `background` shorthand (#306): a solid color merges into the theme; 'transparent' leaves the scene
   // background unset AND creates an alpha GL context so the card shows through. Explicit theme.background
   // / createRenderer win.
@@ -326,7 +333,7 @@ export async function renderStill(
     ...(options.tube ? { tube: options.tube } : {}),
     ...(options.tubeByteBudget !== undefined ? { tubeByteBudget: options.tubeByteBudget } : {}),
     ...(options.qualityMode !== undefined ? { qualityMode: options.qualityMode } : {}),
-    ...(options.buildVolume ? { buildVolume: toVolume(options.buildVolume) } : {}),
+    ...(options.buildVolume ? { buildVolume: toVolume(options.buildVolume, machineToVolume) } : {}),
     preserveDrawingBuffer: true,
     scheduleFrame: (cb) => queueMicrotask(cb),
     ...(resolvedCreateRenderer ? { createRenderer: resolvedCreateRenderer } : {})
