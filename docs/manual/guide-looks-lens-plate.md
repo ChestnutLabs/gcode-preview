@@ -29,6 +29,10 @@ build-volume cage **off**, so turn it off with it (`showVolumeCage={false}`); th
 Both viewers take it: `<ModelViewer>` has the same `showVolumeCage` prop and `controls.setBuildVolumeCage(visible)`, and
 turning the cage off keeps the plate, grid and contact shadow.
 
+A file with no extrusion (a CNC carve, a laser job or a pen plotter) works at or below the plate, which is drawn at Z 0.
+For those files the plate and its edge turn see-through (at most 35% opaque) and the contact shadow is left out, so the
+toolpath shows through. A file with any extrusion, including a printer that also cuts, keeps the opaque plate and shadow.
+
 | Look | Backdrop | Plate and grid |
 | --- | --- | --- |
 | `studioTheme('dark')` | dark grey gradient | solid mid-grey plate, white 10 mm grid with stronger 50 mm lines and an outline |
