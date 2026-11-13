@@ -519,7 +519,8 @@ function checkRendererOptions(r: PreviewControllerOptions['renderer']): void {
   if (r.pixelRatio != null) checkPixelRatio(r.pixelRatio);
   if (r.frameContent != null) checkFrameContent(r.frameContent);
   if (r.interactionQuality != null) checkInteractionQuality(r.interactionQuality);
-  if (r.theme != null) checkTheme(r.theme);
+  // Unconditional: null / undefined are the default theme (checkTheme reads `theme ?? {}`).
+  checkTheme(r.theme);
 }
 
 /**

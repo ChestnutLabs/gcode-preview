@@ -75,7 +75,8 @@
   export let rendererOptions = undefined;
 
   const dispatch = createEventDispatcher();
-  const isMachine = buildVolume !== undefined && 'bed' in buildVolume;
+  // `!= null`: a `buildVolume={null}` binding means no volume, never `'bed' in null` (#590).
+  const isMachine = buildVolume != null && 'bed' in buildVolume;
 
   /** The full store/action handle — reachable via `bind:this={c}` then `c.preview`. */
   export const preview = createGcodePreview({
@@ -84,8 +85,9 @@
       mode: renderer,
       buildVolume: isMachine ? undefined : buildVolume,
       quality,
-      qualityMode,
-      progressivePreview,
+      // An empty value is unset, as in the reactive setters below (`$: if (qualityMode)`), never a bad value.
+      qualityMode: qualityMode || undefined,
+      progressivePreview: progressivePreview || undefined,
       cameraMode,
       cameraFov,
       pixelRatio,
