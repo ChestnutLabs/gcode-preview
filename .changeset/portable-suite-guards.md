@@ -1,6 +1,6 @@
 ---
-'@chestnutlabs/gcode-preview-core': patch
-'@chestnutlabs/gcode-model-renderer': patch
+'@chestnutlabs/gcode-preview-core': minor
+'@chestnutlabs/gcode-model-renderer': minor
 ---
 
 Portable behavioural suites: new parity guards every adapter inherits.
@@ -10,10 +10,14 @@ Portable behavioural suites: new parity guards every adapter inherits.
   through the newly exported `withParseLifecycleGuard` and `parseLifecycleViolation`. New cases cover a null
   input, an input whose `getReader` getter throws, a renderer-checked bad control (a `RangeError`, or
   `E_CONTROL_REJECTED` when it was queued, never both), bad control values after bind, and a 3D renderer that
-  fails to load (`E_RENDERER_LOAD` in state and on the `error` event), through the new optional
-  `AdapterHarness.create({ createGL })` seam. The component suite
-  adds a re-parse case (the same source again, or a `parseOptions` change alone, does not re-parse) and the
-  optional `MountedComponent.setParseOptions` seam it needs.
+  fails to load (`E_RENDERER_LOAD` in state and on the `error` event), through the new
+  `AdapterHarness.create({ createGL })` seam. The component suite adds a re-parse case (the same source again,
+  or a `parseOptions` change alone, does not re-parse), which needs the new `MountedComponent.setParseOptions`
+  seam.
+- **If you run these suites against your own adapter:** both seams are typed as optional, but the new cases need
+  them. A harness without `setParseOptions` fails the re-parse case ("harness must implement…"). A harness that
+  ignores `createGL` reaches a real WebGL context and fails the renderer-load case. A harness that passed on
+  0.23 can go red on this release until it implements both.
 - **`@chestnutlabs/gcode-model-renderer/testing`:** `runModelBehavioralSuite` adds render-scope validation,
   last-wins overlapping `setSource`, and `setSource` after dispose rejecting `E_MODEL_PREVIEW_DISPOSED`. New
   `MODEL_VIEWER_PROP_KEYS`, `MODEL_VIEWER_EVENT_KEYS` and `modelViewerSurfaceGaps` let each `/model` adapter
