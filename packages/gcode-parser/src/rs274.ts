@@ -72,6 +72,30 @@ export function stripParenComments(s: string): string {
   return out;
 }
 
+/**
+ * One scan of a raw line's `( … )` comments, with the same depth rules as {@link stripParenComments}
+ * (a stray `)` at depth 0 is ignored; an unclosed `(` swallows the rest of the line). Returns:
+ * - `semi`: index of the first `;` OUTSIDE parentheses (`-1` if none) — where the `;` comment starts;
+ * - `unclosed` / `nested`: a `(` still open at the `;` (or the end of the line) / a `(` inside a `(`.
+ *   LinuxCNC rejects both; the parser warns and carries on. Nothing after the `;` is examined.
+ */
+export function scanParenComments(s: string): { semi: number; unclosed: boolean; nested: boolean } {
+  let depth = 0;
+  let nested = false;
+  for (let i = 0; i < s.length; i++) {
+    const c = s.charCodeAt(i);
+    if (c === 40) {
+      depth++;
+      if (depth > 1) nested = true;
+    } else if (c === 41) {
+      if (depth > 0) depth--;
+    } else if (c === 59 && depth === 0) {
+      return { semi: i, unclosed: false, nested };
+    }
+  }
+  return { semi: -1, unclosed: depth > 0, nested };
+}
+
 /** The result of lexing one parametric line. */
 export type ParametricLine =
   | { kind: 'empty' }

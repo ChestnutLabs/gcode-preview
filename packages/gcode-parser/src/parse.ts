@@ -47,6 +47,7 @@ import {
   NUMBER_OUT_OF_RANGE_WARN,
   Rs274Context,
   lineUsesParametric,
+  scanParenComments,
   stripParenComments
 } from './rs274.js';
 import { RS274_FLOW_WARN, interpretOWordProgram, programUsesOWords, type FlowLine } from './rs274-flow.js';
@@ -255,6 +256,14 @@ interface Cmd {
 
 const SPLIT_LETTERS = /([a-zA-Z])/g;
 
+/** Warning code: a `(` comment that is never closed or is nested (LinuxCNC errors on both). */
+const UNBALANCED_PAREN_WARN = 'unbalanced-paren-comment';
+/** A line whose parentheses are DATA, not a comment: it starts with a multi-letter word (a dialect/macro
+ *  command such as `EXCLUDE_OBJECT_START NAME=cube_(1`, `SET_PIN …`) or is one of Marlin's text-argument
+ *  M-codes (`M117` message, `M118` echo, `M486` object name; any case). Such a line is never reported as an
+ *  unbalanced comment, and its `;` comment starts at the first `;` as it always did. */
+const TEXT_ARGUMENT_LINE = /^\s*(?:[A-Za-z_][A-Za-z_]|m(?:117|118|486)(?!\d))/i;
+
 /**
  * Lex a line into its G/M/T command words plus the axis/param words. Real CNC G-code routinely puts
  * several commands on one line and prefixes lines with `N` line numbers; both are handled here.
@@ -458,6 +467,8 @@ export function createEngine(input: string | Uint8Array, opts: ParseOptions): En
   let cannedRetractInitial = true; // G98 (retract to initial Z) vs G99 (retract to R); modal, default G98
   let cannedZSet = false; // a Z / R word was ever given (else the cycle runs on the 0 default, which is disclosed)
   let cannedRSet = false;
+  let cannedRWord = 0; // the R / Z words as last written (sticky numbers); G91 re-derives the planes from them
+  let cannedZWord = 0;
   let cannedCyclesSeen = false; // any G81/G82/G83 expanded → cannedCycles capability 'known'
   // RS274NGC parametric programs (DD-017 Phase 1, #189 phase 7). The store + expression evaluator resolve
   // `#params`/`[expr]` on any line that uses them; non-parametric lines never touch it (byte-identical).
@@ -935,6 +946,16 @@ export function createEngine(input: string | Uint8Array, opts: ParseOptions): En
   // Canned drilling cycle (DD-012 phase 2, #189): expand G81/G82/G83 into explicit sub-moves so the
   // holes are real geometry (today they emit nothing). Rapids are Travel; the plunge(s) are Cut. Z/R/Q
   // and the initial plane are captured when the cycle is defined and retained across modal repeats.
+  // Under G91 the cycle's R plane is `current Z + R` and its depth is `R plane + Z`, so each block (a fresh
+  // G8x or a bare X/Y repeat) re-derives both planes from the sticky words (a word given on this very block
+  // was stored by the caller just before). A word that was never given reads as 0 in the active distance mode
+  // (an increment of 0: the R plane is the current Z, the depth is the R plane); the missing-word warning
+  // still fires. G90 never calls this: absolute planes are stored once.
+  const rederiveIncrementalPlanes = (): void => {
+    cannedR = sz + cannedRWord;
+    cannedZ = cannedR + cannedZWord;
+  };
+
   const runCannedCycle = (p: Record<string, number>): boolean => {
     // 1. Rapid to the hole XY at the current Z.
     sx = nextAxis(sx, p.x, offX());
@@ -961,7 +982,9 @@ export function createEngine(input: string | Uint8Array, opts: ParseOptions): En
       if (!emitSegment(sx, sy, sz, 0, MoveKind.Cut)) return false; // single plunge
     }
     // 4. Retract (rapid) to the initial plane (G98) or the R plane (G99).
-    sz = cannedRetractInitial ? cannedInitialZ : cannedR;
+    // LinuxCNC: retract "to the original Z position (if that is above the R position and the retract mode
+    // is G98, OLD_Z), or otherwise to the R position".
+    sz = cannedRetractInitial ? Math.max(cannedInitialZ, cannedR) : cannedR;
     if (!emitSegment(sx, sy, sz, 0, MoveKind.Travel)) return false;
     return true;
   };
@@ -984,8 +1007,11 @@ export function createEngine(input: string | Uint8Array, opts: ParseOptions): En
       return;
     }
     // DD-005 §4.3 read-only observation points — no effect on lexing or state.
+    // A `;` inside `( … )` is part of that paren comment, not the start of a `;` comment — the same split
+    // the lexer makes. A line without `(` (every FDM line) keeps the plain `indexOf` and skips the scan.
+    const parens = rawLine.indexOf('(') === -1 || TEXT_ARGUMENT_LINE.test(rawLine) ? null : scanParenComments(rawLine);
     if (onComment !== undefined) {
-      const ci = rawLine.indexOf(';');
+      const ci = parens === null ? rawLine.indexOf(';') : parens.semi;
       if (ci !== -1) onComment(rawLine.slice(ci + 1), offset);
     }
     // RS274NGC parametric programs (DD-017 Phase 1): a line using `#`/`[` is resolved by the parameter +
@@ -1001,6 +1027,18 @@ export function createEngine(input: string | Uint8Array, opts: ParseOptions): En
       cmd = r.kind === 'cmd' ? { codes: r.codes, params: r.params } : lexLine(rawLine, warnOutOfRange); // 'plain' → normal
     } else {
       cmd = lexLine(rawLine, warnOutOfRange);
+    }
+    // LinuxCNC rejects an unclosed or nested `(` comment; the plain lexer tolerates both (an unclosed `(`
+    // swallows the rest of the line). Disclose it, once per file. Dialect extended commands (Klipper
+    // `EXCLUDE_OBJECT_START NAME=cube_(1`) legitimately carry bare parentheses and are not checked.
+    if (parens !== null && (parens.unclosed || parens.nested)) {
+      warn(
+        UNBALANCED_PAREN_WARN,
+        parens.unclosed
+          ? 'a "(" comment is never closed; the rest of the line is treated as a comment'
+          : 'a "(" comment is nested inside another; the outer parentheses close at the matching ")"',
+        currentSrcByte
+      );
     }
     // Skip only genuinely empty lines. A line with no lexable words but real content (a dialect
     // extended command like `EXCLUDE_OBJECT_START NAME=cube`, a macro) must NOT be dropped — the
@@ -1024,8 +1062,10 @@ export function createEngine(input: string | Uint8Array, opts: ParseOptions): En
         onCommand({ gcode: '', params: cmd.params, rawLine, srcByte: offset, segIndex: writer.count });
       }
       if (cmd.params.x !== undefined || cmd.params.y !== undefined || cmd.params.z !== undefined) {
-        if (cannedCycle !== null) ok = runCannedCycle(cmd.params);
-        else if (modalMotion === 'g2' || modalMotion === 'g3') ok = g2(cmd.params, modalMotion === 'g2');
+        if (cannedCycle !== null) {
+          if (!xyzAbsolute) rederiveIncrementalPlanes();
+          ok = runCannedCycle(cmd.params);
+        } else if (modalMotion === 'g2' || modalMotion === 'g3') ok = g2(cmd.params, modalMotion === 'g2');
         else if (modalMotion === 'g0' || modalMotion === 'g1') ok = g0(cmd.params, modalMotion === 'g0');
       }
     } else
@@ -1059,15 +1099,21 @@ export function createEngine(input: string | Uint8Array, opts: ParseOptions): En
             cannedCyclesSeen = true;
             cannedCycle = gcode as 'g81' | 'g82' | 'g83';
             cannedInitialZ = sz;
-            // R first: under G91 Z is incremental from the R plane (not from the current Z), as in LinuxCNC.
+            // R and Z are sticky NUMBERS (kept as written in cannedRWord/cannedZWord). Under G90 the planes
+            // are absolute and stored here once. Under G91 they are derived only by rederiveIncrementalPlanes()
+            // below: R from this block's current Z first, then Z from the NEW R plane, as in LinuxCNC. So a
+            // later G91 block that omits one re-applies it from its own current Z, never a stale absolute plane.
             if (cmd.params.r !== undefined) {
-              cannedR = nextAxis(sz, cmd.params.r, offZ());
+              cannedRWord = cmd.params.r;
+              if (xyzAbsolute) cannedR = nextAxis(sz, cmd.params.r, offZ());
               cannedRSet = true;
             }
             if (cmd.params.z !== undefined) {
-              cannedZ = xyzAbsolute ? nextAxis(sz, cmd.params.z, offZ()) : cannedR + cmd.params.z;
+              cannedZWord = cmd.params.z;
+              if (xyzAbsolute) cannedZ = nextAxis(sz, cmd.params.z, offZ());
               cannedZSet = true;
             }
+            if (!xyzAbsolute) rederiveIncrementalPlanes();
             if (!cannedZSet || !cannedRSet) {
               warn(
                 'canned-cycle-missing-word',

@@ -106,8 +106,8 @@ describe('canned cycles', () => {
 
   it('G91: Z is incremental from the R plane, R from the current Z', () => {
     const r = run('G0 Z5\nG91\nG81 X1 Y1 Z-3 R2');
-    // rapid to R (5+2=7), plunge to R+Z (7-3=4), retract to the initial plane (5)
-    expect(r.z1.slice(-3)).toEqual([7, 4, 5]);
+    // rapid to R (5+2=7), plunge to R+Z (7-3=4), retract to max(initial 5, R 7) = 7 (LinuxCNC G98)
+    expect(r.z1.slice(-3)).toEqual([7, 4, 7]);
   });
 
   it('G90 is unchanged: Z and R are absolute', () => {
@@ -115,9 +115,9 @@ describe('canned cycles', () => {
     expect(r.z1.slice(-3)).toEqual([2, -3, 5]);
   });
 
-  it('G91 with a repeated Z but no R reuses the stored R plane', () => {
+  it('G91 with a repeated Z but no R re-applies the sticky R increment from the current Z', () => {
     const r = run('G0 Z5\nG91\nG81 X1 Y1 Z-3 R2\nG81 X1 Y0 Z-1');
-    // second hole: R plane stays 7, depth 7-1=6
-    expect(r.z1.slice(-3)).toEqual([7, 6, 5]);
+    // the first hole retracted to R (7), so the second block's R plane is 7+2=9, depth 9-1=8, retract 9
+    expect(r.z1.slice(-3)).toEqual([9, 8, 9]);
   });
 });
