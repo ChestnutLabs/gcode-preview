@@ -199,7 +199,8 @@ try { manifest = JSON.parse(fs.readFileSync(path.join(process.cwd(), 'package.js
 fs.appendFileSync(process.env.RELEASE_TOOLS_STUB_LOG, JSON.stringify({
   argv, name: manifest.name ?? null, private: manifest.private === true,
   sawToken: Boolean(process.env.NPM_TOKEN || process.env.NODE_AUTH_TOKEN),
-  registry: process.env.npm_config_registry ?? null
+  registry: process.env.npm_config_registry ?? null,
+  npmConfig: Object.keys(process.env).filter((k) => /^npm_config_/i.test(k)).sort()
 }) + '\\n');
 const list = (k) => (process.env[k] || '').split(',').filter(Boolean);
 if (argv[0] === 'view') {
@@ -234,6 +235,18 @@ export function isForbiddenPublishEnv(key) {
 }
 
 /**
+ * Fail closed: resolves `npm` exactly the way publish.mjs does (`npm.cmd` through a shell on Windows,
+ * `npm` on PATH elsewhere) with `env`, and throws unless the stub answers.
+ */
+export function assertStubResolves(env) {
+  const npmCmd = process.platform === 'win32' ? 'npm.cmd' : 'npm';
+  const probe = spawnSync(npmCmd, ['--stub-probe'], { env, encoding: 'utf8', shell: process.platform === 'win32' });
+  if (probe.status !== 0 || !String(probe.stdout).includes(STUB_MARK)) {
+    throw new Error(`npm stub is not what the child resolves (status ${probe.status}): ${probe.stdout}${probe.stderr}`);
+  }
+}
+
+/**
  * Installs the npm stub in a temp dir and returns { env, logFile, calls() } for spawning publish.mjs.
  * The env has the stub first on PATH, a dead registry, and every credential / OIDC / publish switch
  * removed. Throws (fail closed) unless `npm` as publish.mjs runs it resolves to the stub.
@@ -258,30 +271,35 @@ export function npmStub({ fail = [], published = {}, realBranch = false } = {}) 
   }
   const logFile = path.join(dir, 'calls.jsonl');
 
+  // Never let the non-dry branch run where the job can mint a publish identity (release-publish.yml
+  // has id-token: write). The suite skips those tests there; this is the backstop if a skip is lost.
+  if (realBranch && process.env.ACTIONS_ID_TOKEN_REQUEST_URL) {
+    throw new Error('npmStub: refusing realBranch where ACTIONS_ID_TOKEN_REQUEST_URL is set (an OIDC-capable job)');
+  }
+
   const env = {};
-  for (const [k, v] of Object.entries(process.env)) if (!isForbiddenPublishEnv(k)) env[k] = v;
+  for (const [k, v] of Object.entries(process.env)) {
+    // Drop credentials and the publish switches, and every npm config var in any case (an uppercase
+    // NPM_CONFIG_REGISTRY or NPM_CONFIG_USERCONFIG beats a lowercase one on Windows).
+    if (!isForbiddenPublishEnv(k) && !/^npm_config_/i.test(k)) env[k] = v;
+  }
   const oldPath = pathKeys(env)
     .map((k) => env[k])
     .find(Boolean);
   for (const k of pathKeys(env)) delete env[k];
   env.PATH = oldPath ? dir + path.delimiter + oldPath : dir;
-  // A leak to a real npm would fail here, locally, never at the registry.
+  // A leak to a real npm would fail here, locally, never at the registry, and read no user or global npmrc.
+  const emptyRc = path.join(dir, 'empty.npmrc');
+  fs.writeFileSync(emptyRc, '');
   env.npm_config_registry = 'http://127.0.0.1:9';
+  env.npm_config_userconfig = emptyRc;
+  env.npm_config_globalconfig = emptyRc;
   env.RELEASE_TOOLS_STUB_LOG = logFile;
   if (fail.length) env.RELEASE_TOOLS_STUB_FAIL = fail.join(',');
   const pub = Object.entries(published).map(([n, v]) => `${n}=${v}`);
   if (pub.length) env.RELEASE_TOOLS_STUB_PUBLISHED = pub.join(',');
 
-  // Fail closed: resolve `npm` exactly the way publish.mjs does and require the stub's answer.
-  const npmCmd = process.platform === 'win32' ? 'npm.cmd' : 'npm';
-  const probe = spawnSync(npmCmd, ['--stub-probe'], {
-    env,
-    encoding: 'utf8',
-    shell: process.platform === 'win32'
-  });
-  if (probe.status !== 0 || !String(probe.stdout).includes(STUB_MARK)) {
-    throw new Error(`npm stub is not what the child resolves (status ${probe.status}): ${probe.stdout}${probe.stderr}`);
-  }
+  assertStubResolves(env);
   for (const k of Object.keys(env)) {
     if (isForbiddenPublishEnv(k)) throw new Error(`forbidden env ${k} reached the publish child`);
   }

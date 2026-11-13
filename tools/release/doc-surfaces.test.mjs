@@ -137,6 +137,17 @@ describe('narrativeChecks', () => {
     });
     const noEnd = base.replace('Changesets accumulate', 'Changesets');
     expect(narrativeChecks(noEnd, '1.2.0')[1]).toEqual({ ok: false, detail: `Release-history list ${regionMissing}` });
+    // Fail closed: with the end anchor gone, a later mention of the version must not count as history.
+    const noEndLater = noEnd + '\n## Later section\n\nSee `v1.2.0` notes.\n';
+    expect(narrativeChecks(noEndLater, '1.2.0')[1]).toEqual({
+      ok: false,
+      detail: `Release-history list ${regionMissing}`
+    });
+    const noStartEarlier = '`v1.2.0` early\n' + noStart;
+    expect(narrativeChecks(noStartEarlier, '1.2.0')[1]).toEqual({
+      ok: false,
+      detail: `Release-history list ${regionMissing}`
+    });
     const swapped = 'Changesets accumulate first. publishing from tagged `v1.2.0`';
     expect(narrativeChecks(swapped, '1.2.0')[1]).toEqual({
       ok: false,
@@ -195,6 +206,8 @@ describe('reviewChecks', () => {
     const content = review('1.0.0');
     expect(content).toContain('`Status: pending`');
     expect(failing(content)).toEqual([]);
+    // Even when a pipe follows later on the same prose line.
+    expect(failing(content + '\nWrite `Status: pending | reviewed` only in the table.\n')).toEqual([]);
   });
 
   it('fails a review with no package disposition rows at all', () => {
@@ -203,6 +216,40 @@ describe('reviewChecks', () => {
     expect(failing(review('1.0.0', { rows: [] }))).toEqual([
       'no package disposition rows found (expected at least one `| Status: <keyword> |` cell)'
     ]);
+  });
+
+  it('counts a disposition with notes after the keyword', () => {
+    expect(
+      failing(review('1.0.0', { rows: ['reviewed — README already covers it', 'not-applicable - bump'] }))
+    ).toEqual([]);
+    expect(reviewChecks(review('1.0.0', { rows: ['reviewed — notes'] }), '1.0.0')[1]).toEqual({
+      ok: true,
+      message: 'all 1 package disposition(s) resolved'
+    });
+  });
+
+  it('fails a pending or unknown disposition that carries notes, even next to a bare resolved row', () => {
+    expect(failing(review('1.0.0', { rows: ['reviewed', 'pending — TODO check README'] }))).toEqual([
+      'unresolved package disposition(s): pending (allowed: reviewed / no-change-needed / not-applicable)'
+    ]);
+    expect(failing(review('1.0.0', { rows: ['reviewed', 'pendingx — later'] }))).toEqual([
+      'unresolved package disposition(s): pendingx (allowed: reviewed / no-change-needed / not-applicable)'
+    ]);
+  });
+
+  it('passes the row shapes the v0.21.2 and v0.23.0 reviews were resolved with (fixture copies)', () => {
+    const rows = [
+      '| `@chestnutlabs/gcode-bgcode` | 5 | `.bgcode` files with corrupt streams are now handled safely. | Status: reviewed — package README already lists `E_BGCODE_BOMB` (1,000,000 blocks), `E_BGCODE_MEATPACK`; no demo/media impact. |',
+      '| `@chestnutlabs/gcode-containers` | 4 | A `.gcode.3mf` with impossible settings no longer gives an infinite bed | Status: no-change-needed — README does not document bed parsing. |',
+      '| `@chestnutlabs/gcode-preview-vue` | 1 | _(version bump only — no src changelog summary)_ | Status: not-applicable — dependency bump only; behaviour comes from core (covered there). |',
+      '| `@chestnutlabs/gcode-parser` | 16 | Pipes \\| in a summary | Status: reviewed |'
+    ];
+    const content = review('0.23.0', { rows: [] }).replace(
+      '|---|--:|---|---|\n',
+      '|---|--:|---|---|\n' + rows.join('\n') + '\n'
+    );
+    expect(reviewChecks(content, '0.23.0').filter((r) => !r.ok)).toEqual([]);
+    expect(reviewChecks(content, '0.23.0')[1].message).toBe('all 4 package disposition(s) resolved');
   });
 
   it('fails each global marker that is pending or missing', () => {

@@ -309,9 +309,11 @@ export function reviewChecks(content, version) {
   });
 
   // 2) Per-package dispositions: no row may remain `pending` (or carry an unknown keyword).
-  //    A disposition is a table cell `| Status: <keyword> |` — anchoring to the cell delimiters
-  //    keeps prose mentions of "Status: pending" (in the header comment / guidance) from matching.
-  const statusRe = /\|\s*Status:\s*([A-Za-z-]+)\s*\|/g;
+  //    A disposition is a table cell `| Status: <keyword> |`, optionally with notes after the keyword
+  //    (`| Status: reviewed — README already covers it |`, as the v0.21.2 and v0.23.0 reviews did).
+  //    Anchoring to the leading cell delimiter keeps prose mentions of "Status: pending" (in the
+  //    header comment / guidance) from matching.
+  const statusRe = /\|\s*Status:\s*([A-Za-z-]+)[^|\n]*\|/g;
   let m;
   let rows = 0;
   const unresolved = [];

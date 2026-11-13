@@ -3,7 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { buildOrder, main, planSteps } from './gate.mjs';
+import { buildOrder, main, planSteps, spawnStep } from './gate.mjs';
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -237,5 +237,27 @@ describe('planSteps', () => {
     expect(steps.find((s) => s.name === 'test:packages').cmd).toBe(
       'npm test --workspaces --if-present -- --maxWorkers=3'
     );
+  });
+});
+
+describe('spawnStep', () => {
+  it('returns the exit status, or the signal name when the step was killed', () => {
+    const seen = [];
+    const fake = (result) => (cmd, opts) => (seen.push([cmd, opts]), result);
+    expect(spawnStep('a', '/r', fake({ status: 0, signal: null }))).toBe(0);
+    expect(spawnStep('b', '/r', fake({ status: 3, signal: null }))).toBe(3);
+    expect(spawnStep('c', '/r', fake({ status: null, signal: 'SIGKILL' }))).toBe('SIGKILL');
+    expect(seen[0]).toEqual(['a', { cwd: '/r', stdio: 'inherit', shell: true }]);
+  });
+
+  it('runs a real command and reports its exit code', () => {
+    expect(spawnStep(`"${process.execPath}" -e "process.exit(3)"`, os.tmpdir())).toBe(3);
+    expect(spawnStep(`"${process.execPath}" -e "0"`, os.tmpdir())).toBe(0);
+  });
+
+  it.skipIf(process.platform === 'win32')('never reports a real signal-killed step as exit 0', () => {
+    // sh either execs node (status null, signal SIGKILL) or reports 128 + 9.
+    const r = spawnStep(`"${process.execPath}" -e "process.kill(process.pid, 'SIGKILL')"`, os.tmpdir());
+    expect(['SIGKILL', 137]).toContain(r);
   });
 });
