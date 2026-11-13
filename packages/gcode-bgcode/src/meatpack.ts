@@ -49,11 +49,27 @@ function reverseLookup(nibble: number, noSpaces: boolean): number {
 type State = 'disabled' | 'enabled' | 'first' | 'second' | 'rightFull' | 'leftFull';
 
 /**
+ * Internal (not exported from the package index; shared with `heatshrink.ts`): the decoders' `limit` must be a
+ * non-negative safe integer. `NaN`/`Infinity`/negative/fractional/non-numbers would silently disable the
+ * output cap (`pos >= NaN` is never true) — reject with `E_BGCODE_OPTION`, never clamp (#449/#457 precedent).
+ */
+export function checkDecoderLimit(limit: unknown): void {
+  if (!(Number.isSafeInteger(limit) && (limit as number) >= 0)) {
+    throw new ContainerError('E_BGCODE_OPTION', `limit must be a non-negative integer (got ${String(limit)})`);
+  }
+}
+
+/**
  * Decode a MeatPack byte stream to plain G-code, bounded to `limit` output bytes (decompression-bomb
  * defense). Both bgcode GCode encodings (MeatPack, MeatPack-comments) decode through this identically —
  * comment preservation is an *encoder* choice; the decoder simply reproduces the packed bytes.
+ *
+ * `limit` must be a non-negative safe integer; anything else (`NaN`, `Infinity`, a negative or fractional
+ * number, a non-number) throws `ContainerError` `E_BGCODE_OPTION` before any allocation. Output past `limit`
+ * throws `E_BGCODE_BOMB`.
  */
 export function meatpackDecode(data: Uint8Array, limit: number): Uint8Array {
+  checkDecoderLimit(limit);
   // Every input byte emits at most 2 output bytes, so `2 * data.length` (clamped to `limit`) always fits:
   // `pos` reaches `limit` (and throws) before it can pass `out.length`. No growth path is needed.
   const out = new Uint8Array(Math.max(64, Math.min(limit, data.length * 2)));
@@ -83,12 +99,14 @@ export function meatpackDecode(data: Uint8Array, limit: number): Uint8Array {
         const least = reverseLookup(byte & 0x0f, noSpaces); // low nibble → 1st char
         if (most === 10 && least === 10) {
           push(10); // a packed (\n, \n) collapses to a single newline
-        } else if (most === 0 && least !== 0) {
-          // 2nd char is full-width (follows in the stream); 1st char is real.
+        } else if (most === 0) {
+          // 2nd char is full-width (follows in the stream); 1st char is real. (`most === 0` alone suffices:
+          // both nibbles 0 would be byte 0xFF, which the SIGNAL check above always takes.)
           push(least);
           state = 'rightFull';
-        } else if (most !== 0 && least === 0) {
-          // 1st char is full-width (follows); place a placeholder, then the real 2nd char.
+        } else if (least === 0) {
+          // 1st char is full-width (follows); place a placeholder, then the real 2nd char. (`most !== 0` is
+          // implied: the branch above took every `most === 0`.)
           push(least);
           push(most);
           state = 'leftFull';
