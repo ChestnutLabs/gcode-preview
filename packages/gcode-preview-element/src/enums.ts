@@ -16,17 +16,28 @@ import type {
   ToolpathRendererOptions
 } from '@chestnutlabs/gcode-renderer-three';
 
+import {
+  CAMERA_MODES,
+  CAMERA_VIEWS,
+  FRAME_CONTENT_MODES,
+  INTERACTION_QUALITY_MODES,
+  PROGRESSIVE_PREVIEW_MODES,
+  QUALITY_POLICIES,
+  RENDERER_MODES
+} from '@chestnutlabs/gcode-renderer-three/lite';
+
 /** `true` only when the list `L` holds exactly the members of the union `U` (none missing, none extra). */
 type Covers<U extends string, L extends string> = [Exclude<U, L>, Exclude<L, U>] extends [never, never] ? true : never;
 
+// The renderer's own lists (validate.ts, via the three-free /lite entry), so each list exists once.
+// `quality` (the geometry tier plus 'auto') has no renderer check, so its list stays here.
 export const QUALITIES = ['auto', 'lines', 'tubes'] as const;
-export const QUALITY_MODES = ['full', 'adaptive', 'fast'] as const;
-export const PROGRESSIVE_PREVIEWS = ['auto', 'lines', 'hold', 'off'] as const;
-export const CAMERA_MODES = ['perspective', 'orthographic'] as const;
-export const FRAME_CONTENTS = ['object', 'all'] as const;
-export const INTERACTION_QUALITIES = ['off', 'auto'] as const;
-export const RENDERERS = ['2d', '3d'] as const;
-export const CAMERA_VIEWS = ['top', 'bottom', 'front', 'back', 'left', 'right', 'iso'] as const;
+export const QUALITY_MODES = QUALITY_POLICIES;
+export const PROGRESSIVE_PREVIEWS = PROGRESSIVE_PREVIEW_MODES;
+export { CAMERA_MODES, CAMERA_VIEWS };
+export const FRAME_CONTENTS = FRAME_CONTENT_MODES;
+export const INTERACTION_QUALITIES = INTERACTION_QUALITY_MODES;
+export const RENDERERS = RENDERER_MODES;
 
 // Compile-time pins (type-only; erased at runtime).
 export const ENUM_PINS: [
