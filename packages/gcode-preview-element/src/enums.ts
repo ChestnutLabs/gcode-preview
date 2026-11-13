@@ -12,7 +12,8 @@ import type {
   CameraView,
   ProgressivePreview,
   QualityMode,
-  QualityPolicy
+  QualityPolicy,
+  ToolpathRendererOptions
 } from '@chestnutlabs/gcode-renderer-three';
 
 /** `true` only when the list `L` holds exactly the members of the union `U` (none missing, none extra). */
@@ -34,8 +35,10 @@ export const ENUM_PINS: [
   Covers<ProgressivePreview, (typeof PROGRESSIVE_PREVIEWS)[number]>,
   Covers<CameraMode, (typeof CAMERA_MODES)[number]>,
   Covers<RendererMode, (typeof RENDERERS)[number]>,
-  Covers<CameraView, (typeof CAMERA_VIEWS)[number]>
-] = [true, true, true, true, true, true];
+  Covers<CameraView, (typeof CAMERA_VIEWS)[number]>,
+  Covers<NonNullable<ToolpathRendererOptions['frameContent']>, (typeof FRAME_CONTENTS)[number]>,
+  Covers<NonNullable<ToolpathRendererOptions['interactionQuality']>, (typeof INTERACTION_QUALITIES)[number]>
+] = [true, true, true, true, true, true, true, true];
 
 /** `value` if it is exactly one of `list`, else `undefined` (a markup value: ignored, never thrown). */
 export function pickEnum<T extends string>(list: readonly T[], value: string | null): T | undefined {

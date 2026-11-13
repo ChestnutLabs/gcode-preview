@@ -51,7 +51,7 @@ Scalar options are **attributes** (also settable as properties); rich options ar
 | `camera-fov` | `cameraFov` | degrees, 10–120 | `50` |
 | `pixel-ratio` | `pixelRatio` | number in (0, 4] or `'device'` | renderer's own (1) |
 | `frame-content` | `frameContent` | `'object' \| 'all'` | `'all'` |
-| `interaction-quality` | `interactionQuality` | `'off' \| 'auto'` | — |
+| `interaction-quality` | `interactionQuality` | `'off' \| 'auto'` | `'off'` |
 | `view` | `view` | `'top' \| 'bottom' \| 'front' \| 'back' \| 'left' \| 'right' \| 'iso'` | — |
 | `show-travel` | `showTravel` | `"true" \| "false"` | `true` |
 | `show-wipe` | `showWipe` | `"true" \| "false"` | `true` |
@@ -74,6 +74,8 @@ Scalar options are **attributes** (also settable as properties); rich options ar
 > mount, the last valid value stays on a change, and nothing throws or stops the viewer. `renderer="foo"` renders the
 > default 3D view. Setting the matching **property** to an invalid value throws `RangeError` and leaves the attribute
 > unchanged. The same rule applies to `<gcode-model-viewer>`'s `view`, `camera-mode` and `interaction-quality`.
+> If the element is removed and added again while an attribute still holds a bad value, the default applies again:
+> the last valid value isn't kept across a reconnect.
 > `capture()` before the element is connected rejects with `CaptureUnsupportedError`.
 
 > `source` is a **property only** (never a URL attribute) — the element does not fetch.

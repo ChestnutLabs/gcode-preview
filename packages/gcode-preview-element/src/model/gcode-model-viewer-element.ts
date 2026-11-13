@@ -115,6 +115,9 @@ export class GcodeModelViewerElement extends HTMLElement {
   set renderScope(v: RenderScope | null) {
     // RangeError now, before anything is stored: the controller's own check, run on an unbound controller
     // (it validates before it touches any engine), so a disconnected element rejects a bad scope too.
+    // This relies on createModelPreviewController() construction staying side-effect-free (no listeners,
+    // timers, observers or GPU work until bind; measured ~2.6 µs, #582 review). If that changes, export the
+    // check from gcode-model-renderer instead.
     if (v !== null) createModelPreviewController({}).controls.setRenderScope(v);
     this._renderScope = v;
     this.controller?.controls.setRenderScope(v);
