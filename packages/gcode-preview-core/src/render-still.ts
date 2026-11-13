@@ -84,6 +84,8 @@ export interface RenderStillOptions {
   showTravel?: boolean;
   /** Include slicer wipe moves (default false — same clean-still default as {@link showTravel}). */
   showWipe?: boolean;
+  /** Include CNC/laser Cut moves (default true — unlike travel/wipe, cuts ARE the model of a CNC file). */
+  showCut?: boolean;
   /**
    * Camera: an explicit pose, or omitted for deterministic bounds framing. `position` / `target` must be
    * finite and `fov` in [10, 120] (the same rule as `cameraFov`), else `RangeError` before any work.
@@ -378,6 +380,7 @@ export async function renderStill(
     // time so a still honors the clean-thumbnail defaults (both off) and frames as a model-only image.
     renderer.setKindVisible('travel', options.showTravel === true);
     renderer.setKindVisible('wipe', options.showWipe === true);
+    renderer.setKindVisible('cut', options.showCut !== false);
     if (options.colorMode) renderer.setColorMode(options.colorMode);
     if (options.layerRange) renderer.setLayerRange(options.layerRange[0], options.layerRange[1]);
     if (options.scrub !== undefined) renderer.setScrubPosition(options.scrub);

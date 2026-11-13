@@ -79,7 +79,7 @@ The declarative props below are equivalent across the Vue, React, and Svelte com
 and are attributes or properties on the Web Component (see the Web Component note for which is which):
 
 **Source & parse** — `source` · `parseOptions` · `renderer` (`'3d'`/`'2d'`) · `createWorker`
-**Inspect** — `layerRange` · `scrub` · `scrubTime` · `showTravel` · `showWipe` · `showRetractions` ·
+**Inspect** — `layerRange` · `scrub` · `scrubTime` · `showTravel` · `showWipe` · `showCut` · `showRetractions` ·
 `hiddenFeatureRoles`
 **Appearance** — `colorMode` · `theme`
 **View / camera** — `cameraMode` · `cameraFov` · `view` · `cameraState` · `frameContent` · `showVolumeCage`

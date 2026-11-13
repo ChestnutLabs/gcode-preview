@@ -83,7 +83,7 @@ Scalar options are **attributes** (also settable as properties); rich options ar
 > attributes — set them as JS properties. `hidden-feature-roles` gates on `capabilities.featureRoles`
 > (declarative form of `controls.setFeatureRoleVisible`). This is a ~24-option surface; the rest of
 > the declarative props (`qualityMode`, `view`, `cameraState`, `frameContent`, `scrubTime`,
-> `showWipe`, `showVolumeCage`, `interactionQuality`, `parseOptions`, `rendererOptions`, `layerRange`)
+> `showWipe`, `showCut`, `showVolumeCage`, `interactionQuality`, `parseOptions`, `rendererOptions`, `layerRange`)
 > are set the same way.
 
 ### DOM events (`CustomEvent`, kebab-case `detail`)

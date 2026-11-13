@@ -420,7 +420,7 @@ export class ToolpathRenderer {
   private startLayer = 0;
   private endLayer = Infinity;
   private scrubSegIndex: number | null = null;
-  private kindVisible: Record<GeometryChunk['kind'], boolean> = { extrude: true, travel: true, wipe: true };
+  private kindVisible: Record<GeometryChunk['kind'], boolean> = { extrude: true, travel: true, wipe: true, cut: true };
   // Per-feature-role visibility (DD-009 extension): hidden roles are collapsed to NaN positions so the
   // GPU discards them, reversibly. Empty by default → no work, geometry byte-identical when unused.
   private hiddenFeatureRoles = new Set<number>();

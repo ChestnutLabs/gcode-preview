@@ -72,6 +72,7 @@ describe('<GcodePreview> (react) wiring: defaults at mount', () => {
       'setLayerRange(0,"Infinity")',
       'setKindVisible("travel",true)',
       'setKindVisible("wipe",true)',
+      'setKindVisible("cut",true)',
       'setShowRetractions(false)',
       'setBuildVolumeCage(true)'
     ]);
@@ -103,6 +104,7 @@ describe('<GcodePreview> (react) wiring: props reach the controller', () => {
       theme,
       showTravel: false,
       showWipe: false,
+      showCut: false,
       showRetractions: true,
       showVolumeCage: false,
       layerRange: [2, 5],
@@ -122,6 +124,7 @@ describe('<GcodePreview> (react) wiring: props reach the controller', () => {
       'setTheme({"background":"#101010"})',
       'setKindVisible("travel",false)',
       'setKindVisible("wipe",false)',
+      'setKindVisible("cut",false)',
       'setShowRetractions(true)',
       'setBuildVolumeCage(false)',
       'setLayerRange(2,5)'

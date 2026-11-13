@@ -85,6 +85,7 @@ export const GcodePreview = defineComponent({
     showTravel: { type: Boolean, default: true },
     /** DD-016 (#182): show slicer wipe moves. Default true. */
     showWipe: { type: Boolean, default: true },
+    showCut: { type: Boolean, default: true },
     /** DD-009 D1 (#148): opt-in retraction/deretraction markers. */
     showRetractions: { type: Boolean, default: false },
     /** #306/#6: show the build-volume wireframe cage (independent of the bed/plate). Default true. */
@@ -313,6 +314,11 @@ export const GcodePreview = defineComponent({
     watch(
       () => props.showWipe,
       (visible) => preview.controls.setKindVisible('wipe', visible),
+      { immediate: true }
+    );
+    watch(
+      () => props.showCut,
+      (visible) => preview.controls.setKindVisible('cut', visible),
       { immediate: true }
     );
     watch(

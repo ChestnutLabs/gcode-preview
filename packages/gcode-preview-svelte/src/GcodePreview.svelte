@@ -54,6 +54,7 @@
   export let showTravel = true;
   /** DD-016 (#182): show slicer wipe moves. Default true. */
   export let showWipe = true;
+  export let showCut = true;
   /** DD-009 D1 (#148): opt-in retraction/deretraction markers. */
   export let showRetractions = false;
   /** #306/#6: show the build-volume wireframe cage (independent of the bed/plate). Default true. */
@@ -205,6 +206,7 @@
   $: sendScrubTime(scrubTime ?? null);
   $: preview.controls.setKindVisible('travel', showTravel);
   $: preview.controls.setKindVisible('wipe', showWipe);
+  $: preview.controls.setKindVisible('cut', showCut);
   $: preview.controls.setShowRetractions(showRetractions);
   $: preview.controls.setBuildVolumeCage(showVolumeCage);
   $: if (colorMode !== undefined) preview.controls.setColorMode(colorMode);
