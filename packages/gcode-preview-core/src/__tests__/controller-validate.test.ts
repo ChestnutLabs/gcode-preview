@@ -245,6 +245,15 @@ describe('null and undefined mean unset (the renderer default), never a throw', 
     c.dispose();
   });
 
+  it('renderer: null constructs (as renderer: undefined)', () => {
+    expect(() =>
+      createPreviewController({
+        createWorker: () => new SuiteStubWorker(),
+        renderer: null as unknown as RendererOpts
+      }).dispose()
+    ).not.toThrow();
+  });
+
   it('buildVolume: null is no consumer volume, so the file bed still auto-applies', async () => {
     const c = createPreviewController({
       createWorker: () => new SuiteStubWorker(TEST_MACHINE),
