@@ -54,6 +54,7 @@
   export let showTravel = true;
   /** DD-016 (#182): show slicer wipe moves. Default true. */
   export let showWipe = true;
+  /** #584: show CNC/laser cut moves. Default true. */
   export let showCut = true;
   /** DD-009 D1 (#148): opt-in retraction/deretraction markers. */
   export let showRetractions = false;

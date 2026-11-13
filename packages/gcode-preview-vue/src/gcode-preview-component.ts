@@ -85,6 +85,7 @@ export const GcodePreview = defineComponent({
     showTravel: { type: Boolean, default: true },
     /** DD-016 (#182): show slicer wipe moves. Default true. */
     showWipe: { type: Boolean, default: true },
+    /** #584: show CNC/laser cut moves. Default true. */
     showCut: { type: Boolean, default: true },
     /** DD-009 D1 (#148): opt-in retraction/deretraction markers. */
     showRetractions: { type: Boolean, default: false },

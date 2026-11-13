@@ -57,6 +57,39 @@ describe('buildChunks Cut kind (#584)', () => {
     expect(cut.flatMap((c) => Array.from(c.segIndices))).toEqual([1, 4, 8, 9]);
   });
 
+  // Real CNC data carries Cut with other bits set (mach3: 169 of 177 cuts are arcs). Literal values, not the constants.
+  it.each([
+    ['Cut|ArcSegment', 160],
+    ['Cut|Seam', 192]
+  ])('routes %s (%i) to the cut chunk and keeps its layer boundary under decimation', (_name, kind) => {
+    expect(kind).toBe(_name === 'Cut|ArcSegment' ? MoveKind.Cut | MoveKind.ArcSegment : MoveKind.Cut | MoveKind.Seam);
+    // A travel at index 0, then flagged cuts at 1..9 in one layer.
+    const b = new ToolpathIRBuilder({ parserVersion: 'test', units: 'mm', unitsSource: 'known' });
+    for (let n = 0; n < 10; n++) {
+      b.addSegment({
+        x0: n,
+        y0: 0,
+        z0: 0,
+        x1: n + 1,
+        y1: 0,
+        z1: 0,
+        e: 0,
+        kind: n === 0 ? MoveKind.Travel : kind,
+        tool: 0,
+        layer: 0,
+        srcByte: n * 10
+      });
+    }
+    const ir = b.finalize();
+    const full = buildChunks(ir, { decimation: 1 });
+    expect(total(full, 'cut')).toBe(9);
+    expect(total(full, 'travel')).toBe(1);
+    // Decimation 4: first (1) and last (9) cut of the layer are boundaries, plus every 4th (4, 8); travel dropped.
+    const thin = buildChunks(ir, { decimation: 4 });
+    expect(thin.chunks.filter((c) => c.kind === 'cut').flatMap((c) => Array.from(c.segIndices))).toEqual([1, 4, 8, 9]);
+    expect(total(thin, 'travel')).toBe(0);
+  });
+
   it('does not count cuts toward autoDecimation (extrude-only, this change)', () => {
     // >2M cuts would force auto-decimation if counted; it must stay 1 and keep them all.
     const r = buildChunks(makeIR(2_100_000, 0, 1));
