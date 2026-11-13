@@ -276,7 +276,7 @@ export function registerCompat({ describe, it, expect, svelte, compiler, expecte
           layerRange: opts.layerRange,
           createWorker: () => new SuiteStubWorker(undefined, opts.ir),
           rendererOptions: {
-            createRenderer: (canvas) => makeSuiteStubGL(canvas),
+            createRenderer: opts.createGL ?? ((canvas) => makeSuiteStubGL(canvas)),
             scheduleFrame: (f) => f(),
             chunksPerTick: 8
           }
@@ -290,7 +290,9 @@ export function registerCompat({ describe, it, expect, svelte, compiler, expecte
               ready: (e) => cb.onReady(e.detail.segments),
               buildcomplete: (e) => cb.onBuildComplete(e.detail.segments),
               disclosure: (e) => cb.onDisclosure(e.detail),
-              rendererunsupported: (e) => cb.onRendererUnsupported?.(e.detail.feature, e.detail.message)
+              rendererunsupported: (e) => cb.onRendererUnsupported?.(e.detail.feature, e.detail.message),
+              error: (e) => cb.onError?.(e.detail),
+              parseerror: (e) => cb.onParseError?.(e.detail)
             }
           }
         });

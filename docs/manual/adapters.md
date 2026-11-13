@@ -181,12 +181,21 @@ your UI offer and *explain* controls honestly rather than guessing.
 These codes arrive on the `error` and `parse-error` events, in `state.error`, or as the `code` of a rejected
 promise. Each adapter surfaces them the same way.
 
+Every error is `{ code, message }`, plus two optional fields:
+
+- **`cause`** is the original error when there is one: for example the browser's `SecurityError` behind
+  `E_WORKER_CREATE_FAILED`, or what the WebGL renderer threw behind `E_RENDERER_LOAD`. Use it to tell causes apart
+  (`error.cause?.name === 'SecurityError'`) instead of matching on `message`. It is for reading, not persisting: a
+  cause may not survive `structuredClone`, and `structuredClone(state)` throws `DataCloneError` when it can't copy it.
+- **`reason`** is set on `E_RENDERER_LOAD` only. It says what to do next, as in the table.
+
 | Code | When | What to do |
 | --- | --- | --- |
-| `E_WORKER_CREATE_FAILED` | `createWorker`, or the default worker, threw: a strict Content Security Policy is the usual cause | The preview returns to `parsing: false`; the next `parse()` tries again. The browser's own message is part of `message`. Only a `ParseSession` driven directly (`@chestnutlabs/gcode-parser`) also carries `error.cause` |
-| `E_RENDERER_LOAD` | The 3D renderer could not be loaded or started: offline, a stale deploy whose chunk now returns 404, or a device or browser without WebGL | Fall back to `renderer: { mode: '2d' }` (or the `/lite` entry); reloading only helps for the offline and stale-deploy cases |
+| `E_WORKER_CREATE_FAILED` | `createWorker`, or the default worker, threw: a strict Content Security Policy is the usual cause | The preview returns to `parsing: false`; the next `parse()` tries again. The browser's own error is on `cause` |
+| `E_RENDERER_LOAD` with `reason: 'load'` | The 3D renderer's code could not be downloaded: offline, or a stale deploy whose chunk now returns 404 | Reload the page, or fall back to `renderer: { mode: '2d' }` (or the `/lite` entry) |
+| `E_RENDERER_LOAD` with `reason: 'start'` | The 3D renderer downloaded but could not start, usually because the device or browser has no WebGL. Read `cause` for the browser's error: a renderer option the renderer rejects lands here too | Fall back to `renderer: { mode: '2d' }`; reloading won't help |
 | `E_WORKER_TERMINATED` | You passed a single `Worker` instance as `createWorker` and it was terminated (a cancel that the worker did not acknowledge in time, a crash, or `dispose()`); the next parse used to hang | Pass a factory, `createWorker: () => new Worker(…)`, so each parse gets a fresh worker |
-| `E_POST_FAILED` | You re-parsed a buffer that was already handed to the worker | Pass `bytes.slice()` each time |
+| `E_POST_FAILED` | You re-parsed a buffer that was already handed to the worker | Pass `bytes.slice()` each time. The browser's `DataCloneError` is on `cause` |
 | `E_CONTROL_REJECTED` | The renderer rejected a control you queued before it loaded (see above) | Fix the value named in the message |
 | `E_CAPTURE_UNSUPPORTED` | `capture()` was called before the 3D renderer is ready, or on the 2D renderer | Call it once the 3D view shows the file (the `stage` event's `ready` stage); `ready` can fire before the 3D chunk has bound, so retry on this code |
 | `E_PARSE_OPTION`, `E_MODEL_OPTION` | A `parseOptions` or model limit is not a usable number | Pass a finite whole number; there is no `Infinity` |

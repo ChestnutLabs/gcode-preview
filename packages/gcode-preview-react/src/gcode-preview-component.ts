@@ -37,6 +37,7 @@ import type { WireParseOptions, WorkerLike } from '@chestnutlabs/gcode-parser';
 import {
   useGcodePreview,
   type GcodePreviewHandle,
+  type PreviewError,
   type PreviewEvent,
   type RendererMode,
   type UseGcodePreviewOptions
@@ -133,7 +134,7 @@ export interface GcodePreviewProps {
   }) => void;
   /** #275/M6: fires after a user camera interaction settles, with the new serializable state. */
   onCameraChange?: (state: CameraState) => void;
-  onParseError?: (e: { code: string; message: string }) => void;
+  onParseError?: (e: PreviewError) => void;
   onParseCancelled?: () => void;
   onParseProgress?: (p: { bytesProcessed: number; totalBytes: number }) => void;
   /** DD-029 staged preparation progress (`building-geometry` carries a real `progress` + counts). */
@@ -150,7 +151,7 @@ export interface GcodePreviewProps {
    * `feature` groups it (`camera`, `quality`, `layers`, `retractions`); `message` is user-presentable.
    */
   onRendererUnsupported?: (e: { feature: string; message: string }) => void;
-  onError?: (e: { code: string; message: string }) => void;
+  onError?: (e: PreviewError) => void;
 }
 
 function GcodePreviewImpl(props: GcodePreviewProps, ref: ForwardedRef<GcodePreviewHandle>): ReactElement {
@@ -221,9 +222,12 @@ function GcodePreviewImpl(props: GcodePreviewProps, ref: ForwardedRef<GcodePrevi
         case 'camera-changed':
           p.onCameraChange?.(e.state);
           break;
-        case 'parse-error':
-          p.onParseError?.({ code: e.code, message: e.message });
+        case 'parse-error': {
+          // The whole error, `cause` and `reason` included, without the event's `type`.
+          const { type: _type, ...error } = e;
+          p.onParseError?.(error);
           break;
+        }
         case 'parse-cancelled':
           p.onParseCancelled?.();
           break;
@@ -249,10 +253,12 @@ function GcodePreviewImpl(props: GcodePreviewProps, ref: ForwardedRef<GcodePrevi
         case 'machine-geometry-discovered':
           p.onMachineGeometryDiscovered?.(e.machine);
           break;
-        case 'error':
+        case 'error': {
+          const { type: _type, ...error } = e;
           if (e.code === 'machine-geometry-mismatch') p.onMachineGeometryMismatch?.(e.message);
-          else p.onError?.({ code: e.code, message: e.message });
+          else p.onError?.(error);
           break;
+        }
         case 'renderer-unsupported':
           p.onRendererUnsupported?.({ feature: e.feature, message: e.message });
           break;

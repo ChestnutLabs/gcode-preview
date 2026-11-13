@@ -62,7 +62,8 @@ import { checkCameraFov, checkPixelRatio } from './lens.js';
 
 /** Session/renderer events, re-emitted, plus the controller's own lifecycle events. */
 export type PreviewEvent =
-  | PreviewRendererEvent
+  | Exclude<PreviewRendererEvent, { type: 'error' }>
+  | ({ type: 'error' } & PreviewError)
   | { type: 'parse-started'; bytes: number }
   | { type: 'parse-progress'; progress: ParseProgress }
   | {
@@ -83,7 +84,7 @@ export type PreviewEvent =
       metadata: DialectMetadata | undefined;
     }
   | { type: 'parse-cancelled' }
-  | { type: 'parse-error'; code: string; message: string }
+  | ({ type: 'parse-error' } & PreviewError)
   | {
       /** File-discovered geometry NOT auto-applied because the consumer configured a
        *  volume (DD-005 consumer-wins precedence) — the host decides. */
@@ -163,7 +164,41 @@ export interface PreviewControllerOptions {
 export type ParseOutcome =
   | { ok: true; result: ParseResult }
   | { ok: false; cancelled: true }
-  | { ok: false; cancelled?: false; error: { code: string; message: string } };
+  | { ok: false; cancelled?: false; error: PreviewError };
+
+/**
+ * Why the 3D renderer failed, on an `E_RENDERER_LOAD` error:
+ * - `'load'`: its code could not be downloaded (offline, or a stale deploy whose chunk now returns 404).
+ *   Reloading the page can help.
+ * - `'start'`: it was downloaded but could not start, usually because the device or browser has no WebGL.
+ *   Read `cause` for the browser's own error. Falling back to `renderer: { mode: '2d' }` helps; reloading doesn't.
+ */
+export type RendererFailureReason = 'load' | 'start';
+
+/** An error as the preview reports it: on `state.error`, the `error` / `parse-error` events and a failed {@link ParseOutcome}. */
+export interface PreviewError {
+  /** A stable code such as `E_WORKER_CREATE_FAILED` or `E_RENDERER_LOAD`: match on this, not on `message`. */
+  code: string;
+  /** Human-readable detail, including the original error's message. */
+  message: string;
+  /**
+   * The original error, when there is one: for example the browser's `SecurityError` behind
+   * `E_WORKER_CREATE_FAILED`, or the error the WebGL renderer threw behind `E_RENDERER_LOAD`. For reading, not
+   * persisting: it may not survive `structuredClone`, and `structuredClone(state)` throws `DataCloneError` when
+   * it can't be cloned. Absent when there is no underlying error.
+   */
+  cause?: unknown;
+  /** Set on `E_RENDERER_LOAD` only. See {@link RendererFailureReason}. */
+  reason?: RendererFailureReason;
+}
+
+/** Build a {@link PreviewError}, leaving out `cause` / `reason` when they don't apply. */
+function previewError(code: string, message: string, cause?: unknown, reason?: RendererFailureReason): PreviewError {
+  const e: PreviewError = { code, message };
+  if (cause !== undefined) e.cause = cause;
+  if (reason !== undefined) e.reason = reason;
+  return e;
+}
 
 export interface GcodePreviewState {
   parsing: boolean;
@@ -205,7 +240,7 @@ export interface GcodePreviewState {
   hasRetractions: boolean;
   /** True when the current file carries M600 color-change boundaries (DD-031 G6). */
   hasColorChanges: boolean;
-  error: { code: string; message: string } | null;
+  error: PreviewError | null;
 }
 
 /** The discriminant of {@link ColorMode} — the color-mode identifiers, for capability lists. */
@@ -607,9 +642,13 @@ export function createPreviewController(options: PreviewControllerOptions = {}):
       try {
         op.run(r);
       } catch (err) {
-        const message = `${op.control} rejected: ${err instanceof Error ? err.message : String(err)}`;
-        mutate({ error: { code: 'E_CONTROL_REJECTED', message } });
-        emit({ type: 'error', code: 'E_CONTROL_REJECTED', message });
+        const error = previewError(
+          'E_CONTROL_REJECTED',
+          `${op.control} rejected: ${err instanceof Error ? err.message : String(err)}`,
+          err
+        );
+        mutate({ error });
+        emit({ type: 'error', ...error });
       }
       if (renderer !== r) return;
     }
@@ -672,13 +711,19 @@ export function createPreviewController(options: PreviewControllerOptions = {}):
             : {})
         });
         applyRendererReady(canvas, r3d);
-      })
-      .catch((err: unknown) => {
+      }, rendererFailed('load'))
+      // Anything that throws once the code is here (constructing the renderer and its WebGL context, or
+      // binding it) is a failure to start, not to load.
+      .catch(rendererFailed('start'));
+
+    function rendererFailed(reason: RendererFailureReason): (err: unknown) => void {
+      return (err) => {
         if (disposed || gen !== bindGen) return;
-        const message = err instanceof Error ? err.message : String(err);
-        mutate({ error: { code: 'E_RENDERER_LOAD', message } });
-        emit({ type: 'error', code: 'E_RENDERER_LOAD', message });
-      });
+        const error = previewError('E_RENDERER_LOAD', err instanceof Error ? err.message : String(err), err, reason);
+        mutate({ error });
+        emit({ type: 'error', ...error });
+      };
+    }
   }
 
   const offProgress = session.onProgress((p) => {
@@ -803,11 +848,15 @@ export function createPreviewController(options: PreviewControllerOptions = {}):
         emit({ type: 'parse-cancelled' });
         return { ok: false, cancelled: true };
       }
-      const code = err instanceof ParseSessionError ? err.code : 'E_UNKNOWN';
-      const message = err instanceof Error ? err.message : String(err);
-      mutate({ error: { code, message } });
-      emit({ type: 'parse-error', code, message });
-      return { ok: false, error: { code, message } };
+      // The original error: a ParseSessionError carries it on `cause` (e.g. the browser's SecurityError behind
+      // E_WORKER_CREATE_FAILED); anything else thrown here is itself the original.
+      const error =
+        err instanceof ParseSessionError
+          ? previewError(err.code, err.message, err.cause)
+          : previewError('E_UNKNOWN', err instanceof Error ? err.message : String(err), err);
+      mutate({ error });
+      emit({ type: 'parse-error', ...error });
+      return { ok: false, error };
     } finally {
       // A failed or cancelled parse brings no file. A superseded one leaves the flag to the newer parse
       // (#531), which is still loading; a state listener below may also have started one.

@@ -115,13 +115,18 @@ describe('GcodeParseSession — postMessage failure (#453)', () => {
       message: 'could not send the parse to the worker: boom'
     });
 
+    const original = new Error('cannot clone');
     worker.postMessage = () => {
-      throw new Error('cannot clone');
+      throw original;
     };
-    await expect(session.parse('G1 X1')).rejects.toMatchObject({
+    let caught: unknown;
+    await session.parse('G1 X1').catch((err: unknown) => (caught = err));
+    expect(caught).toMatchObject({
       code: 'E_POST_FAILED',
       message: 'could not send the parse to the worker: cannot clone'
     });
+    // The original error rides on `cause`, the same object (as for E_WORKER_CREATE_FAILED).
+    expect((caught as Error).cause).toBe(original);
   });
 
   it('end to end with the real handler: parse, re-parse same bytes fails cleanly, parse a copy works', async () => {

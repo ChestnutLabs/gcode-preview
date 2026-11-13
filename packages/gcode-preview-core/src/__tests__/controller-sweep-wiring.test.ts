@@ -178,13 +178,21 @@ describe('bind / unbind wiring', () => {
   });
 
   it('a renderer that fails to construct is E_RENDERER_LOAD', async () => {
+    const noGL = new Error('no gl');
     const { controller, events } = makeWith(() => new SuiteStubWorker(), {
       createRenderer: () => {
-        throw new Error('no gl');
+        throw noGL;
       }
     });
     await settle();
-    expect(controller.getState().error).toEqual({ code: 'E_RENDERER_LOAD', message: 'no gl' });
+    // #589: it loaded but could not start; the thrown error is the cause.
+    expect(controller.getState().error).toEqual({
+      code: 'E_RENDERER_LOAD',
+      message: 'no gl',
+      cause: noGL,
+      reason: 'start'
+    });
+    expect(controller.getState().error?.cause).toBe(noGL);
     expect(errorEvents(events)).toEqual([{ code: 'E_RENDERER_LOAD', message: 'no gl' }]);
     controller.dispose();
   });
@@ -316,13 +324,14 @@ describe('parse wiring', () => {
   it('a non-session failure is E_UNKNOWN', async () => {
     const { controller } = makeWith(() => new SuiteStubWorker());
     await settle();
+    const boom = new Error('ir boom');
     vi.spyOn(ToolpathRenderer.prototype, 'setIR').mockImplementation(() => {
-      throw new Error('ir boom');
+      throw boom;
     });
-    expect(await controller.parse(new Uint8Array(1_000))).toEqual({
-      ok: false,
-      error: { code: 'E_UNKNOWN', message: 'ir boom' }
-    });
+    const out = await controller.parse(new Uint8Array(1_000));
+    // #589: what was thrown is itself the original error.
+    expect(out).toEqual({ ok: false, error: { code: 'E_UNKNOWN', message: 'ir boom', cause: boom } });
+    expect(out.ok === false && !out.cancelled && out.error.cause).toBe(boom);
     controller.dispose();
   });
 

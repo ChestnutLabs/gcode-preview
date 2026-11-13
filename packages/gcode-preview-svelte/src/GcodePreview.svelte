@@ -113,9 +113,12 @@
       case 'camera-changed':
         dispatch('camerachange', e.state);
         break;
-      case 'parse-error':
-        dispatch('parseerror', { code: e.code, message: e.message });
+      case 'parse-error': {
+        // The whole error, `cause` and `reason` included, without the event's `type`.
+        const { type: _type, ...error } = e;
+        dispatch('parseerror', error);
         break;
+      }
       case 'parse-cancelled':
         dispatch('parsecancelled');
         break;
@@ -142,10 +145,12 @@
       case 'machine-geometry-discovered':
         dispatch('machinegeometrydiscovered', e.machine);
         break;
-      case 'error':
+      case 'error': {
+        const { type: _type, ...error } = e;
         if (e.code === 'machine-geometry-mismatch') dispatch('machinegeometrymismatch', e.message);
-        else dispatch('error', { code: e.code, message: e.message });
+        else dispatch('error', error);
         break;
+      }
       case 'renderer-unsupported':
         // #520: the renderer cannot honour a requested setting (e.g. a lens on the 2D renderer); once per request.
         dispatch('rendererunsupported', { feature: e.feature, message: e.message });

@@ -47,14 +47,16 @@ runComponentConformanceSuite(
           layerRange: opts.layerRange,
           createWorker: () => new SuiteStubWorker(undefined, opts.ir),
           rendererOptions: {
-            createRenderer: () => makeSuiteStubGL(canvas),
+            createRenderer: opts.createGL ?? (() => makeSuiteStubGL(canvas)),
             scheduleFrame: (f: () => void) => f(),
             chunksPerTick: 8
           },
           onReady: (e) => cb.onReady(e.segments),
           onBuildComplete: (e) => cb.onBuildComplete(e.segments),
           onDisclosure: (text) => cb.onDisclosure(text),
-          onRendererUnsupported: (e) => cb.onRendererUnsupported?.(e.feature, e.message)
+          onRendererUnsupported: (e) => cb.onRendererUnsupported?.(e.feature, e.message),
+          onError: (e) => cb.onError?.(e),
+          onParseError: (e) => cb.onParseError?.(e)
         });
       await act(async () => {
         root = createRoot(host);

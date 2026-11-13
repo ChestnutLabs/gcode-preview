@@ -317,6 +317,26 @@ export function registerWiring({ describe, it, expect, beforeEach, svelte, expec
       ]);
       m.unmount();
     });
+
+    it('error and parseerror carry cause and reason through, the cause as the same object (#589)', async () => {
+      const got = [];
+      const m = mountP(
+        {},
+        { error: (e) => got.push(['error', e.detail]), parseerror: (e) => got.push(['parseerror', e.detail]) }
+      );
+      await settle();
+      const noWebGL = new Error('no webgl');
+      const csp = new Error('blocked by CSP');
+      fire({ type: 'error', code: 'E_RENDERER_LOAD', message: 'no webgl', cause: noWebGL, reason: 'start' });
+      fire({ type: 'parse-error', code: 'E_WORKER_CREATE_FAILED', message: 'could not start', cause: csp });
+      expect(got).toStrictEqual([
+        ['error', { code: 'E_RENDERER_LOAD', message: 'no webgl', cause: noWebGL, reason: 'start' }],
+        ['parseerror', { code: 'E_WORKER_CREATE_FAILED', message: 'could not start', cause: csp }]
+      ]);
+      expect(got[0][1].cause).toBe(noWebGL);
+      expect(got[1][1].cause).toBe(csp);
+      m.unmount();
+    });
   });
 
   describe(`${label}: createGcodePreview wiring (the store handle)`, () => {

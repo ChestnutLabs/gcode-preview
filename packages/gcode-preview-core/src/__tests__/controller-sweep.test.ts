@@ -104,8 +104,10 @@ describe('queued control replay (E_CONTROL_REJECTED)', () => {
     expect(controller.controls.getCameraState()?.cameraMode).toBe('orthographic');
     expect(controller.getState().error).toEqual({
       code: 'E_CONTROL_REJECTED',
-      message: 'setTheme rejected: theme gridOpacity must be a number in [0,1] (got 2)'
+      message: 'setTheme rejected: theme gridOpacity must be a number in [0,1] (got 2)',
+      cause: new RangeError('theme gridOpacity must be a number in [0,1] (got 2)')
     });
+    expect(controller.getState().error?.cause).toBeInstanceOf(RangeError);
     expect(errorEvents(events)).toEqual([
       { code: 'E_CONTROL_REJECTED', message: 'setTheme rejected: theme gridOpacity must be a number in [0,1] (got 2)' }
     ]);
@@ -168,7 +170,11 @@ describe('queued control replay (E_CONTROL_REJECTED)', () => {
     controller.controls.setShowRetractions(true);
     expect(() => controller.bindCanvas(canvas)).not.toThrow();
     expect(shown).toHaveBeenCalledTimes(1);
-    expect(controller.getState().error).toEqual({ code: 'E_CONTROL_REJECTED', message: 'setView rejected: view boom' });
+    expect(controller.getState().error).toEqual({
+      code: 'E_CONTROL_REJECTED',
+      message: 'setView rejected: view boom',
+      cause: 'view boom' // a non-Error throw is the cause as it was thrown (#589)
+    });
     expect(errorEvents(events)).toEqual([{ code: 'E_CONTROL_REJECTED', message: 'setView rejected: view boom' }]);
     controller.dispose();
   });
@@ -362,16 +368,19 @@ describe('queued control replay (E_CONTROL_REJECTED)', () => {
   });
 
   it('a queued setColorMode is named too', () => {
+    const boom = new Error('color boom');
     vi.spyOn(LayerView2DRenderer.prototype, 'setColorMode').mockImplementation(() => {
-      throw new Error('color boom');
+      throw boom;
     });
     const controller = createPreviewController({ createWorker: () => new SuiteStubWorker(), renderer: { mode: '2d' } });
     expect(controller.controls.setColorMode({ mode: 'tool', palette: [] })).toBe(true);
     controller.bindCanvas(document.createElement('canvas'));
     expect(controller.getState().error).toEqual({
       code: 'E_CONTROL_REJECTED',
-      message: 'setColorMode rejected: color boom'
+      message: 'setColorMode rejected: color boom',
+      cause: boom
     });
+    expect(controller.getState().error?.cause).toBe(boom);
     controller.dispose();
   });
 });

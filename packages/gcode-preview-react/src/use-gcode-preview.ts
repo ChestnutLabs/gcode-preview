@@ -30,8 +30,10 @@ export type {
   GcodePreviewControls,
   GcodePreviewState,
   ParseOutcome,
+  PreviewError,
   PreviewEvent,
   PreviewRenderer,
+  RendererFailureReason,
   RendererMode
 } from '@chestnutlabs/gcode-preview-core';
 

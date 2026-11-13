@@ -164,7 +164,9 @@ export class GcodeParseSession {
           undefined,
           new ParseSessionError(
             'E_POST_FAILED',
-            `could not send the parse to the worker: ${err instanceof Error ? err.message : String(err)}`
+            `could not send the parse to the worker: ${err instanceof Error ? err.message : String(err)}`,
+            undefined,
+            { cause: err }
           )
         );
       }

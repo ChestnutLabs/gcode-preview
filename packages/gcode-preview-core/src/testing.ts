@@ -17,7 +17,7 @@ import {
 } from '@chestnutlabs/toolpath-core';
 import type { ColorMode, GLRendererLike, RenderTargetCanvas } from '@chestnutlabs/gcode-renderer-three';
 import type { WireParseOptions } from '@chestnutlabs/gcode-parser';
-import type { GcodePreviewControls, GcodePreviewState, PreviewEvent } from './controller.js';
+import type { GcodePreviewControls, GcodePreviewState, ParseOutcome, PreviewEvent } from './controller.js';
 
 /** 2 layers × 6 extrude segments; srcByte = i*10; source byteLength 1000. */
 export function makeTestIR(): ToolpathIR {
@@ -740,6 +740,32 @@ export function runBehavioralSuite(name: string, api: TestApi, rawHarness: Adapt
       await a.dispose();
     });
 
+    it('a parse error keeps the original error on cause: in state, on the event and in the outcome (#589)', async () => {
+      const a = await harness.create();
+      const original = new Error('hostile getter');
+      const hostile = {
+        byteLength: 10,
+        get getReader(): never {
+          throw original;
+        }
+      };
+      const seen: unknown[] = [];
+      a.onEvent((e) => {
+        if (e.type === 'parse-error') seen.push(e.cause, 'reason' in e);
+      });
+      const out = (await a.parse(hostile as unknown as Uint8Array)) as ParseOutcome;
+      await a.settle();
+      const error = a.getState().error;
+      expect(error?.code).toBe('E_POST_FAILED');
+      expect(error?.cause).toBe(original);
+      expect(error !== null && 'reason' in error).toBe(false);
+      expect(seen.length).toBe(2);
+      expect(seen[0]).toBe(original);
+      expect(seen[1]).toBe(false);
+      expect(out.ok === false && !out.cancelled ? out.error.cause : null).toBe(original);
+      await a.dispose();
+    });
+
     it('a renderer-checked bad control is reported exactly one way: a RangeError, or E_CONTROL_REJECTED when queued', async () => {
       // A call made before the renderer binds is queued and replayed; whether an adapter has bound by the time
       // create() returns is its own timing (React's act() flushes the 3D load). Either path is the contract,
@@ -769,6 +795,9 @@ export function runBehavioralSuite(name: string, api: TestApi, rawHarness: Adapt
           code: 'E_CONTROL_REJECTED',
           message: `setTheme rejected: ${reason}`
         });
+        // #589: the renderer's own RangeError is the cause.
+        const cause = a.getState().error?.cause;
+        expect(cause instanceof RangeError && cause.message).toBe(reason);
       }
       // The file still loaded: a rejected control is not a load failure.
       expect(a.getState().summary).toMatchObject({ segments: 12, layers: 2, complete: true });
@@ -819,21 +848,29 @@ export function runBehavioralSuite(name: string, api: TestApi, rawHarness: Adapt
     });
 
     it('a 3D renderer that fails to load is E_RENDERER_LOAD in state and on the error event (#576)', async () => {
+      const noWebGL = new Error('no webgl');
       const a = await harness.create({
         createGL: () => {
-          throw new Error('no webgl');
+          throw noWebGL;
         }
       });
       // React's act() finishes the on-demand 3D load inside create(), before anyone can subscribe. So: when the
       // failure is already in state at subscribe time, no further event may follow; otherwise exactly one does.
       const failedBeforeSubscribe = a.getState().error !== null;
       const errors: string[] = [];
+      const causes: unknown[] = [];
       a.onEvent((e) => {
-        if (e.type === 'error') errors.push(`${e.code}: ${e.message}`);
+        if (e.type === 'error') {
+          errors.push(`${e.code}: ${e.message} (${e.reason})`);
+          causes.push(e.cause);
+        }
       });
       await a.settle();
-      expect(a.getState().error).toMatchObject({ code: 'E_RENDERER_LOAD', message: 'no webgl' });
-      expect(errors.join('|')).toBe(failedBeforeSubscribe ? '' : 'E_RENDERER_LOAD: no webgl');
+      expect(a.getState().error).toMatchObject({ code: 'E_RENDERER_LOAD', message: 'no webgl', reason: 'start' });
+      // #589: the code loaded but the renderer could not start; the thrown error is the cause, the same object.
+      expect(a.getState().error?.cause).toBe(noWebGL);
+      expect(errors.join('|')).toBe(failedBeforeSubscribe ? '' : 'E_RENDERER_LOAD: no webgl (start)');
+      expect(causes.every((c) => c === noWebGL)).toBe(true);
       // A file still parses without a renderer; its parse clears the stale load error.
       await a.parse(new Uint8Array(1_000));
       await a.settle();
@@ -879,6 +916,13 @@ export interface ComponentHarness {
        * so existing harnesses keep compiling; the #520 cases fail with an explicit message without it.
        */
       onRendererUnsupported?: (feature: string, message: string) => void;
+      /**
+       * The component's error callback/event (`onError` / `error`), with its payload exactly as the consumer gets
+       * it (#589). Optional like `onRendererUnsupported`; the #589 cases fail with an explicit message without it.
+       */
+      onError?: (payload: unknown) => void;
+      /** The component's parse-error callback/event (`onParseError` / `parse-error` / `parseerror`), as delivered (#589). */
+      onParseError?: (payload: unknown) => void;
     },
     opts?: ComponentMountOptions
   ): Promise<MountedComponent> | MountedComponent;
@@ -901,6 +945,11 @@ export interface ComponentMountOptions {
   scrubTime?: number;
   /** The component's `layerRange` prop / `layer-range` attribute at mount (Part C). */
   layerRange?: [number, number];
+  /**
+   * Replaces the harness's stub GL factory in the component's renderer options (#589): a factory that throws is a
+   * renderer that loaded but could not start.
+   */
+  createGL?: (canvas: RenderTargetCanvas) => GLRendererLike;
 }
 
 export interface MountedComponent {
@@ -1112,6 +1161,71 @@ export function runComponentConformanceSuite(name: string, api: TestApi, harness
       await m.setCameraMode('orthographic');
       await m.settle();
       expect(JSON.stringify(log)).toBe(JSON.stringify([line, line]));
+      await m.unmount();
+    });
+
+    // #589: each adapter builds its own error payload; the original error (`cause`) and E_RENDERER_LOAD's
+    // `reason` must reach the consumer's callback, the cause as the very object that was thrown.
+    it('a renderer that cannot start reaches the error callback with reason start and the same cause (#589)', async () => {
+      const noWebGL = new Error('no webgl');
+      const payloads: unknown[] = [];
+      const m = await harness.mount(
+        {
+          onReady: () => undefined,
+          onBuildComplete: () => undefined,
+          onDisclosure: () => undefined,
+          onError: (payload) => payloads.push(payload)
+        },
+        {
+          createGL: () => {
+            throw noWebGL;
+          }
+        }
+      );
+      await m.settle();
+      if (payloads.length === 0) {
+        throw new Error('harness must implement createGL and onError (#589): no E_RENDERER_LOAD reached onError');
+      }
+      expect(payloads.length).toBe(1);
+      const p = payloads[0] as { code?: unknown; message?: unknown; reason?: unknown; cause?: unknown };
+      expect(JSON.stringify(p)).toBe(
+        JSON.stringify({ code: 'E_RENDERER_LOAD', message: 'no webgl', cause: {}, reason: 'start' })
+      );
+      expect(p.cause).toBe(noWebGL);
+      await m.unmount();
+    });
+
+    it('a parse error reaches the parse-error callback with the same cause and no reason (#589)', async () => {
+      const original = new Error('hostile getter');
+      const payloads: unknown[] = [];
+      const m = await harness.mount({
+        onReady: () => undefined,
+        onBuildComplete: () => undefined,
+        onDisclosure: () => undefined,
+        onParseError: (payload) => payloads.push(payload)
+      });
+      await m.settle();
+      const hostile = {
+        byteLength: 10,
+        get getReader(): never {
+          throw original;
+        }
+      };
+      await m.parse(hostile as unknown as Uint8Array);
+      await m.settle();
+      if (payloads.length === 0) {
+        throw new Error('harness must implement onParseError (#589): no parse error reached it');
+      }
+      expect(payloads.length).toBe(1);
+      const p = payloads[0] as { cause?: unknown };
+      expect(JSON.stringify(p)).toBe(
+        JSON.stringify({
+          code: 'E_POST_FAILED',
+          message: 'could not send the parse to the worker: hostile getter',
+          cause: {}
+        })
+      );
+      expect(p.cause).toBe(original);
       await m.unmount();
     });
 

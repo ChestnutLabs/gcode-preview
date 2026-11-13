@@ -30,7 +30,7 @@ runComponentConformanceSuite(
       if (opts.scrubTime !== undefined) el.scrubTime = opts.scrubTime;
       if (opts.layerRange !== undefined) el.layerRange = opts.layerRange;
       el.rendererOptions = {
-        createRenderer: () => makeSuiteStubGL(canvas),
+        createRenderer: opts.createGL ?? (() => makeSuiteStubGL(canvas)),
         scheduleFrame: (f) => f(),
         chunksPerTick: 8
       };
@@ -43,6 +43,8 @@ runComponentConformanceSuite(
         const d = (e as CustomEvent<{ feature: string; message: string }>).detail;
         cb.onRendererUnsupported?.(d.feature, d.message);
       });
+      el.addEventListener('error', (e) => cb.onError?.((e as CustomEvent).detail));
+      el.addEventListener('parse-error', (e) => cb.onParseError?.((e as CustomEvent).detail));
       document.body.appendChild(el);
       await settle();
       return {

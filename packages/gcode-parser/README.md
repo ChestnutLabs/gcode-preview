@@ -20,8 +20,8 @@ session.dispose();
 > **Bytes are handed to the worker, not copied.** A `Uint8Array` passed to `parse()` has its buffer
 > transferred to the worker, so it is empty (`byteLength === 0`) afterwards. To parse the same file
 > again, for example to switch plates with `{ plate: 1 }`, keep a copy and pass `bytes.slice()`
-> each time. Passing the already-transferred bytes rejects with `E_POST_FAILED`; the session stays
-> usable.
+> each time. Passing the already-transferred bytes rejects with `E_POST_FAILED`, with the browser's
+> `DataCloneError` on `error.cause`; the session stays usable.
 
 If the worker can't be created (for example, a strict Content Security Policy blocks the worker URL),
 `parse()` rejects with `E_WORKER_CREATE_FAILED`. The message keeps the browser's text, and `error.cause`

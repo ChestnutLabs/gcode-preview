@@ -53,7 +53,7 @@ runComponentConformanceSuite(
               layerRange: opts.layerRange,
               createWorker: () => new SuiteStubWorker(undefined, opts.ir),
               rendererOptions: {
-                createRenderer: () => makeSuiteStubGL(canvas),
+                createRenderer: opts.createGL ?? (() => makeSuiteStubGL(canvas)),
                 scheduleFrame: (f: () => void) => f(),
                 chunksPerTick: 8
               },
@@ -61,7 +61,9 @@ runComponentConformanceSuite(
               onBuildComplete: (e: { segments: number }) => cb.onBuildComplete(e.segments),
               onDisclosure: (text: string) => cb.onDisclosure(text),
               onRendererUnsupported: (e: { feature: string; message: string }) =>
-                cb.onRendererUnsupported?.(e.feature, e.message)
+                cb.onRendererUnsupported?.(e.feature, e.message),
+              onError: (e: unknown) => cb.onError?.(e),
+              onParseError: (e: unknown) => cb.onParseError?.(e)
             })
         })
       );

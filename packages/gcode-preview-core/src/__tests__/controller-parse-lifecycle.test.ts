@@ -23,15 +23,21 @@ describe('controller parse lifecycle: inputs that throw', () => {
   it('parse(null) ends with parse-error and parsing false; the next parse completes', async () => {
     const { c, log } = make();
     const out = await c.parse(null as unknown as Uint8Array);
+    const cause = out.ok === false && !out.cancelled ? out.error.cause : undefined;
     expect(JSON.stringify(out)).toBe(
       JSON.stringify({
         ok: false,
         error: {
           code: 'E_UNKNOWN',
-          message: 'parse input must be a Uint8Array, ArrayBuffer or File (got null)'
+          message: 'parse input must be a Uint8Array, ArrayBuffer or File (got null)',
+          cause: {} // an Error stringifies to {}; it is checked below
         }
       })
     );
+    expect(cause instanceof TypeError && cause.message).toBe(
+      'parse input must be a Uint8Array, ArrayBuffer or File (got null)'
+    );
+    expect(c.getState().error?.cause).toBe(cause);
     expect(c.getState().parsing).toBe(false);
     expect(c.getState().error?.code).toBe('E_UNKNOWN');
     expect(log.join('|')).toBe(
