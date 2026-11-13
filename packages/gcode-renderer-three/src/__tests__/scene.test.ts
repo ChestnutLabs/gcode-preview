@@ -327,6 +327,31 @@ describe('ToolpathRenderer clipping/scrub/visibility/coloring (phase 3)', () => 
     expect(byKind('wipe').every((m) => m.visible)).toBe(true);
   });
 
+  it('setKindVisible(cut) toggles only the cut chunk and cuts are visible by default (#584)', () => {
+    const h = makeHarness();
+    const b = new ToolpathIRBuilder({ parserVersion: 'test', units: 'mm', unitsSource: 'known' });
+    const base = { x0: 0, y0: 0, z0: 0.2, x1: 1, y1: 0, z1: 0.2, tool: 0, layer: 0 };
+    b.addSegment({ ...base, kind: MoveKind.Cut, srcByte: 0 });
+    b.addSegment({ ...base, kind: MoveKind.Travel, srcByte: 10 });
+    h.renderer.setIR(b.finalize());
+    h.runTicks();
+
+    const byKind = (k: string) =>
+      h.renderer.chunkMeshes.filter((m) => (m.userData.chunk as { kind: string }).kind === k);
+    expect(byKind('cut').length).toBe(1);
+    expect(byKind('cut').every((m) => m.visible)).toBe(true); // default visible
+
+    // Hiding travel (the Feature Lab default) must NOT hide the cuts.
+    h.renderer.setKindVisible('travel', false);
+    expect(byKind('cut').every((m) => m.visible)).toBe(true);
+    expect(byKind('travel').every((m) => !m.visible)).toBe(true);
+
+    h.renderer.setKindVisible('cut', false);
+    expect(byKind('cut').every((m) => !m.visible)).toBe(true);
+    h.renderer.setKindVisible('cut', true);
+    expect(byKind('cut').every((m) => m.visible)).toBe(true);
+  });
+
   it('clipping set during an in-flight incremental build applies to later-built chunks', () => {
     const h = makeHarness({ chunksPerTick: 1 });
     const ir = makeIR(6, 4, { travelPerLayer: 2 }); // extrude + travel chunks

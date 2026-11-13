@@ -279,6 +279,10 @@ input[type='range'].gp-range:disabled {
   cursor: pointer;
   user-select: none;
 }
+.gp-toggle[hidden] {
+  display: none;
+}
+
 .gp-toggle input {
   accent-color: var(--gp-accent);
   width: 15px;

@@ -30,7 +30,7 @@ That is a complete viewer. The component ships from the `/GcodePreview.svelte` s
 the `svelte` export condition), not from the package index. The ~24-prop defaulted surface covers
 `source`, `parseOptions`, `buildVolume` (consumer-wins bed precedence), `quality` / `qualityMode`,
 `colorMode`, `theme`, `cameraMode` / `view` / `frameContent`, `layerRange`, `scrub`, `showTravel` /
-`showRetractions` / `showWipe`, `hiddenFeatureRoles` (hide feature roles like Skirt or Brim; gate on
+`showRetractions` / `showWipe` / `showCut` (CNC/laser cutting moves, default on), `hiddenFeatureRoles` (hide feature roles like Skirt or Brim; gate on
 `capabilities.featureRoles`), `progress` (DD-006 observation), and `createWorker`. Events (14):
 `ready`, `camerachange`, `parseerror`, `parsecancelled`, `parseprogress`, `stage`, `buildcomplete`,
 `qualityfallback`, `machinegeometrymismatch`/`discovered`, `progresspresentationchanged`,

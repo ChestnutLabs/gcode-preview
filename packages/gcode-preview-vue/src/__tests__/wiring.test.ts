@@ -62,6 +62,7 @@ describe('<GcodePreview> (vue) wiring: mount', () => {
       'setLayerRange(0,"Infinity")',
       'setKindVisible("travel",true)',
       'setKindVisible("wipe",true)',
+      'setKindVisible("cut",true)',
       'setShowRetractions(false)',
       'setBuildVolumeCage(true)'
     ]);
@@ -85,6 +86,7 @@ describe('<GcodePreview> (vue) wiring: mount', () => {
       layerRange: [2, 5],
       showTravel: false,
       showWipe: false,
+      showCut: false,
       showRetractions: true,
       showVolumeCage: false,
       view: 'top',
@@ -101,6 +103,7 @@ describe('<GcodePreview> (vue) wiring: mount', () => {
       'setLayerRange(2,5)',
       'setKindVisible("travel",false)',
       'setKindVisible("wipe",false)',
+      'setKindVisible("cut",false)',
       'setShowRetractions(true)',
       'setBuildVolumeCage(false)',
       'setView("top")',

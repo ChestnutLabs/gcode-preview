@@ -70,6 +70,12 @@ function makeMixedIR(): ToolpathIR {
  * chunk meshes in the scene — lets a test observe kind visibility inside renderStill (which disposes
  * its renderer internally, so post-call inspection isn't possible).
  */
+function makeCutIR(): ToolpathIR {
+  const b = new ToolpathIRBuilder({ parserVersion: 'render-still-test', units: 'mm', unitsSource: 'known' });
+  b.addSegment({ x0: 0, y0: 0, z0: 0, x1: 10, y1: 0, z1: 0, kind: MoveKind.Cut, layer: 0, srcByte: 0 });
+  return b.finalize();
+}
+
 function makeKindProbeGL(): {
   gl: (c: RenderTargetCanvas) => GLRendererLike;
   visible: (kind: string) => boolean | null;
@@ -303,6 +309,20 @@ describe('renderStill (#132)', () => {
     });
     expect(on.visible('travel')).toBe(true);
     expect(on.visible('wipe')).toBe(true);
+  });
+
+  it('shows Cut moves by default and hides them only for showCut:false (#584)', async () => {
+    const def = makeKindProbeGL();
+    await renderStill(makeCutIR(), { canvas: makeStubCanvas(), createRenderer: def.gl });
+    expect(def.visible('cut')).toBe(true);
+
+    const off = makeKindProbeGL();
+    await renderStill(makeCutIR(), { canvas: makeStubCanvas(), showCut: false, createRenderer: off.gl });
+    expect(off.visible('cut')).toBe(false);
+
+    const on = makeKindProbeGL();
+    await renderStill(makeCutIR(), { canvas: makeStubCanvas(), showCut: true, createRenderer: on.gl });
+    expect(on.visible('cut')).toBe(true);
   });
 
   it('accepts the background convenience option (transparent + solid) without throwing (#306)', async () => {

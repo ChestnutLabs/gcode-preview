@@ -97,6 +97,8 @@ export interface GcodePreviewProps {
   showTravel?: boolean;
   /** DD-016 (#182): show slicer wipe moves. Default true; set false to hide the wipe chunk. */
   showWipe?: boolean;
+  /** #584: show CNC/laser cutting moves. Default true; set false to hide the cut chunk. */
+  showCut?: boolean;
   /** DD-009 D1 (#148): opt-in retraction/deretraction markers. */
   showRetractions?: boolean;
   /** #306/#6: show the build-volume wireframe cage (independent of the bed/plate). Default true. */
@@ -276,6 +278,7 @@ function GcodePreviewImpl(props: GcodePreviewProps, ref: ForwardedRef<GcodePrevi
     scrubTime,
     showTravel,
     showWipe,
+    showCut,
     showRetractions,
     showVolumeCage,
     colorMode,
@@ -336,6 +339,9 @@ function GcodePreviewImpl(props: GcodePreviewProps, ref: ForwardedRef<GcodePrevi
   useEffect(() => {
     preview.controls.setKindVisible('wipe', showWipe ?? true);
   }, [showWipe]);
+  useEffect(() => {
+    preview.controls.setKindVisible('cut', showCut ?? true);
+  }, [showCut]);
   useEffect(() => {
     preview.controls.setShowRetractions(showRetractions ?? false);
   }, [showRetractions]);

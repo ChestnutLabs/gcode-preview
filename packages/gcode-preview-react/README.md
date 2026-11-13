@@ -29,7 +29,7 @@ function Viewer({ file }: { file: File | null }) {
 That is a complete viewer (StrictMode-safe). The full surface is ~24 optional props with sensible
 defaults — `source`, `parseOptions`, `buildVolume` (consumer-wins bed precedence), `quality` /
 `qualityMode`, `colorMode`, `theme`, `cameraMode` / `view` / `frameContent`, `layerRange`, `scrub`,
-`showTravel` / `showRetractions` / `showWipe`, `hiddenFeatureRoles` (hide feature roles like Skirt or
+`showTravel` / `showRetractions` / `showWipe` / `showCut` (CNC/laser cutting moves, default on), `hiddenFeatureRoles` (hide feature roles like Skirt or
 Brim; gate on `capabilities.featureRoles`), `progress` (DD-006 observation), `createWorker` — with
 matching callbacks (`onReady`, `onCameraChange`, `onParseError`, `onParseCancelled`,
 `onParseProgress`, `onStage`, `onBuildComplete`, `onQualityFallback`,

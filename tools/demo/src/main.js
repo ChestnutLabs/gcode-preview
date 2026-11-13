@@ -9,7 +9,7 @@ import { createPreviewController, studioTheme, STUDIO_CAMERA_FOV } from '@chestn
 // DD-031: the Prepare-side controller for source-model (STL/3MF) viewing — the counterpart to the
 // toolpath controller above. The flagship demonstrates both halves of the SDK.
 import { createModelPreviewController } from '@chestnutlabs/gcode-model-renderer';
-import { FeatureRole } from '@chestnutlabs/toolpath-core';
+import { FeatureRole, MoveKind } from '@chestnutlabs/toolpath-core';
 import {
   COLOR_MODES,
   COLOR_MODE_BY_ID,
@@ -340,6 +340,11 @@ async function parseInput(input, label) {
     if (!outcome.cancelled) els.status.textContent = `Parse failed: ${outcome.error.message}`;
     return;
   }
+  // "Cut moves" (#584) is offered only for files that have CNC/laser cutting moves.
+  const kinds = outcome.result.ir.segments.kind;
+  let hasCut = false;
+  for (let i = 0; i < kinds.length && !hasCut; i++) hasCut = (kinds[i] & MoveKind.Cut) !== 0;
+  els.cutRow.hidden = !hasCut;
   els.status.textContent = `Loaded ${label ?? 'file'} — ${count(outcome.result.ir.segments.count)} segments.`;
 }
 
@@ -482,6 +487,7 @@ const RUNTIME_CONTROLS = [
   'timeScrub',
   'travel',
   'wipe',
+  'cut',
   'retractions',
   'hideAdhesion',
   'colorMode',
@@ -545,12 +551,14 @@ els.railToggle.addEventListener('click', () => els.main.classList.toggle('gp-rai
 // ============ wiring: inspect ============
 els.travel.addEventListener('change', () => preview.controls.setKindVisible('travel', els.travel.checked));
 els.wipe.addEventListener('change', () => preview.controls.setKindVisible('wipe', els.wipe.checked));
+els.cut.addEventListener('change', () => preview.controls.setKindVisible('cut', els.cut.checked));
 els.retractions.addEventListener('change', () => preview.controls.setShowRetractions(els.retractions.checked));
 // Apply the initial move-visibility state — the renderer's defaults otherwise disagree with the
 // unchecked/checked boxes (e.g. travel would render though "Travel moves" is off). Queued until the
 // renderer resolves, then replayed.
 preview.controls.setKindVisible('travel', els.travel.checked);
 preview.controls.setKindVisible('wipe', els.wipe.checked);
+preview.controls.setKindVisible('cut', els.cut.checked);
 preview.controls.setShowRetractions(els.retractions.checked);
 els.hideAdhesion.addEventListener('change', () => {
   const visible = !els.hideAdhesion.checked;

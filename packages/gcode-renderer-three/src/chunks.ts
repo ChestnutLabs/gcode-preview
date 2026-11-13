@@ -33,7 +33,7 @@ export interface ChunkBuildOptions {
 }
 
 export interface GeometryChunk {
-  kind: 'extrude' | 'travel' | 'wipe';
+  kind: 'extrude' | 'travel' | 'wipe' | 'cut';
   /** Inclusive layer range covered by this chunk. */
   layerStart: number;
   layerEnd: number;
@@ -93,6 +93,8 @@ export function buildChunks(ir: ToolpathIR, opts: ChunkBuildOptions = {}): Chunk
       skippedNonFinite++;
       continue;
     }
+    // Cut (CNC/laser) is deliberately NOT counted: autoDecimation / the tube budget stay Extrude-driven in this
+    // change (autoDecimation-for-CNC is a follow-up). A user-chosen numeric decimation still thins Cut below.
     if ((seg.kind[i] & MoveKind.Extrude) !== 0) extrudeCount++;
   }
   let decimation: number;
@@ -124,15 +126,24 @@ export function buildChunks(ir: ToolpathIR, opts: ChunkBuildOptions = {}): Chunk
   for (const layer of ir.layers) {
     let first = -1;
     let last = -1;
+    let cutFirst = -1;
+    let cutLast = -1;
     for (let i = Math.max(0, layer.segStart); i <= layer.segEnd && i < seg.count; i++) {
       if ((seg.kind[i] & MoveKind.Extrude) !== 0 && finite(i)) {
         if (first === -1) first = i;
         last = i;
+      } else if ((seg.kind[i] & MoveKind.Cut) !== 0 && finite(i)) {
+        if (cutFirst === -1) cutFirst = i;
+        cutLast = i;
       }
     }
     if (first !== -1) {
       boundary.add(first);
       boundary.add(last);
+    }
+    if (cutFirst !== -1) {
+      boundary.add(cutFirst);
+      boundary.add(cutLast);
     }
   }
 
@@ -144,6 +155,7 @@ export function buildChunks(ir: ToolpathIR, opts: ChunkBuildOptions = {}): Chunk
   let pendingExtrude: number[] = [];
   let pendingTravel: number[] = [];
   let pendingWipe: number[] = [];
+  let pendingCut: number[] = [];
   let chunkLayerStart = 0;
   let kept = 0;
 
@@ -151,7 +163,8 @@ export function buildChunks(ir: ToolpathIR, opts: ChunkBuildOptions = {}): Chunk
     for (const [kind, list] of [
       ['extrude', pendingExtrude],
       ['travel', pendingTravel],
-      ['wipe', pendingWipe]
+      ['wipe', pendingWipe],
+      ['cut', pendingCut]
     ] as const) {
       if (list.length === 0) continue;
       const positions = new Float32Array(list.length * 6);
@@ -173,6 +186,7 @@ export function buildChunks(ir: ToolpathIR, opts: ChunkBuildOptions = {}): Chunk
     pendingExtrude = [];
     pendingTravel = [];
     pendingWipe = [];
+    pendingCut = [];
     kept = 0;
   };
 
@@ -195,6 +209,14 @@ export function buildChunks(ir: ToolpathIR, opts: ChunkBuildOptions = {}): Chunk
         // subject to travel decimation.
         pendingWipe.push(i);
         kept++;
+      } else if ((seg.kind[i] & MoveKind.Cut) !== 0) {
+        // Cut moves (CNC/laser, #584) are their own toggleable chunk, line-only. They are the whole of a CNC
+        // file, so they follow Extrude's decimation rule (boundary or every Nth) instead of Wipe's keep-all,
+        // and they are NOT dropped with travel.
+        if (boundary.has(i) || i % decimation === 0) {
+          pendingCut.push(i);
+          kept++;
+        }
       } else if (!travelHidden) {
         pendingTravel.push(i);
         kept++;

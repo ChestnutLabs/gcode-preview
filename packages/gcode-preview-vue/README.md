@@ -48,7 +48,7 @@ frequently reached-for ones:
 | `theme` | viewer theme (background, bed, toolpath palette) |
 | `camera-mode` / `view` / `camera-state` / `frame-content` | perspective/orthographic, named view, saved camera, framing target |
 | `layer-range` / `scrub` / `scrub-time` | clipping / time-based scrub controls |
-| `show-travel` / `show-wipe` / `show-retractions` / `show-volume-cage` | move-class and overlay visibility toggles |
+| `show-travel` / `show-wipe` / `show-cut` / `show-retractions` / `show-volume-cage` | move-class and overlay visibility toggles |
 | `hidden-feature-roles` | hide feature roles (e.g. Skirt, Brim) — declarative form of `controls.setFeatureRoleVisible`; gate on `capabilities.featureRoles` |
 | `progress` | a DD-006 `ProgressObservation` — drives the honest live-progress overlay (marker for byte-exact, uncertainty band for approximate, gray when stale) |
 | `create-worker` | worker factory escape hatch (see below) |

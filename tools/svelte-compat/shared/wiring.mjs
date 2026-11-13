@@ -53,6 +53,7 @@ export function registerWiring({ describe, it, expect, beforeEach, svelte, expec
           'setInteractionQuality("off")',
           'setKindVisible("travel",true)',
           'setKindVisible("wipe",true)',
+          'setKindVisible("cut",true)',
           'setLayerRange(0,"Infinity")',
           'setShowRetractions(false)'
         ].sort()
@@ -77,6 +78,7 @@ export function registerWiring({ describe, it, expect, beforeEach, svelte, expec
         layerRange: [2, 5],
         showTravel: false,
         showWipe: false,
+        showCut: false,
         showRetractions: true,
         showVolumeCage: false,
         colorMode: { mode: 'single', color: [1, 0, 0] },
@@ -95,6 +97,7 @@ export function registerWiring({ describe, it, expect, beforeEach, svelte, expec
         'setLayerRange(2,5)',
         'setKindVisible("travel",false)',
         'setKindVisible("wipe",false)',
+        'setKindVisible("cut",false)',
         'setShowRetractions(true)',
         'setBuildVolumeCage(false)',
         'setColorMode({"mode":"single","color":[1,0,0]})',
@@ -163,13 +166,21 @@ export function registerWiring({ describe, it, expect, beforeEach, svelte, expec
         ].sort()
       );
       log.length = 0;
-      await m.set({ layerRange: null, progress: null, showTravel: true, showWipe: false, showVolumeCage: false });
+      await m.set({
+        layerRange: null,
+        progress: null,
+        showTravel: true,
+        showWipe: false,
+        showCut: false,
+        showVolumeCage: false
+      });
       expect(log.slice().sort()).toEqual(
         [
           'ctl.clearProgress()',
           'setBuildVolumeCage(false)',
           'setKindVisible("travel",true)',
           'setKindVisible("wipe",false)',
+          'setKindVisible("cut",false)',
           'setLayerRange(0,"Infinity")'
         ].sort()
       );

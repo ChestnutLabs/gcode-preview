@@ -86,6 +86,7 @@ const OBSERVED = [
   'view',
   'show-travel',
   'show-wipe',
+  'show-cut',
   'show-retractions',
   'show-volume-cage',
   'scrub',
@@ -336,6 +337,13 @@ export class GcodePreviewElement extends HTMLElement {
   set showWipe(v: boolean) {
     this.setAttribute('show-wipe', v ? 'true' : 'false');
   }
+  /** #584: default true; only `show-cut="false"` hides CNC/laser cutting moves. */
+  get showCut(): boolean {
+    return this.getAttribute('show-cut') !== 'false';
+  }
+  set showCut(v: boolean) {
+    this.setAttribute('show-cut', v ? 'true' : 'false');
+  }
   /** Default false; only `show-retractions="true"` shows markers. */
   get showRetractions(): boolean {
     return this.getAttribute('show-retractions') === 'true';
@@ -543,6 +551,9 @@ export class GcodePreviewElement extends HTMLElement {
       case 'show-wipe':
         c.setKindVisible('wipe', value !== 'false');
         break;
+      case 'show-cut':
+        c.setKindVisible('cut', value !== 'false');
+        break;
       case 'show-volume-cage':
         c.setBuildVolumeCage(value !== 'false');
         break;
@@ -579,6 +590,7 @@ export class GcodePreviewElement extends HTMLElement {
     const c = this.requireController().controls;
     c.setKindVisible('travel', this.showTravel);
     c.setKindVisible('wipe', this.showWipe);
+    c.setKindVisible('cut', this.showCut);
     c.setShowRetractions(this.showRetractions);
     c.setBuildVolumeCage(this.showVolumeCage);
     const r = this.layerRange;
