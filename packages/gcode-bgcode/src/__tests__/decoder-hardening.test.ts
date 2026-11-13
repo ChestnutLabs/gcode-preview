@@ -38,6 +38,10 @@ function codeOf(fn: () => unknown): string | undefined {
   return undefined;
 }
 
+/** Above this, the spy throws instead of allocating, so a validation regression fails fast rather than
+ * allocating (say) a 1 GiB window in CI first. No case here legitimately allocates more. */
+const SPY_ALLOCATION_CAP = 1 << 20;
+
 /** Sizes of every numeric-length `new Uint8Array(n)` made while `fn` runs. */
 function uint8Allocations(fn: () => void): number[] {
   const sizes: number[] = [];
@@ -45,7 +49,10 @@ function uint8Allocations(fn: () => void): number[] {
     'Uint8Array',
     new Proxy(Uint8Array, {
       construct(target, args, nt) {
-        if (typeof args[0] === 'number') sizes.push(args[0]);
+        if (typeof args[0] === 'number') {
+          sizes.push(args[0]);
+          if (args[0] > SPY_ALLOCATION_CAP) throw new Error(`test spy: refused a ${args[0]}-byte Uint8Array`);
+        }
         return Reflect.construct(target, args, nt);
       }
     })
