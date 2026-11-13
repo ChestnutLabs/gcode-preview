@@ -112,7 +112,9 @@ export function narrativeChecks(content, version) {
   // 2) The release-history list must include the version being shipped.
   const histStart = content.indexOf('publishing from tagged');
   const histEnd = content.indexOf('Changesets accumulate');
-  const history = histStart >= 0 && histEnd > histStart ? content.slice(histStart, histEnd) : '';
+  // substring, not slice: substring swaps reversed bounds and clamps -1 to 0, so each guard clause
+  // below is what keeps a missing or misordered anchor from reading a region outside the list.
+  const history = histStart >= 0 && histEnd > histStart ? content.substring(histStart, histEnd) : '';
   results.push({
     ok: history.includes('`v' + version + '`'),
     detail: history

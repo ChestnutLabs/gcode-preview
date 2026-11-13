@@ -7,7 +7,7 @@
 // The non-dry tests then set only GITHUB_ACTIONS=true and RELEASE_CONFIRM=publish, the two switches
 // publish.mjs checks. No token, OIDC variable or .npmrc is set, read or exercised.
 import path from 'node:path';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   assertStubResolves,
   cleanup,
@@ -198,10 +198,14 @@ describe('publish.mjs --dry-run', () => {
   });
 });
 
+let nonDryRan = 0;
 describe.skipIf(CAN_MINT_IDENTITY)(
   'publish.mjs non-dry branch (stubbed npm; skipped where ACTIONS_ID_TOKEN_REQUEST_URL is set)',
   () => {
     const real = (opts = {}) => npmStub({ realBranch: true, ...opts });
+    beforeEach(() => {
+      nonDryRan += 1;
+    });
     const kinds = (calls) => calls.map((c) => `${c.argv[0]} ${c.name}`);
 
     it('needs both workflow switches: either one alone is refused before any npm call', () => {
@@ -302,3 +306,9 @@ describe.skipIf(CAN_MINT_IDENTITY)(
     });
   }
 );
+
+describe('publish.mjs non-dry skip', () => {
+  it('runs all six non-dry tests unless ACTIONS_ID_TOKEN_REQUEST_URL is set', () => {
+    expect(nonDryRan).toBe(process.env.ACTIONS_ID_TOKEN_REQUEST_URL ? 0 : 6);
+  });
+});
