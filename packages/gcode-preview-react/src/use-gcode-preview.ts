@@ -112,8 +112,10 @@ export function useGcodePreview(options: UseGcodePreviewOptions = {}): GcodePrev
       },
       parse: (input, opts) => ensure().parse(input, opts),
       cancel: () => slot.current.controller?.cancel(),
-      observeProgress: (obs) => slot.current.controller?.observeProgress(obs) ?? null,
-      tickProgress: (nowMs) => slot.current.controller?.tickProgress(nowMs) ?? null,
+      // `controller` is set by the first render's `ensure()` (via getSnapshot) and never reset to null, so it is
+      // non-null whenever a handle method can run. Unlike `ensure()`, this does not rebuild a disposed controller.
+      observeProgress: (obs) => slot.current.controller!.observeProgress(obs),
+      tickProgress: (nowMs) => slot.current.controller!.tickProgress(nowMs),
       clearProgress: () => slot.current.controller?.clearProgress(),
       capture: (opts) => ensure().controls.capture(opts),
       get state() {

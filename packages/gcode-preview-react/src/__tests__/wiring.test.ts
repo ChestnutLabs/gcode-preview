@@ -8,8 +8,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { StrictMode, act, createElement, createRef } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { SuiteStubWorker, makeSuiteStubGL } from '@chestnutlabs/gcode-preview-core/testing';
-import { GcodePreview, type GcodePreviewHandle } from '../index';
-import { created, fire, log, reset } from './spy-core';
+import { GcodePreview, useGcodePreview, type GcodePreviewHandle } from '../index';
+import { created, fire, listeners, log, reset } from './spy-core';
 
 vi.mock('@chestnutlabs/gcode-preview-core', async (importOriginal) => {
   const spy = await import('./spy-core');
@@ -426,6 +426,117 @@ describe('<GcodePreview> (react) wiring: scrub props and a source change (Part C
     await m.set({ source: new Uint8Array(43) });
     expect(view()).toEqual([]);
     expect(calls('ctl.parse')).toEqual(['ctl.parse("Uint8Array(43)","undefined")']);
+    await m.unmount();
+  });
+});
+
+describe('<GcodePreview> (react) lifecycle: rebuilt controller, canvas bind, subscription (react sweep 2)', () => {
+  // The 2D renderer is built synchronously by bindCanvas, so the mount effect finds one and must not bind again.
+  // (The 3D renderer loads on demand, so its mount effect always rebinds: that is not asserted here.)
+  it('a 2D mount binds the canvas once, and StrictMode rebinds it to the rebuilt controller', async () => {
+    const m = await mount({ renderer: '2d' });
+    expect(calls('ctl.bindCanvas')).toEqual(['ctl.bindCanvas("node")']);
+    await m.unmount();
+    reset();
+    const s = await mount({ renderer: '2d' }, { strict: true });
+    expect(log.filter((l) => /^ctl\.(bindCanvas|dispose)/.test(l))).toEqual([
+      'ctl.bindCanvas("node")',
+      'ctl.dispose()',
+      'ctl.bindCanvas("node")'
+    ]);
+    await s.unmount();
+  });
+
+  it('a hook that is never given a canvas binds nothing on mount', async () => {
+    const host = document.createElement('div');
+    document.body.appendChild(host);
+    const root: Root = createRoot(host);
+    const Probe = (): null => {
+      useGcodePreview({});
+      return null;
+    };
+    await act(async () => root.render(createElement(Probe)));
+    await settle();
+    expect(calls('ctl.bindCanvas')).toEqual([]);
+    await act(async () => root.unmount());
+  });
+
+  it('a controller rebuilt after dispose() gets the options of the latest render', async () => {
+    const m = await mount();
+    expect(created[0]!.options.renderer).toMatchObject({ frameContent: 'all' });
+    await m.set({ frameContent: 'object' });
+    m.ref.current!.dispose();
+    void m.ref.current!.controls;
+    expect(created).toHaveLength(2);
+    expect(created[1]!.options.renderer).toMatchObject({ frameContent: 'object' });
+    await m.unmount();
+  });
+
+  it.each([
+    ['raw', (h: GcodePreviewHandle) => void h.raw],
+    ['onEvent', (h: GcodePreviewHandle) => void h.onEvent(() => undefined)]
+  ])('%s after dispose() builds a fresh controller', async (_name, touch) => {
+    const m = await mount();
+    m.ref.current!.dispose();
+    expect(created).toHaveLength(1);
+    touch(m.ref.current!);
+    expect(created).toHaveLength(2);
+    await m.unmount();
+  });
+
+  it('state is the render snapshot: reading it after dispose() builds no controller', async () => {
+    const m = await mount();
+    const before = m.ref.current!.state;
+    m.ref.current!.dispose();
+    expect(m.ref.current!.state).toBe(before);
+    expect(created).toHaveLength(1);
+    await m.unmount();
+  });
+
+  it('subscribes to controller events once, however often a callback changes', async () => {
+    const m = await mount({ onReady: () => undefined });
+    expect(listeners).toHaveLength(1);
+    await m.set({ onReady: () => undefined });
+    await m.set({ onReady: () => undefined });
+    expect(listeners).toHaveLength(1);
+    await m.unmount();
+  });
+
+  it('onReady passes the parsed metadata through', async () => {
+    const got: unknown[] = [];
+    const m = await mount({ onReady: (s: { metadata: unknown }) => got.push(s.metadata) });
+    fire({
+      type: 'parse-complete',
+      segments: 1,
+      layers: 1,
+      complete: true,
+      capabilities: {},
+      warnings: [],
+      metadata: { dialect: 'marlin' }
+    });
+    expect(got).toEqual([{ dialect: 'marlin' }]);
+    await m.unmount();
+  });
+
+  it('hiddenFeatureRoles: editing the previous array in place does not stop the next list from hiding the new role', async () => {
+    const list = ['skirt'];
+    const m = await mount({ hiddenFeatureRoles: list });
+    log.length = 0;
+    list.push('brim');
+    await m.set({ hiddenFeatureRoles: list.slice() });
+    expect(log).toEqual(['setFeatureRoleVisible("brim",false)']);
+    await m.unmount();
+  });
+
+  it('the canvas is focusable, labelled, full size and does not scroll the page on touch', async () => {
+    const m = await mount();
+    const c = document.body.querySelector('canvas')!;
+    expect(c.getAttribute('tabindex')).toBe('0');
+    expect(c.getAttribute('aria-label')).toBe('3D G-code toolpath preview');
+    expect(c.style.width).toBe('100%');
+    expect(c.style.height).toBe('100%');
+    expect(c.style.display).toBe('block');
+    expect(c.style.touchAction).toBe('none');
     await m.unmount();
   });
 });
