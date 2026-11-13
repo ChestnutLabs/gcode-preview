@@ -11,6 +11,7 @@
  * No framework peer dependency — this is the plain-DOM / Angular / vanilla path.
  */
 import {
+  CaptureUnsupportedError,
   createPreviewController,
   type CaptureOptions,
   type GcodePreviewControls,
@@ -22,9 +23,7 @@ import {
 } from '@chestnutlabs/gcode-preview-core';
 import type {
   BuildVolumeDef,
-  CameraMode,
   CameraState,
-  CameraView,
   ColorMode,
   PixelRatioOption,
   Theme,
@@ -37,6 +36,19 @@ import type {
   ProgressObservation
 } from '@chestnutlabs/toolpath-core';
 import type { WireParseOptions, WorkerLike } from '@chestnutlabs/gcode-parser';
+
+import {
+  CAMERA_MODES,
+  CAMERA_VIEWS,
+  FRAME_CONTENTS,
+  INTERACTION_QUALITIES,
+  PROGRESSIVE_PREVIEWS,
+  QUALITIES,
+  QUALITY_MODES,
+  RENDERERS,
+  assertEnum,
+  pickEnum
+} from './enums.js';
 
 export type GcodePreviewSource = Uint8Array | ArrayBuffer | File | null;
 
@@ -199,6 +211,7 @@ export class GcodePreviewElement extends HTMLElement {
     return this.getAttribute('renderer');
   }
   set renderer(v: string | null) {
+    assertEnum('renderer', RENDERERS, v);
     this.reflect('renderer', v);
   }
   /** 2D only: preceding "ghost" layers (DD-031 E1). Construction-time; reflected accessor over the attribute. */
@@ -215,24 +228,28 @@ export class GcodePreviewElement extends HTMLElement {
     return this.getAttribute('quality');
   }
   set quality(v: string | null) {
+    assertEnum('quality', QUALITIES, v);
     this.reflect('quality', v);
   }
   get qualityMode(): string | null {
     return this.getAttribute('quality-mode');
   }
   set qualityMode(v: string | null) {
+    assertEnum('qualityMode', QUALITY_MODES, v);
     this.reflect('quality-mode', v);
   }
   get progressivePreview(): string | null {
     return this.getAttribute('progressive-preview');
   }
   set progressivePreview(v: string | null) {
+    assertEnum('progressivePreview', PROGRESSIVE_PREVIEWS, v);
     this.reflect('progressive-preview', v);
   }
   get cameraMode(): string | null {
     return this.getAttribute('camera-mode');
   }
   set cameraMode(v: string | null) {
+    assertEnum('cameraMode', CAMERA_MODES, v);
     this.reflect('camera-mode', v);
   }
   /**
@@ -274,6 +291,7 @@ export class GcodePreviewElement extends HTMLElement {
     return this.getAttribute('frame-content');
   }
   set frameContent(v: string | null) {
+    assertEnum('frameContent', FRAME_CONTENTS, v);
     this.reflect('frame-content', v);
   }
   /** #306/2 (DD-020): 'auto' reduces detail while the camera moves. */
@@ -281,6 +299,7 @@ export class GcodePreviewElement extends HTMLElement {
     return this.getAttribute('interaction-quality');
   }
   set interactionQuality(v: string | null) {
+    assertEnum('interactionQuality', INTERACTION_QUALITIES, v);
     this.reflect('interaction-quality', v);
   }
   /** #268/#275/M6: preset orientation attribute (top/front/iso/…). */
@@ -288,6 +307,7 @@ export class GcodePreviewElement extends HTMLElement {
     return this.getAttribute('view');
   }
   set view(v: string | null) {
+    assertEnum('view', CAMERA_VIEWS, v);
     this.reflect('view', v);
   }
   /** #268/#275/M6: restore a saved pose (property-only — objects can't be attributes). Pair with the
@@ -376,7 +396,9 @@ export class GcodePreviewElement extends HTMLElement {
   }
   /** Capture the current view as an image `Blob` (DD-030 D1). Delegates to `controls.capture`. */
   capture(opts?: CaptureOptions): Promise<Blob> {
-    return this.requireController().controls.capture(opts);
+    // Before connect there is no canvas: reject like the controller does, never a synchronous throw.
+    if (this.controller === null) return Promise.reject(new CaptureUnsupportedError('no canvas bound (not connected)'));
+    return this.controller.controls.capture(opts);
   }
   observeProgress(obs: ProgressObservation): MappedProgress | null {
     return this.controller?.observeProgress(obs) ?? null;
@@ -405,9 +427,10 @@ export class GcodePreviewElement extends HTMLElement {
     this.canvasEl = canvas;
 
     const isMachine = this._buildVolume !== undefined && 'bed' in this._buildVolume;
-    const mode = (this.getAttribute('renderer') as RendererMode | null) ?? undefined;
-    const quality = this.getAttribute('quality') as 'auto' | 'lines' | 'tubes' | null;
-    const cameraMode = this.getAttribute('camera-mode') as CameraMode | null;
+    // An enum attribute that is not exactly one of its values is bad markup: ignored (the default), never a throw.
+    const mode: RendererMode | undefined = pickEnum(RENDERERS, this.getAttribute('renderer'));
+    const quality = pickEnum(QUALITIES, this.getAttribute('quality')) ?? 'auto';
+    const cameraMode = pickEnum(CAMERA_MODES, this.getAttribute('camera-mode')) ?? null;
     const cameraFov = this.acceptFov(this.getAttribute('camera-fov'));
     const pixelRatio = this.acceptPixelRatio(this.getAttribute('pixel-ratio'));
     this.controller = createPreviewController({
@@ -416,14 +439,14 @@ export class GcodePreviewElement extends HTMLElement {
         // DD-014 D5: construction-time renderer selection (mode switching post-mount is out of scope).
         mode,
         buildVolume: isMachine ? undefined : (this._buildVolume as BuildVolumeDef | undefined),
-        quality: quality ?? 'auto',
-        qualityMode: (this.getAttribute('quality-mode') as 'full' | 'adaptive' | 'fast' | null) ?? undefined,
-        progressivePreview: (this.getAttribute('progressive-preview') as 'lines' | 'hold' | 'off' | null) ?? undefined,
+        quality,
+        qualityMode: pickEnum(QUALITY_MODES, this.getAttribute('quality-mode')),
+        progressivePreview: pickEnum(PROGRESSIVE_PREVIEWS, this.getAttribute('progressive-preview')),
         cameraMode: cameraMode ?? undefined,
         cameraFov,
         pixelRatio,
-        frameContent: (this.getAttribute('frame-content') as 'object' | 'all' | null) ?? undefined,
-        interactionQuality: (this.getAttribute('interaction-quality') as 'off' | 'auto' | null) ?? undefined,
+        frameContent: pickEnum(FRAME_CONTENTS, this.getAttribute('frame-content')),
+        interactionQuality: pickEnum(INTERACTION_QUALITIES, this.getAttribute('interaction-quality')),
         colorMode: this._colorMode,
         tube: this._tube,
         theme: this._theme,
@@ -440,7 +463,7 @@ export class GcodePreviewElement extends HTMLElement {
     // connect. 3D was built with them, so it skips this (a re-applied quality would rebuild).
     if (mode === '2d') {
       const c = this.controller.controls;
-      if (quality !== null && quality !== 'auto') c.setQuality(quality);
+      if (quality !== 'auto') c.setQuality(quality);
       if (cameraMode !== null && cameraMode !== 'perspective') c.setCameraMode(cameraMode);
       if (cameraFov !== undefined && cameraFov !== DEFAULT_LENS) c.setCameraFov(cameraFov);
       if (pixelRatio !== undefined) c.setPixelRatio(pixelRatio);
@@ -465,18 +488,27 @@ export class GcodePreviewElement extends HTMLElement {
     if (this.controller === null) return; // connectedCallback applies the initial state
     const c = this.controller.controls;
     switch (name) {
-      case 'quality':
-        c.setQuality((value as 'auto' | 'lines' | 'tubes' | null) ?? 'auto');
+      case 'quality': {
+        // Removed means the default; any other value must be a valid one (bad markup is ignored).
+        const q = value === null ? 'auto' : pickEnum(QUALITIES, value);
+        if (q !== undefined) c.setQuality(q);
         break;
-      case 'quality-mode':
-        if (value !== null) c.setQualityMode(value as 'full' | 'adaptive' | 'fast');
+      }
+      case 'quality-mode': {
+        const v = pickEnum(QUALITY_MODES, value);
+        if (v !== undefined) c.setQualityMode(v);
         break;
-      case 'progressive-preview':
-        if (value !== null) c.setProgressivePreview(value as 'lines' | 'hold' | 'off');
+      }
+      case 'progressive-preview': {
+        const v = pickEnum(PROGRESSIVE_PREVIEWS, value);
+        if (v !== undefined) c.setProgressivePreview(v);
         break;
-      case 'camera-mode':
-        if (value !== null) c.setCameraMode(value as CameraMode);
+      }
+      case 'camera-mode': {
+        const v = pickEnum(CAMERA_MODES, value);
+        if (v !== undefined) c.setCameraMode(v);
         break;
+      }
       case 'camera-fov': {
         const fov = this.acceptFov(value);
         if (fov !== undefined) c.setCameraFov(fov);
@@ -487,15 +519,21 @@ export class GcodePreviewElement extends HTMLElement {
         if (ratio !== undefined) c.setPixelRatio(ratio);
         break;
       }
-      case 'frame-content':
-        if (value !== null) c.setFrameContent(value as 'object' | 'all');
+      case 'frame-content': {
+        const v = pickEnum(FRAME_CONTENTS, value);
+        if (v !== undefined) c.setFrameContent(v);
         break;
-      case 'interaction-quality':
-        if (value !== null) c.setInteractionQuality(value as 'off' | 'auto');
+      }
+      case 'interaction-quality': {
+        const v = pickEnum(INTERACTION_QUALITIES, value);
+        if (v !== undefined) c.setInteractionQuality(v);
         break;
-      case 'view':
-        if (value !== null) c.setView(value as CameraView);
+      }
+      case 'view': {
+        const v = pickEnum(CAMERA_VIEWS, value);
+        if (v !== undefined) c.setView(v);
         break;
+      }
       case 'show-travel':
         c.setKindVisible('travel', value !== 'false');
         break;
@@ -554,8 +592,8 @@ export class GcodePreviewElement extends HTMLElement {
     // while controller === null, so the initial `view` attribute and any pre-connect cameraState must
     // be applied here or they're silently dropped (the <gcode-model-viewer> element already does this).
     // Apply the preset view first, then let an explicit cameraState override it.
-    const view = this.getAttribute('view');
-    if (view !== null) c.setView(view as CameraView);
+    const view = pickEnum(CAMERA_VIEWS, this.getAttribute('view'));
+    if (view !== undefined) c.setView(view);
     if (this._cameraState !== null) c.setCameraState(this._cameraState);
   }
 
@@ -696,7 +734,7 @@ export class GcodePreviewElement extends HTMLElement {
 
 function parseLayerRange(value: string | null): [number, number] | null {
   if (value === null) return null;
-  const parts = value.split(',').map((s) => Number(s.trim()));
+  const parts = value.split(',').map((s) => Number(s));
   if (parts.length !== 2 || parts.some((n) => Number.isNaN(n))) return null;
   return [parts[0], parts[1]];
 }
@@ -706,7 +744,7 @@ function parseRoleList(value: string | null): number[] {
   if (value === null || value.trim() === '') return [];
   return value
     .split(',')
-    .map((s) => Number(s.trim()))
+    .map((s) => Number(s))
     .filter((n) => Number.isFinite(n));
 }
 
