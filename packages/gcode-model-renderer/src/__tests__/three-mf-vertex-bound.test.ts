@@ -174,6 +174,21 @@ describe('3MF triangle bound (scene-wide, at parse time)', () => {
     expect(m.objects).toHaveLength(1);
   });
 
+  it('triangles split across the main model and an external part count together', async () => {
+    const comp = (id: number): string =>
+      `<object id="${id}"><components><component p:path="/3D/Objects/a.model" objectid="2"/></components></object>`;
+    // An UNPLACED 6-triangle object in the main model plus a 7-triangle external part: 13 > 10 scene-wide, although
+    // each part alone is under the cap. A per-part counter would load it.
+    const bytes = makeZip([
+      {
+        name: '3D/3dmodel.model',
+        data: enc(modelXml(triOnly(1, 6) + comp(8) + comp(9), '<item objectid="8"/><item objectid="9"/>'))
+      },
+      { name: '3D/Objects/a.model', data: enc(modelXml(triOnly(2, 7))) }
+    ]);
+    await expect(parse3mf(bytes, { maxTriangles: 10 })).rejects.toEqual(triTooMany(10));
+  });
+
   it('throws before the triangle array grows past the cap (array-length spy)', async () => {
     let longest = 0;
     const bytes = mainOnly(triOnly(1, 11));
