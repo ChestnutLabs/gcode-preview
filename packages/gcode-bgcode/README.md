@@ -53,6 +53,8 @@ is `image/png`, `image/jpeg` or `image/qoi`), the same list `; thumbnail` commen
 Every failure — bad magic/version, CRC mismatch, truncation, unknown/unsupported codec, or a
 decompression bomb — is a structured, bounded `ContainerError` (never a crash or an unbounded read).
 
+The low-level decoders check their parameters before they allocate anything, and throw `E_BGCODE_OPTION` for a bad one. For both `heatshrinkDecode` and `meatpackDecode`, `limit` must be a non-negative safe integer. For `heatshrinkDecode`, `windowBits` must be an integer from 4 to 15 and `lookaheadBits` an integer from 3 to `windowBits - 1`. `openBgcode` passes valid values itself, so this only matters if you call the decoders directly.
+
 Fixed limits:
 
 | Limit | Value | When exceeded |
