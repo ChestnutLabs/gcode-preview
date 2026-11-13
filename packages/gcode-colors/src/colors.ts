@@ -165,7 +165,7 @@ function rampOrFallback(ramp: RGB[], v: number, lo: number, span: number, fallba
 export function checkColorMode(mode: ColorMode): void {
   checkModeColors(mode);
   if (mode.mode === 'feedrate' || mode.mode === 'layerHeight' || mode.mode === 'power') {
-    if (mode.range === undefined) return;
+    if (mode.range == null) return;
     const [lo, hi] = mode.range;
     if (!Number.isFinite(lo) || !Number.isFinite(hi) || lo < 0 || hi < 0) {
       throw new RangeError(
@@ -251,7 +251,7 @@ function checkModeColors(mode: ColorMode): void {
     case 'filament':
       break;
   }
-  if ((mode.mode === 'tool' || mode.mode === 'filament') && mode.fallback === undefined) return;
+  if ((mode.mode === 'tool' || mode.mode === 'filament') && mode.fallback == null) return;
   checkColor(m, 'fallback', mode.fallback);
 }
 
