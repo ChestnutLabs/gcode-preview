@@ -15,7 +15,9 @@ The `scrub`, `scrubTime` and `layerRange` props now keep applying across mount a
   to show the new file uncut while the prop still held its value. This holds on all four adapters (the
   `<gcode-preview>` `source` property included). A range or cut you set from a `ready` handler for the new file
   still wins, so a consumer that resets its range to the new file's layer count on `ready` ends on that range.
-- **When both `scrub` and `scrubTime` hold a value, `scrubTime` wins**, at mount and on a source change, as it
-  already did on `<gcode-preview>`.
+- **When both `scrub` and `scrubTime` hold a value, `scrubTime` wins** at mount, and on a source change that leaves
+  both props as they were, as it already did on `<gcode-preview>`. A prop that changes in the same update as `source`
+  is applied last, so it wins: changing `scrub` together with `source` cuts the new file at the new `scrub`, even
+  while `scrubTime` still holds its value.
 - **A `parse()` started from a `parse-complete` (`ready`) handler now owns a cut made right after it in the
   same handler.** The cut used to reach the file that was finishing and was lost when the new one loaded.

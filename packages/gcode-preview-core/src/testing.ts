@@ -261,11 +261,14 @@ export interface AdapterHarness {
   /**
    * Construct one preview bound to a fresh canvas, wired to a SuiteStubWorker + stub GL. `renderer: '2d'`
    * selects the 2D renderer (the adapter's own renderer-mode option); omitted means the 3D default.
+   * `createWorker`, when given, replaces the SuiteStubWorker factory (passed through the adapter's own
+   * `createWorker` option), e.g. a factory that throws.
    */
   create(opts?: {
     machine?: MachineGeometry;
     consumerVolume?: boolean;
     renderer?: '2d';
+    createWorker?: () => SuiteStubWorker;
   }): Promise<AdapterInstance> | AdapterInstance;
 }
 
@@ -587,6 +590,48 @@ export function runBehavioralSuite(name: string, api: TestApi, harness: AdapterH
       await a.parse(new Uint8Array(1_000));
       await a.settle();
       expect(events.filter((e) => e.type === 'machine-geometry-discovered').length).toBe(1);
+      await a.dispose();
+    });
+
+    it('a worker factory that throws ends the parse with parse-error E_WORKER_CREATE_FAILED; the next parse works (#566)', async () => {
+      let calls = 0;
+      const a = await harness.create({
+        createWorker: () => {
+          calls++;
+          if (calls === 1) throw new Error('worker blocked');
+          return new SuiteStubWorker();
+        }
+      });
+      const events: PreviewEvent[] = [];
+      a.onEvent((e) => events.push(e));
+      let threw = false;
+      try {
+        await a.parse(new Uint8Array(1_000));
+      } catch {
+        threw = true;
+      }
+      await a.settle();
+      expect(threw).toBe(false);
+      expect(calls).toBe(1);
+      const lifecycle = (es: PreviewEvent[]) =>
+        es
+          .filter((e) => e.type.startsWith('parse-'))
+          .map((e) => (e.type === 'parse-error' ? `parse-error:${e.code}` : e.type))
+          .join(',');
+      expect(lifecycle(events)).toBe('parse-started,parse-error:E_WORKER_CREATE_FAILED');
+      expect(a.getState().parsing).toBe(false);
+      expect(a.getState().error).toMatchObject({
+        code: 'E_WORKER_CREATE_FAILED',
+        message: 'could not start the parse worker: worker blocked'
+      });
+      events.length = 0;
+      await a.parse(new Uint8Array(1_000));
+      await a.settle();
+      expect(calls).toBe(2);
+      expect(lifecycle(events)).toBe('parse-started,parse-complete');
+      expect(a.getState().parsing).toBe(false);
+      expect(a.getState().error).toBeNull();
+      expect(a.getState().summary).toMatchObject({ segments: 12, layers: 2, complete: true });
       await a.dispose();
     });
 

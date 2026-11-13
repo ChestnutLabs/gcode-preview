@@ -23,6 +23,11 @@ session.dispose();
 > each time. Passing the already-transferred bytes rejects with `E_POST_FAILED`; the session stays
 > usable.
 
+If the worker can't be created (for example, a strict Content Security Policy blocks the worker URL),
+`parse()` rejects with `E_WORKER_CREATE_FAILED`. The message keeps the browser's text, and `error.cause`
+holds the original error (a `SecurityError`, say). The session stays usable: the next `parse()` tries to
+create the worker again.
+
 ## Workers
 
 - **Batteries default (zero setup):** the session creates its own worker via the bundler-native
