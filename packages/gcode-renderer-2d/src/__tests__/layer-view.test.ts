@@ -11,6 +11,7 @@ import { MoveKind, ToolpathIRBuilder, type ToolpathIR } from '@chestnutlabs/tool
 import { createSegmentColorer, type ColorMode } from '@chestnutlabs/gcode-colors';
 import {
   LayerView2D,
+  checkColorMode,
   computeLayerFit,
   describe2DDisclosures,
   drawLayer,
@@ -1053,5 +1054,57 @@ describe('LayerView2D: layer requests past the end and option checks (core 2D ad
     expect(JSON.stringify(view.render().ghostLayers)).toBe('[]');
     view.setAdjacentLayers(2);
     expect(JSON.stringify(view.render().ghostLayers)).toBe('[0,1]');
+  });
+});
+
+// ---------------------------------------------------------------------------------------------
+// Second-pass sweep gap tests (2026-11-13): each pins a clause a base mutant survived.
+// ---------------------------------------------------------------------------------------------
+
+describe('second-pass sweep gaps', () => {
+  it('layerBounds2D: content with zero X span (one vertical segment) still has content', () => {
+    const ir = irOf([{ x0: 5, y0: 0, x1: 5, y1: 10 }]);
+    expect(layerBounds2D(ir, 0)).toEqual({ minX: 5, minY: 0, maxX: 5, maxY: 10, hasContent: true });
+  });
+
+  it('modelBounds2D: content with zero X span (one vertical segment) still has content', () => {
+    const ir = irOf([{ x0: 5, y0: 0, x1: 5, y1: 10 }]);
+    expect(modelBounds2D(ir)).toEqual({ minX: 5, minY: 0, maxX: 5, maxY: 10, hasContent: true });
+  });
+
+  it('drawLayers: ghost layers use the given colour mode', () => {
+    const m = new MockCtx();
+    drawLayers(m.ctx, makeIR(2, 2), {
+      layer: 1,
+      adjacentLayers: 1,
+      colorMode: { mode: 'single', color: [0, 0, 1] },
+      fit: scaleFit
+    });
+    // ghost layer 0 ×2 (0.25), active layer 1 ×2 (1): all blue
+    expect(m.strokes.map((s) => [s.style, s.alpha])).toEqual([
+      ['rgb(0, 0, 255)', 0.25],
+      ['rgb(0, 0, 255)', 0.25],
+      ['rgb(0, 0, 255)', 1],
+      ['rgb(0, 0, 255)', 1]
+    ]);
+  });
+
+  it('LayerView2D.setToolpath(null) clears the toolpath: the next render draws nothing', () => {
+    const m = new MockCtx();
+    const view = new LayerView2D(fakeCanvas(100, 100, m));
+    view.setToolpath(makeIR(2, 2));
+    expect(view.render()).toMatchObject({ drawn: true, extrudeDrawn: 2 });
+    const before = m.strokes.length;
+    view.setToolpath(null);
+    expect(view.render()).toMatchObject({ drawn: false, layerCount: 0, extrudeDrawn: 0 });
+    expect(m.strokes.length).toBe(before);
+    expect(view.layerCount).toBe(0);
+  });
+
+  it('index re-exports checkColorMode from the colour package', () => {
+    expect(() => checkColorMode({ mode: 'single', color: [0, 1, 0] })).not.toThrow();
+    expect(() =>
+      checkColorMode({ mode: 'feedrate', ramp: [[0, 0, 1]], range: [0, Number.NaN], fallback: [0, 0, 0] })
+    ).toThrow('feedrate color range must be two finite numbers >= 0, got [0, NaN]');
   });
 });
