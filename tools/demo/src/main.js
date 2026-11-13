@@ -30,6 +30,8 @@ import {
 } from '../../demo-kit/index.js';
 import { downloadToolpathStl } from './stl-export.js';
 import { createParseNotes, PARSE_NOTES_IDLE } from './parse-notes.js';
+import { createErrorDetail, ERROR_DETAIL_IDLE } from './error-detail.js';
+import { cutRowState } from './cut-row.js';
 
 const els = {};
 for (const el of document.querySelectorAll('[id]')) els[el.id] = el;
@@ -97,6 +99,8 @@ let fileBytes = 0;
 let capabilities = {};
 let savedCamera = null;
 let ready = false;
+// Does the file on screen have Cut moves? null = no file yet (or none that loaded).
+let fileHasCut = null;
 
 // ---- Prepare (source-model) mode: the second half of the SDK, lazily created on first use ----
 let mode = 'preview'; // 'preview' (toolpath) | 'prepare' (source model)
@@ -340,12 +344,20 @@ async function parseInput(input, label) {
     if (!outcome.cancelled) els.status.textContent = `Parse failed: ${outcome.error.message}`;
     return;
   }
-  // "Cut moves" (#584) is offered only for files that have CNC/laser cutting moves.
+  // "Cut moves" (#584): the row follows the file now on screen (see cutRowState).
   const kinds = outcome.result.ir.segments.kind;
   let hasCut = false;
   for (let i = 0; i < kinds.length && !hasCut; i++) hasCut = (kinds[i] & MoveKind.Cut) !== 0;
-  els.cutRow.hidden = !hasCut;
+  fileHasCut = hasCut;
+  applyCutRow();
   els.status.textContent = `Loaded ${label ?? 'file'} — ${count(outcome.result.ir.segments.count)} segments.`;
+}
+
+function applyCutRow() {
+  const c = cutRowState(fileHasCut, ready);
+  els.cutRow.classList.toggle('gp-disabled', c.disabled);
+  els.cutRow.querySelector('span').textContent = c.label;
+  els.cut.disabled = c.disabled;
 }
 
 function setParsing(on) {
@@ -359,9 +371,14 @@ function setParsing(on) {
 // Parse notes (Diagnostics tab): the pure reducer in parse-notes.js owns the markup; this only assigns it.
 const parseNotes = createParseNotes(count);
 els.parseNotes.innerHTML = PARSE_NOTES_IDLE;
+// Last error (Diagnostics tab): code, reason and the original error's message (#589/#596), public fields only.
+const errorDetail = createErrorDetail();
+els.errorDetail.innerHTML = ERROR_DETAIL_IDLE;
 preview.onEvent((e) => {
   const notesHtml = parseNotes.onEvent(e);
   if (notesHtml !== undefined) els.parseNotes.innerHTML = notesHtml;
+  const errorHtml = errorDetail.onEvent(e);
+  if (errorHtml !== undefined) els.errorDetail.innerHTML = errorHtml;
   switch (e.type) {
     case 'parse-started':
       fileBytes = e.bytes;
@@ -412,6 +429,7 @@ function onReady() {
   // over the source model.
   els.countPill.hidden = mode !== 'preview';
   enableControls(true);
+  applyCutRow(); // enableControls just re-enabled the Cut checkbox
   // scrub ranges
   const state = preview.getState();
   els.segCount.textContent = count(state.segmentCount);
