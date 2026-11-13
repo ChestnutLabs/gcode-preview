@@ -163,14 +163,38 @@
   // Only `source` re-parses. `parseOptions` is read inside the function, so the `$:` block does not track it:
   // an inline `parseOptions={{ ... }}` is a new object every render and must not re-parse an unchanged file
   // (React reads it from a ref and Vue untracked, so all three adapters agree). #435.
+  // On a source change the view props are read here too, untracked, and re-sent when they hold a value: a
+  // renderer shows the new file uncut, and the controller applies them to the file this parse loads. scrubTime
+  // goes last, so it wins over scrub (as at mount). The first parse needs none: the blocks below send them.
+  let sourceParsed = false;
   function parseSource(bytes) {
     void preview.parse(bytes, parseOptions);
+    const first = !sourceParsed;
+    sourceParsed = true;
+    if (first) return;
+    if (layerRange !== null && layerRange !== undefined) preview.controls.setLayerRange(layerRange[0], layerRange[1]);
+    if (scrub !== null && scrub !== undefined) preview.controls.setScrubPosition(scrub);
+    if (scrubTime !== null && scrubTime !== undefined) preview.controls.setScrubTime(scrubTime);
+  }
+  // The scrub values last sent from the props. A nullish prop is sent (as a clear) only when it replaces a sent
+  // number, so an unset `scrubTime` at mount no longer clears the `scrub` cut.
+  let scrubSent = null;
+  let scrubTimeSent = null;
+  function sendScrub(v) {
+    if (v === null && scrubSent === null) return;
+    scrubSent = v;
+    preview.controls.setScrubPosition(v);
+  }
+  function sendScrubTime(v) {
+    if (v === null && scrubTimeSent === null) return;
+    scrubTimeSent = v;
+    preview.controls.setScrubTime(v);
   }
   $: if (source !== null && source !== undefined) parseSource(source);
   $: if (layerRange === null || layerRange === undefined) preview.controls.setLayerRange(0, Number.POSITIVE_INFINITY);
   else preview.controls.setLayerRange(layerRange[0], layerRange[1]);
-  $: preview.controls.setScrubPosition(scrub ?? null);
-  $: preview.controls.setScrubTime(scrubTime ?? null);
+  $: sendScrub(scrub ?? null);
+  $: sendScrubTime(scrubTime ?? null);
   $: preview.controls.setKindVisible('travel', showTravel);
   $: preview.controls.setKindVisible('wipe', showWipe);
   $: preview.controls.setShowRetractions(showRetractions);

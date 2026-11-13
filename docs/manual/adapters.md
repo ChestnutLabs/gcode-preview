@@ -114,6 +114,19 @@ the previous cut is kept, so the source still parses. A callback of yours that t
 `onStateChange`) cannot change a parse's outcome: the other callbacks still run, and the error is re-thrown
 from a microtask so it still reaches the console.
 
+`scrub`, `scrubTime` and `layerRange` describe the view you want, and they stay in force until you change
+them. Loading a file starts from the whole toolpath, so each adapter re-sends the ones that hold a value whenever
+`source` changes, and the new file opens with the same cut or range. A prop you leave unset sends nothing: it
+does not clear a cut you set another way. Setting one back to `null` (or removing the attribute) clears it. When
+both `scrub` and `scrubTime` hold a value, `scrubTime` wins. A call you make from a `ready` handler applies to
+that file and wins over the props, so you can still reset the range to each new file's layer count there.
+Calling `controls.parse()` yourself does not re-send the props: set the cut you want after it, or before it
+finishes.
+
+The `theme` and `colorMode` props also throw `RangeError` for a value the renderer can't use, in every adapter:
+see [theme values that throw](https://github.com/ChestnutLabs/gcode-preview/blob/dev/packages/gcode-renderer-three/README.md#theme-values-that-throw)
+and [colours that throw](https://github.com/ChestnutLabs/gcode-preview/blob/dev/packages/gcode-colors/README.md#colours-that-throw).
+
 Two of the events tell your users what the view is not showing. They answer different questions:
 
 | | `disclosure` | `renderer-unsupported` |
@@ -269,6 +282,9 @@ are **attributes**; rich options (`.source`, `.colorMode`, `.theme`, `.tube`, `.
 or `element.controls.*` for the imperative surface. Works in any page or framework. The source-model
 counterpart is `<gcode-model-viewer>` (from `/model/define`) — the tag avoids the reserved
 `<model-viewer>` name.
+
+On `<gcode-preview renderer="2d">`, a non-numeric `adjacent-layers` attribute is ignored and the default of one
+ghost layer applies.
 
 ## Build your own (core)
 

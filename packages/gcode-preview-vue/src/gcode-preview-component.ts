@@ -256,10 +256,22 @@ export const GcodePreview = defineComponent({
     // `buildVolume`) are already applied as renderer options at controller creation above, so their
     // watchers stay change-only — making them immediate would just re-apply the same value redundantly.
     // (On the 2D renderer the four 3D-only ones are also applied once at mount when non-default; see #520.)
+    let sourceParsed = false;
     watch(
       () => props.source,
       (source) => {
-        if (source !== null) void preview.parse(source, props.parseOptions);
+        if (source === null) return;
+        void preview.parse(source, props.parseOptions);
+        // On a source change a renderer shows the new file uncut, so re-send the view props that still hold a
+        // value: the controller applies them to the file that parse loads. scrubTime goes last, so it wins over
+        // scrub (as at mount). The first parse needs none: the immediate watchers below send them at mount.
+        const first = !sourceParsed;
+        sourceParsed = true;
+        if (first) return;
+        const range = props.layerRange;
+        if (range !== null) preview.controls.setLayerRange(range[0], range[1]);
+        if (props.scrub !== null) preview.controls.setScrubPosition(props.scrub);
+        if (props.scrubTime !== null) preview.controls.setScrubTime(props.scrubTime);
       },
       { immediate: true }
     );
@@ -271,14 +283,26 @@ export const GcodePreview = defineComponent({
       },
       { immediate: true }
     );
+    // The scrub values last sent from the props. A null prop is sent (as a clear) only when it replaces a sent
+    // number, so an unset `scrubTime` at mount no longer clears the `scrub` cut.
+    let scrubSent: number | null = null;
+    let scrubTimeSent: number | null = null;
     watch(
       () => props.scrub,
-      (scrub) => preview.controls.setScrubPosition(scrub),
+      (scrub) => {
+        if (scrub === null && scrubSent === null) return;
+        scrubSent = scrub;
+        preview.controls.setScrubPosition(scrub);
+      },
       { immediate: true }
     );
     watch(
       () => props.scrubTime,
-      (t) => preview.controls.setScrubTime(t),
+      (t) => {
+        if (t === null && scrubTimeSent === null) return;
+        scrubTimeSent = t;
+        preview.controls.setScrubTime(t);
+      },
       { immediate: true }
     );
     watch(

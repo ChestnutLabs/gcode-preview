@@ -643,6 +643,12 @@ export interface ComponentMountOptions {
   cameraFov?: number;
   /** The component's pixel-ratio prop/attribute at mount (#520). */
   pixelRatio?: number;
+  /** The component's `scrub` prop/attribute at mount (Part C). */
+  scrub?: number;
+  /** The component's `scrubTime` prop / `scrub-time` attribute at mount (Part C). */
+  scrubTime?: number;
+  /** The component's `layerRange` prop / `layer-range` attribute at mount (Part C). */
+  layerRange?: [number, number];
 }
 
 export interface MountedComponent {
@@ -659,9 +665,35 @@ export interface MountedComponent {
    * scope (#520). Optional like `onRendererUnsupported`.
    */
   setCameraMode?(mode: 'perspective' | 'orthographic'): Promise<void> | void;
+  /**
+   * Set the component's `source` prop/property to `bytes` (a declarative source change, not `parse()`), inside
+   * the framework's update scope (Part C). Optional in the type so older harnesses compile; the Part C cases
+   * fail with an explicit message without it.
+   */
+  setSource?(bytes: Uint8Array): Promise<void> | void;
+  /** The bound renderer's first chunk draw count, as {@link AdapterInstance.firstChunkDrawCount} (Part C). */
+  firstChunkDrawCount?(): number;
+  /** The component's own preview handle's `controls` (Part C: a ready-time call, as a consumer makes it). */
+  controls?(): GcodePreviewControls;
   /** Let microtask round-trips + framework effects settle. */
   settle(): Promise<void>;
   unmount(): Promise<void> | void;
+}
+
+/** What the Part C cases need from a mount; a harness without it fails with this, not a bare diff. */
+function requireViewSeams(
+  m: MountedComponent,
+  needControls = false
+): Required<Pick<MountedComponent, 'setSource' | 'firstChunkDrawCount' | 'controls'>> {
+  const seams: Array<'setSource' | 'firstChunkDrawCount' | 'controls'> = ['setSource', 'firstChunkDrawCount'];
+  if (needControls) seams.push('controls');
+  const missing = seams.filter((k) => m[k] === undefined);
+  if (missing.length > 0) throw new Error(`harness must implement ${missing.join(' and ')} (Part C)`);
+  return {
+    setSource: (bytes) => m.setSource!(bytes),
+    firstChunkDrawCount: () => m.firstChunkDrawCount!(),
+    controls: () => m.controls!()
+  };
 }
 
 /** Emit `buildComplete` from a bound renderer; for {@link MountedComponent.emitBuild} implementations. */
@@ -826,6 +858,89 @@ export function runComponentConformanceSuite(name: string, api: TestApi, harness
       await m.setCameraMode('orthographic');
       await m.settle();
       expect(JSON.stringify(log)).toBe(JSON.stringify([line, line]));
+      await m.unmount();
+    });
+
+    // Part C. The suite IR is 2 layers x 6 extrusions in one chunk: 24 vertices drawn in full, 12 for one layer
+    // or a cut after segment 5, 0 for a time cut before the first segment (the IR has no feedrate, so every
+    // segment ends at 0 ms). Each setSource passes a new array, so a framework sees a changed prop.
+    const quiet = { onReady: () => undefined, onBuildComplete: () => undefined, onDisclosure: () => undefined };
+
+    it('a scrub prop set at mount survives it, and a scrubTime prop set with it wins after the parse (Part C)', async () => {
+      const a = await harness.mount(quiet, { scrub: 5 });
+      const av = requireViewSeams(a);
+      await a.settle();
+      await a.parse(new Uint8Array(1_000));
+      await a.settle();
+      expect(av.firstChunkDrawCount()).toBe(12);
+      await a.unmount();
+      const b = await harness.mount(quiet, { scrub: 5, scrubTime: -1 });
+      const bv = requireViewSeams(b);
+      await b.settle();
+      await b.parse(new Uint8Array(1_000));
+      await b.settle();
+      expect(bv.firstChunkDrawCount()).toBe(0);
+      await b.unmount();
+    });
+
+    it('a scrub or scrubTime prop still applies to the next file when the source changes (Part C)', async () => {
+      const a = await harness.mount(quiet, { scrub: 5 });
+      const av = requireViewSeams(a);
+      await av.setSource(new Uint8Array(1_000));
+      await a.settle();
+      expect(av.firstChunkDrawCount()).toBe(12);
+      await av.setSource(new Uint8Array(1_000));
+      await a.settle();
+      expect(av.firstChunkDrawCount()).toBe(12);
+      await a.unmount();
+      const b = await harness.mount(quiet, { scrub: 5, scrubTime: -1 });
+      const bv = requireViewSeams(b);
+      await bv.setSource(new Uint8Array(1_000));
+      await b.settle();
+      await bv.setSource(new Uint8Array(1_000));
+      await b.settle();
+      expect(bv.firstChunkDrawCount()).toBe(0);
+      await b.unmount();
+    });
+
+    it('a layerRange prop still applies to the next file when the source changes (Part C)', async () => {
+      const m = await harness.mount(quiet, { layerRange: [0, 0] });
+      const v = requireViewSeams(m);
+      await v.setSource(new Uint8Array(1_000));
+      await m.settle();
+      expect(v.firstChunkDrawCount()).toBe(12);
+      await v.setSource(new Uint8Array(1_000));
+      await m.settle();
+      expect(v.firstChunkDrawCount()).toBe(12);
+      await m.unmount();
+    });
+
+    it('a ready-time setLayerRange wins over the layerRange prop re-sent on a source change (Part C)', async () => {
+      // A consumer that resets its range to the new file in its ready handler ends on that range.
+      let armed = false;
+      let calls = 0;
+      let view: ReturnType<typeof requireViewSeams> | null = null;
+      const m = await harness.mount(
+        {
+          ...quiet,
+          onReady: () => {
+            if (!armed || view === null) return;
+            armed = false;
+            calls++;
+            view.controls().setLayerRange(0, Number.POSITIVE_INFINITY);
+          }
+        },
+        { layerRange: [0, 0] }
+      );
+      view = requireViewSeams(m, true);
+      await view.setSource(new Uint8Array(1_000));
+      await m.settle();
+      expect(view.firstChunkDrawCount()).toBe(12);
+      armed = true;
+      await view.setSource(new Uint8Array(1_000));
+      await m.settle();
+      expect(calls).toBe(1);
+      expect(view.firstChunkDrawCount()).toBe(24);
       await m.unmount();
     });
   });

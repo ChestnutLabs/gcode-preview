@@ -394,6 +394,26 @@ describe('3D: calls made once a file is shown', () => {
     c.dispose();
   });
 
+  it('a parse started in a parse-complete handler owns a cut made right after it in the same handler', async () => {
+    const c = await bound3D();
+    await load(c);
+    let next: Promise<unknown> | null = null;
+    c.onEvent((e) => {
+      if (e.type === 'parse-complete' && next === null) {
+        next = c.parse(new Uint8Array(1_000));
+        c.controls.setScrubPosition(5);
+      }
+    });
+    await load(c);
+    expect(next).not.toBeNull();
+    expect(((await next) as { ok: boolean }).ok).toBe(true);
+    await settle();
+    expect(drawCount(c)).toBe(12);
+    await load(c);
+    expect(drawCount(c)).toBe(24);
+    c.dispose();
+  });
+
   it('a pre-parse request is consumed by the file it applied to: the next file shows everything', async () => {
     const c = await bound3D();
     c.controls.setLayerRange(0, 0);
