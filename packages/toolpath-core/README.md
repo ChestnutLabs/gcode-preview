@@ -20,7 +20,7 @@ it. See [`docs/design/DD-001`](https://github.com/ChestnutLabs/gcode-preview/blo
   `FeatureRole`, `IR_SCHEMA_VERSION`.
 - `builder.ts` — `ToolpathIRBuilder` (accumulate segments → canonical typed-array IR).
 - `source-index.ts` — `buildSourceIndex` / `segmentAtByte` (byte offset → segment; live-progress input).
-- `bounds.ts` — extrude-only and travel-inclusive bounds.
+- `bounds.ts` — productive-move (extrude or cut) and travel-inclusive bounds.
 
 ```bash
 npm run build      -w @chestnutlabs/toolpath-core   # tsc -> dist

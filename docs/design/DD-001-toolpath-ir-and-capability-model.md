@@ -88,7 +88,7 @@ declared/inferred**, each with a companion capability (§4.5) — absent buffers
   bridge, travel, custom, unknown`), extensible; `feature` buffer indexes it.
 
 ### 4.4 Bounds & source index
-- `bounds`: `{ min: Vec3; max: Vec3 }` (over extruding moves; travel-inclusive bounds also provided).
+- `bounds`: `{ min: Vec3; max: Vec3 }` (over productive moves — `Extrude` or `Cut`, per DD-012 D7 / #568; travel-inclusive bounds also provided).
 - `sourceIndex`: a **sorted `Uint32Array` of `srcByte`** (parallel to a `Uint32Array` of segment indices)
   enabling `byteOffset → segmentIndex` via binary search. This is the contract E5/DD-006 consumes for
   live-progress (RR-001 §5.4: byte-offset is the field both Fluidd and Mainsail key on). Line/command indexes
