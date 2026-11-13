@@ -8,8 +8,8 @@ E-datum are now modeled.
 arcs and canned cycles that cannot be drawn exactly as written now carry a warning; under `G91` a
 canned-cycle `Z` is measured from the `R` plane. See
 [Moves drawn differently from what was written](#moves-drawn-differently-from-what-was-written).
-**Updated 2026-11-12** (#189 corpus): `G20` is recorded but its coordinates are not converted to
-millimetres ([#578](https://github.com/ChestnutLabs/gcode-preview/issues/578)).
+**Updated 2026-11-12** ([#578](https://github.com/ChestnutLabs/gcode-preview/issues/578)): `G20` inch files are
+converted to millimetres, so they draw at their real size.
 
 This page records which **position-affecting** G/M-codes the parser/interpreter
 (`@chestnutlabs/gcode-parser`) honors. The interpreter began as a **byte-exact port of the
@@ -25,7 +25,7 @@ remaining gaps plainly — and disclosing them at runtime via the `extrusionMode
 | `G0` / `G1` | linear move | **honored** | core motion |
 | `G2` / `G3` | arc move (I/J/K center or R) incl. full circles, all planes | **honored** — an arc that cannot be drawn as written is drawn the nearest way and warned (see below); `P` turn counts other than 1 are not applied (`arc-turns-ignored`) | E2/E3, #157, #553 |
 | `G81` / `G82` / `G83` | canned drilling cycles (+ `G80`, `G98`/`G99`, modal bare-`X`/`Y` repeat) | **honored** (DD-012 D5) — under `G91`, `Z` is incremental from the `R` plane, as in LinuxCNC (#553); `G84`–`G89` `unavailable` | `arc-cycle-disclosure.test.ts` |
-| `G20` / `G21` | units inch / mm | **recorded, not converted** — after `G20` the IR header says `units: 'in'`, but coordinates stay in inches and the viewer does not scale them, so an inch file draws 25.4× too small on a millimetre bed ([#578](https://github.com/ChestnutLabs/gcode-preview/issues/578)) | `units` header; `corpus-cnc-plotter.test.ts` |
+| `G20` / `G21` | units inch / mm | **honored: converted to mm** — every length word read under `G20` (axes, `I`/`J`/`K`, `R`, `Q`, `G92`/`G10` offsets, `F`, `E`) is multiplied by 25.4, so the IR is always millimetres; `G20`/`G21` apply to the whole line they are on and can switch mid-file. `header.units` keeps the file's declaration (`'in'`), and a `units-converted` info warning says the file was converted ([#578](https://github.com/ChestnutLabs/gcode-preview/issues/578)) | `g20-units.test.ts`; `corpus-cnc-plotter.test.ts` |
 | `G28` | homing (position reset to origin) | **honored** | interpreter |
 | `T0`–`T7` | tool select | **honored** | `tool` channel |
 | **`G90` / `G91`** | **absolute / relative positioning** | **honored** (E10 phase 1, #155) — `positioningMode` capability | `motion-model.test.ts` |
@@ -58,8 +58,13 @@ Under `G91`, a canned cycle's `R` and `Z` are kept as the numbers written (as Li
 with `G99` (or `G98` when the R plane is above the start Z) each hole's plane moves up by `R`. A `G98` cycle retracts to the higher of the start Z and the R plane.
 
 The existing `arc-missing-center` warning (no I/J/K and no R: drawn as a straight move) is unchanged.
-The bundled `mach3` demo file raises `arc-radius-too-small` for its `G02 … R0.255` arcs; its geometry
-is unchanged.
+The bundled `mach3` demo file raises `arc-radius-too-small` for its `G02 … R0.255` arcs. Since #578 an
+`arc-radius-too-small` arc is always drawn as the half circle; before, rounding could turn it into one
+straight line.
+
+An inch (`G20`) file also carries a `units-converted` warning with severity `info`, once per file. Nothing is
+drawn differently: it says that the file's inch values were converted to millimetres, so `header.units` reads
+`'in'` while every coordinate is in mm. The `mach3` demo file is an inch file.
 
 ## Firmware conditioning (DD-010)
 

@@ -2,7 +2,7 @@
 
 **Status:** **Accepted (2026-07-22)** <!-- Draft | Proposed | Accepted | Superseded | Rejected -->
 **Authors/Owners:** Chestnut Labs
-**Date:** 2026-07-22 · **Last revised:** 2026-07-22
+**Date:** 2026-07-22 · **Last revised:** 2026-11-12
 **Owning Epic:** E1 (#2) · **Milestone:** M1
 **Supersedes / Superseded by:** none
 **Related:** RR-001 (#18, accepted), DD-002 (#27), issues #26 (this DD), #28 (golden fixtures), #29 (migration),
@@ -12,6 +12,10 @@ architecture doc §5, master plan §8.2
 > then extracted per DD-002 §7). **Decisions log:**
 > - **§4.6 Coordinate precision → floating origin:** `Float32` positions relative to a `Float64` `originOffset`.
 > - **§4.2/§12 Memory layout → SoA typed buffers**, with the proposed core/optional channel split accepted.
+> - **Amendment 2026-11-12 (#578), §4.1 units:** IR coordinates are **always millimetres**. `header.units` is the
+>   source file's declaration (`'in'` after a `G20`), not the unit of the stored values. The parser converts every
+>   length word read under `G20` (axes, arc and canned-cycle words, offsets, feedrate, E) and reports it once with
+>   the `units-converted` info warning. Before this, inch files kept inch coordinates and drew 25.4× too small.
 
 ---
 
@@ -55,7 +59,8 @@ canonical IR.
 - `source`: `{ id?: string; byteLength: number; sha256?: string }` — identity/hash of the parsed input.
 - `parserVersion: string`, `generatedAtTag?: string`.
 - `dialect`: `{ id: string; version?: string; confidence: Confidence }[]` — what was detected/decided.
-- `units: 'mm' | 'in'` + `unitsSource: Capability`.
+- `units: 'mm' | 'in'` + `unitsSource: Capability`: the **source file's declaration**. Coordinates, offsets and
+  feedrates in the IR are always millimetres (mm/min); a `G20` file is converted by the parser (amendment #578).
 - `coordinateSummary`: absolute/relative XYZ & E mode transitions observed (counts), `originOffset: Vec3`.
 - `warnings: Warning[]` (see §5).
 

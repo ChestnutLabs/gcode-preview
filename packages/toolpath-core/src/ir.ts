@@ -93,7 +93,13 @@ export interface ToolpathIRHeader {
   irSchemaVersion: number;
   parserVersion: string;
   source: { id?: string; byteLength: number; sha256?: string };
+  /**
+   * The units the source file declared (`'in'` after a `G20`). It is not the unit of the IR: coordinates,
+   * offsets and feedrates are always millimetres (mm/min), because the parser converts inch words (DD-001
+   * §4.1, #578). A `G20` file also carries a `units-converted` info warning.
+   */
   units: Units;
+  /** `'known'` when the file stated `G20`/`G21`, `'inferred'` (millimetres assumed) when it did not. */
   unitsSource: Confidence;
   /** Float64 reference point; segment positions are Float32 deltas from this (DD-001 §4.6). */
   originOffset: Vec3;

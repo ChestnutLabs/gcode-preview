@@ -44,11 +44,12 @@ describe('parse core (DD-003 phase 1)', () => {
     // but the next extrusion path carries tool 3.
     expect(ir.tools.map((t) => t.id)).toContain(3);
     // Inherited G28 semantics: homing sets STATE to (0,0,0) but emits no vertex —
-    // the post-home segment still starts from the last emitted vertex (2,2),
+    // the post-home segment still starts from the last emitted vertex (2 in),
     // jumping to the new state-derived endpoint. Quirk preserved by the port.
+    // G20 words are converted to mm (#578): 2 in = 50.8 mm, 1 in = 25.4 mm.
     const last = ir.segments.count - 1;
-    expect(ir.header.originOffset.x + ir.segments.x0[last]).toBeCloseTo(2);
-    expect(ir.header.originOffset.x + ir.segments.x1[last]).toBeCloseTo(1);
+    expect(ir.header.originOffset.x + ir.segments.x0[last]).toBeCloseTo(50.8, 4);
+    expect(ir.header.originOffset.x + ir.segments.x1[last]).toBeCloseTo(25.4, 4);
   });
 
   it('flattens G2 arcs into ARC_SEGMENT-flagged segments distributing e', () => {

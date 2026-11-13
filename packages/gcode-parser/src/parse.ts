@@ -256,6 +256,14 @@ interface Cmd {
 
 const SPLIT_LETTERS = /([a-zA-Z])/g;
 
+/** Millimetres per inch: G20 words are multiplied by this so the IR is always mm (#578). */
+const MM_PER_INCH = 25.4;
+/** Info code, once per file: the file declared G20 and its inch words were converted to mm (#578). */
+const UNITS_CONVERTED_WARN = 'units-converted';
+/** Words that carry a length and are scaled under G20: axes, arc centre offsets, arc / canned-retract R,
+ *  G83 peck Q, feedrate (in/min → mm/min) and E (Marlin scales E under G20 too). P, L, S, T are not lengths. */
+const INCH_LENGTH_WORDS = ['x', 'y', 'z', 'i', 'j', 'k', 'r', 'q', 'f', 'e'] as const;
+
 /** Warning code: a `(` comment that is never closed or is nested (LinuxCNC errors on both). */
 const UNBALANCED_PAREN_WARN = 'unbalanced-paren-comment';
 /** A line whose parentheses are DATA, not a comment: it starts with a multi-letter word (a dialect/macro
@@ -390,13 +398,13 @@ export function createEngine(input: string | Uint8Array, opts: ParseOptions): En
     extrusionDistance: 0,
     warningsByCode: {}
   };
-  const warn = (code: string, message: string, srcByte?: number): void => {
+  const warn = (code: string, message: string, srcByte?: number, severity: 'info' | 'warn' = 'warn'): void => {
     stats.warningsByCode[code] = (stats.warningsByCode[code] ?? 0) + 1;
     const existing = warnings.get(code);
     if (existing) {
       existing.count = (existing.count ?? 1) + 1;
     } else if (warnings.size < limits.maxWarnings) {
-      warnings.set(code, { code, message, severity: 'warn', srcByte, count: 1 });
+      warnings.set(code, { code, message, severity, srcByte, count: 1 });
     }
   };
 
@@ -472,8 +480,12 @@ export function createEngine(input: string | Uint8Array, opts: ParseOptions): En
   let cannedCyclesSeen = false; // any G81/G82/G83 expanded → cannedCycles capability 'known'
   // RS274NGC parametric programs (DD-017 Phase 1, #189 phase 7). The store + expression evaluator resolve
   // `#params`/`[expr]` on any line that uses them; non-parametric lines never touch it (byte-identical).
-  // The system-parameter allow-list (#5420–#5422 = current position) reads live engine position.
-  const rs274 = new Rs274Context(warn, () => ({ x: sx, y: sy, z: sz }));
+  // The system-parameter allow-list (#5420–#5422 = current position) reads live engine position. The engine
+  // tracks millimetres, but LinuxCNC returns these in the program's units, so under G20 they read inches
+  // (and the inch word they feed is scaled back to mm once, at the point of use: no double scaling, #578).
+  const rs274 = new Rs274Context(warn, () =>
+    units === 'in' ? { x: sx / MM_PER_INCH, y: sy / MM_PER_INCH, z: sz / MM_PER_INCH } : { x: sx, y: sy, z: sz }
+  );
 
   // Per-axis position certainty (DD-010 D4 amendment, #158). A G31 probe endpoint is reached at
   // RUNTIME (workpiece contact), not the commanded value, so it marks the probed axes uncertain. A
@@ -799,8 +811,9 @@ export function createEngine(input: string | Uint8Array, opts: ParseOptions): En
     let ia = oa ?? 0;
     let ib = ob ?? 0;
     // Disclosure tolerance for "this arc does not close": LinuxCNC rejects such arcs, Marlin draws them, so the
-    // parser draws them too and says so. 0.005 mm / 0.0002 in plus 0.1% of the radius absorbs slicer rounding.
-    const arcTolerance = (radius: number): number => (units == 'in' ? 0.0002 : 0.005) + 0.001 * radius;
+    // parser draws them too and says so. 0.005 mm plus 0.1% of the radius absorbs slicer rounding. Coordinates are
+    // already millimetres here (G20 words are converted at lexing, #578), so one tolerance serves both units.
+    const arcTolerance = (radius: number): number => 0.005 + 0.001 * radius;
     if (r) {
       const deltaA = ta - sa;
       const deltaB = tb - sb;
@@ -879,8 +892,8 @@ export function createEngine(input: string | Uint8Array, opts: ParseOptions): En
       totalArc = cw ? arcCurrentAngle - finalTheta : finalTheta - arcCurrentAngle;
       if (totalArc < 0.0) totalArc += 2 * Math.PI;
     }
+    // One segment per 0.5 mm of arc. An inch arc is already in mm here, so it needs no ×25 compensation (#578).
     let totalSegments = (arcRadius * totalArc) / 0.5;
-    if (units == 'in') totalSegments *= 25;
     if (totalSegments < 1) totalSegments = 1;
     let arcAngleIncrement = totalArc / totalSegments;
     arcAngleIncrement *= cw ? -1 : 1;
@@ -1009,6 +1022,48 @@ export function createEngine(input: string | Uint8Array, opts: ParseOptions): En
       currentSrcByte
     );
 
+  // Units (#578): IR coordinates are always millimetres; `header.units` records what the file declared.
+  // G20/G21 take effect for the WHOLE line they are on, before its words are read (RS274NGC order of
+  // execution), so `G0 X1 G20` is an inch move. Under G20 every length word is scaled once, here, before
+  // the modal F latch, the observer and every handler; the stored state (position, G92/G10 offsets, canned
+  // planes) is therefore mm and a later G21 needs no rescale. FDM files never declare G20: their lines
+  // take only the `codes` scan and the units test below, so the corpus stays byte-identical.
+  let unitsConvertedWarned = false;
+  const applyUnits = (cmd: Cmd): void => {
+    for (const code of cmd.codes) {
+      if (code === 'g20') {
+        units = 'in';
+        unitsSeen = true;
+        if (!unitsConvertedWarned) {
+          unitsConvertedWarned = true;
+          warn(
+            UNITS_CONVERTED_WARN,
+            'G20 inch units: coordinates, offsets and feedrates under G20 are converted to millimetres (x 25.4).',
+            currentSrcByte,
+            'info'
+          );
+        }
+      } else if (code === 'g21') {
+        units = 'mm';
+        unitsSeen = true;
+      }
+    }
+    if (units !== 'in') return;
+    const params = cmd.params;
+    for (const key of INCH_LENGTH_WORDS) {
+      const v = params[key];
+      if (v === undefined) continue;
+      const mm = v * MM_PER_INCH;
+      // A word that fits float32 in inches can overflow it in mm: drop and disclose it exactly as the lexer
+      // does for an out-of-range mm word, never store ±Infinity.
+      if (Math.abs(mm) <= FLOAT32_MAX) params[key] = mm;
+      else {
+        delete params[key];
+        warnOutOfRange(key);
+      }
+    }
+  };
+
   const processLine = (rawLine: string, offset: number): void => {
     stats.lines++;
     currentSrcByte = offset;
@@ -1039,6 +1094,7 @@ export function createEngine(input: string | Uint8Array, opts: ParseOptions): En
     } else {
       cmd = lexLine(rawLine, warnOutOfRange);
     }
+    applyUnits(cmd);
     // LinuxCNC rejects an unclosed or nested `(` comment; the plain lexer tolerates both (an unclosed `(`
     // swallows the rest of the line). Disclose it, once per file. Dialect extended commands (Klipper
     // `EXCLUDE_OBJECT_START NAME=cube_(1`) legitimately carry bare parentheses and are not checked.
@@ -1153,13 +1209,8 @@ export function createEngine(input: string | Uint8Array, opts: ParseOptions): En
             cannedRetractInitial = false;
             break;
           case 'g20':
-            units = 'in';
-            unitsSeen = true;
-            break;
           case 'g21':
-            units = 'mm';
-            unitsSeen = true;
-            break;
+            break; // applied by applyUnits() before this line's words were read (#578)
           case 'g28':
             sx = 0;
             sy = 0;
