@@ -16,7 +16,8 @@ this order:
   including when the file has trailing bytes.
 
 The "holds" check keeps three's tolerance: a binary STL up to 2 bytes short of its last facet's trailing
-attribute word still loads, as before.
+attribute word passes this check, as before. (A file with a `COLOR=` header still fails at the loader, as it
+always did, because three reads that word as a colour.)
 
 Valid files are unaffected, including binary STLs with trailing bytes and ASCII STLs. Files that failed before
 fail with the same error code; they now fail without the allocation.

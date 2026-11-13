@@ -222,6 +222,14 @@ describe('parseStl: a header that overstates its facet count allocates nothing b
     expect(spy).toHaveBeenCalledTimes(2);
   });
 
+  it('a file at the cap with >= 48 trailing bytes loads: the cap applies to the claim, not to what the file holds', () => {
+    // 4 declared facets + 50 (or 48) trailing bytes: the file "holds" 5 by length, but the loader reads only the 4 claimed.
+    for (const trailing of [50, 48]) {
+      const scene = parseStl(binaryStl(tris(4), { trailing }), { maxTriangles: 4 });
+      expect(scene.objects[0].geometry.positions).toHaveLength(36);
+    }
+  });
+
   it('a claim over both the cap and the capacity is E_MODEL_PARSE, and so is one at the cap; neither reaches the loader', () => {
     const spy = vi.spyOn(STLLoader.prototype, 'parse');
     expect(codeOf(() => parseStl(small(11), { maxTriangles: 10 }))).toBe('E_MODEL_PARSE');
