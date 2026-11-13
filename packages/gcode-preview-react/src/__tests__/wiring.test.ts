@@ -493,6 +493,22 @@ describe('<GcodePreview> (react) lifecycle: rebuilt controller, canvas bind, sub
     await m.unmount();
   });
 
+  it('cancel/clearProgress/observeProgress/tickProgress after dispose() build no controller', async () => {
+    const m = await mount();
+    const h = m.ref.current!;
+    h.dispose();
+    expect(created).toHaveLength(1);
+    log.length = 0;
+    h.cancel();
+    h.clearProgress();
+    const observed = h.observeProgress({ v: 1, timestampMs: 5, position: { byte: 1 } });
+    const ticked = h.tickProgress(12);
+    expect(created).toHaveLength(1);
+    expect(observed).toBeNull();
+    expect(ticked).toBeNull();
+    await m.unmount();
+  });
+
   it('subscribes to controller events once, however often a callback changes', async () => {
     const m = await mount({ onReady: () => undefined });
     expect(listeners).toHaveLength(1);
