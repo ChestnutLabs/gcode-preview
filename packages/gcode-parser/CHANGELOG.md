@@ -1,5 +1,114 @@
 # @chestnutlabs/gcode-parser
 
+## 0.24.0
+
+### Patch Changes
+
+- [#595](https://github.com/ChestnutLabs/gcode-preview/pull/595) [`dc4387f`](https://github.com/ChestnutLabs/gcode-preview/commit/dc4387f5361807fed66d9870294fa7400afd1079) Thanks [@sobechestnut-dev](https://github.com/sobechestnut-dev)! - Canned drilling cycles now honour their `L` repeat count.
+  - **`L` repeats the hole.** `G81`/`G82`/`G83` with `L3` drill three holes instead of one, on a `G81 ... L3` line and on a bare `X`/`Y` repeat line alike. Under `G91` each repeat steps by the `X`/`Y` increment, giving a row of holes; under `G90` the same hole is drilled again in place. A start height below the `R` plane still rises to `R` only once.
+  - **A bad `L` draws the cycle once and says so.** `L0`, a negative `L` or a fraction such as `L1.5` raises the new `canned-cycle-bad-repeat` warning. A fraction used to be cut down silently.
+  - **A huge `L` is bounded.** An `L` above `maxProgramIterations` (default 1,000,000) repeats that many times and raises `canned-cycle-repeat-limit`, so a single cycle line cannot spin the parser. The parser's segment and memory limits still bound the whole file.
+
+- [#596](https://github.com/ChestnutLabs/gcode-preview/pull/596) [`adae623`](https://github.com/ChestnutLabs/gcode-preview/commit/adae6230cda908bc20d95e9b5d3036b5298d871f) Thanks [@sobechestnut-dev](https://github.com/sobechestnut-dev)! - Errors now keep the original error, and `E_RENDERER_LOAD` says whether the 3D renderer failed to load or to start.
+  - **`cause`.** `state.error`, the `error` and `parse-error` events and a failed `parse()` outcome now carry
+    `cause` when there is an underlying error, on every adapter's callback and event too. For example, the browser's
+    `SecurityError` behind `E_WORKER_CREATE_FAILED`, the error the WebGL renderer threw behind `E_RENDERER_LOAD`, or
+    the renderer's `RangeError` behind `E_CONTROL_REJECTED`. Check `error.cause?.name` instead of matching on
+    `message`. `cause` is for reading, not persisting: `structuredClone(state)` throws `DataCloneError` when a cause
+    can't be copied. Errors with no underlying error have no `cause` key.
+  - **`reason` on `E_RENDERER_LOAD`.** `'load'` means the renderer's code could not be downloaded (offline, or a
+    stale deploy): reloading can help. `'start'` means it downloaded but could not start, usually because there is no
+    WebGL: fall back to `renderer: { mode: '2d' }`. The code is still `E_RENDERER_LOAD`, so existing checks keep
+    working.
+  - **`E_POST_FAILED`** from `GcodeParseSession` now carries the browser's error (for example `DataCloneError`) on
+    `error.cause`, as `E_WORKER_CREATE_FAILED` already did.
+  - New exported types: `PreviewError` and `RendererFailureReason`, re-exported by every adapter.
+  - **If your tests compare errors exactly:** an assertion like `expect(state.error).toEqual({ code, message })` now
+    fails whenever a `cause` or `reason` is present. Use `toMatchObject({ code, message })`, or compare `.code` and
+    `.message`.
+
+- [#593](https://github.com/ChestnutLabs/gcode-preview/pull/593) [`7b459c8`](https://github.com/ChestnutLabs/gcode-preview/commit/7b459c8e0ec13fd9bed21c88b9fe2026fbb1cffb) Thanks [@sobechestnut-dev](https://github.com/sobechestnut-dev)! - A parse whose input throws now keeps the parse event contract (every `parse-started` is followed by exactly one
+  terminal event, then `parsing: false`).
+  - **Core:** `controller.parse(null)` (or `undefined`, or a primitive) used to throw before any event and leave
+    `state.parsing` `true` for good. It now emits `parse-started` (0 bytes) and `parse-error` with code `E_UNKNOWN`
+    (`parse input must be a Uint8Array, ArrayBuffer or File (got null)`), resolves `{ ok: false, error }` and resets
+    `parsing`. That includes a string: no adapter's types allow one, but from plain JavaScript a string used to be
+    sent to the parse worker, and it is now refused the same way. An input whose size cannot be read reports `parse-started` with 0 bytes instead of throwing.
+  - **Parser:** an input whose `getReader` getter throws used to leave `GcodeParseSession` busy, so every later
+    `parse()` failed with `E_BUSY` until `dispose()`. It now rejects with `E_POST_FAILED` (as a failed `postMessage`
+    does, [#453](https://github.com/ChestnutLabs/gcode-preview/issues/453)) and the session stays usable.
+
+- [#553](https://github.com/ChestnutLabs/gcode-preview/pull/553) [`c502ad7`](https://github.com/ChestnutLabs/gcode-preview/commit/c502ad7666684f9bb6d77df6ce34f5214ac4bafa) Thanks [@sobechestnut-dev](https://github.com/sobechestnut-dev)! - Arcs and drilling cycles that cannot be drawn exactly as written are now reported in the parse warnings instead of being quietly reshaped. A `G2`/`G3` with an `R` smaller than half the chord (`arc-radius-too-small`; LinuxCNC rejects it, the parser draws a half circle), an `R` arc whose start and target are the same point (`arc-radius-degenerate`; there is no centre), an I/J/K arc whose target is not on the circle through its start (`arc-end-off-circle`; the arc spirals), and a `P` turn count other than 1 (`arc-turns-ignored`) each raise a warning. `G81`/`G82`/`G83` raise `canned-cycle-missing-word` when Z or R was never given (0 is used) and `canned-cycle-plane` in `G18`/`G19`, where the cycle still drills along Z.
+
+  One geometry fix: under `G91` a canned-cycle `Z` is now measured from the `R` plane, as in LinuxCNC, rather than from the current Z. `G90` cycles are unchanged. The bundled `mach3` demo gains the `arc-radius-too-small` warning (its `G02 … R0.255` arcs are shorter than half their chord); its geometry is unchanged.
+
+- [#569](https://github.com/ChestnutLabs/gcode-preview/pull/569) [`4713f01`](https://github.com/ChestnutLabs/gcode-preview/commit/4713f01671cf2487d2d85e4046c22fc3c9d2fcd1) Thanks [@sobechestnut-dev](https://github.com/sobechestnut-dev)! - A canned cycle (`G81`/`G82`/`G83`) now starts with LinuxCNC's preliminary Z move: when the current Z is below the R plane, the tool first rapids straight up to R at the old XY, and only then rapids to the hole. Before, the parser rapided across at the low Z and climbed afterwards, so the drawn travel crossed the part below the clear plane. The extra segment is a travel move and appears only when the start Z is below R; a cycle that starts at or above R is drawn exactly as before, and later holes of a cycle never get it. A line-number prefix no longer hides a text-argument line: `N10 M117 Printing (50%` does not raise `unbalanced-paren-comment`, like the same line without `N10`. Nothing in the bundled test corpus changes (it contains no canned cycles).
+
+- [#585](https://github.com/ChestnutLabs/gcode-preview/pull/585) [`eb6b74c`](https://github.com/ChestnutLabs/gcode-preview/commit/eb6b74c0f9a8a7b0e28060d672d1021dab2a63d5) Thanks [@sobechestnut-dev](https://github.com/sobechestnut-dev)! - Inch files (`G20`) now draw at their real size. **IR coordinates are always mm; `header.units` is the file's
+  declaration.**
+  - **Before:** after a `G20` the header said `units: 'in'`, but the coordinates stayed in inches and nothing scaled
+    them, so an inch file drew 25.4× too small on a millimetre bed.
+  - **Now:** the parser multiplies every length word read under `G20` by 25.4: `X`/`Y`/`Z`, arc `I`/`J`/`K` and `R`,
+    canned-cycle `R`/`Z`/`Q`, `G92` and `G10` offsets, the feedrate (in/min becomes mm/min) and `E`, as Marlin does.
+    `P`, `L`, `S` and `T` are not lengths and are unchanged.
+  - `G20`/`G21` apply to the whole line they are on (`G0 X1 G20` is an inch move) and can switch mid-file; only the
+    words read under `G20` are converted.
+  - RS274NGC `#` parameters are converted where they are used. `[#5420](https://github.com/ChestnutLabs/gcode-preview/issues/5420)`–`[#5422](https://github.com/ChestnutLabs/gcode-preview/issues/5422)` return the position in the program's
+    units, as LinuxCNC does.
+  - A `G20` file carries one `units-converted` warning with severity `info`. A word that fits in inches but is too
+    big for the IR once converted is dropped with the usual `number-out-of-range` warning.
+  - Inch arcs are flattened into ~0.5 mm segments, like mm arcs. The old inch-only ×25 segment factor is gone.
+  - If you labelled sizes or coordinates with `header.units`, label them mm: the numbers are millimetres for every file.
+  - A `G20` or `G21` inside message text (`M117 Printing G20 part`, `M118`, `M486`, Klipper `RESPOND`) is text: it
+    does not switch units.
+
+  Millimetre files are unchanged: every file in the test corpus except the two inch files parses to the same IR.
+
+- [#562](https://github.com/ChestnutLabs/gcode-preview/pull/562) [`118f0b3`](https://github.com/ChestnutLabs/gcode-preview/commit/118f0b398ee7bd1afa2160ffbb3081fe4ff194a9) Thanks [@sobechestnut-dev](https://github.com/sobechestnut-dev)! - Three parser corrections. A `;` inside a `( … )` comment no longer starts the `;` comment that `onComment` reports: `G1 X1 (a;b) ; real` now reports ` real`, the same split the lexer makes. An unclosed or nested `(` comment now raises one `unbalanced-paren-comment` warning per file (LinuxCNC rejects both; the parse carries on as before, and lines that start with a multi-letter command word such as Klipper `EXCLUDE_OBJECT_START NAME=cube_(1` are not checked). Under `G91`, a canned cycle's `R` and `Z` are now sticky numbers: a later `G81`/`G82`/`G83` block, or a bare `X`/`Y` repeat, that leaves one out applies it again from its own current Z instead of reusing the first block's absolute plane. This differs with `G99` (retract to the R plane), and with `G98` only when the R plane is above the start Z; `G90` cycles are unchanged except for the G98 retract below. A `G98` cycle now retracts to the higher of the start Z and the R plane, as LinuxCNC does (it used to drop back to the start Z even when R was above it). A G91 cycle whose R (or Z) was never given reads it as 0 in the active distance mode, so the R plane is the current Z (the missing-word warning still fires). Lines starting with `M117`, `M118` or `M486` (any case) and with a multi-letter command word keep their parentheses as text: no warning, and `onComment` splits at the first `;` as before. Nothing in the bundled test corpus changes geometry.
+
+- [#544](https://github.com/ChestnutLabs/gcode-preview/pull/544) [`deed06d`](https://github.com/ChestnutLabs/gcode-preview/commit/deed06daa26391b8f01e4671bf660deca1dac4a5) Thanks [@sobechestnut-dev](https://github.com/sobechestnut-dev)! - A `( … )` comment on an ordinary G-code line is now ignored, as it already was on lines that use `#` parameters or `[ ]` expressions. Before, `G1 X1 Y1 (then G1 X99)` also moved to X99 and read any letter inside the parentheses as a command or axis word, which affected Fanuc, Mach and LinuxCNC files that annotate moves. An unclosed `(` comments out the rest of the line, and a `;` inside the parentheses no longer cuts the line short. This also fixes two related cases: a comment placed straight after the command word (`G1 (fast) X1`, `M486 (label) S1`) used to drop the whole command, and a comment-only line such as `(T2 D=6)` used to run a tool change. Files without parentheses parse exactly as before.
+
+  Also: `limits.maxInputBytes` above 4 294 967 295 (2^32 - 1) now throws `E_PARSE_OPTION`, because source byte offsets are stored in 32 bits and a larger input would wrap them.
+
+- [#585](https://github.com/ChestnutLabs/gcode-preview/pull/585) [`eb6b74c`](https://github.com/ChestnutLabs/gcode-preview/commit/eb6b74c0f9a8a7b0e28060d672d1021dab2a63d5) Thanks [@sobechestnut-dev](https://github.com/sobechestnut-dev)! - Fixed: an R-format arc whose radius is below half the chord now draws the forced half circle instead of one
+  straight chord. The parser raises such a radius to half the chord (`arc-radius-too-small`), but rounding could make
+  the arc's geometry slightly negative, and the arc was then drawn as a single straight line, for example
+  `G0 X0 Y0` / `G3 X-16.51 Y3.81 R-1`. Every file in the test corpus parses to the same IR as before.
+
+- [#560](https://github.com/ChestnutLabs/gcode-preview/pull/560) [`782f058`](https://github.com/ChestnutLabs/gcode-preview/commit/782f0587bd9ffd9eec3911b170bfd825cca8af08) Thanks [@sobechestnut-dev](https://github.com/sobechestnut-dev)! - Three fixes to how the parser handles streams, workers and containers. When a streamed parse ends early (a limit is hit, it is cancelled, or the source fails), the parser now cancels the source stream instead of leaving it producing data nobody reads. A `GcodeParseSession` built around a single `Worker` instance (not a factory) used to hang forever on the next `parse()` after that worker was terminated by the cancel backstop, a crash or `dispose()`; it now rejects with `E_WORKER_TERMINATED`, and sessions built with a worker factory still start a fresh worker as before. A container `plate` that is not a whole number (`NaN`, `1.5`) is now refused with `E_CONTAINER_NO_PAYLOAD` instead of reaching the container. Parsed output of the bundled test corpus is unchanged.
+
+- [#602](https://github.com/ChestnutLabs/gcode-preview/pull/602) [`e5c9013`](https://github.com/ChestnutLabs/gcode-preview/commit/e5c9013b62087cef3a71cb54d3f9671c44f565f1) Thanks [@sobechestnut-dev](https://github.com/sobechestnut-dev)! - Message text and Klipper commands no longer move the preview or change its colours.
+  - **Words inside message text are text.** A line such as `M117 Homing G28`, `M118 … G91`, `M117 F9000 fast` or
+    Klipper's `RESPOND MSG="G28 done"` used to home the head, switch to relative moves or change the feedrate in the
+    preview. These lines are now messages only. This also covers the SD-card file-name codes `M23`, `M28`, `M32`, `M33`
+    and `M928`.
+  - **Klipper object names no longer change the tool.** `EXCLUDE_OBJECT_START NAME=part2` was read as a tool change to
+    T2, so in tool colour mode the rest of the object took another tool's colour. `RESPOND MSG=at X50` no longer adds a
+    move. Object exclusion still works as before.
+  - **A plain Klipper file is no longer reported as a parametric program.** The `[` in
+    `EXCLUDE_OBJECT_DEFINE … POLYGON=[[…]]` used to set `capabilities.parametricProgram` to `'known'` and add
+    `rs274-bad-expression` warnings. Such a file now reports `'unavailable'` with no such warning, which is what it is.
+  - `M486` keeps its object index and count (`S`, `T`, `P`, `U`, `C`), and the name after `A` is text:
+    `M486 S2 A"part G28"` starts object 2 and does not home.
+
+- [#571](https://github.com/ChestnutLabs/gcode-preview/pull/571) [`5f43b93`](https://github.com/ChestnutLabs/gcode-preview/commit/5f43b93abd7ddc5f167d9a14824d00605aed63b7) Thanks [@sobechestnut-dev](https://github.com/sobechestnut-dev)! - A worker that can't be created no longer leaves the preview stuck on "parsing".
+  - **The preview recovers.** If `createWorker` (or the default worker) throws, for example `SecurityError` under a strict
+    Content Security Policy, the preview used to emit `parse-started`, throw out of `parse()`, and stay at
+    `parsing: true` with no `parse-error`. It now emits `parse-error` with code `E_WORKER_CREATE_FAILED`, sets
+    `state.error`, and returns to `parsing: false`. The next `parse()` tries to create the worker again. All four
+    adapters inherit this.
+  - **Error shape change for `GcodeParseSession` and `renderStill` callers.** `session.parse()` and `renderStill()` now
+    reject with a `ParseSessionError` whose `code` is `E_WORKER_CREATE_FAILED`, instead of the raw error the factory
+    threw. The message keeps the original text (`could not start the parse worker: <original message>`), and the
+    original error is on `error.cause`. **If you match on the original error, for example `err.name === 'SecurityError'`,
+    read `err.cause.name` instead.** `session.parse()` no longer throws synchronously in this case.
+
+- Updated dependencies [[`8f6e5d2`](https://github.com/ChestnutLabs/gcode-preview/commit/8f6e5d2ed32a05d04defcb4586e40970833b6439), [`94d51f3`](https://github.com/ChestnutLabs/gcode-preview/commit/94d51f3b8c19a009ecf41f54180e3e0df8b4d39d), [`eb6b74c`](https://github.com/ChestnutLabs/gcode-preview/commit/eb6b74c0f9a8a7b0e28060d672d1021dab2a63d5), [`6b03f42`](https://github.com/ChestnutLabs/gcode-preview/commit/6b03f4221e5f0a552959fbed7f85124203d42f57)]:
+  - @chestnutlabs/gcode-bgcode@0.24.0
+  - @chestnutlabs/gcode-dialects@0.24.0
+  - @chestnutlabs/toolpath-core@0.24.0
+  - @chestnutlabs/gcode-containers@0.24.0
+
 ## 0.23.0
 
 ### Patch Changes

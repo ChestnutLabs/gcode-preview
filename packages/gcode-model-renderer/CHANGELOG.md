@@ -1,5 +1,114 @@
 # @chestnutlabs/gcode-model-renderer
 
+## 0.24.0
+
+### Minor Changes
+
+- [#593](https://github.com/ChestnutLabs/gcode-preview/pull/593) [`7b459c8`](https://github.com/ChestnutLabs/gcode-preview/commit/7b459c8e0ec13fd9bed21c88b9fe2026fbb1cffb) Thanks [@sobechestnut-dev](https://github.com/sobechestnut-dev)! - Portable behavioural suites: new parity guards every adapter inherits.
+  - **`@chestnutlabs/gcode-preview-core/testing`:** `runBehavioralSuite` now checks the parse event contract on
+    every case (each `parse-started` gets exactly one terminal event, and `state.parsing` is false at dispose),
+    through the newly exported `withParseLifecycleGuard` and `parseLifecycleViolation`. New cases cover a null
+    input, an input whose `getReader` getter throws, a renderer-checked bad control (a `RangeError`, or
+    `E_CONTROL_REJECTED` when it was queued, never both), bad control values after bind, and a 3D renderer that
+    fails to load (`E_RENDERER_LOAD` in state and on the `error` event), through the new
+    `AdapterHarness.create({ createGL })` seam. The component suite adds a re-parse case (the same source again,
+    or a `parseOptions` change alone, does not re-parse), which needs the new `MountedComponent.setParseOptions`
+    seam.
+  - **If you run these suites against your own adapter:** both seams are typed as optional, but the new cases need
+    them. A harness without `setParseOptions` fails the re-parse case ("harness must implement…"). A harness that
+    ignores `createGL` reaches a real WebGL context and fails the renderer-load case. A harness that passed on
+    0.23 can go red on this release until it implements both.
+  - **`@chestnutlabs/gcode-model-renderer/testing`:** `runModelBehavioralSuite` adds render-scope validation,
+    last-wins overlapping `setSource`, and `setSource` after dispose rejecting `E_MODEL_PREVIEW_DISPOSED`. New
+    `MODEL_VIEWER_PROP_KEYS`, `MODEL_VIEWER_EVENT_KEYS` and `modelViewerSurfaceGaps` let each `/model` adapter
+    check that its component surface matches the others.
+
+### Patch Changes
+
+- [#564](https://github.com/ChestnutLabs/gcode-preview/pull/564) [`5a72612`](https://github.com/ChestnutLabs/gcode-preview/commit/5a72612a17dbcfa26c29b25c92fc683b8ab2326b) Thanks [@sobechestnut-dev](https://github.com/sobechestnut-dev)! - Mutation sweep of the React, Vue and Svelte `/model` adapters.
+  - **Svelte:** `<ModelViewer renderScope={null}>` now means "the whole source", as documented and as React and Vue
+    already behave. Before, it threw `RangeError: renderScope must be an object` while the component was created.
+  - **Testing seam:** `@chestnutlabs/gcode-model-renderer/testing` adds `makeModelRecordingGL().drawn()`,
+    `makeTwoObjectModelSource()` and an opt-in guard (`ModelAdapterInstance.rebind` + `drawn`) that a runtime render
+    scope and background survive a canvas rebind. Adapters that do not provide them are unaffected.
+
+- [#574](https://github.com/ChestnutLabs/gcode-preview/pull/574) [`2a8854d`](https://github.com/ChestnutLabs/gcode-preview/commit/2a8854d8ff7fdf9187dfb705d12fd3b5a04ec0d9) Thanks [@sobechestnut-dev](https://github.com/sobechestnut-dev)! - A 3MF that holds an absurd number of vertices or triangles is now rejected before its arrays are allocated, instead of
+  being read up to the container's expanded-size cap. Vertices are bounded at three per allowed triangle (15,000,000 at the
+  default `maxTriangles` of 5,000,000) and fail with the new `E_MODEL_TOO_MANY_VERTICES`; triangles are now bounded at
+  `maxTriangles` across the whole file while it is read (`E_MODEL_TOO_MANY_TRIANGLES`), where before only each object was
+  checked at read time. Both counts cover every object and part in the file, placed or not; a part reached by several
+  build items counts once. Raising `maxTriangles` raises both limits and the error message names the numbers. Meshes that
+  fit the triangle limit are unaffected, including unindexed exports that use exactly three vertices per triangle. A file
+  whose unplaced objects add up to more than `maxTriangles` triangles, or that carries more than three vertices per
+  allowed triangle, will now reject; raise `maxTriangles` to load it.
+
+- [#556](https://github.com/ChestnutLabs/gcode-preview/pull/556) [`25e3de1`](https://github.com/ChestnutLabs/gcode-preview/commit/25e3de1a5881d9e2170fa53c22c386c846131dc8) Thanks [@sobechestnut-dev](https://github.com/sobechestnut-dev)! - A model-viewer capture with `includeBuildVolume: false` no longer hides the plate from live frames while the image
+  encodes. The plate is hidden only for the off-screen render and restored before the encode starts, so a frame drawn
+  during the encode, or a second capture started meanwhile, still shows it. The same holds when the capture fails.
+
+- [#548](https://github.com/ChestnutLabs/gcode-preview/pull/548) [`6fb7153`](https://github.com/ChestnutLabs/gcode-preview/commit/6fb7153c483c44cbf73af636e2d0bef9af455d2c) Thanks [@sobechestnut-dev](https://github.com/sobechestnut-dev)! - Model viewer fixes from a mutation sweep of `createModelPreviewController`, `createModelViewer`, `renderModelStill` and the render scope.
+  - The controller now remembers `setRenderScope`, `setBackground` and `setInteractionQuality`, so a canvas rebind (a StrictMode remount, a replaced canvas) keeps the consumer's latest values instead of the initial options.
+  - `controls.setSource()` after `dispose()` rejects with `E_MODEL_PREVIEW_DISPOSED` instead of never settling. `controls.capture()` before a canvas binds rejects with `CaptureUnsupportedError` (`code: 'E_CAPTURE_UNSUPPORTED'`) instead of a plain `Error`.
+  - A superseded or disposed `setSource` that fails no longer emits an `error` event after the newer load's `ready`; its own promise still rejects.
+  - An invalid render scope (not exactly one of `objectIds` (string array), `plateId` (integer), `instanceFilter` (function)) throws `RangeError` before anything is stored, in `setRenderScope`, the constructor options and `renderModelStill`. Previously `{}` threw a `TypeError` and `{ objectIds: 'a' }` matched by substring.
+  - A render scope whose only kept object has empty geometry now has empty bounds `[0,0,0]`..`[0,0,0]` instead of ±Infinity.
+  - **Cache keys change for pre-built `ModelScene` inputs.** `renderModelStill` used to key them on the object count, bounds and capabilities only, so two scenes with different geometry or colours shared a key (a false thumbnail cache hit). The key now covers the geometry content, transforms, instances, plate membership, materials, plates and the source's plate claim. A stored key for a pre-built scene will not match; regenerate it. Keys for STL and 3MF byte sources are unchanged.
+
+- [#608](https://github.com/ChestnutLabs/gcode-preview/pull/608) [`53d2d47`](https://github.com/ChestnutLabs/gcode-preview/commit/53d2d47f04fe782dbf1dee232d34788f0122cb67) Thanks [@sobechestnut-dev](https://github.com/sobechestnut-dev)! - The `pixelRatio` option no longer stops the 3D view from starting. Since 0.22.0, a `pixelRatio` that changed the
+  ratio at start-up (`2`, or `'device'` on a high-DPI screen) drew a frame before the cameras existed: the preview
+  reported `E_RENDERER_LOAD` and drew nothing, and the model viewer stayed blank. `setPixelRatio()` after start-up was
+  not affected.
+
+  The testing helpers now catch this: the stub GLs in `@chestnutlabs/gcode-preview-core/testing` (`makeSuiteStubGL`)
+  and `@chestnutlabs/gcode-model-renderer/testing` (`MODEL_STUB_GL`, `makeModelRecordingGL`) read the camera the way
+  three does, and `ModelAdapterHarness.create` takes an optional `{ pixelRatio }` that your harness passes to the
+  viewer at mount.
+
+- [#559](https://github.com/ChestnutLabs/gcode-preview/pull/559) [`e7e5bd4`](https://github.com/ChestnutLabs/gcode-preview/commit/e7e5bd432dd601a780f1f3809888e1f5aef5fb21) Thanks [@sobechestnut-dev](https://github.com/sobechestnut-dev)! - A theme value the viewer can't draw now throws a `RangeError` that names the field, instead of quietly
+  drawing something else. This covers the toolpath viewer and the model viewer, whose plate uses the same
+  theme. Valid themes, the defaults and both `studioTheme()` presets look exactly as before.
+  - **Light intensities:** `hemisphereIntensity` and `directionalIntensity` must be finite numbers `>= 0`.
+    Before, `NaN`, `Infinity` or a negative value went straight to the lights.
+  - **Plate:** `bedSurface.opacity` must be in `[0, 1]`. `bedSurface.thickness` must be a finite number
+    `>= 0`: before, a negative or `NaN` thickness silently drew no walls, and `Infinity` produced broken
+    geometry.
+  - **Typos now throw (behaviour change):** a `bedSurface.mode` other than `'none'` or `'solid'` used to
+    draw no plate, and a `materialPreset` other than `'matte'` or `'glossy'` used to fall back to matte.
+    Both now throw and list the accepted values. If you pass an untyped or user-edited theme, check these
+    two fields.
+  - **`createContactShadow(footprint, opacity)`:** throws for an `opacity` outside `[0, 1]`. A footprint
+    with an infinite or `NaN` extent (it comes from file data) now draws no shadow, as an empty one already
+    did.
+  - **`lensScale(from, to)`:** throws for a field of view outside `[10, 120]` degrees, like `cameraFov`.
+  - **Renderer detection:** a GPU string ending in `"AMD "` now classifies as hardware (the trailing space
+    was trimmed away before).
+
+  Colour strings are not checked yet.
+
+- [#572](https://github.com/ChestnutLabs/gcode-preview/pull/572) [`74e217d`](https://github.com/ChestnutLabs/gcode-preview/commit/74e217da4f3c3f6b5dfc8de276e51841929d2e5e) Thanks [@sobechestnut-dev](https://github.com/sobechestnut-dev)! - A tiny STL whose header overstates its triangle count no longer allocates memory in proportion to the claim
+  before failing.
+
+  A binary STL header says how many triangles follow, and the parser sized its buffers from that number before
+  checking it against the file or against `maxTriangles`. A 134-byte file claiming 5,000,000 triangles made the
+  loader allocate about 360 MB before failing; a larger claim cost gigabytes. The claim is now checked first, in
+  this order:
+  - a claim that the file cannot hold fails with `E_MODEL_PARSE` ("declares N triangles but holds M"), whatever
+    the claim is, so a corrupt short file still reads as "could not read", not "too large";
+  - a claim the file does hold, but that is over `maxTriangles`, fails with `E_MODEL_TOO_MANY_TRIANGLES`,
+    including when the file has trailing bytes.
+
+  The "holds" check keeps three's tolerance: a binary STL up to 2 bytes short of its last facet's trailing
+  attribute word passes this check, as before. (A file with a `COLOR=` header still fails at the loader, as it
+  always did, because three reads that word as a colour.)
+
+  Valid files are unaffected, including binary STLs with trailing bytes and ASCII STLs. Files that failed before
+  fail with the same error code; they now fail without the allocation.
+
+- Updated dependencies [[`7a95b00`](https://github.com/ChestnutLabs/gcode-preview/commit/7a95b00ce7ad65ae8f8d4090070d0ea583310446), [`01d9d9f`](https://github.com/ChestnutLabs/gcode-preview/commit/01d9d9f9911eee0042d939d871fd10fc47a2932c), [`51145d8`](https://github.com/ChestnutLabs/gcode-preview/commit/51145d8dce4934c4f048bc33831161de5404210f), [`e6ca4e8`](https://github.com/ChestnutLabs/gcode-preview/commit/e6ca4e857a1ee599ffc516562b022ece6bbebe8b), [`d895700`](https://github.com/ChestnutLabs/gcode-preview/commit/d895700aeb702dbf5a5e1e00479881220ae97856), [`eb6b74c`](https://github.com/ChestnutLabs/gcode-preview/commit/eb6b74c0f9a8a7b0e28060d672d1021dab2a63d5), [`53d2d47`](https://github.com/ChestnutLabs/gcode-preview/commit/53d2d47f04fe782dbf1dee232d34788f0122cb67), [`6ac0492`](https://github.com/ChestnutLabs/gcode-preview/commit/6ac04923113acae681366f5b64b86f1976fc1759), [`e7e5bd4`](https://github.com/ChestnutLabs/gcode-preview/commit/e7e5bd432dd601a780f1f3809888e1f5aef5fb21), [`6b03f42`](https://github.com/ChestnutLabs/gcode-preview/commit/6b03f4221e5f0a552959fbed7f85124203d42f57)]:
+  - @chestnutlabs/gcode-renderer-three@0.24.0
+  - @chestnutlabs/toolpath-core@0.24.0
+  - @chestnutlabs/gcode-containers@0.24.0
+
 ## 0.23.0
 
 ### Patch Changes

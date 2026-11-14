@@ -309,6 +309,9 @@ function Viewer({ file }) {
 StrictMode-safe. Lower level: **`useGcodePreview()`** — `useSyncExternalStore`-backed state with an
 identity-stable handle (`controls`, `capture`).
 
+**Deliberate difference from Vue and Svelte:** React's prop types do not accept `null`. Pass `undefined` to
+clear an optional prop (Vue and Svelte take `null`, because a cleared binding there is `null`).
+
 ## Svelte
 
 ```svelte
@@ -337,6 +340,10 @@ are **attributes**; rich options (`.source`, `.colorMode`, `.theme`, `.tube`, `.
 or `element.controls.*` for the imperative surface. Works in any page or framework. The source-model
 counterpart is `<gcode-model-viewer>` (from `/model/define`) — the tag avoids the reserved
 `<model-viewer>` name.
+
+The `/define` and `/model/define` imports are side-effect imports, and they are kept in production bundles.
+Up to v0.23.0 a bundler that honoured the package's `sideEffects` flag could drop them, leaving the tag
+unregistered and the element blank (this is why the Web Component demo on Pages showed nothing).
 
 On `<gcode-preview renderer="2d">`, a non-numeric `adjacent-layers` attribute is ignored and the default of one
 ghost layer applies.

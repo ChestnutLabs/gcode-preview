@@ -1,5 +1,27 @@
 # @chestnutlabs/gcode-bgcode
 
+## 0.24.0
+
+### Patch Changes
+
+- [#594](https://github.com/ChestnutLabs/gcode-preview/pull/594) [`8f6e5d2`](https://github.com/ChestnutLabs/gcode-preview/commit/8f6e5d2ed32a05d04defcb4586e40970833b6439) Thanks [@sobechestnut-dev](https://github.com/sobechestnut-dev)! - `heatshrinkDecode` and `meatpackDecode` now reject out-of-range parameters instead of misbehaving silently.
+
+  Only code that calls these two exports directly is affected; opening a `.bgcode` file goes through the same
+  decoders with fixed, valid values and decodes exactly as before (checked byte-for-byte against a real PrusaSlicer
+  file).
+  - `limit` must be a non-negative integer. `NaN` used to return empty output and `Infinity` switched the output cap
+    off; both, and any negative, fractional or non-number value, now throw `ContainerError` with code
+    `E_BGCODE_OPTION` (the same code `openBgcode` uses for a bad `maxOutputBytes`).
+  - `heatshrinkDecode`: `windowBits` must be an integer from 4 to 15 and `lookaheadBits` an integer from 3 to
+    `windowBits − 1`; anything else throws `E_BGCODE_OPTION`. Before, `windowBits: 30` allocated 1 GiB before any
+    limit applied, 31 threw a bare `RangeError`, and 32 or `NaN` silently decoded wrong data.
+
+  All checks run before anything is allocated.
+
+- Updated dependencies [[`eb6b74c`](https://github.com/ChestnutLabs/gcode-preview/commit/eb6b74c0f9a8a7b0e28060d672d1021dab2a63d5), [`6b03f42`](https://github.com/ChestnutLabs/gcode-preview/commit/6b03f4221e5f0a552959fbed7f85124203d42f57)]:
+  - @chestnutlabs/toolpath-core@0.24.0
+  - @chestnutlabs/gcode-containers@0.24.0
+
 ## 0.23.0
 
 ### Patch Changes

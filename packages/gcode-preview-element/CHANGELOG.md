@@ -1,5 +1,199 @@
 # @chestnutlabs/gcode-preview-element
 
+## 0.24.0
+
+### Minor Changes
+
+- [#534](https://github.com/ChestnutLabs/gcode-preview/pull/534) [`eae5fda`](https://github.com/ChestnutLabs/gcode-preview/commit/eae5fdaa4ff69db94e6a30607bdeddb767863fe8) Thanks [@sobechestnut-dev](https://github.com/sobechestnut-dev)! - The toolpath components now tell you when the renderer can't honour a setting ([#520](https://github.com/ChestnutLabs/gcode-preview/issues/520)). Before, only the
+  lower-level `onEvent` received it.
+  - **New event:** React `onRendererUnsupported`, Vue `@renderer-unsupported`, Svelte `on:rendererunsupported`, and
+    `renderer-unsupported` on `<gcode-preview>`. The payload is `{ feature, message }`; the names match the `/model`
+    viewers.
+  - **When it fires:** on the 2D renderer (`renderer="2d"`), for a lens, pixel ratio, quality, camera mode, preset view,
+    camera state, retraction markers, or a non-planar toolpath. It fires once per request, with no dedupe.
+  - **At mount:** on every adapter, `quality`, `cameraMode`, `cameraFov` or `pixelRatio` set to a non-default value
+    fires it once. A default (`'auto'`, `'perspective'`, a 50-degree lens, no ratio) fires nothing, written out or not.
+  - **No extra 3D work at mount:** a 3D view no longer re-applies these props at mount, since it was built with them.
+    Before, React and Svelte re-applied `quality`, which rebuilt the view when the parse finished before three.js
+    loaded. React now builds the 3D view with `pixelRatio` too, like the other adapters, so under StrictMode the
+    ratio set at mount reaches the live view.
+  - **Svelte:** `quality`, `cameraMode`, `cameraFov` and `pixelRatio` now apply only when their value changes.
+  - **Core `testing.ts`:** `ComponentHarness` callbacks gain an optional `onRendererUnsupported`, `MountedComponent`
+    an optional `setCameraMode`, and `ComponentMountOptions` gains `cameraFov` and `pixelRatio`. Two conformance cases
+    are new. A harness that doesn't wire the callback fails them with an explicit message.
+
+- [#597](https://github.com/ChestnutLabs/gcode-preview/pull/597) [`d895700`](https://github.com/ChestnutLabs/gcode-preview/commit/d895700aeb702dbf5a5e1e00479881220ae97856) Thanks [@sobechestnut-dev](https://github.com/sobechestnut-dev)! - CNC and laser Cut moves are now their own toggleable move kind (`'cut'`), no longer hidden or dropped with travel.
+  - **Fixes:** a Cut segment used to land in the travel chunk. Hiding travel hid the cuts (so a CNC file looked empty),
+    and under decimation the cuts were dropped along with travel.
+  - **Decimation:** cuts now follow the same rule as extrusion (kept if first/last of a layer or every Nth), so a large
+    CNC file thins out instead of disappearing.
+  - **New toggle:** `setKindVisible('cut', visible)`, `showCut` on Vue, React, Svelte and `renderStill` (default `true`),
+    and `show-cut` / `showCut` on `<gcode-preview>`.
+  - **2D view:** draws Cut moves too, and honours the same toggle (see the `gcode-renderer-2d` entry).
+  - FDM files have no Cut moves and render exactly as before.
+
+### Patch Changes
+
+- [#565](https://github.com/ChestnutLabs/gcode-preview/pull/565) [`b792e0c`](https://github.com/ChestnutLabs/gcode-preview/commit/b792e0cb1b1d0680f125281b88eb03fc406390a0) Thanks [@sobechestnut-dev](https://github.com/sobechestnut-dev)! - The `scrub`, `scrubTime` and `layerRange` props now keep applying across mount and source changes.
+  - **A `scrub` prop set at mount now cuts the view.** In Vue, React and Svelte, `<GcodePreview scrub={1}>` with no
+    `scrubTime` showed the whole toolpath: the unset `scrubTime` was sent as a clear at mount and replaced the cut.
+    An unset prop now sends nothing. Changing a prop from a number to `null` still clears the cut.
+  - **A `scrub`, `scrubTime` or `layerRange` prop now also applies to the next file when `source` changes.** It used
+    to show the new file uncut while the prop still held its value. This holds on all four adapters (the
+    `<gcode-preview>` `source` property included). A range or cut you set from a `ready` handler for the new file
+    still wins, so a consumer that resets its range to the new file's layer count on `ready` ends on that range.
+  - **When both `scrub` and `scrubTime` hold a value, `scrubTime` wins** at mount, and on a source change that leaves
+    both props as they were, as it already did on `<gcode-preview>`. A prop that changes in the same update as `source`
+    is applied last, so it wins: changing `scrub` together with `source` cuts the new file at the new `scrub`, even
+    while `scrubTime` still holds its value.
+  - **A `parse()` started from a `parse-complete` (`ready`) handler now owns a cut made right after it in the
+    same handler.** The cut used to reach the file that was finishing and was lost when the new one loaded.
+
+- [#542](https://github.com/ChestnutLabs/gcode-preview/pull/542) [`1c07e9d`](https://github.com/ChestnutLabs/gcode-preview/commit/1c07e9d05e5439319ca3095da50dd9aabb2ca6a2) Thanks [@sobechestnut-dev](https://github.com/sobechestnut-dev)! - The preview controller no longer misreports a rejected control or a throwing subscriber, and it rejects
+  `NaN` layer and scrub positions. Vue, React, Svelte and the Web Component inherit every change.
+  - **A rejected queued control is reported as `E_CONTROL_REJECTED`.** A control you call before the 3D
+    renderer has loaded is queued and replayed once it binds. If the renderer rejected one of those calls,
+    for example `setTheme({ gridOpacity: 2 })` or a `setBuildVolume` it cannot draw, the bind used to
+    report `E_RENDERER_LOAD`, although the renderer was bound. Every call queued after the bad one was lost.
+    Now each rejected call sets `state.error` and fires an `error` event with code `E_CONTROL_REJECTED`.
+    The message names the control and quotes the renderer's error, for example
+    `setTheme rejected: theme gridOpacity must be a number in [0,1] (got 2)`. The calls queued after it
+    still apply, and a rebind replays nothing twice. `bindCanvas` never throws because of a queued call,
+    in 2D or 3D. A call made after the renderer is bound still throws its `RangeError` to you, as before.
+  - **A throwing subscriber no longer changes a parse's outcome.** If an `onStateChange` or `onEvent`
+    callback threw during a parse, `parse()` resolved `{ ok: false, error: { code: 'E_UNKNOWN' } }` for a
+    file that had loaded. `parse-complete` and the capability state (`availableColorModes`,
+    `hasRetractions`, `hasColorChanges`) were also skipped, and a throw at the very end could reject
+    `parse()`. Now each subscriber runs on its own: the others still run, and the parse outcome reflects
+    only the parse. A throwing listener no longer makes `parse()` reject or report `parse-error`. The
+    subscriber's error is re-thrown from a microtask, so it still shows up as an uncaught error.
+    If a subscriber disposes the preview or rebinds its canvas while the renderer binds (loading the file
+    or replaying queued calls), the old renderer gets no further calls, and `state.layerCount` and
+    `state.segmentCount` no longer drop to 0. A rebind during replay drops the queued calls that had not run
+    yet: the new view starts from the construction options, as on any rebind.
+  - **These calls now throw `RangeError` for a value that is not a number, or is `NaN`:**
+    `setLayerRange(startLayer, endLayer)` (either end), `setScrubPosition(segIndex)` and
+    `setScrubTime(ms)`. They throw at once, before anything is queued, even before the renderer has loaded.
+    `null` (clear) and `±Infinity` (an open end) are still accepted. Before, a `NaN` reached the 3D
+    renderer's draw state, and `setScrubTime(NaN)` silently drew nothing.
+  - **The Web Component ignores a non-numeric `scrub` or `scrub-time` attribute.** `scrub="abc"` (or
+    setting the `scrub` / `scrubTime` property to `NaN`) keeps the previous cut instead of throwing, so the
+    source still parses. A number, including `Infinity`, still applies, and removing the attribute clears.
+  - **`<gcode-preview scrub="5">` keeps its initial cut.** Without a `scrub-time` attribute, connecting the
+    element used to clear the cut that `scrub` had just set. When both are set, `scrub-time` is applied last.
+  - **`setScrubTime(ms)` before a successful parse does nothing, as documented.** It used to clear an
+    existing scrub cut. `setScrubTime(null)` still clears.
+
+- [#596](https://github.com/ChestnutLabs/gcode-preview/pull/596) [`adae623`](https://github.com/ChestnutLabs/gcode-preview/commit/adae6230cda908bc20d95e9b5d3036b5298d871f) Thanks [@sobechestnut-dev](https://github.com/sobechestnut-dev)! - Errors now keep the original error, and `E_RENDERER_LOAD` says whether the 3D renderer failed to load or to start.
+  - **`cause`.** `state.error`, the `error` and `parse-error` events and a failed `parse()` outcome now carry
+    `cause` when there is an underlying error, on every adapter's callback and event too. For example, the browser's
+    `SecurityError` behind `E_WORKER_CREATE_FAILED`, the error the WebGL renderer threw behind `E_RENDERER_LOAD`, or
+    the renderer's `RangeError` behind `E_CONTROL_REJECTED`. Check `error.cause?.name` instead of matching on
+    `message`. `cause` is for reading, not persisting: `structuredClone(state)` throws `DataCloneError` when a cause
+    can't be copied. Errors with no underlying error have no `cause` key.
+  - **`reason` on `E_RENDERER_LOAD`.** `'load'` means the renderer's code could not be downloaded (offline, or a
+    stale deploy): reloading can help. `'start'` means it downloaded but could not start, usually because there is no
+    WebGL: fall back to `renderer: { mode: '2d' }`. The code is still `E_RENDERER_LOAD`, so existing checks keep
+    working.
+  - **`E_POST_FAILED`** from `GcodeParseSession` now carries the browser's error (for example `DataCloneError`) on
+    `error.cause`, as `E_WORKER_CREATE_FAILED` already did.
+  - New exported types: `PreviewError` and `RendererFailureReason`, re-exported by every adapter.
+  - **If your tests compare errors exactly:** an assertion like `expect(state.error).toEqual({ code, message })` now
+    fails whenever a `cause` or `reason` is present. Use `toMatchObject({ code, message })`, or compare `.code` and
+    `.message`.
+
+- [`51145d8`](https://github.com/ChestnutLabs/gcode-preview/commit/51145d8dce4934c4f048bc33831161de5404210f) Thanks [@sobechestnut-dev](https://github.com/sobechestnut-dev)! - A bad viewer option now throws at once, not after the 3D renderer loads. Until now, a typo such as
+  `cameraMode: 'ortho'` or a theme opacity of `2` passed to `createPreviewController` (or as an adapter prop) only
+  failed inside the on-demand 3D load. The viewer then reported `E_RENDERER_LOAD` and showed no 3D view. The same value
+  passed to a setter before the load came back later as `E_CONTROL_REJECTED`.
+  - **Same rule, same message, earlier.** The constructor and the setters throw `RangeError` synchronously for
+    `theme`, `buildVolume`, `cameraMode`, `qualityMode`, `progressivePreview`, `frameContent`,
+    `interactionQuality` and `renderer.mode`, and for `setView` and `setCameraState`. Nothing is queued. Every value
+    that works today still works.
+  - **`null` and `undefined` are not an error.** An option left `null` (a cleared Vue prop or Svelte binding, say) gets
+    the default; before, some of them (`buildVolume`, `qualityMode`, `progressivePreview`, `cameraMode`) threw or failed
+    the 3D load. A prop cleared to `null` after mount leaves the current value. `setFrameContent` and `setInteractionQuality` with `null` or `undefined` apply `'all'` and
+    `'off'`. `setBuildVolume(null)` does nothing (the current plate stays; on the model viewer it still removes the
+    plate), and a `buildVolume: null` option lets a bed found in the file apply. `colorMode: null` still throws.
+    Before, `setBuildVolume(null)` threw a `TypeError` from inside the renderer.
+  - **Vue and Svelte:** `:build-volume="null"` (Vue) and `buildVolume={null}` (Svelte) no longer throw a `TypeError` at
+    mount. On Svelte, an empty `qualityMode` or `progressivePreview` means the default, at mount as after it. Clearing
+    `cameraMode`, `view`, `cameraFov` or `pixelRatio` to `null` after mount (plus `qualityMode` and
+    `progressivePreview` on Vue) now keeps the current value. Before, it threw `RangeError` (a 2D viewer ignored some).
+  - **2D viewers check too.** A bad 3D option on a `renderer: { mode: '2d' }` viewer used to be ignored. It now throws,
+    as `cameraFov`, `pixelRatio` and `colorMode` already did. `frameContent`, `interactionQuality`, `setView` and
+    `renderer.mode` had no check at all before, so a typo there now throws in every mode.
+  - **New in `@chestnutlabs/gcode-renderer-three` (and `/lite`):** the checks themselves (`checkTheme`,
+    `checkBuildVolume`, `checkCameraMode`, `checkCameraView`, `checkCameraState`, `checkCameraFov`, `checkPixelRatio`,
+    `checkQualityMode`, `checkProgressivePreview`, `checkFrameContent`, `checkInteractionQuality`,
+    `checkRendererMode`) and the allowed values as `readonly` arrays (`CAMERA_MODES`, `CAMERA_VIEWS`,
+    `QUALITY_POLICIES`, `PROGRESSIVE_PREVIEW_MODES`, `FRAME_CONTENT_MODES`, `INTERACTION_QUALITY_MODES`,
+    `RENDERER_MODES`), plus `MAX_GRID_LINES_PER_AXIS`. The renderer uses the same functions, so each rule exists once.
+  - **Web Component:** `<gcode-preview>`'s `buildVolume = null` is now no volume, before and after connect. It threw a
+    `TypeError` (`'bed' in null`). Otherwise unchanged: a bad property value throws, and a bad attribute value
+    (`camera-mode="ortho"`) is ignored, as before.
+
+- [#609](https://github.com/ChestnutLabs/gcode-preview/pull/609) [`84d0346`](https://github.com/ChestnutLabs/gcode-preview/commit/84d0346b65de68bb1bf908cbb03824a598fda4dc) Thanks [@sobechestnut-dev](https://github.com/sobechestnut-dev)! - `import '@chestnutlabs/gcode-preview-element/define'` (and `/model/define`) now registers `<gcode-preview>` (and
+  `<gcode-model-viewer>`) in production builds too.
+
+  Before, the package told bundlers that none of its files had side effects, so a production build (Vite, Rollup,
+  webpack) dropped the one-line import. The tags stayed plain, unregistered elements and nothing drew. A dev server
+  never shows this, because it doesn't tree-shake. The package now lists the two registration files as side effects,
+  and nothing else changes: the main entry still tree-shakes as before.
+
+  If you worked around this by calling `defineGcodePreview()` / `defineGcodeModelViewer()` yourself, that keeps
+  working; registering twice is a no-op.
+
+- [#582](https://github.com/ChestnutLabs/gcode-preview/pull/582) [`177e20b`](https://github.com/ChestnutLabs/gcode-preview/commit/177e20b59de84b72a3f82ac468e94ab56eb41222) Thanks [@sobechestnut-dev](https://github.com/sobechestnut-dev)! - A mistyped enum attribute no longer breaks `<gcode-preview>` or `<gcode-model-viewer>`.
+  - **Bad enum attributes are now ignored.** `quality`, `quality-mode`, `progressive-preview`, `camera-mode`,
+    `frame-content`, `interaction-quality`, `view` and `renderer` (and `<gcode-model-viewer>`'s `view`, `camera-mode`
+    and `interaction-quality`) keep the default at mount, or the last valid value on a change, when the value is not
+    exactly one of the documented ones. Before, a bad `camera-mode`, `quality-mode` or `progressive-preview` left a dead
+    viewer with an `E_RENDERER_LOAD` error at mount and threw from `setAttribute` afterwards.
+  - **`view="foo"` no longer throws.** It threw a `TypeError` on `<gcode-model-viewer>` out of `connectedCallback` and on
+    every change; on `<gcode-preview>` it emitted `E_CONTROL_REJECTED` at mount and threw on a change. `renderer="foo"`
+    renders the default 3D view.
+  - **Properties still throw.** Setting `quality`, `qualityMode`, `progressivePreview`, `cameraMode`, `frameContent`,
+    `interactionQuality`, `view` or `renderer` to an invalid value now throws `RangeError` before it reflects, and
+    leaves the attribute unchanged. `null` clears.
+  - **`capture()` before the element is connected now rejects** with `CaptureUnsupportedError` on both elements; it used
+    to throw a plain `Error` synchronously.
+  - **`<gcode-model-viewer>`'s `renderScope` setter now validates** a bad scope with `RangeError` before storing it,
+    even before the element is connected (it used to throw later, from `connectedCallback`).
+  - The README attribute table now lists every attribute and states the bad-value rule once.
+
+- [#593](https://github.com/ChestnutLabs/gcode-preview/pull/593) [`7b459c8`](https://github.com/ChestnutLabs/gcode-preview/commit/7b459c8e0ec13fd9bed21c88b9fe2026fbb1cffb) Thanks [@sobechestnut-dev](https://github.com/sobechestnut-dev)! - `<gcode-preview>`: assigning the same `source` value again no longer re-parses, matching the React, Vue and Svelte adapters. To reload the same bytes, assign a new array or call `parse()`.
+
+- [#554](https://github.com/ChestnutLabs/gcode-preview/pull/554) [`c0c799a`](https://github.com/ChestnutLabs/gcode-preview/commit/c0c799a6f5f24fd309cf9ac9a1c59da73c6f679f) Thanks [@sobechestnut-dev](https://github.com/sobechestnut-dev)! - The 2D view no longer goes blank when you clear the layer range. With `renderer: '2d'`, setting
+  `layerRange` back to `null` (React, Vue, Svelte) or removing the `<gcode-preview>` layer-range attribute
+  after a file had loaded left an empty canvas. It now shows the top layer, as the 3D view does.
+  - **Layer requests:** `setLayerRange(start, end)` in 2D shows layer `end`, now floored (a slider value of
+    `2.5` shows layer 2). An `end` past the last layer, `Infinity` included, shows the top layer, and it
+    stays the top layer when you load a file with more layers. A `NaN` end is ignored. `LayerView2D.setLayer`
+    behaves the same way.
+  - **Option checks:** `LayerView2D` and the core `LayerView2DRenderer` now throw a `RangeError` for
+    `adjacentLayers: NaN`, a `ghostOpacity` outside `[0, 1]` or `NaN`, and a `lineWidth` that isn't a finite
+    number above 0. `LayerView2D` also rejects a negative or non-finite `padding`, and `setAdjacentLayers(NaN)`
+    throws with the previous count kept. Before, these drew wrongly with no error (a `NaN` opacity drew the
+    ghost layers at full strength). Through the core controller, a bad `adjacentLayers` or `ghostOpacity`
+    throws from `bindCanvas`. On `<gcode-preview renderer="2d">` a non-numeric `adjacent-layers` attribute is
+    bad markup: it is ignored (one ghost layer, the default) and the element still draws.
+  - **Travel toggle:** turning travel back on in 2D keeps the travel style you gave the renderer, instead of
+    switching to the default grey.
+  - **After `dispose()`:** the 2D renderer no longer draws, matching the 3D renderer. A size that is `NaN`,
+    infinite or below 1 is clamped to 1 pixel instead of emptying the canvas.
+  - **Core `testing.ts`:** `AdapterHarness.create` accepts an optional `renderer: '2d'`. One new behavioral
+    case runs the layer-range clip-and-restore check on 2D, and `installSuite2DProbe()` gives a DOM shim such
+    as happy-dom a recording Canvas 2D context. A harness that ignores `renderer: '2d'` fails the case with an
+    explicit message.
+
+- Updated dependencies [[`5a72612`](https://github.com/ChestnutLabs/gcode-preview/commit/5a72612a17dbcfa26c29b25c92fc683b8ab2326b), [`b792e0c`](https://github.com/ChestnutLabs/gcode-preview/commit/b792e0cb1b1d0680f125281b88eb03fc406390a0), [`dc4387f`](https://github.com/ChestnutLabs/gcode-preview/commit/dc4387f5361807fed66d9870294fa7400afd1079), [`7a95b00`](https://github.com/ChestnutLabs/gcode-preview/commit/7a95b00ce7ad65ae8f8d4090070d0ea583310446), [`eae5fda`](https://github.com/ChestnutLabs/gcode-preview/commit/eae5fdaa4ff69db94e6a30607bdeddb767863fe8), [`01d9d9f`](https://github.com/ChestnutLabs/gcode-preview/commit/01d9d9f9911eee0042d939d871fd10fc47a2932c), [`1c07e9d`](https://github.com/ChestnutLabs/gcode-preview/commit/1c07e9d05e5439319ca3095da50dd9aabb2ca6a2), [`53d2d47`](https://github.com/ChestnutLabs/gcode-preview/commit/53d2d47f04fe782dbf1dee232d34788f0122cb67), [`adae623`](https://github.com/ChestnutLabs/gcode-preview/commit/adae6230cda908bc20d95e9b5d3036b5298d871f), [`51145d8`](https://github.com/ChestnutLabs/gcode-preview/commit/51145d8dce4934c4f048bc33831161de5404210f), [`7b459c8`](https://github.com/ChestnutLabs/gcode-preview/commit/7b459c8e0ec13fd9bed21c88b9fe2026fbb1cffb), [`00120ff`](https://github.com/ChestnutLabs/gcode-preview/commit/00120ff15676daab70bc258741752453ed423a19), [`50ac885`](https://github.com/ChestnutLabs/gcode-preview/commit/50ac8851db4157061f06c93157420236a1349e25), [`e6ca4e8`](https://github.com/ChestnutLabs/gcode-preview/commit/e6ca4e857a1ee599ffc516562b022ece6bbebe8b), [`d895700`](https://github.com/ChestnutLabs/gcode-preview/commit/d895700aeb702dbf5a5e1e00479881220ae97856), [`2a8854d`](https://github.com/ChestnutLabs/gcode-preview/commit/2a8854d8ff7fdf9187dfb705d12fd3b5a04ec0d9), [`25e3de1`](https://github.com/ChestnutLabs/gcode-preview/commit/25e3de1a5881d9e2170fa53c22c386c846131dc8), [`6fb7153`](https://github.com/ChestnutLabs/gcode-preview/commit/6fb7153c483c44cbf73af636e2d0bef9af455d2c), [`c502ad7`](https://github.com/ChestnutLabs/gcode-preview/commit/c502ad7666684f9bb6d77df6ce34f5214ac4bafa), [`4713f01`](https://github.com/ChestnutLabs/gcode-preview/commit/4713f01671cf2487d2d85e4046c22fc3c9d2fcd1), [`eb6b74c`](https://github.com/ChestnutLabs/gcode-preview/commit/eb6b74c0f9a8a7b0e28060d672d1021dab2a63d5), [`118f0b3`](https://github.com/ChestnutLabs/gcode-preview/commit/118f0b398ee7bd1afa2160ffbb3081fe4ff194a9), [`deed06d`](https://github.com/ChestnutLabs/gcode-preview/commit/deed06daa26391b8f01e4671bf660deca1dac4a5), [`eb6b74c`](https://github.com/ChestnutLabs/gcode-preview/commit/eb6b74c0f9a8a7b0e28060d672d1021dab2a63d5), [`782f058`](https://github.com/ChestnutLabs/gcode-preview/commit/782f0587bd9ffd9eec3911b170bfd825cca8af08), [`e5c9013`](https://github.com/ChestnutLabs/gcode-preview/commit/e5c9013b62087cef3a71cb54d3f9671c44f565f1), [`5f43b93`](https://github.com/ChestnutLabs/gcode-preview/commit/5f43b93abd7ddc5f167d9a14824d00605aed63b7), [`53d2d47`](https://github.com/ChestnutLabs/gcode-preview/commit/53d2d47f04fe782dbf1dee232d34788f0122cb67), [`7b459c8`](https://github.com/ChestnutLabs/gcode-preview/commit/7b459c8e0ec13fd9bed21c88b9fe2026fbb1cffb), [`ffd8ce7`](https://github.com/ChestnutLabs/gcode-preview/commit/ffd8ce785489292791ea031b16d8f591e3461e7b), [`c0c799a`](https://github.com/ChestnutLabs/gcode-preview/commit/c0c799a6f5f24fd309cf9ac9a1c59da73c6f679f), [`6ac0492`](https://github.com/ChestnutLabs/gcode-preview/commit/6ac04923113acae681366f5b64b86f1976fc1759), [`e7e5bd4`](https://github.com/ChestnutLabs/gcode-preview/commit/e7e5bd432dd601a780f1f3809888e1f5aef5fb21), [`74e217d`](https://github.com/ChestnutLabs/gcode-preview/commit/74e217da4f3c3f6b5dfc8de276e51841929d2e5e), [`6b03f42`](https://github.com/ChestnutLabs/gcode-preview/commit/6b03f4221e5f0a552959fbed7f85124203d42f57)]:
+  - @chestnutlabs/gcode-model-renderer@0.24.0
+  - @chestnutlabs/gcode-preview-core@0.24.0
+  - @chestnutlabs/gcode-parser@0.24.0
+  - @chestnutlabs/gcode-renderer-three@0.24.0
+  - @chestnutlabs/toolpath-core@0.24.0
+
 ## 0.23.0
 
 ### Patch Changes
