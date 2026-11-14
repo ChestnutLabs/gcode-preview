@@ -19,16 +19,14 @@ import {
   type ModelSourceInput,
   type ModelViewer,
   type ModelViewerEvent,
-  type PresentationView,
   type RenderScope
 } from '@chestnutlabs/gcode-model-renderer';
-import { resolveTheme } from '@chestnutlabs/gcode-renderer-three';
+import { CaptureUnsupportedError, resolveTheme } from '@chestnutlabs/gcode-renderer-three';
+import { CAMERA_MODES, CAMERA_VIEWS, INTERACTION_QUALITIES, assertEnum, pickEnum } from '../enums.js';
 import type {
   BuildVolumeDef,
   Theme,
-  CameraMode,
   CameraState,
-  CameraView,
   CaptureOptions,
   GLRendererLike,
   InteractiveStageOptions,
@@ -49,7 +47,7 @@ const OBSERVED = [
 
 /** A `camera-fov` attribute as a valid lens, or `undefined` (absent, non-numeric or outside [10, 120]). */
 function parseFovAttribute(value: string | null): number | undefined {
-  if (value === null || value.trim() === '') return undefined;
+  // Number(null), Number('') and Number(' ') are all 0, and NaN fails both bounds: the range alone decides.
   const n = Number(value);
   return n >= 10 && n <= 120 ? n : undefined;
 }
@@ -115,6 +113,12 @@ export class GcodeModelViewerElement extends HTMLElement {
     return this._renderScope;
   }
   set renderScope(v: RenderScope | null) {
+    // RangeError now, before anything is stored: the controller's own check, run on an unbound controller
+    // (it validates before it touches any engine), so a disconnected element rejects a bad scope too.
+    // This relies on createModelPreviewController() construction staying side-effect-free (no listeners,
+    // timers, observers or GPU work until bind; measured ~2.6 µs, #582 review). If that changes, export the
+    // check from gcode-model-renderer instead.
+    if (v !== null) createModelPreviewController({}).controls.setRenderScope(v);
     this._renderScope = v;
     this.controller?.controls.setRenderScope(v);
   }
@@ -206,6 +210,7 @@ export class GcodeModelViewerElement extends HTMLElement {
     return this.getAttribute('view');
   }
   set view(v: string | null) {
+    assertEnum('view', CAMERA_VIEWS, v);
     if (v === null) this.removeAttribute('view');
     else this.setAttribute('view', v);
   }
@@ -213,6 +218,7 @@ export class GcodeModelViewerElement extends HTMLElement {
     return this.getAttribute('interaction-quality');
   }
   set interactionQuality(v: string | null) {
+    assertEnum('interactionQuality', INTERACTION_QUALITIES, v);
     if (v === null) this.removeAttribute('interaction-quality');
     else this.setAttribute('interaction-quality', v);
   }
@@ -220,6 +226,7 @@ export class GcodeModelViewerElement extends HTMLElement {
     return this.getAttribute('camera-mode');
   }
   set cameraMode(v: string | null) {
+    assertEnum('cameraMode', CAMERA_MODES, v);
     if (v === null) this.removeAttribute('camera-mode');
     else this.setAttribute('camera-mode', v);
   }
@@ -248,7 +255,9 @@ export class GcodeModelViewerElement extends HTMLElement {
     return this.requireController().controls.setSource(input);
   }
   capture(opts?: CaptureOptions): Promise<Blob> {
-    return this.requireController().controls.capture(opts);
+    // Before connect there is no canvas: reject like the controller does, never a synchronous throw.
+    if (this.controller === null) return Promise.reject(new CaptureUnsupportedError('no canvas bound (not connected)'));
+    return this.controller.controls.capture(opts);
   }
   onEvent(cb: (e: ModelViewerEvent) => void): () => void {
     return this.requireController().onEvent(cb);
@@ -273,6 +282,8 @@ export class GcodeModelViewerElement extends HTMLElement {
     const bg = (this._background ??= this.getAttribute('background') ?? undefined);
     const fov = (this._cameraFov ??= parseFovAttribute(this.getAttribute('camera-fov')));
     const pixelRatio = (this._pixelRatio ??= parsePixelRatioAttribute(this.getAttribute('pixel-ratio')));
+    const interactionQuality = pickEnum(INTERACTION_QUALITIES, this.getAttribute('interaction-quality'));
+    const cameraMode = pickEnum(CAMERA_MODES, this.getAttribute('camera-mode'));
     this.controller = createModelPreviewController({
       ...(this._buildVolume !== null ? { buildVolume: this._buildVolume } : {}),
       ...(this._theme !== undefined ? { theme: this._theme } : {}),
@@ -281,10 +292,9 @@ export class GcodeModelViewerElement extends HTMLElement {
       ...(pixelRatio !== undefined ? { pixelRatio } : {}),
       ...(this._loaders ? { loaders: this._loaders } : {}),
       ...(bg !== undefined ? { background: bg } : {}),
-      ...(this.getAttribute('interaction-quality')
-        ? { interactionQuality: this.getAttribute('interaction-quality') as 'off' | 'auto' }
-        : {}),
-      ...(this.getAttribute('camera-mode') ? { cameraMode: this.getAttribute('camera-mode') as CameraMode } : {}),
+      // An enum attribute that is not exactly one of its values is bad markup: ignored (the default), never a throw.
+      ...(interactionQuality !== undefined ? { interactionQuality } : {}),
+      ...(cameraMode !== undefined ? { cameraMode } : {}),
       ...(this._limits ? { limits: this._limits } : {}),
       ...(this._filamentPalette ? { filamentPalette: this._filamentPalette } : {}),
       ...(this._renderScope ? { renderScope: this._renderScope } : {}),
@@ -295,8 +305,8 @@ export class GcodeModelViewerElement extends HTMLElement {
     this.controller.onEvent((e) => this.reemit(e));
     this.controller.bindCanvas(canvas);
     // Apply runtime-only state that isn't a construction option.
-    const view = this.getAttribute('view');
-    if (view !== null) this.controller.controls.setView(view as PresentationView | CameraView);
+    const view = pickEnum(CAMERA_VIEWS, this.getAttribute('view'));
+    if (view !== undefined) this.controller.controls.setView(view);
     if (this._cameraState !== null) this.controller.controls.setCameraState(this._cameraState);
     if (this._source !== null) void this.controller.controls.setSource(this._source);
   }
@@ -320,15 +330,19 @@ export class GcodeModelViewerElement extends HTMLElement {
     if (this.controller === null) return;
     const c = this.controller.controls;
     switch (name) {
-      case 'view':
-        if (value !== null) c.setView(value as PresentationView | CameraView);
+      case 'view': {
+        const v = pickEnum(CAMERA_VIEWS, value);
+        if (v !== undefined) c.setView(v);
         break;
+      }
       case 'background':
         if (value !== null) c.setBackground(value);
         break;
-      case 'interaction-quality':
-        if (value !== null) c.setInteractionQuality(value as 'off' | 'auto');
+      case 'interaction-quality': {
+        const v = pickEnum(INTERACTION_QUALITIES, value);
+        if (v !== undefined) c.setInteractionQuality(v);
         break;
+      }
       case 'camera-mode':
         // Construction-time only (projection switching post-mount is out of scope); no-op at runtime.
         break;

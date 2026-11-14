@@ -8,7 +8,7 @@ import { describe, expect, it } from 'vitest';
 import { act, createElement } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import {
-  MODEL_STUB_GL,
+  makeModelRecordingGL,
   MODEL_STUB_CONTROLS,
   runModelBehavioralSuite,
   type ModelAdapterInstance
@@ -33,12 +33,14 @@ runModelBehavioralSuite(
   'react useModelViewer',
   { describe, it, expect },
   {
-    async create() {
+    async create(opts) {
       let handle: ModelViewerHandle | null = null;
       const latest = (): ModelViewerHandle => handle as ModelViewerHandle;
+      const gl = makeModelRecordingGL();
       const options: UseModelViewerOptions = {
-        createRenderer: MODEL_STUB_GL,
-        createControls: MODEL_STUB_CONTROLS
+        createRenderer: gl.createRenderer,
+        createControls: MODEL_STUB_CONTROLS,
+        ...(opts?.pixelRatio !== undefined ? { pixelRatio: opts.pixelRatio } : {})
       };
       const host = document.createElement('div');
       document.body.appendChild(host);
@@ -59,7 +61,16 @@ runModelBehavioralSuite(
           });
           host.remove();
         },
-        settle
+        settle,
+        drawn: () => gl.drawn(),
+        rebind: async () => {
+          await act(async () => {
+            latest().canvasRef(null);
+          });
+          await act(async () => {
+            latest().canvasRef(document.createElement('canvas'));
+          });
+        }
       };
       return instance;
     }

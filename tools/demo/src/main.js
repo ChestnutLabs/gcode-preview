@@ -9,7 +9,7 @@ import { createPreviewController, studioTheme, STUDIO_CAMERA_FOV } from '@chestn
 // DD-031: the Prepare-side controller for source-model (STL/3MF) viewing — the counterpart to the
 // toolpath controller above. The flagship demonstrates both halves of the SDK.
 import { createModelPreviewController } from '@chestnutlabs/gcode-model-renderer';
-import { FeatureRole } from '@chestnutlabs/toolpath-core';
+import { FeatureRole, MoveKind } from '@chestnutlabs/toolpath-core';
 import {
   COLOR_MODES,
   COLOR_MODE_BY_ID,
@@ -29,6 +29,9 @@ import {
   placementLine
 } from '../../demo-kit/index.js';
 import { downloadToolpathStl } from './stl-export.js';
+import { createParseNotes, PARSE_NOTES_IDLE } from './parse-notes.js';
+import { createErrorDetail, ERROR_DETAIL_IDLE } from './error-detail.js';
+import { cutRowState } from './cut-row.js';
 
 const els = {};
 for (const el of document.querySelectorAll('[id]')) els[el.id] = el;
@@ -96,6 +99,8 @@ let fileBytes = 0;
 let capabilities = {};
 let savedCamera = null;
 let ready = false;
+// Does the file on screen have Cut moves? null = no file yet (or none that loaded).
+let fileHasCut = null;
 
 // ---- Prepare (source-model) mode: the second half of the SDK, lazily created on first use ----
 let mode = 'preview'; // 'preview' (toolpath) | 'prepare' (source model)
@@ -339,7 +344,20 @@ async function parseInput(input, label) {
     if (!outcome.cancelled) els.status.textContent = `Parse failed: ${outcome.error.message}`;
     return;
   }
+  // "Cut moves" (#584): the row follows the file now on screen (see cutRowState).
+  const kinds = outcome.result.ir.segments.kind;
+  let hasCut = false;
+  for (let i = 0; i < kinds.length && !hasCut; i++) hasCut = (kinds[i] & MoveKind.Cut) !== 0;
+  fileHasCut = hasCut;
+  applyCutRow();
   els.status.textContent = `Loaded ${label ?? 'file'} — ${count(outcome.result.ir.segments.count)} segments.`;
+}
+
+function applyCutRow() {
+  const c = cutRowState(fileHasCut, ready);
+  els.cutRow.classList.toggle('gp-disabled', c.disabled);
+  els.cutRow.querySelector('span').textContent = c.label;
+  els.cut.disabled = c.disabled;
 }
 
 function setParsing(on) {
@@ -350,7 +368,17 @@ function setParsing(on) {
 }
 
 // ============ controller events ============
+// Parse notes (Diagnostics tab): the pure reducer in parse-notes.js owns the markup; this only assigns it.
+const parseNotes = createParseNotes(count);
+els.parseNotes.innerHTML = PARSE_NOTES_IDLE;
+// Last error (Diagnostics tab): code, reason and the original error's message (#589/#596), public fields only.
+const errorDetail = createErrorDetail();
+els.errorDetail.innerHTML = ERROR_DETAIL_IDLE;
 preview.onEvent((e) => {
+  const notesHtml = parseNotes.onEvent(e);
+  if (notesHtml !== undefined) els.parseNotes.innerHTML = notesHtml;
+  const errorHtml = errorDetail.onEvent(e);
+  if (errorHtml !== undefined) els.errorDetail.innerHTML = errorHtml;
   switch (e.type) {
     case 'parse-started':
       fileBytes = e.bytes;
@@ -401,6 +429,7 @@ function onReady() {
   // over the source model.
   els.countPill.hidden = mode !== 'preview';
   enableControls(true);
+  applyCutRow(); // enableControls just re-enabled the Cut checkbox
   // scrub ranges
   const state = preview.getState();
   els.segCount.textContent = count(state.segmentCount);
@@ -476,6 +505,7 @@ const RUNTIME_CONTROLS = [
   'timeScrub',
   'travel',
   'wipe',
+  'cut',
   'retractions',
   'hideAdhesion',
   'colorMode',
@@ -539,12 +569,14 @@ els.railToggle.addEventListener('click', () => els.main.classList.toggle('gp-rai
 // ============ wiring: inspect ============
 els.travel.addEventListener('change', () => preview.controls.setKindVisible('travel', els.travel.checked));
 els.wipe.addEventListener('change', () => preview.controls.setKindVisible('wipe', els.wipe.checked));
+els.cut.addEventListener('change', () => preview.controls.setKindVisible('cut', els.cut.checked));
 els.retractions.addEventListener('change', () => preview.controls.setShowRetractions(els.retractions.checked));
 // Apply the initial move-visibility state — the renderer's defaults otherwise disagree with the
 // unchecked/checked boxes (e.g. travel would render though "Travel moves" is off). Queued until the
 // renderer resolves, then replayed.
 preview.controls.setKindVisible('travel', els.travel.checked);
 preview.controls.setKindVisible('wipe', els.wipe.checked);
+preview.controls.setKindVisible('cut', els.cut.checked);
 preview.controls.setShowRetractions(els.retractions.checked);
 els.hideAdhesion.addEventListener('change', () => {
   const visible = !els.hideAdhesion.checked;

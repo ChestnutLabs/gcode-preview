@@ -37,11 +37,15 @@ import type { WireParseOptions, WorkerLike } from '@chestnutlabs/gcode-parser';
 import {
   useGcodePreview,
   type GcodePreviewHandle,
+  type PreviewError,
   type PreviewEvent,
   type RendererMode,
   type UseGcodePreviewOptions
 } from './use-gcode-preview.js';
 import { readLiveState } from './live-state.js';
+
+/** The perspective lens every renderer starts with, in degrees (#520: a mount value of 50 asks for nothing). */
+const DEFAULT_LENS = 50;
 
 export type GcodePreviewSource = Uint8Array | ArrayBuffer | File | null;
 
@@ -93,6 +97,8 @@ export interface GcodePreviewProps {
   showTravel?: boolean;
   /** DD-016 (#182): show slicer wipe moves. Default true; set false to hide the wipe chunk. */
   showWipe?: boolean;
+  /** #584: show CNC/laser cutting moves. Default true; set false to hide the cut chunk. */
+  showCut?: boolean;
   /** DD-009 D1 (#148): opt-in retraction/deretraction markers. */
   showRetractions?: boolean;
   /** #306/#6: show the build-volume wireframe cage (independent of the bed/plate). Default true. */
@@ -130,7 +136,7 @@ export interface GcodePreviewProps {
   }) => void;
   /** #275/M6: fires after a user camera interaction settles, with the new serializable state. */
   onCameraChange?: (state: CameraState) => void;
-  onParseError?: (e: { code: string; message: string }) => void;
+  onParseError?: (e: PreviewError) => void;
   onParseCancelled?: () => void;
   onParseProgress?: (p: { bytesProcessed: number; totalBytes: number }) => void;
   /** DD-029 staged preparation progress (`building-geometry` carries a real `progress` + counts). */
@@ -141,7 +147,13 @@ export interface GcodePreviewProps {
   onMachineGeometryDiscovered?: (machine: MachineGeometry) => void;
   onProgressPresentationChanged?: (e: { mode: string; reason?: string }) => void;
   onDisclosure?: (text: string) => void;
-  onError?: (e: { code: string; message: string }) => void;
+  /**
+   * #520: the renderer cannot honour a setting you asked for, e.g. a camera lens or pixel ratio on the 2D
+   * renderer. Fires once per request (no dedupe), including for a non-default value set at mount.
+   * `feature` groups it (`camera`, `quality`, `layers`, `retractions`); `message` is user-presentable.
+   */
+  onRendererUnsupported?: (e: { feature: string; message: string }) => void;
+  onError?: (e: PreviewError) => void;
 }
 
 function GcodePreviewImpl(props: GcodePreviewProps, ref: ForwardedRef<GcodePreviewHandle>): ReactElement {
@@ -156,6 +168,7 @@ function GcodePreviewImpl(props: GcodePreviewProps, ref: ForwardedRef<GcodePrevi
       progressivePreview: props.progressivePreview,
       cameraMode: props.cameraMode ?? 'perspective',
       cameraFov: props.cameraFov,
+      pixelRatio: props.pixelRatio,
       frameContent: props.frameContent ?? 'all',
       interactionQuality: props.interactionQuality ?? 'off',
       theme: props.theme,
@@ -171,6 +184,27 @@ function GcodePreviewImpl(props: GcodePreviewProps, ref: ForwardedRef<GcodePrevi
   // Callbacks live in a ref so the event subscription is stable across renders.
   const cbRef = useRef(props);
   cbRef.current = props;
+  // #520: what the controls last received for the four 3D-only construction props. 3D was built with the
+  // construction values, so the mount pass is a no-op there (no extra build). 2D starts from the documented
+  // defaults, so only a non-default mount value is applied, and the 2D renderer reports it once. Later
+  // changes apply in both modes. This ref outlives StrictMode's dispose/recreate of the controller, which
+  // is safe because the recreated 3D controller is built from the same construction values.
+  const is2D = props.renderer === '2d';
+  const appliedRef = useRef<{
+    quality: QualityMode | 'auto';
+    cameraMode: CameraMode;
+    cameraFov: number | undefined;
+    pixelRatio: PixelRatioOption | undefined;
+  }>({
+    quality: is2D ? 'auto' : (props.quality ?? 'auto'),
+    cameraMode: is2D ? 'perspective' : (props.cameraMode ?? 'perspective'),
+    cameraFov: is2D ? DEFAULT_LENS : props.cameraFov,
+    pixelRatio: is2D ? undefined : props.pixelRatio
+  });
+  // The plain BuildVolumeDef the renderer was last given (construction value first); see the buildVolume effect.
+  const appliedVolumeRef = useRef<BuildVolumeDef | MachineGeometry | undefined>(
+    isMachine ? undefined : props.buildVolume
+  );
   // Tracks which roles THIS prop last hid, so we diff prev→next and don't disturb roles hidden elsewhere.
   const prevHiddenRef = useRef<FeatureRoleValue[]>([]);
   useEffect(() => {
@@ -190,9 +224,12 @@ function GcodePreviewImpl(props: GcodePreviewProps, ref: ForwardedRef<GcodePrevi
         case 'camera-changed':
           p.onCameraChange?.(e.state);
           break;
-        case 'parse-error':
-          p.onParseError?.({ code: e.code, message: e.message });
+        case 'parse-error': {
+          // The whole error, `cause` and `reason` included, without the event's `type`.
+          const { type: _type, ...error } = e;
+          p.onParseError?.(error);
           break;
+        }
         case 'parse-cancelled':
           p.onParseCancelled?.();
           break;
@@ -218,9 +255,14 @@ function GcodePreviewImpl(props: GcodePreviewProps, ref: ForwardedRef<GcodePrevi
         case 'machine-geometry-discovered':
           p.onMachineGeometryDiscovered?.(e.machine);
           break;
-        case 'error':
+        case 'error': {
+          const { type: _type, ...error } = e;
           if (e.code === 'machine-geometry-mismatch') p.onMachineGeometryMismatch?.(e.message);
-          else p.onError?.({ code: e.code, message: e.message });
+          else p.onError?.(error);
+          break;
+        }
+        case 'renderer-unsupported':
+          p.onRendererUnsupported?.({ feature: e.feature, message: e.message });
           break;
         default:
           break;
@@ -236,6 +278,7 @@ function GcodePreviewImpl(props: GcodePreviewProps, ref: ForwardedRef<GcodePrevi
     scrubTime,
     showTravel,
     showWipe,
+    showCut,
     showRetractions,
     showVolumeCage,
     colorMode,
@@ -254,18 +297,41 @@ function GcodePreviewImpl(props: GcodePreviewProps, ref: ForwardedRef<GcodePrevi
     hiddenFeatureRoles,
     progress
   } = props;
+  // The scrub values last sent from the props. A nullish prop is sent (as a clear) only when it replaces a sent
+  // number, so an unset `scrubTime` at mount no longer clears the `scrub` cut. StrictMode's second effect run
+  // reads the same record, so it sends nothing extra.
+  const scrubSentRef = useRef<{ scrub: number | null; scrubTime: number | null }>({ scrub: null, scrubTime: null });
+  const sourceParsedRef = useRef(false);
   useEffect(() => {
-    if (source !== null && source !== undefined) void preview.parse(source, cbRef.current.parseOptions);
+    if (source === null || source === undefined) return;
+    void preview.parse(source, cbRef.current.parseOptions);
+    // On a source change a renderer shows the new file uncut, so re-send the view props that still hold a
+    // value: the controller applies them to the file that parse loads. scrubTime goes last, so it wins over
+    // scrub (as at mount). The first parse needs none: the prop effects below send them at mount.
+    const first = !sourceParsedRef.current;
+    sourceParsedRef.current = true;
+    if (first) return;
+    const p = cbRef.current;
+    if (p.layerRange !== null && p.layerRange !== undefined)
+      preview.controls.setLayerRange(p.layerRange[0], p.layerRange[1]);
+    if (p.scrub !== null && p.scrub !== undefined) preview.controls.setScrubPosition(p.scrub);
+    if (p.scrubTime !== null && p.scrubTime !== undefined) preview.controls.setScrubTime(p.scrubTime);
   }, [source]);
   useEffect(() => {
     if (layerRange === null || layerRange === undefined) preview.controls.setLayerRange(0, Number.POSITIVE_INFINITY);
     else preview.controls.setLayerRange(layerRange[0], layerRange[1]);
   }, [layerRange]);
   useEffect(() => {
-    preview.controls.setScrubPosition(scrub ?? null);
+    const v = scrub ?? null;
+    if (v === null && scrubSentRef.current.scrub === null) return;
+    scrubSentRef.current.scrub = v;
+    preview.controls.setScrubPosition(v);
   }, [scrub]);
   useEffect(() => {
-    preview.controls.setScrubTime(scrubTime ?? null);
+    const v = scrubTime ?? null;
+    if (v === null && scrubSentRef.current.scrubTime === null) return;
+    scrubSentRef.current.scrubTime = v;
+    preview.controls.setScrubTime(v);
   }, [scrubTime]);
   useEffect(() => {
     preview.controls.setKindVisible('travel', showTravel ?? true);
@@ -273,6 +339,9 @@ function GcodePreviewImpl(props: GcodePreviewProps, ref: ForwardedRef<GcodePrevi
   useEffect(() => {
     preview.controls.setKindVisible('wipe', showWipe ?? true);
   }, [showWipe]);
+  useEffect(() => {
+    preview.controls.setKindVisible('cut', showCut ?? true);
+  }, [showCut]);
   useEffect(() => {
     preview.controls.setShowRetractions(showRetractions ?? false);
   }, [showRetractions]);
@@ -283,7 +352,9 @@ function GcodePreviewImpl(props: GcodePreviewProps, ref: ForwardedRef<GcodePrevi
     if (colorMode !== undefined) preview.controls.setColorMode(colorMode);
   }, [colorMode]);
   useEffect(() => {
-    if (quality !== undefined) preview.controls.setQuality(quality);
+    if (quality === undefined || quality === appliedRef.current.quality) return;
+    appliedRef.current.quality = quality;
+    preview.controls.setQuality(quality);
   }, [quality]);
   useEffect(() => {
     if (qualityMode !== undefined) preview.controls.setQualityMode(qualityMode);
@@ -292,15 +363,19 @@ function GcodePreviewImpl(props: GcodePreviewProps, ref: ForwardedRef<GcodePrevi
     if (progressivePreview !== undefined) preview.controls.setProgressivePreview(progressivePreview);
   }, [progressivePreview]);
   useEffect(() => {
-    if (cameraMode !== undefined) preview.controls.setCameraMode(cameraMode);
+    if (cameraMode === undefined || cameraMode === appliedRef.current.cameraMode) return;
+    appliedRef.current.cameraMode = cameraMode;
+    preview.controls.setCameraMode(cameraMode);
   }, [cameraMode]);
   useEffect(() => {
-    if (cameraFov !== undefined) preview.controls.setCameraFov(cameraFov);
+    if (cameraFov === undefined || cameraFov === appliedRef.current.cameraFov) return;
+    appliedRef.current.cameraFov = cameraFov;
+    preview.controls.setCameraFov(cameraFov);
   }, [cameraFov]);
-  // Also the mount value: the call queues before the async 3D load and replays before the first frame,
-  // so (unlike the lens) the ratio needs no construction option.
   useEffect(() => {
-    if (pixelRatio !== undefined) preview.controls.setPixelRatio(pixelRatio);
+    if (pixelRatio === undefined || pixelRatio === appliedRef.current.pixelRatio) return;
+    appliedRef.current.pixelRatio = pixelRatio;
+    preview.controls.setPixelRatio(pixelRatio);
   }, [pixelRatio]);
   useEffect(() => {
     if (frameContent !== undefined) preview.controls.setFrameContent(frameContent);
@@ -318,7 +393,17 @@ function GcodePreviewImpl(props: GcodePreviewProps, ref: ForwardedRef<GcodePrevi
     if (theme !== undefined) preview.controls.setTheme(theme);
   }, [theme]);
   useEffect(() => {
-    if (buildVolume !== undefined && 'bed' in buildVolume) preview.controls.setBuildVolume(buildVolume);
+    if (buildVolume === undefined) return;
+    if ('bed' in buildVolume) {
+      // A MachineGeometry is never a construction option, so it applies on every pass (incl. a StrictMode remount).
+      preview.controls.setBuildVolume(buildVolume);
+      return;
+    }
+    // A plain BuildVolumeDef is built into the renderer, so the mount pass is a no-op; a later change re-applies
+    // it, as Vue's watch and Svelte's `$:` do (DD-031 parity, #274).
+    if (buildVolume === appliedVolumeRef.current) return;
+    appliedVolumeRef.current = buildVolume;
+    preview.controls.setBuildVolume(buildVolume);
   }, [buildVolume]);
   useEffect(() => {
     // Feature-role visibility (DD-031 G3): diff prev→next so we only toggle roles this prop owns.

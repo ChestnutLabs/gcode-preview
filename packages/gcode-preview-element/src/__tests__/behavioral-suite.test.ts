@@ -27,14 +27,15 @@ runBehavioralSuite(
       const canvas = document.createElement('canvas');
       const el = document.createElement('gcode-preview') as GcodePreviewElement;
       // Injectables the suite needs are JS properties (they can't be HTML attributes).
-      el.createWorker = () => new SuiteStubWorker(opts.machine);
+      el.createWorker = opts.createWorker ?? (() => new SuiteStubWorker(opts.machine));
       el.quality = 'lines';
       el.rendererOptions = {
-        createRenderer: () => makeSuiteStubGL(canvas),
+        createRenderer: opts.createGL ?? (() => makeSuiteStubGL(canvas)),
         scheduleFrame: (cb) => cb(),
         chunksPerTick: 8
       };
       if (opts.consumerVolume === true) el.buildVolume = { x: 220, y: 220, z: 250 };
+      if (opts.renderer === '2d') el.renderer = '2d'; // read by connectedCallback (construction-time)
       document.body.appendChild(el); // connectedCallback creates the controller + binds synchronously
 
       const instance: AdapterInstance = {

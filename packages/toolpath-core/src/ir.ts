@@ -93,7 +93,13 @@ export interface ToolpathIRHeader {
   irSchemaVersion: number;
   parserVersion: string;
   source: { id?: string; byteLength: number; sha256?: string };
+  /**
+   * The units the source file declared (`'in'` after a `G20`). It is not the unit of the IR: coordinates,
+   * offsets and feedrates are always millimetres (mm/min), because the parser converts inch words (DD-001
+   * §4.1, #578). A `G20` file also carries a `units-converted` info warning.
+   */
   units: Units;
+  /** `'known'` when the file stated `G20`/`G21`, `'inferred'` (millimetres assumed) when it did not. */
   unitsSource: Confidence;
   /** Float64 reference point; segment positions are Float32 deltas from this (DD-001 §4.6). */
   originOffset: Vec3;
@@ -219,12 +225,16 @@ export interface ToolpathIR {
   retractions: RetractionEvent[];
   /** Sparse M600 filament-swap color-change boundaries (DD-009 D2, #147); empty when none seen. */
   colorChanges: ColorChangeEvent[];
-  /** Bounds over extruding moves only. */
+  /**
+   * Bounds over productive moves: `Extrude` or `Cut` (DD-012 D7, #568). For a CNC/laser/plotter file this is
+   * the cut extent; FDM files never set `Cut`, so for them it is the extrusion extent. Travel, retract and
+   * unretract moves are excluded. Empty (Infinity/-Infinity) when there is no productive move.
+   */
   bounds: ToolpathBounds;
   /** Bounds including travel moves. */
   boundsWithTravel: ToolpathBounds;
   /**
-   * Bounds over the extrusion of labeled objects (`segments.object != 0`) — excludes skirt/prime/purge
+   * Bounds over the productive moves (`Extrude` or `Cut`) of labeled objects (`segments.object != 0`) — excludes skirt/prime/purge
    * (which are `object 0`). Empty (Infinity/-Infinity) when the file carries no object labels. Used to
    * "frame the printed object, not the skirt" (#306/#6); a consumer checks it is finite before use.
    */

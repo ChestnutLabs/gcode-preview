@@ -38,12 +38,13 @@ runBehavioralSuite(
       let handle: GcodePreviewHandle | null = null;
       const latest = (): GcodePreviewHandle => handle as GcodePreviewHandle;
       const options: UseGcodePreviewOptions = {
-        createWorker: () => new SuiteStubWorker(opts.machine),
+        createWorker: opts.createWorker ?? (() => new SuiteStubWorker(opts.machine)),
         renderer: {
+          mode: opts.renderer ?? '3d',
           buildVolume: opts.consumerVolume === true ? { x: 220, y: 220, z: 250 } : undefined,
           quality: 'lines',
           chunksPerTick: 8,
-          createRenderer: () => makeSuiteStubGL(canvas),
+          createRenderer: opts.createGL ?? (() => makeSuiteStubGL(canvas)),
           scheduleFrame: (cb) => cb()
         }
       };

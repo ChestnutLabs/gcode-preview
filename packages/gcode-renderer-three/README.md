@@ -41,8 +41,31 @@ const renderer = new ToolpathRenderer({ canvas, theme: studioTheme('dark'), came
 renderer.setBuildVolumeCage(false); // the preset is measured with the cage off
 ```
 
-`cameraFov` accepts 10-120 degrees and throws `RangeError` outside it. See the
+`cameraFov` accepts 10-120 degrees and throws `RangeError` outside it, and so does `lensScale(from, to)`. See the
 [Studio look and build plate guide](https://github.com/ChestnutLabs/gcode-preview/blob/dev/docs/manual/guide-looks-lens-plate.md).
+
+### Theme values that throw
+
+A theme value the renderer can't draw throws a `RangeError` that names the field, from the `theme` option and
+from `setTheme()`. Before, it drew something else without telling you. The defaults and both `studioTheme()`
+presets pass.
+
+| Field | Accepted |
+| --- | --- |
+| `hemisphereIntensity`, `directionalIntensity` | a finite number `>= 0` |
+| `materialPreset` | `'matte'` or `'glossy'` |
+| `bedSurface.mode` | `'none'` or `'solid'` (required when you pass `bedSurface`) |
+| `bedSurface.opacity` | a number in `[0, 1]` |
+| `bedSurface.thickness` | a finite number `>= 0` |
+| grid, major-grid, outline and contact-shadow opacities | a number in `[0, 1]` |
+| `gridMajor.every` | a finite number above 0 |
+
+A misspelled `materialPreset` or `bedSurface.mode` used to fall back to matte, or to no plate. It now throws,
+and the message lists the accepted values. If your theme comes from user settings or untyped JSON, check these
+two fields first. `createContactShadow(footprint, opacity)` throws for an `opacity` outside `[0, 1]`. Colour
+strings are not checked yet.
+
+The model viewer (`@chestnutlabs/gcode-model-renderer`) checks the same theme the same way.
 
 ## Pixel ratio (opt-in)
 
@@ -103,5 +126,35 @@ from measurement.
 
 Most applications should consume this through [`@chestnutlabs/gcode-preview-core`](../gcode-preview-core/README.md)
 or a framework adapter, which own the parse→render lifecycle.
+
+## The three-free `/lite` entry
+
+`@chestnutlabs/gcode-renderer-three/lite` holds the pieces that never load three.js: `CaptureUnsupportedError`,
+`studioTheme`, `STUDIO_CAMERA_FOV`, the option checks below, and the theme, camera and capture types. You normally don't need it: the main
+entry exports the same things. It exists for packages that load the renderer on demand, like
+`@chestnutlabs/gcode-preview-core`, so a 2D-only app loads no three.js. If the main entry could not load (offline, or a stale deploy) or could not start (no WebGL), core reports
+`E_RENDERER_LOAD` on its `error` event, with `reason: 'load'` or `reason: 'start'`; for `'start'` (usually no WebGL), use `renderer: { mode: '2d' }`. Tests that wait a fixed number of ticks for the 3D renderer to bind can preload it
+once: `await import('@chestnutlabs/gcode-renderer-three')`.
+
+The option checks are the renderer's own rules, so you can check a value before any renderer exists (a setting a
+user typed, for example). Each throws `RangeError` with the same message the renderer throws:
+
+| Check | Accepts |
+| --- | --- |
+| `checkTheme(theme)` | see [theme values that throw](#theme-values-that-throw) |
+| `checkBuildVolume(def)` | a volume the grid can draw: finite sizes, at most `MAX_GRID_LINES_PER_AXIS` (10 000) lines per axis |
+| `checkCameraMode(mode)` | `CAMERA_MODES`: `'perspective'`, `'orthographic'` |
+| `checkCameraView(view)` | `CAMERA_VIEWS`: `'top'`, `'bottom'`, `'front'`, `'back'`, `'left'`, `'right'`, `'iso'` |
+| `checkCameraState(state)` | finite `position` / `target`, `zoom` > 0, a valid `cameraMode` |
+| `checkCameraFov(fov)` | 10 to 120 degrees |
+| `checkPixelRatio(ratio)` | `'device'`, or a number in (0, 4] |
+| `checkQualityMode(mode)` | `QUALITY_POLICIES`: `'full'`, `'adaptive'`, `'fast'` |
+| `checkProgressivePreview(mode)` | `PROGRESSIVE_PREVIEW_MODES`: `'auto'`, `'lines'`, `'hold'`, `'off'` |
+| `checkFrameContent(mode)` | `FRAME_CONTENT_MODES`: `'object'`, `'all'` |
+| `checkInteractionQuality(mode)` | `INTERACTION_QUALITY_MODES`: `'off'`, `'auto'` |
+| `checkRendererMode(mode)` | `RENDERER_MODES`: `'2d'`, `'3d'` |
+
+The upper-case lists are `readonly` arrays, so you can filter input without a `try`/`catch`:
+`CAMERA_MODES.includes(value)`.
 
 Part of [Chestnut Labs G-code Preview](../../README.md) · MIT

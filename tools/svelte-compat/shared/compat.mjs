@@ -17,6 +17,8 @@ import { MODEL_STUB_CONTROLS, MODEL_STUB_GL, makeStlModelSource } from '@chestnu
 import GcodePreview from '../../../packages/gcode-preview-svelte/src/GcodePreview.svelte';
 import ModelViewer from '../../../packages/gcode-preview-svelte/src/model/ModelViewer.svelte';
 import { mountComponent } from './mount-api.mjs';
+import PreviewHost from './PreviewHost.svelte';
+import { CaptureUnsupportedError, ToolpathRenderer } from '@chestnutlabs/gcode-renderer-three';
 
 const PKG_DIR = resolve(dirname(fileURLToPath(import.meta.url)), '../../../packages/gcode-preview-svelte');
 
@@ -133,6 +135,36 @@ export function registerCompat({ describe, it, expect, svelte, compiler, expecte
       target.remove();
     });
 
+    it('a new parseOptions object with an unchanged source does not re-parse; a changed source does (#435)', async () => {
+      const ready = [];
+      const parseCalls = [];
+      const source = new Uint8Array(1_000);
+      const { target, handle } = mountPreview({ source }, { ready: (e) => ready.push(e.detail) });
+      await settle();
+      expect(ready.length).toBe(1);
+      const preview = handle.instance.preview;
+      const parse = preview.parse;
+      // Count parse calls on the live handle's controller path: the component calls `preview.parse`.
+      preview.parse = (...args) => {
+        parseCalls.push(args[1]);
+        return parse(...args);
+      };
+      handle.setProps({ parseOptions: { maxSegments: 5 } });
+      await settle();
+      handle.setProps({ parseOptions: { maxSegments: 5 } });
+      await settle();
+      expect(parseCalls.length).toBe(0);
+      expect(ready.length).toBe(1);
+      // A changed source re-parses, with the CURRENT parseOptions (not a stale one).
+      handle.setProps({ source: new Uint8Array(2_000) });
+      await settle();
+      expect(parseCalls.length).toBe(1);
+      expect(JSON.stringify(parseCalls[0])).toBe('{"maxSegments":5}');
+      expect(ready.length).toBe(2);
+      handle.destroy();
+      target.remove();
+    });
+
     it('exposes the preview handle and its state reflects the parse', async () => {
       const { target, handle } = mountPreview({ source: new Uint8Array(1_000) });
       await settle();
@@ -154,37 +186,183 @@ export function registerCompat({ describe, it, expect, svelte, compiler, expecte
       expect(SuiteStubWorker.terminated - terminated0).toBe(1);
       target.remove();
     });
+
+    // #590 round A: an empty enum is unset (as the reactive setters already treat it), and a null buildVolume
+    // is no volume. With the real core, the 3D view loads and the file's bed applies.
+    it('qualityMode="" / progressivePreview="" / buildVolume={null} mount and load 3D (no throw)', async () => {
+      const { target, handle } = mountPreview({
+        source: new Uint8Array(1_000),
+        qualityMode: '',
+        progressivePreview: '',
+        buildVolume: null
+      });
+      await settle();
+      const preview = handle.instance.preview;
+      let state;
+      preview.state.subscribe((s) => (state = s))();
+      expect(state.error).toBe(null);
+      expect(state.summary?.segments).toBe(12);
+      expect(preview.raw.renderer()).not.toBe(null);
+      handle.destroy();
+      target.remove();
+    });
+
+    // #590 round A: the `$:` statements hand frameContent / interactionQuality to core unguarded. A binding
+    // that is (or becomes) null or undefined means the default, as before core checked values: never a throw.
+    it('frameContent / interactionQuality null, then undefined, mean the defaults (no throw)', async () => {
+      const { target, handle } = mountPreview({
+        source: new Uint8Array(1_000),
+        frameContent: null,
+        interactionQuality: null
+      });
+      await settle();
+      const preview = handle.instance.preview;
+      let state;
+      preview.state.subscribe((s) => (state = s))();
+      expect(state.error).toBe(null);
+      const r = preview.raw.renderer();
+      expect(r.frameContentMode).toBe('all');
+      const applied = [];
+      const fc = r.setFrameContent.bind(r);
+      const iq = r.setInteractionQuality.bind(r);
+      r.setFrameContent = (m) => (applied.push(`frameContent ${m}`), fc(m));
+      r.setInteractionQuality = (m) => (applied.push(`interactionQuality ${m}`), iq(m));
+      handle.setProps({ frameContent: undefined, interactionQuality: undefined });
+      await settle();
+      expect(JSON.stringify(applied.sort())).toBe('["frameContent all","interactionQuality off"]');
+      expect(r.frameContentMode).toBe('all');
+      preview.state.subscribe((s) => (state = s))();
+      expect(state.error).toBe(null);
+      handle.destroy();
+      target.remove();
+    });
+  });
+
+  // #520: the mount pass for the four 3D-only construction props. 2D applies a non-default value once (and
+  // the 2D renderer reports it); 3D was built with them and must not re-apply (a re-applied quality rebuilds).
+  describe(`${label}: 3D-only props at mount (#520)`, () => {
+    const QUALITY = 'quality Quality/geometry modes apply only to the 3D renderer; the 2D view has none.';
+    const CAMERA = 'camera Camera projection applies only to the 3D renderer; the 2D view is flat top-down.';
+    const mountP = (props) => {
+      const log = [];
+      const target = document.body.appendChild(document.createElement('div'));
+      const base = {
+        createWorker: () => new SuiteStubWorker(),
+        rendererOptions: { createRenderer: (canvas) => makeSuiteStubGL(canvas), scheduleFrame: (f) => f() }
+      };
+      const handle = mountComponent(svelte, PreviewHost, {
+        target,
+        props: {
+          props: { ...base, ...props },
+          handlers: { rendererunsupported: (e) => log.push(`${e.detail.feature} ${e.detail.message}`) }
+        }
+      });
+      return {
+        log,
+        set: (patch) => handle.setProps({ props: { ...base, ...props, ...patch } }),
+        unmount: () => {
+          handle.destroy();
+          target.remove();
+        }
+      };
+    };
+
+    it('2D: explicit defaults report nothing', async () => {
+      const m = mountP({ renderer: '2d', quality: 'auto', cameraMode: 'perspective', cameraFov: 50 });
+      await settle();
+      expect(JSON.stringify(m.log)).toBe('[]');
+      m.unmount();
+    });
+
+    it('2D: a non-default quality and camera mode report once at mount, then once per change', async () => {
+      const m = mountP({ renderer: '2d', quality: 'tubes', cameraMode: 'orthographic' });
+      await settle();
+      expect(JSON.stringify(m.log)).toBe(JSON.stringify([QUALITY, CAMERA]));
+      // Back to the defaults is a change too: each is applied (and reported) once more.
+      m.set({ quality: 'auto', cameraMode: 'perspective' });
+      await settle();
+      expect(JSON.stringify(m.log)).toBe(JSON.stringify([QUALITY, CAMERA, QUALITY, CAMERA]));
+      m.unmount();
+    });
+
+    it('3D: the mount pass re-applies none of the construction props (no extra build)', async () => {
+      const calls = [];
+      const keys = ['setQuality', 'setCameraMode', 'setCameraFov', 'setPixelRatio'];
+      const saved = keys.map((k) => ToolpathRenderer.prototype[k]);
+      for (const k of keys) {
+        ToolpathRenderer.prototype[k] = () => {
+          calls.push(k);
+        };
+      }
+      try {
+        const m = mountP({ quality: 'lines', cameraMode: 'orthographic', cameraFov: 32, pixelRatio: 2 });
+        await settle();
+        expect(JSON.stringify(calls)).toBe('[]');
+        m.unmount();
+      } finally {
+        keys.forEach((k, i) => {
+          ToolpathRenderer.prototype[k] = saved[i];
+        });
+      }
+    });
   });
 
   // The portable component conformance case (#502): event -> callback wiring through the compiled component.
+  // Mounted through a parent template (PreviewHost) so `on:` listeners attach before the child mounts, as in
+  // an app; mount-time events (#520) are otherwise dispatched inside Svelte 4's constructor, before `$on`.
   runComponentConformanceSuite(
     `svelte ${expectedMajor} <GcodePreview>`,
     { describe, it, expect },
     {
       mount(cb, opts = {}) {
         const target = document.body.appendChild(document.createElement('div'));
-        const handle = mountComponent(svelte, GcodePreview, {
+        const base = {
+          renderer: opts.renderer,
+          quality: 'lines',
+          cameraFov: opts.cameraFov,
+          pixelRatio: opts.pixelRatio,
+          scrub: opts.scrub,
+          scrubTime: opts.scrubTime,
+          layerRange: opts.layerRange,
+          createWorker: () => new SuiteStubWorker(undefined, opts.ir),
+          rendererOptions: {
+            createRenderer: opts.createGL ?? ((canvas) => makeSuiteStubGL(canvas)),
+            scheduleFrame: (f) => f(),
+            chunksPerTick: 8
+          }
+        };
+        let current = base;
+        const handle = mountComponent(svelte, PreviewHost, {
           target,
           props: {
-            renderer: opts.renderer,
-            quality: 'lines',
-            createWorker: () => new SuiteStubWorker(undefined, opts.ir),
-            rendererOptions: {
-              createRenderer: (canvas) => makeSuiteStubGL(canvas),
-              scheduleFrame: (f) => f(),
-              chunksPerTick: 8
+            props: base,
+            handlers: {
+              ready: (e) => cb.onReady(e.detail.segments),
+              buildcomplete: (e) => cb.onBuildComplete(e.detail.segments),
+              disclosure: (e) => cb.onDisclosure(e.detail),
+              rendererunsupported: (e) => cb.onRendererUnsupported?.(e.detail.feature, e.detail.message),
+              error: (e) => cb.onError?.(e.detail),
+              parseerror: (e) => cb.onParseError?.(e.detail)
             }
-          },
-          events: {
-            ready: (e) => cb.onReady(e.detail.segments),
-            buildcomplete: (e) => cb.onBuildComplete(e.detail.segments),
-            disclosure: (e) => cb.onDisclosure(e.detail)
           }
         });
-        const preview = handle.instance.preview; // Svelte 4 clears the instance's exports on $destroy()
+        svelte.flushSync?.(); // Svelte 5 assigns the host's bind:this in an effect (Svelte 4: done already)
+        const preview = handle.instance.getPreview(); // Svelte 4 clears the instance's exports on $destroy()
         return {
           emitBuild: (decimation, segments) => emitSuiteBuild(preview.raw.renderer(), decimation, segments),
           parse: (bytes) => preview.parse(bytes),
+          setCameraMode: (mode) => preview.controls.setCameraMode(mode),
+          // Each prop change keeps the others: the re-parse case sets source, then parseOptions alone.
+          setSource: (bytes) => {
+            current = { ...current, source: bytes };
+            handle.setProps({ props: current });
+          },
+          setParseOptions: (parseOptions) => {
+            current = { ...current, parseOptions };
+            handle.setProps({ props: current });
+          },
+          firstChunkDrawCount: () => preview.raw.renderer().chunkMeshes[0].geometry.drawRange.count,
+          controls: () => preview.controls,
           settle,
           unmount: () => {
             handle.destroy();
@@ -194,6 +372,41 @@ export function registerCompat({ describe, it, expect, svelte, compiler, expecte
       }
     }
   );
+
+  // Svelte counts an object prop as changed whenever it is set again, even to the same array: the component
+  // itself must treat the same source as no change, as the React, Vue and Web Component adapters do.
+  describe(`${label}: GcodePreview source identity`, () => {
+    it('the same source again does not re-parse; null and back, or a new array, does', async () => {
+      const target = document.body.appendChild(document.createElement('div'));
+      let ready = 0;
+      const base = {
+        quality: 'lines',
+        createWorker: () => new SuiteStubWorker(),
+        rendererOptions: { createRenderer: (c) => makeSuiteStubGL(c), scheduleFrame: (f) => f(), chunksPerTick: 8 }
+      };
+      const handle = mountComponent(svelte, PreviewHost, {
+        target,
+        props: { props: base, handlers: { ready: () => ready++ } }
+      });
+      const set = async (source) => {
+        handle.setProps({ props: { ...base, source } });
+        svelte.flushSync?.();
+        await settle();
+      };
+      const file = new Uint8Array(1_000);
+      await set(file);
+      expect(ready).toBe(1);
+      await set(file);
+      expect(ready).toBe(1);
+      await set(null);
+      await set(file); // cleared and set again: a change
+      expect(ready).toBe(2);
+      await set(new Uint8Array(1_000));
+      expect(ready).toBe(3);
+      handle.destroy();
+      target.remove();
+    });
+  });
 
   describe(`${label}: mount ModelViewer`, () => {
     it('renders the canvas, fires `ready` for a source, and unmount disposes the renderer', async () => {
@@ -230,6 +443,95 @@ export function registerCompat({ describe, it, expect, svelte, compiler, expecte
       const created = renderersCreated;
       viewer.canvas(document.createElement('canvas'));
       expect(renderersCreated).toBe(created);
+      target.remove();
+    });
+  });
+
+  describe(`${label}: ModelViewer input errors and capture (pinned, same channel as the toolpath component)`, () => {
+    const mountModel = (props) => {
+      const target = document.body.appendChild(document.createElement('div'));
+      const handle = mountComponent(svelte, ModelViewer, {
+        target,
+        props: { createRenderer: MODEL_STUB_GL, createControls: MODEL_STUB_CONTROLS, ...props }
+      });
+      return { handle, target };
+    };
+    /**
+     * Apply a prop patch and return what it threw. Svelte 5 flushes synchronously, so the throw is catchable.
+     * Svelte 4 applies `$set` in a microtask: the same RangeError surfaces there as an unhandled promise
+     * rejection, which a test cannot catch, so the two update-path cases below run on Svelte 5 only.
+     */
+    const patchThrows = (handle, patch) => {
+      try {
+        handle.setProps(patch);
+        return null;
+      } catch (e) {
+        return e;
+      }
+    };
+    const itSync = expectedMajor === 5 ? it : it.skip;
+
+    it('renderScope null means the whole source: it mounts and draws (it used to throw a RangeError)', async () => {
+      const ready = [];
+      const target = document.body.appendChild(document.createElement('div'));
+      const handle = mountComponent(svelte, ModelViewer, {
+        target,
+        props: {
+          source: makeStlModelSource(),
+          renderScope: null,
+          createRenderer: MODEL_STUB_GL,
+          createControls: MODEL_STUB_CONTROLS
+        },
+        events: { ready: (e) => ready.push(e.detail) }
+      });
+      await settle();
+      expect(ready).toHaveLength(1);
+      handle.destroy();
+      target.remove();
+    });
+
+    it('a bad renderScope at mount throws a RangeError out of the mount', () => {
+      let error = null;
+      try {
+        mountModel({ renderScope: { objectIds: 'nope' } });
+      } catch (e) {
+        error = e;
+      }
+      expect(error).toBeInstanceOf(RangeError);
+      expect(error.message).toContain('objectIds');
+    });
+
+    itSync('a bad renderScope set after mount throws a RangeError out of the update', async () => {
+      const { handle, target } = mountModel({ renderScope: { objectIds: ['a'] } });
+      await settle();
+      const error = patchThrows(handle, { renderScope: { plateId: 1.5 } });
+      expect(error).toBeInstanceOf(RangeError);
+      expect(error.message).toContain('plateId');
+      target.remove();
+    });
+
+    itSync('the toolpath component behaves the same: a NaN layerRange after mount throws a RangeError', async () => {
+      const target = document.body.appendChild(document.createElement('div'));
+      const handle = mountComponent(svelte, GcodePreview, {
+        target,
+        props: {
+          createWorker: () => new SuiteStubWorker(),
+          rendererOptions: { createRenderer: (c) => makeSuiteStubGL(c), scheduleFrame: (cb) => cb() },
+          layerRange: [0, 1]
+        }
+      });
+      await settle();
+      const error = patchThrows(handle, { layerRange: [Number.NaN, 1] });
+      expect(error).toBeInstanceOf(RangeError);
+      expect(error.message).toContain('NaN');
+      target.remove();
+    });
+
+    it('capture rejects with CaptureUnsupportedError through the viewer handle (stub GL cannot render to a target)', async () => {
+      const { handle, target } = mountModel({});
+      await settle();
+      await expect(handle.instance.viewer.capture()).rejects.toBeInstanceOf(CaptureUnsupportedError);
+      await expect(handle.instance.viewer.controls.capture()).rejects.toBeInstanceOf(CaptureUnsupportedError);
       target.remove();
     });
   });

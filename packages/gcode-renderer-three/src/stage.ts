@@ -10,6 +10,7 @@
  * parity (the extraction must be behavior-preserving for the toolpath side).
  */
 import { Camera, Scene, Vector3, WebGLRenderer, type WebGLRenderTarget } from 'three';
+import { checkCameraFov as checkFov } from './validate.js';
 
 /**
  * Render target: a DOM canvas (interactive hosts) or an OffscreenCanvas (workers / headless
@@ -104,19 +105,15 @@ export function framingFromCenterRadius(center: Vector3, radius: number, fov = 5
   checkFov(fov);
   const target = new Vector3(center.x, center.z, -center.y);
   const viewHalfHeight = radius * 1.25;
-  if (fov === 50) {
-    const position = new Vector3(target.x - radius * 1.2, target.y + radius * 1.6, target.z + radius * 1.8);
-    return { target, position, viewHalfHeight };
-  }
+  // At fov 50 the scale is exactly 1 (see framingLensScale) and `x * 1 === x`, so the 50° pose is
+  // byte-identical to the original fixed offset without a special case.
   const k = framingLensScale(fov);
   const position = new Vector3(target.x - radius * 1.2 * k, target.y + radius * 1.6 * k, target.z + radius * 1.8 * k);
   return { target, position, viewHalfHeight };
 }
 
-/** A perspective vertical fov must be a number in [10, 120] degrees (extreme lenses put the camera absurdly far/near). */
-export function checkFov(fov: number): void {
-  if (!(fov >= 10 && fov <= 120)) throw new RangeError(`fov must be in [10, 120] degrees (got ${String(fov)})`);
-}
+// The lens checks live in the three-free validate.ts (one source of truth with gcode-preview-core).
+export { checkCameraFov as checkFov, checkPixelRatio } from './validate.js';
 
 /**
  * The interactive canvas's resting pixel ratio (drawing-buffer pixels per CSS pixel). A number in (0, 4],
@@ -129,17 +126,6 @@ export type PixelRatioOption = number | 'device';
 export const DEVICE_PIXEL_RATIO_CAP = 2;
 
 /**
- * A pixel ratio must be `'device'` (the exact string, case-sensitive) or a number in (0, 4]. Throws
- * `RangeError` otherwise — it never clamps.
- */
-export function checkPixelRatio(ratio: PixelRatioOption): void {
-  if (ratio === 'device') return;
-  if (!(typeof ratio === 'number' && ratio > 0 && ratio <= 4)) {
-    throw new RangeError(`pixelRatio must be 'device' or a number in (0, 4] (got ${String(ratio)})`);
-  }
-}
-
-/**
  * How far the framing pose backs off at `fov` relative to the 50° pose: the larger of
  * - tan(25°)/tan(fov/2): the same visible half-height at the target plane (what a dolly keeps), and
  * - sin(25°)/sin(fov/2): the same bounding-sphere margin.
@@ -147,13 +133,19 @@ export function checkPixelRatio(ratio: PixelRatioOption): void {
  * (at 120° it lands at 0.72·r), so the sphere rule takes over. Exactly 1 at 50.
  */
 export function framingLensScale(fov: number): number {
-  if (fov === 50) return 1;
+  // No fov === 50 shortcut needed: at 50, `half` is computed by the same expression as `half50`
+  // ((50 / 2) is exactly 25), so both ratios are exactly 1.
   const half = ((fov / 2) * Math.PI) / 180;
   const half50 = (25 * Math.PI) / 180;
   return Math.max(Math.tan(half50) / Math.tan(half), Math.sin(half50) / Math.sin(half));
 }
 
-/** Camera-distance factor that keeps apparent size when the vertical fov changes `from` → `to` degrees. */
+/**
+ * Camera-distance factor that keeps apparent size when the vertical fov changes `from` → `to` degrees.
+ * Throws `RangeError` when either fov is outside [10, 120], like the `cameraFov` option.
+ */
 export function lensScale(from: number, to: number): number {
+  checkFov(from);
+  checkFov(to);
   return Math.tan(((from / 2) * Math.PI) / 180) / Math.tan(((to / 2) * Math.PI) / 180);
 }

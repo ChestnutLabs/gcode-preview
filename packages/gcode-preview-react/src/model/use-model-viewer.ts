@@ -39,17 +39,22 @@ export interface ModelViewerHandle {
 interface Slot {
   controller: ModelPreviewController | null;
   disposed: boolean;
+  /**
+   * True once the unmount cleanup ran and nothing re-subscribed since. A handle call then reaches the disposed
+   * controller (setSource rejects `E_MODEL_PREVIEW_DISPOSED`) instead of rebuilding one that no canvas will bind.
+   */
+  unmounted: boolean;
   canvas: HTMLCanvasElement | null;
 }
 
 export function useModelViewer(options: UseModelViewerOptions = {}): ModelViewerHandle {
   const optionsRef = useRef(options);
   optionsRef.current = options;
-  const slot = useRef<Slot>({ controller: null, disposed: false, canvas: null });
+  const slot = useRef<Slot>({ controller: null, disposed: false, unmounted: false, canvas: null });
 
   const ensure = useCallback((): ModelPreviewController => {
     const s = slot.current;
-    if (s.controller === null || s.disposed) {
+    if (s.controller === null || (s.disposed && !s.unmounted)) {
       s.controller = createModelPreviewController(optionsRef.current);
       s.disposed = false;
       if (s.canvas !== null) s.controller.bindCanvas(s.canvas);
@@ -57,24 +62,30 @@ export function useModelViewer(options: UseModelViewerOptions = {}): ModelViewer
     return s.controller;
   }, []);
 
-  const subscribe = useCallback((cb: () => void) => ensure().onStateChange(() => cb()), [ensure]);
+  // A (re-)subscribe means the component is mounted (again, under StrictMode): rebuild from here on.
+  const subscribe = useCallback(
+    (cb: () => void) => {
+      slot.current.unmounted = false;
+      return ensure().onStateChange(() => cb());
+    },
+    [ensure]
+  );
   const getSnapshot = useCallback(() => ensure().getState(), [ensure]);
   const state = useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
 
-  // Own the controller's lifecycle: (re)create on mount (StrictMode's second setup lands here) and
-  // DISPOSE on unmount. Without this the GL engine was freed via the canvas-ref-null path but the
-  // controller was never disposed, so in-flight setSource promises never settled and the controller
-  // leaked — the toolpath hook already does this; the model hook must match.
+  // Own the controller's lifecycle: DISPOSE on unmount. Without this the GL engine was freed via the
+  // canvas-ref-null path but the controller was never disposed, so in-flight setSource promises never
+  // settled and the controller leaked — the toolpath hook already does this; the model hook must match.
+  // No rebuild here: on a StrictMode remount, useSyncExternalStore re-subscribes first (its effect is
+  // declared above), and `subscribe` calls `ensure()`, which rebuilds the disposed controller AND
+  // rebinds the canvas it already holds (refs attach before the dispose/recreate cycle and never
+  // re-fire). Every handle call goes through `ensure()` too.
+  // After a real unmount nothing re-subscribes, so `unmounted` stays set and a late handle call is refused.
   useEffect(() => {
-    const c = ensure();
-    // Refs attach BEFORE StrictMode's dispose/recreate cycle: rebind the delivered canvas to the fresh
-    // controller (refs never re-fire) so it renders again after a remount.
-    if (slot.current.canvas !== null && c.raw.viewer() === null) {
-      c.bindCanvas(slot.current.canvas);
-    }
     return () => {
       slot.current.controller?.dispose();
       slot.current.disposed = true;
+      slot.current.unmounted = true;
     };
   }, [ensure]);
 

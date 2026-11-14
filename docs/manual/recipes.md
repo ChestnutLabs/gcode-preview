@@ -48,6 +48,12 @@ when you set the mode, and the previous mode stays in effect. For a reversed sca
 color. Moves with no speed in the file, or a negative one, are drawn in `fallback`. To check a mode
 built from user input before you set it, call `checkColorMode(mode)` from `@chestnutlabs/gcode-colors`.
 
+Every color in the mode is checked too: each `ramp` and `palette` entry and the `fallback` must be
+`[r, g, b]` of three finite numbers. A `NaN` from a color picker, or a two-entry array, throws a
+`RangeError` that names the field and its index, and the previous mode stays in effect. Each mode's
+required fields are listed in the
+[gcode-colors README](https://github.com/ChestnutLabs/gcode-preview/blob/dev/packages/gcode-colors/README.md#colours-that-throw).
+
 ## Camera control: preset views & saved state
 
 The imperative `controls` handle (the composable return / React ref / Svelte `bind:this` / element
@@ -85,7 +91,9 @@ The `ready` event (React `onReady`, Vue `@ready`, Svelte `on:ready`, element `re
 `capabilities` (the per-field `known | inferred | approximated | unavailable` map) and `warnings`
 alongside `{ segments, layers, complete }` — so a consumer can gate its own UI (e.g. only offer a
 color-by-power control when `capabilities.toolPower !== 'unavailable'`) without reaching for the raw
-handle.
+handle. A warning means part of the file was drawn differently from what it says, for example an arc
+whose radius is too small for its endpoints; the arc and canned-cycle codes are listed in the
+[motion coverage reference](../compatibility/gcode-motion-coverage.md#moves-drawn-differently-from-what-was-written).
 
 ## `.gcode.3mf` multi-plate
 

@@ -1,5 +1,39 @@
 # @chestnutlabs/gcode-colors
 
+## 0.24.0
+
+### Patch Changes
+
+- [#599](https://github.com/ChestnutLabs/gcode-preview/pull/599) [`1ff1bbf`](https://github.com/ChestnutLabs/gcode-preview/commit/1ff1bbf7cc39b2faf9b21ecd25fac56d1b82b8bf) Thanks [@sobechestnut-dev](https://github.com/sobechestnut-dev)! - `fallback: null` now means "use the default" instead of throwing. In `tool` and `filament` colour modes, a
+  `null` `fallback` behaves exactly like an omitted one (the neutral grey). A `null` `range` in `feedrate`,
+  `layerHeight` and `power` mode now means "auto-range" like an omitted `range`, instead of throwing a
+  `TypeError`. This lets a framework binding pass `x ?? null` straight through. Only `null` and `undefined` mean
+  "unset": `false`, `0` and `''` are still bad values and throw. A required `fallback` (every other mode) and any
+  other bad colour still throw a `RangeError`.
+
+  A `range` that is not a two-element array (`5`, `{}`, `false`, `''`, `[]`, `[1, 2, 3]`) now throws a
+  `RangeError` too, where `5`, `{}` and `false` used to throw a `TypeError` from the destructure. A three-element
+  array was accepted before, with the third value ignored; it is now rejected, because the type is `[number, number]`.
+
+- [#547](https://github.com/ChestnutLabs/gcode-preview/pull/547) [`b0b1922`](https://github.com/ChestnutLabs/gcode-preview/commit/b0b1922ce7a4f3c3f3952185d1fdd47fcc115480) Thanks [@sobechestnut-dev](https://github.com/sobechestnut-dev)! - A colour mode with a colour that has no rendering now throws a `RangeError` naming the mode, the field and
+  the index, instead of painting garbage (NaN into the vertex buffer or canvas style).
+  - **Every colour is checked:** `single.color`, each `palette` / `ramp` entry, `moveKind` `cut` / `travel`
+    and every `fallback`. A colour is an array-like (plain array, readonly tuple, `Float32Array`) whose first
+    three entries are finite numbers; extra entries (an alpha) are ignored and any finite value is accepted,
+    so a 4-element or 0-255 colour that rendered before still does. NaN, ±Infinity, fewer than three entries
+    or a non-array now throw, e.g. `tool color mode palette[2] must be [r, g, b] of three finite numbers, got
+[0.1, NaN, 0.3]`.
+  - **`fallback` is required** in `feature`, `colorChange`, `feedrate`, `layerHeight`, `power`, `object` and
+    `moveKind` mode (the types already require it) and optional only in `tool` and `filament`. An empty
+    palette or ramp is still valid and colours every segment with the fallback.
+  - **Callers inherit it:** `createSegmentColorer`, `segmentColor`, the `colorMode` option and
+    `setColorMode` of the Canvas 2D `LayerView2D` and the preview controller all call `checkColorMode`, so a
+    bad mode throws at the call and is never stored.
+  - A one-stop ramp now returns a fresh colour array instead of the ramp's own entry.
+
+- Updated dependencies [[`eb6b74c`](https://github.com/ChestnutLabs/gcode-preview/commit/eb6b74c0f9a8a7b0e28060d672d1021dab2a63d5), [`6b03f42`](https://github.com/ChestnutLabs/gcode-preview/commit/6b03f4221e5f0a552959fbed7f85124203d42f57)]:
+  - @chestnutlabs/toolpath-core@0.24.0
+
 ## 0.23.0
 
 ### Minor Changes

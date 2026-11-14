@@ -11,6 +11,7 @@ import { MoveKind, ToolpathIRBuilder, type ToolpathIR } from '@chestnutlabs/tool
 import { createSegmentColorer, type ColorMode } from '@chestnutlabs/gcode-colors';
 import {
   LayerView2D,
+  checkColorMode,
   computeLayerFit,
   describe2DDisclosures,
   drawLayer,
@@ -18,6 +19,7 @@ import {
   layerBounds2D,
   modelBounds2D,
   rgbToCss,
+  summarize2DDrawable,
   type CanvasContext2DLike,
   type LayerBounds2D,
   type LayerFit
@@ -907,5 +909,376 @@ describe('computeLayerFit: every non-finite bounds edge falls back (#501)', () =
     const fit = computeLayerFit(b, 100, Number.NaN, 0);
     expect(fit.scale).toBe(0.1);
     expect(fit.project(10, 10)).toEqual([50.5, 0]);
+  });
+});
+
+// ---------------------------------------------------------------------------------------------
+// Audit of the #516 sweep (2026-11-12). #516 recorded its mutant M24 (`spanX > 0` → `spanX >= 0`)
+// as equivalent. It is not: a direct caller can pass bounds whose span is -0 (maxX = -0, minX = 0),
+// and `availW / -0` is -Infinity, a NaN transform. These pin both axes with literal values.
+// ---------------------------------------------------------------------------------------------
+
+describe('computeLayerFit: a -0 span is zero, not a divisor (#516 M24 audit)', () => {
+  it('X span -0 (maxX = -0, minX = 0): Y limits the scale, the line sits at the canvas centre', () => {
+    // avail 80×80; spanX = -0 - 0 = -0 (no X limit), spanY = 10 → scale 8; drawn 0×80;
+    // offsetX = 10 + 80 / 2 = 50, offsetYTop = 10.
+    const fit = computeLayerFit({ minX: 0, minY: 0, maxX: -0, maxY: 10, hasContent: true }, 100, 100, 10);
+    expect(fit.scale).toBe(8);
+    expect(fit.project(0, 0)).toEqual([50, 90]);
+    expect(fit.project(0, 10)).toEqual([50, 10]);
+  });
+
+  it('Y span -0 (maxY = -0, minY = 0): X limits the scale, the line sits at the canvas middle', () => {
+    // avail 80×80; spanX = 10 → scale 8, spanY = -0 (no Y limit); drawn 80×0;
+    // offsetX = 10, offsetYTop = 10 + 80 / 2 = 50.
+    const fit = computeLayerFit({ minX: 0, minY: 0, maxX: 10, maxY: -0, hasContent: true }, 100, 100, 10);
+    expect(fit.scale).toBe(8);
+    expect(fit.project(0, 0)).toEqual([10, 50]);
+    expect(fit.project(10, 0)).toEqual([90, 50]);
+  });
+});
+
+describe('summarize2DDrawable (whole-toolpath draw summary, #518)', () => {
+  it('counts extrusion and travel only, splitting finite from non-finite x/y', () => {
+    const ir = irOf([
+      { x0: 0, y0: 0, x1: 1, y1: 0 }, // 0 extrude, finite → drawable
+      { x0: 1, y0: 0, x1: 2, y1: 0, kind: MoveKind.Travel }, // 1 travel, finite → drawable
+      { x0: 2, y0: 0, x1: 3, y1: 0, kind: MoveKind.Wipe }, // 2 wipe → not counted
+      { x0: 3, y0: 0, x1: 4, y1: 0, kind: MoveKind.Extrude | MoveKind.ArcSegment }, // 3 arc extrude → drawable
+      { x0: 4, y0: 0, x1: 5, y1: 0 }, // 4 extrude, y0 NaN below → skipped
+      { x0: 5, y0: 0, x1: 6, y1: 0, kind: MoveKind.Travel }, // 5 travel, x1 Infinity below → skipped
+      { x0: 6, y0: 0, x1: 7, y1: 0, kind: MoveKind.Wipe } // 6 wipe, NaN below → still not counted
+    ]);
+    ir.segments.y0[4] = Number.NaN;
+    ir.segments.x1[5] = Infinity;
+    ir.segments.x0[6] = Number.NaN;
+    expect(summarize2DDrawable(ir)).toEqual({ drawable: 3, skippedNonFinite: 2 });
+  });
+
+  it('every layer counts, and a non-finite Z does not matter (the view is flat)', () => {
+    const ir = irOf([
+      { x0: 0, y0: 0, x1: 1, y1: 0, layer: 0 },
+      { x0: 0, y0: 0, x1: 1, y1: 0, layer: 1 }
+    ]);
+    ir.segments.z1[1] = Number.NaN;
+    expect(summarize2DDrawable(ir)).toEqual({ drawable: 2, skippedNonFinite: 0 });
+  });
+
+  it('an IR with no segments is all zeros', () => {
+    expect(summarize2DDrawable(irOf([]))).toEqual({ drawable: 0, skippedNonFinite: 0 });
+  });
+});
+
+describe('LayerView2D: layer requests past the end and option checks (core 2D adapter sweep)', () => {
+  it('setLayer floors fractions; Infinity and past-the-end draw the top layer, never a blank view', () => {
+    const view = new LayerView2D(fakeCanvas(100, 100, new MockCtx()));
+    view.setToolpath(makeIR(3, 2));
+    view.setLayer(Number.POSITIVE_INFINITY);
+    expect(view.render()).toMatchObject({ layer: 2, drawn: true });
+    view.setLayer(1.9);
+    expect(view.render()).toMatchObject({ layer: 1, drawn: true });
+    view.setLayer(7);
+    expect(view.render()).toMatchObject({ layer: 2, drawn: true });
+  });
+
+  it('the empty result (no 2D context) reports the clamped layer too', () => {
+    const view = new LayerView2D(fakeCanvas(100, 100, null));
+    view.setToolpath(makeIR(3, 2));
+    view.setLayer(Number.POSITIVE_INFINITY);
+    expect(view.render()).toMatchObject({ layer: 2, layerCount: 3, drawn: false });
+  });
+
+  it('setLayer(NaN) keeps the current layer', () => {
+    const view = new LayerView2D(fakeCanvas(100, 100, new MockCtx()));
+    view.setToolpath(makeIR(3, 2));
+    view.setLayer(1);
+    view.setLayer(NaN);
+    expect(view.render()).toMatchObject({ layer: 1, drawn: true });
+  });
+
+  it('the layer request outlives a toolpath: Infinity is the top layer of each new one', () => {
+    const view = new LayerView2D(fakeCanvas(100, 100, new MockCtx()), { layer: Number.POSITIVE_INFINITY });
+    view.setToolpath(makeIR(2, 2));
+    expect(view.render().layer).toBe(1);
+    view.setToolpath(makeIR(5, 2));
+    expect(view.render().layer).toBe(4);
+  });
+
+  it('the constructor layer is floored and a NaN one falls back to 0', () => {
+    const view = new LayerView2D(fakeCanvas(100, 100, new MockCtx()), { layer: 1.5 });
+    view.setToolpath(makeIR(3, 2));
+    expect(view.render().layer).toBe(1);
+    const nan = new LayerView2D(fakeCanvas(100, 100, new MockCtx()), { layer: NaN });
+    nan.setToolpath(makeIR(3, 2));
+    expect(nan.render().layer).toBe(0);
+  });
+
+  it('invalid options throw a RangeError naming the option and value', () => {
+    const canvas = fakeCanvas(100, 100, new MockCtx());
+    const cases: [ConstructorParameters<typeof LayerView2D>[1], string][] = [
+      [{ adjacentLayers: NaN }, 'LayerView2D: adjacentLayers must be a number (got NaN).'],
+      [{ ghostOpacity: -0.1 }, 'LayerView2D: ghostOpacity must be in [0, 1] (got -0.1).'],
+      [{ ghostOpacity: 1.01 }, 'LayerView2D: ghostOpacity must be in [0, 1] (got 1.01).'],
+      [{ ghostOpacity: NaN }, 'LayerView2D: ghostOpacity must be in [0, 1] (got NaN).'],
+      [{ lineWidth: 0 }, 'LayerView2D: lineWidth must be a finite number > 0 (got 0).'],
+      [{ lineWidth: -1 }, 'LayerView2D: lineWidth must be a finite number > 0 (got -1).'],
+      [{ lineWidth: NaN }, 'LayerView2D: lineWidth must be a finite number > 0 (got NaN).'],
+      [{ lineWidth: Number.POSITIVE_INFINITY }, 'LayerView2D: lineWidth must be a finite number > 0 (got Infinity).'],
+      [{ padding: -1 }, 'LayerView2D: padding must be a finite number >= 0 (got -1).'],
+      [{ padding: NaN }, 'LayerView2D: padding must be a finite number >= 0 (got NaN).'],
+      [{ padding: Number.POSITIVE_INFINITY }, 'LayerView2D: padding must be a finite number >= 0 (got Infinity).']
+    ];
+    for (const [opts, message] of cases) {
+      expect(() => new LayerView2D(canvas, opts)).toThrowError(new RangeError(message));
+    }
+  });
+
+  it('the boundaries are legal: ghostOpacity 0 and 1, padding 0, a tiny lineWidth, any adjacentLayers count', () => {
+    const canvas = fakeCanvas(100, 100, new MockCtx());
+    for (const opts of [
+      { ghostOpacity: 0, padding: 0, lineWidth: 0.001, adjacentLayers: -2 },
+      { ghostOpacity: 1, adjacentLayers: Number.POSITIVE_INFINITY },
+      { adjacentLayers: Number.NEGATIVE_INFINITY }
+    ]) {
+      expect(() => new LayerView2D(canvas, opts)).not.toThrow();
+    }
+  });
+
+  it('setAdjacentLayers(NaN) throws and the previous count stays in effect', () => {
+    const view = new LayerView2D(fakeCanvas(100, 100, new MockCtx()), { adjacentLayers: 0 });
+    view.setToolpath(makeIR(3, 2));
+    view.setLayer(2);
+    expect(() => view.setAdjacentLayers(NaN)).toThrowError(
+      new RangeError('LayerView2D: adjacentLayers must be a number (got NaN).')
+    );
+    expect(JSON.stringify(view.render().ghostLayers)).toBe('[]');
+    view.setAdjacentLayers(2);
+    expect(JSON.stringify(view.render().ghostLayers)).toBe('[0,1]');
+  });
+});
+
+// ---------------------------------------------------------------------------------------------
+// Second-pass sweep gap tests (2026-11-13): each pins a clause a base mutant survived.
+// ---------------------------------------------------------------------------------------------
+
+describe('second-pass sweep gaps', () => {
+  it('layerBounds2D: content with zero X span (one vertical segment) still has content', () => {
+    const ir = irOf([{ x0: 5, y0: 0, x1: 5, y1: 10 }]);
+    expect(layerBounds2D(ir, 0)).toEqual({ minX: 5, minY: 0, maxX: 5, maxY: 10, hasContent: true });
+  });
+
+  it('modelBounds2D: content with zero X span (one vertical segment) still has content', () => {
+    const ir = irOf([{ x0: 5, y0: 0, x1: 5, y1: 10 }]);
+    expect(modelBounds2D(ir)).toEqual({ minX: 5, minY: 0, maxX: 5, maxY: 10, hasContent: true });
+  });
+
+  it('drawLayers: ghost layers use the given colour mode', () => {
+    const m = new MockCtx();
+    drawLayers(m.ctx, makeIR(2, 2), {
+      layer: 1,
+      adjacentLayers: 1,
+      colorMode: { mode: 'single', color: [0, 0, 1] },
+      fit: scaleFit
+    });
+    // ghost layer 0 ×2 (0.25), active layer 1 ×2 (1): all blue
+    expect(m.strokes.map((s) => [s.style, s.alpha])).toEqual([
+      ['rgb(0, 0, 255)', 0.25],
+      ['rgb(0, 0, 255)', 0.25],
+      ['rgb(0, 0, 255)', 1],
+      ['rgb(0, 0, 255)', 1]
+    ]);
+  });
+
+  it('LayerView2D.setToolpath(null) clears the toolpath: the next render draws nothing', () => {
+    const m = new MockCtx();
+    const view = new LayerView2D(fakeCanvas(100, 100, m));
+    view.setToolpath(makeIR(2, 2));
+    expect(view.render()).toMatchObject({ drawn: true, extrudeDrawn: 2 });
+    const before = m.strokes.length;
+    view.setToolpath(null);
+    expect(view.render()).toMatchObject({ drawn: false, layerCount: 0, extrudeDrawn: 0 });
+    expect(m.strokes.length).toBe(before);
+    expect(view.layerCount).toBe(0);
+  });
+
+  it('index re-exports checkColorMode from the colour package', () => {
+    expect(() => checkColorMode({ mode: 'single', color: [0, 1, 0] })).not.toThrow();
+    expect(() =>
+      checkColorMode({ mode: 'feedrate', ramp: [[0, 0, 1]], range: [0, Number.NaN], fallback: [0, 0, 0] })
+    ).toThrow('feedrate color range must be two finite numbers >= 0, got [0, NaN]');
+  });
+});
+
+// ---------------------------------------------------------------------------------------------
+// #588: the 2D view draws CNC/laser Cut moves (bit tests: a cut arc is kind 160, an extruding arc 33).
+// ---------------------------------------------------------------------------------------------
+
+describe('Cut moves (#588)', () => {
+  const single: ColorMode = { mode: 'single', color: [1, 0, 0] };
+  const CUT_ARC = MoveKind.Cut | MoveKind.ArcSegment;
+
+  /** Layer 0: travel, cut, cut arc, extrude+cut, extrude. */
+  const mixed = () =>
+    irOf([
+      { x0: 0, y0: 0, x1: 1, y1: 0, kind: MoveKind.Travel },
+      { x0: 1, y0: 0, x1: 2, y1: 0, kind: MoveKind.Cut },
+      { x0: 2, y0: 0, x1: 3, y1: 0, kind: CUT_ARC },
+      { x0: 3, y0: 0, x1: 4, y1: 0, kind: MoveKind.Extrude | MoveKind.Cut },
+      { x0: 4, y0: 0, x1: 5, y1: 0, kind: MoveKind.Extrude }
+    ]);
+
+  it('drawLayer draws Cut moves by default, in file order with extrusion; Extrude|Cut counts once, as extrusion', () => {
+    const m = new MockCtx();
+    const res = drawLayer(m.ctx, mixed(), { layer: 0, colorMode: single, fit: scaleFit });
+    expect(res).toEqual({
+      layer: 0,
+      layerCount: 1,
+      extrudeDrawn: 2,
+      travelDrawn: 0,
+      cutDrawn: 2,
+      skippedNonFinite: 0,
+      drawn: true
+    });
+    expect(m.strokes.map((s) => s.from[0])).toEqual([10, 20, 30, 40]);
+    expect(m.strokes.map((s) => [s.style, s.width, s.alpha])).toEqual([
+      ['rgb(255, 0, 0)', 1, 1],
+      ['rgb(255, 0, 0)', 1, 1],
+      ['rgb(255, 0, 0)', 1, 1],
+      ['rgb(255, 0, 0)', 1, 1]
+    ]);
+  });
+
+  it('drawLayer with cut: false hides Cut-only moves but keeps Extrude|Cut (extrusion is never hidden)', () => {
+    const m = new MockCtx();
+    const res = drawLayer(m.ctx, mixed(), { layer: 0, colorMode: single, fit: scaleFit, cut: false });
+    expect(res).toMatchObject({ extrudeDrawn: 2, cutDrawn: 0 });
+    expect(m.strokes.map((s) => s.from[0])).toEqual([30, 40]);
+  });
+
+  it('cut: true is the same as the default', () => {
+    const m = new MockCtx();
+    expect(drawLayer(m.ctx, mixed(), { layer: 0, colorMode: single, fit: scaleFit, cut: true })).toMatchObject({
+      cutDrawn: 2
+    });
+  });
+
+  it('Cut moves take the shared colorer (moveKind mode → the cut colour) and the extrusion width', () => {
+    const m = new MockCtx();
+    const ir = irOf([{ x0: 0, y0: 0, x1: 1, y1: 0, kind: CUT_ARC }]);
+    drawLayer(m.ctx, ir, {
+      layer: 0,
+      colorMode: { mode: 'moveKind', cut: [0, 0, 1], travel: [0, 1, 0], fallback: [0, 0, 0] },
+      fit: scaleFit,
+      lineWidth: 3
+    });
+    expect(m.strokes.map((s) => [s.style, s.width])).toEqual([['rgb(0, 0, 255)', 3]]);
+  });
+
+  it('a non-finite Cut move is skipped and counted, not drawn', () => {
+    const ir = irOf([
+      { x0: 0, y0: 0, x1: 1, y1: 0, kind: MoveKind.Cut },
+      { x0: 1, y0: 0, x1: 2, y1: 0, kind: MoveKind.Cut }
+    ]);
+    ir.segments.x1[0] = Number.NaN;
+    const m = new MockCtx();
+    expect(drawLayer(m.ctx, ir, { layer: 0, colorMode: single, fit: scaleFit })).toMatchObject({
+      cutDrawn: 1,
+      skippedNonFinite: 1
+    });
+    expect(m.strokes).toHaveLength(1);
+  });
+
+  it('the progress cut dims not-yet-cut Cut moves on the active layer', () => {
+    const m = new MockCtx();
+    const ir = irOf([
+      { x0: 0, y0: 0, x1: 1, y1: 0, kind: MoveKind.Cut },
+      { x0: 1, y0: 0, x1: 2, y1: 0, kind: MoveKind.Cut },
+      { x0: 2, y0: 0, x1: 3, y1: 0, kind: MoveKind.Cut }
+    ]);
+    drawLayers(m.ctx, ir, { layer: 0, colorMode: single, fit: scaleFit, progress: { segIndex: 0, layerIndex: 0 } });
+    expect(m.strokes.map((s) => s.alpha)).toEqual([1, 0.15, 0.15]);
+  });
+
+  /** Two layers, each one Cut and one Extrude. */
+  const twoLayers = () =>
+    irOf([
+      { x0: 0, y0: 0, x1: 1, y1: 0, kind: MoveKind.Cut, layer: 0 },
+      { x0: 1, y0: 0, x1: 2, y1: 0, kind: MoveKind.Extrude, layer: 0 },
+      { x0: 0, y0: 1, x1: 1, y1: 1, kind: MoveKind.Cut, layer: 1 },
+      { x0: 1, y0: 1, x1: 2, y1: 1, kind: MoveKind.Extrude, layer: 1 }
+    ]);
+
+  it('drawLayers draws Cut on ghosts and the active layer, and sums cutDrawn', () => {
+    const m = new MockCtx();
+    const res = drawLayers(m.ctx, twoLayers(), { layer: 1, adjacentLayers: 1, colorMode: single, fit: scaleFit });
+    expect(res).toEqual({
+      layer: 1,
+      layerCount: 2,
+      ghostLayers: [0],
+      extrudeDrawn: 2,
+      travelDrawn: 0,
+      cutDrawn: 2,
+      skippedNonFinite: 0,
+      drawn: true
+    });
+    expect(m.strokes.map((s) => s.alpha)).toEqual([0.25, 0.25, 1, 1]);
+  });
+
+  it('drawLayers with cut: false hides Cut on the ghosts AND the active layer', () => {
+    const m = new MockCtx();
+    const res = drawLayers(m.ctx, twoLayers(), {
+      layer: 1,
+      adjacentLayers: 1,
+      colorMode: single,
+      fit: scaleFit,
+      cut: false
+    });
+    expect(res).toMatchObject({ extrudeDrawn: 2, cutDrawn: 0 });
+    expect(m.strokes.map((s) => [s.from[0], s.alpha])).toEqual([
+      [10, 0.25],
+      [10, 1]
+    ]);
+  });
+
+  it('drawLayers out of range reports cutDrawn 0', () => {
+    expect(drawLayers(new MockCtx().ctx, twoLayers(), { layer: 5, colorMode: single, fit: scaleFit })).toMatchObject({
+      cutDrawn: 0,
+      drawn: false
+    });
+  });
+
+  it('LayerView2D: Cut shown by default; the cut option and setCut toggle it', () => {
+    const m = new MockCtx();
+    const view = new LayerView2D(fakeCanvas(100, 100, m), { adjacentLayers: 0 });
+    view.setToolpath(mixed());
+    expect(view.render()).toMatchObject({ cutDrawn: 2, extrudeDrawn: 2 });
+    view.setCut(false);
+    expect(view.render()).toMatchObject({ cutDrawn: 0, extrudeDrawn: 2 });
+    view.setCut(true);
+    expect(view.render()).toMatchObject({ cutDrawn: 2 });
+    const hidden = new LayerView2D(fakeCanvas(100, 100, new MockCtx()), { cut: false });
+    hidden.setToolpath(mixed());
+    expect(hidden.render()).toMatchObject({ cutDrawn: 0, extrudeDrawn: 2 });
+  });
+
+  it('LayerView2D: an empty render reports cutDrawn 0', () => {
+    const view = new LayerView2D(fakeCanvas(100, 100, new MockCtx()));
+    expect(view.render()).toEqual({
+      layer: 0,
+      layerCount: 0,
+      ghostLayers: [],
+      extrudeDrawn: 0,
+      travelDrawn: 0,
+      cutDrawn: 0,
+      skippedNonFinite: 0,
+      drawn: false
+    });
+  });
+
+  it('summarize2DDrawable counts Cut moves (finite and non-finite)', () => {
+    const ir = mixed();
+    expect(summarize2DDrawable(ir)).toEqual({ drawable: 5, skippedNonFinite: 0 });
+    ir.segments.y0[2] = Infinity; // the cut arc
+    expect(summarize2DDrawable(ir)).toEqual({ drawable: 4, skippedNonFinite: 1 });
   });
 });

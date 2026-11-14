@@ -22,12 +22,13 @@ runModelBehavioralSuite(
   'gcode-model-viewer custom element',
   { describe, it, expect },
   {
-    create() {
+    create(opts) {
       defineGcodeModelViewer();
       const el = document.createElement('gcode-model-viewer') as GcodeModelViewerElement;
       // Injectables the suite needs are JS properties (they can't be HTML attributes).
       el.createRenderer = MODEL_STUB_GL;
       el.createControls = MODEL_STUB_CONTROLS;
+      if (opts?.pixelRatio !== undefined) el.pixelRatio = opts.pixelRatio;
       document.body.appendChild(el); // connectedCallback creates the controller + binds synchronously
 
       const instance: ModelAdapterInstance = {

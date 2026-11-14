@@ -1,5 +1,137 @@
 # @chestnutlabs/gcode-renderer-three
 
+## 0.24.0
+
+### Minor Changes
+
+- [`51145d8`](https://github.com/ChestnutLabs/gcode-preview/commit/51145d8dce4934c4f048bc33831161de5404210f) Thanks [@sobechestnut-dev](https://github.com/sobechestnut-dev)! - A bad viewer option now throws at once, not after the 3D renderer loads. Until now, a typo such as
+  `cameraMode: 'ortho'` or a theme opacity of `2` passed to `createPreviewController` (or as an adapter prop) only
+  failed inside the on-demand 3D load. The viewer then reported `E_RENDERER_LOAD` and showed no 3D view. The same value
+  passed to a setter before the load came back later as `E_CONTROL_REJECTED`.
+  - **Same rule, same message, earlier.** The constructor and the setters throw `RangeError` synchronously for
+    `theme`, `buildVolume`, `cameraMode`, `qualityMode`, `progressivePreview`, `frameContent`,
+    `interactionQuality` and `renderer.mode`, and for `setView` and `setCameraState`. Nothing is queued. Every value
+    that works today still works.
+  - **`null` and `undefined` are not an error.** An option left `null` (a cleared Vue prop or Svelte binding, say) gets
+    the default; before, some of them (`buildVolume`, `qualityMode`, `progressivePreview`, `cameraMode`) threw or failed
+    the 3D load. A prop cleared to `null` after mount leaves the current value. `setFrameContent` and `setInteractionQuality` with `null` or `undefined` apply `'all'` and
+    `'off'`. `setBuildVolume(null)` does nothing (the current plate stays; on the model viewer it still removes the
+    plate), and a `buildVolume: null` option lets a bed found in the file apply. `colorMode: null` still throws.
+    Before, `setBuildVolume(null)` threw a `TypeError` from inside the renderer.
+  - **Vue and Svelte:** `:build-volume="null"` (Vue) and `buildVolume={null}` (Svelte) no longer throw a `TypeError` at
+    mount. On Svelte, an empty `qualityMode` or `progressivePreview` means the default, at mount as after it. Clearing
+    `cameraMode`, `view`, `cameraFov` or `pixelRatio` to `null` after mount (plus `qualityMode` and
+    `progressivePreview` on Vue) now keeps the current value. Before, it threw `RangeError` (a 2D viewer ignored some).
+  - **2D viewers check too.** A bad 3D option on a `renderer: { mode: '2d' }` viewer used to be ignored. It now throws,
+    as `cameraFov`, `pixelRatio` and `colorMode` already did. `frameContent`, `interactionQuality`, `setView` and
+    `renderer.mode` had no check at all before, so a typo there now throws in every mode.
+  - **New in `@chestnutlabs/gcode-renderer-three` (and `/lite`):** the checks themselves (`checkTheme`,
+    `checkBuildVolume`, `checkCameraMode`, `checkCameraView`, `checkCameraState`, `checkCameraFov`, `checkPixelRatio`,
+    `checkQualityMode`, `checkProgressivePreview`, `checkFrameContent`, `checkInteractionQuality`,
+    `checkRendererMode`) and the allowed values as `readonly` arrays (`CAMERA_MODES`, `CAMERA_VIEWS`,
+    `QUALITY_POLICIES`, `PROGRESSIVE_PREVIEW_MODES`, `FRAME_CONTENT_MODES`, `INTERACTION_QUALITY_MODES`,
+    `RENDERER_MODES`), plus `MAX_GRID_LINES_PER_AXIS`. The renderer uses the same functions, so each rule exists once.
+  - **Web Component:** `<gcode-preview>`'s `buildVolume = null` is now no volume, before and after connect. It threw a
+    `TypeError` (`'bed' in null`). Otherwise unchanged: a bad property value throws, and a bad attribute value
+    (`camera-mode="ortho"`) is ignored, as before.
+
+- [#601](https://github.com/ChestnutLabs/gcode-preview/pull/601) [`e6ca4e8`](https://github.com/ChestnutLabs/gcode-preview/commit/e6ca4e857a1ee599ffc516562b022ece6bbebe8b) Thanks [@sobechestnut-dev](https://github.com/sobechestnut-dev)! - Very large CNC/laser files are now thinned automatically, like large prints; set `decimation: 1` to keep every move.
+  - Cut moves now count toward the automatic decimation threshold (more than 2M drawn moves keeps every 2nd, 5M every 3rd,
+    10M every 5th). `decimationApplied` reports the factor and travel is hidden while it is above 1, as for prints.
+  - The first and last cut of each layer are always kept.
+  - FDM files have no Cut moves and render exactly as before.
+
+- [#597](https://github.com/ChestnutLabs/gcode-preview/pull/597) [`d895700`](https://github.com/ChestnutLabs/gcode-preview/commit/d895700aeb702dbf5a5e1e00479881220ae97856) Thanks [@sobechestnut-dev](https://github.com/sobechestnut-dev)! - CNC and laser Cut moves are now their own toggleable move kind (`'cut'`), no longer hidden or dropped with travel.
+  - **Fixes:** a Cut segment used to land in the travel chunk. Hiding travel hid the cuts (so a CNC file looked empty),
+    and under decimation the cuts were dropped along with travel.
+  - **Decimation:** cuts now follow the same rule as extrusion (kept if first/last of a layer or every Nth), so a large
+    CNC file thins out instead of disappearing.
+  - **New toggle:** `setKindVisible('cut', visible)`, `showCut` on Vue, React, Svelte and `renderStill` (default `true`),
+    and `show-cut` / `showCut` on `<gcode-preview>`.
+  - **2D view:** draws Cut moves too, and honours the same toggle (see the `gcode-renderer-2d` entry).
+  - FDM files have no Cut moves and render exactly as before.
+
+### Patch Changes
+
+- [#587](https://github.com/ChestnutLabs/gcode-preview/pull/587) [`7a95b00`](https://github.com/ChestnutLabs/gcode-preview/commit/7a95b00ce7ad65ae8f8d4090070d0ea583310446) Thanks [@sobechestnut-dev](https://github.com/sobechestnut-dev)! - CNC, laser and pen-plotter files now frame and sit on the plate sensibly.
+  - **Plotter files frame the drawing.** A file with only travel moves, such as a pen plotter that lifts its pen with Z
+    or a servo, used to open on the empty bed. The camera now frames the drawing instead. A file with unusable
+    coordinates still frames the bed.
+  - **CNC and laser work shows through the plate.** For a file with no printing moves, the build plate and its edge are
+    drawn at no more than 35% opaque and the contact shadow is left out, so cuts below the plate stay visible. A file
+    with any printing move, including one printed entirely with arcs, or a printer that also cuts, looks exactly as
+    before. Themes that draw no plate are unaffected.
+  - The "frameContent 'object' is unavailable" message now says it frames all cut and printed moves.
+
+- [#576](https://github.com/ChestnutLabs/gcode-preview/pull/576) [`01d9d9f`](https://github.com/ChestnutLabs/gcode-preview/commit/01d9d9f9911eee0042d939d871fd10fc47a2932c) Thanks [@sobechestnut-dev](https://github.com/sobechestnut-dev)! - A 2D-only app no longer ships three.js. From v0.18.0 through v0.23.0, any bundle that imported
+  `@chestnutlabs/gcode-preview-core` (or a framework adapter) loaded all of three.js at startup, about 600 KB minified,
+  even with `renderer: { mode: '2d' }`. The 3D renderer was meant to load on demand, and now it does again. Measured on
+  `createPreviewController({ renderer: { mode: '2d' } })`: the startup bundle drops from 634 KB to 35 KB with Vite and from
+  641 KB to 37 KB with esbuild. Three.js moves to a chunk that loads only when a 3D view binds.
+  - **No API change.** Every import keeps working. `renderStill` loads the 3D renderer when it is called, so the first
+    call does one extra dynamic import.
+  - **New: `@chestnutlabs/gcode-renderer-three/lite`.** A three-free entry with `CaptureUnsupportedError`, `studioTheme`,
+    `STUDIO_CAMERA_FOV` and the theme, camera and capture types. Core imports only this entry statically. You normally
+    don't need it, because the main entry exports the same values.
+  - **Your own tests:** the first 3D view now loads the renderer module when it binds, not when core is imported. A
+    test that waits a fixed number of ticks for the 3D renderer to bind may need it preloaded once in its setup:
+    `await import('@chestnutlabs/gcode-renderer-three')`.
+  - **If that load fails** (offline, or a stale deploy whose chunk now returns 404), the preview reports an `error`
+    event with code `E_RENDERER_LOAD`, as it does for any 3D renderer that cannot start.
+
+- [#608](https://github.com/ChestnutLabs/gcode-preview/pull/608) [`53d2d47`](https://github.com/ChestnutLabs/gcode-preview/commit/53d2d47f04fe782dbf1dee232d34788f0122cb67) Thanks [@sobechestnut-dev](https://github.com/sobechestnut-dev)! - The `pixelRatio` option no longer stops the 3D view from starting. Since 0.22.0, a `pixelRatio` that changed the
+  ratio at start-up (`2`, or `'device'` on a high-DPI screen) drew a frame before the cameras existed: the preview
+  reported `E_RENDERER_LOAD` and drew nothing, and the model viewer stayed blank. `setPixelRatio()` after start-up was
+  not affected.
+
+  The testing helpers now catch this: the stub GLs in `@chestnutlabs/gcode-preview-core/testing` (`makeSuiteStubGL`)
+  and `@chestnutlabs/gcode-model-renderer/testing` (`MODEL_STUB_GL`, `makeModelRecordingGL`) read the camera the way
+  three does, and `ModelAdapterHarness.create` takes an optional `{ pixelRatio }` that your harness passes to the
+  viewer at mount.
+
+- [#543](https://github.com/ChestnutLabs/gcode-preview/pull/543) [`6ac0492`](https://github.com/ChestnutLabs/gcode-preview/commit/6ac04923113acae681366f5b64b86f1976fc1759) Thanks [@sobechestnut-dev](https://github.com/sobechestnut-dev)! - Bad camera, capture, colour-mode and progressive-preview input now throws a clear `RangeError` instead of
+  blanking the view or silently doing the wrong thing, and a capture without the build volume no longer
+  leaves it hidden.
+  - **Invalid input is rejected up front and changes nothing.** `setCameraState` (non-finite position or
+    target, a `zoom` that is not a finite number above 0, an unknown `cameraMode`), `setCameraMode` and the
+    `cameraMode` option, capture `width` / `height` (non-finite, over 16384 px a side, or
+    over about 67 megapixels), the `colorMode` option and `setColorMode` (inverted or negative range, bad
+    object index), and `progressivePreview` / `setProgressivePreview` all throw a `RangeError` before any
+    state is touched. `setCameraState` previously accepted a NaN pose that blanked the view for good.
+  - **A capture without the build volume hides it only for the render.** It is no longer hidden across the
+    async encode, so an overlapping capture or a live frame can no longer see the volume hidden or "restore"
+    it to hidden. A volume you had already hidden stays hidden.
+  - **A bare click no longer disturbs the render quality.** A pointer click with no movement used to write a
+    stale resolution ratio back over the renderer's own when interaction quality was `auto`.
+  - **`handleGeometryMessage` and the `GeometryBuildError` type are now exported** beside
+    `handleGeometryRequest`. If you build your own geometry worker, call `handleGeometryMessage` so a failed
+    build comes back tagged with its request id and the pool fails only that request.
+
+- [#559](https://github.com/ChestnutLabs/gcode-preview/pull/559) [`e7e5bd4`](https://github.com/ChestnutLabs/gcode-preview/commit/e7e5bd432dd601a780f1f3809888e1f5aef5fb21) Thanks [@sobechestnut-dev](https://github.com/sobechestnut-dev)! - A theme value the viewer can't draw now throws a `RangeError` that names the field, instead of quietly
+  drawing something else. This covers the toolpath viewer and the model viewer, whose plate uses the same
+  theme. Valid themes, the defaults and both `studioTheme()` presets look exactly as before.
+  - **Light intensities:** `hemisphereIntensity` and `directionalIntensity` must be finite numbers `>= 0`.
+    Before, `NaN`, `Infinity` or a negative value went straight to the lights.
+  - **Plate:** `bedSurface.opacity` must be in `[0, 1]`. `bedSurface.thickness` must be a finite number
+    `>= 0`: before, a negative or `NaN` thickness silently drew no walls, and `Infinity` produced broken
+    geometry.
+  - **Typos now throw (behaviour change):** a `bedSurface.mode` other than `'none'` or `'solid'` used to
+    draw no plate, and a `materialPreset` other than `'matte'` or `'glossy'` used to fall back to matte.
+    Both now throw and list the accepted values. If you pass an untyped or user-edited theme, check these
+    two fields.
+  - **`createContactShadow(footprint, opacity)`:** throws for an `opacity` outside `[0, 1]`. A footprint
+    with an infinite or `NaN` extent (it comes from file data) now draws no shadow, as an empty one already
+    did.
+  - **`lensScale(from, to)`:** throws for a field of view outside `[10, 120]` degrees, like `cameraFov`.
+  - **Renderer detection:** a GPU string ending in `"AMD "` now classifies as hardware (the trailing space
+    was trimmed away before).
+
+  Colour strings are not checked yet.
+
+- Updated dependencies [[`1ff1bbf`](https://github.com/ChestnutLabs/gcode-preview/commit/1ff1bbf7cc39b2faf9b21ecd25fac56d1b82b8bf), [`b0b1922`](https://github.com/ChestnutLabs/gcode-preview/commit/b0b1922ce7a4f3c3f3952185d1fdd47fcc115480), [`eb6b74c`](https://github.com/ChestnutLabs/gcode-preview/commit/eb6b74c0f9a8a7b0e28060d672d1021dab2a63d5), [`6b03f42`](https://github.com/ChestnutLabs/gcode-preview/commit/6b03f4221e5f0a552959fbed7f85124203d42f57)]:
+  - @chestnutlabs/gcode-colors@0.24.0
+  - @chestnutlabs/toolpath-core@0.24.0
+
 ## 0.23.0
 
 ### Patch Changes

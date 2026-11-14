@@ -20,15 +20,24 @@ const settle = async (): Promise<void> => {
   for (let i = 0; i < 4; i++) await new Promise((r) => setTimeout(r, 0));
 };
 
-function makeController(opts: { machine?: MachineGeometry; consumerVolume?: boolean } = {}) {
+function makeController(
+  opts: {
+    machine?: MachineGeometry;
+    consumerVolume?: boolean;
+    renderer?: '2d';
+    createWorker?: () => SuiteStubWorker;
+    createGL?: (canvas: HTMLCanvasElement) => ReturnType<typeof makeSuiteStubGL>;
+  } = {}
+) {
   const canvas = document.createElement('canvas');
   const controller = createPreviewController({
-    createWorker: () => new SuiteStubWorker(opts.machine),
+    createWorker: opts.createWorker ?? (() => new SuiteStubWorker(opts.machine)),
     renderer: {
+      mode: opts.renderer ?? '3d',
       buildVolume: opts.consumerVolume === true ? { x: 220, y: 220, z: 250 } : undefined,
       quality: 'lines',
       chunksPerTick: 8,
-      createRenderer: () => makeSuiteStubGL(canvas),
+      createRenderer: opts.createGL ?? (() => makeSuiteStubGL(canvas)),
       scheduleFrame: (cb) => cb()
     }
   });
@@ -416,13 +425,14 @@ describe('time estimate + time scrub (#181)', () => {
       }
     });
     controller.bindCanvas(canvas);
-    // Before any parse there is no time axis: a time scrub is a no-op (it queues a cleared cut), never a throw.
+    // Before any parse there is no time axis: the call never throws, and it waits for the file.
     expect(() => controller.controls.setScrubTime(5)).not.toThrow();
     await controller.parse(new Uint8Array(1_000));
     await settle();
     const draw = (): number => controller.raw.renderer()!.chunkMeshes[0].geometry.drawRange.count;
-    expect(draw()).toBe(24); // the pre-parse call left no cut behind
+    expect(draw()).toBe(10); // the pre-parse 5 ms, resolved on this file's axis: 5 segments done
     expect(controller.getState().totalTimeMs).toBeCloseTo(12, 6);
+    controller.controls.setScrubTime(null);
     expect(draw()).toBe(24); // two vertices per segment, nothing cut
     const cases: Array<[number, number]> = [
       [0, 0], // exactly 0 ms: the first segment has a duration, so nothing has finished

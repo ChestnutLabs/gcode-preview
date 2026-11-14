@@ -21,7 +21,7 @@
  * Distinct surface from the toolpath controller (no layers/travel/scrub/IR) — capability tiers pass
  * through from the parsed model, never recomputed (DD-001 honesty).
  */
-import { resolveTheme } from '@chestnutlabs/gcode-renderer-three';
+import { CaptureUnsupportedError, resolveTheme } from '@chestnutlabs/gcode-renderer-three';
 import type {
   BuildVolumeDef,
   Theme,
@@ -45,7 +45,7 @@ import {
 import type { ModelSourceInput, ModelLoader } from './loaders.js';
 import { checkModelFov, checkModelPixelRatio, type ModelBackground, type PresentationView } from './model-renderer.js';
 import type { ModelPlacement, PlacementOffset } from './placement.js';
-import type { ModelBounds, ModelPlateSummary, RenderScope } from './scene-model.js';
+import { checkRenderScope, type ModelBounds, type ModelPlateSummary, type RenderScope } from './scene-model.js';
 import type { ModelLimits } from './limits.js';
 
 /**
@@ -216,7 +216,6 @@ export function createModelPreviewController(options: ModelPreviewControllerOpti
 
   let engine: ModelViewer | null = null;
   let boundCanvas: RenderTargetCanvas | null = null;
-  let unsubEngine: (() => void) | null = null;
   let disposed = false;
   /** Last source set — replayed when the canvas (re)binds so the model survives a remount. */
   let lastSource: ModelSourceInput | null = null;
@@ -235,15 +234,21 @@ export function createModelPreviewController(options: ModelPreviewControllerOpti
   let currentCage: boolean = options.showVolumeCage ?? true;
   if (options.pixelRatio !== undefined) checkModelPixelRatio(options.pixelRatio);
   let currentPixelRatio: PixelRatioOption | undefined = options.pixelRatio;
+  // Scope, background and interaction quality are remembered too: the consumer's latest value wins over the
+  // initial option when a rebind rebuilds the engine.
+  if (options.renderScope !== undefined) checkRenderScope(options.renderScope);
+  let currentScope: RenderScope | null = options.renderScope ?? null;
+  let currentBackground: ModelBackground | undefined = options.background;
+  let currentInteraction: 'off' | 'auto' | undefined = options.interactionQuality;
 
   const engineOptions = (): ModelViewerOptions => ({
     ...(options.loaders ? { loaders: options.loaders } : {}),
-    ...(options.background !== undefined ? { background: options.background } : {}),
-    ...(options.interactionQuality ? { interactionQuality: options.interactionQuality } : {}),
+    ...(currentBackground !== undefined ? { background: currentBackground } : {}),
+    ...(currentInteraction ? { interactionQuality: currentInteraction } : {}),
     ...(options.cameraMode ? { cameraMode: options.cameraMode } : {}),
     ...(options.limits ? { limits: options.limits } : {}),
     ...(options.filamentPalette ? { filamentPalette: options.filamentPalette } : {}),
-    ...(options.renderScope ? { renderScope: options.renderScope } : {}),
+    ...(currentScope !== null ? { renderScope: currentScope } : {}),
     ...(options.createRenderer ? { createRenderer: options.createRenderer } : {}),
     ...(options.createControls ? { createControls: options.createControls } : {}),
     ...(options.autoFrameOnResize !== undefined ? { autoFrameOnResize: options.autoFrameOnResize } : {}),
@@ -260,9 +265,8 @@ export function createModelPreviewController(options: ModelPreviewControllerOpti
   });
 
   /** Mirror the engine's current plate placement into state after something that can change it. */
-  const syncPlacement = (): void => {
-    if (engine === null) return;
-    const p = engine.getPlacement();
+  const syncPlacement = (v: ModelViewer): void => {
+    const p = v.getPlacement();
     const o = snapshot.placementOffset;
     const same =
       p.placement === snapshot.placement &&
@@ -290,7 +294,7 @@ export function createModelPreviewController(options: ModelPreviewControllerOpti
   };
 
   const wire = (v: ModelViewer): void => {
-    unsubEngine = v.onEvent((e) => {
+    v.onEvent((e) => {
       switch (e.type) {
         case 'ready':
           applyReady(e.info);
@@ -347,8 +351,6 @@ export function createModelPreviewController(options: ModelPreviewControllerOpti
     unsizeCanvas = null;
     // Tear down the engine bound to the previous canvas.
     if (engine !== null) {
-      unsubEngine?.();
-      unsubEngine = null;
       engine.dispose();
       engine = null;
     }
@@ -379,6 +381,7 @@ export function createModelPreviewController(options: ModelPreviewControllerOpti
 
   const controls: ModelPreviewControls = {
     setSource(input) {
+      if (disposed) return Promise.reject(new Error('E_MODEL_PREVIEW_DISPOSED'));
       lastSource = input;
       mutate({ loading: true, error: null });
       if (engine !== null) return engine.setSource(input);
@@ -399,14 +402,14 @@ export function createModelPreviewController(options: ModelPreviewControllerOpti
       else pendingOps.push((v) => v.setCameraState(state));
     },
     setBackground(bg) {
-      if (engine !== null) engine.setBackground(bg);
-      else pendingOps.push((v) => v.setBackground(bg));
+      currentBackground = bg;
+      if (engine !== null) engine.setBackground(bg); // before a bind, engineOptions() carries it
     },
     setBuildVolume(def) {
       currentBuildVolume = def;
       if (engine !== null) {
         engine.setBuildVolume(def);
-        syncPlacement();
+        syncPlacement(engine);
       }
     },
     setBuildVolumeCage(visible) {
@@ -429,14 +432,16 @@ export function createModelPreviewController(options: ModelPreviewControllerOpti
       if (engine !== null) engine.setPixelRatio(ratio);
     },
     setInteractionQuality(mode) {
+      currentInteraction = mode;
       if (engine !== null) engine.setInteractionQuality(mode);
-      else pendingOps.push((v) => v.setInteractionQuality(mode));
     },
     setRenderScope(scope) {
+      if (scope !== null) checkRenderScope(scope); // RangeError before anything is stored, bound or not
+      currentScope = scope;
       if (engine !== null) {
         engine.setRenderScope(scope);
-        syncPlacement();
-      } else pendingOps.push((v) => v.setRenderScope(scope));
+        syncPlacement(engine);
+      }
     },
     frame() {
       if (engine !== null) engine.frame();
@@ -448,7 +453,7 @@ export function createModelPreviewController(options: ModelPreviewControllerOpti
     },
     capture(opts) {
       if (engine !== null) return engine.capture(opts);
-      return Promise.reject(new Error('E_CAPTURE_UNSUPPORTED: no canvas bound'));
+      return Promise.reject(new CaptureUnsupportedError('no canvas bound'));
     }
   };
 
@@ -457,13 +462,9 @@ export function createModelPreviewController(options: ModelPreviewControllerOpti
     disposed = true;
     unsizeCanvas?.();
     unsizeCanvas = null;
-    unsubEngine?.();
-    unsubEngine = null;
     engine?.dispose();
     engine = null;
     boundCanvas = null;
-    stateListeners.clear();
-    eventListeners.clear();
     pendingOps.length = 0;
     for (const w of pendingSourceWaiters.splice(0, pendingSourceWaiters.length)) {
       w.reject(new Error('E_MODEL_PREVIEW_DISPOSED'));

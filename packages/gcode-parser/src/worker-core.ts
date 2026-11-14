@@ -184,7 +184,6 @@ export function createWorkerHandler(
         return;
       }
       activeId = msg.id;
-      cancelRequested = false;
       const {
         partialOnCancel,
         yieldIntervalMs,
@@ -255,7 +254,7 @@ export function createWorkerHandler(
                 return;
               }
               const plateIdx = plate ?? 0;
-              if (plateIdx < 0 || plateIdx >= opened.plates.length) {
+              if (!Number.isInteger(plateIdx) || plateIdx < 0 || plateIdx >= opened.plates.length) {
                 post({
                   v: PROTOCOL_VERSION,
                   type: 'error',

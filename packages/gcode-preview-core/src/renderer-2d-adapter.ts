@@ -34,6 +34,14 @@ import type {
 import type { MachineGeometry, MappedProgress, ToolpathIR } from '@chestnutlabs/toolpath-core';
 import type { MoveKindToggle, PreviewRenderer, PreviewRendererEvent } from './renderer-interface.js';
 
+/** The travel style used when the constructor set none (the toggle still has to draw something). */
+const DEFAULT_TRAVEL: TravelStyle = { color: 'rgba(120,120,120,0.9)', lineWidth: 0.5 };
+
+/** A canvas dimension in whole device px, at least 1 (NaN and infinities become 1). */
+function canvasSize(v: number): number {
+  return Number.isFinite(v) && v >= 1 ? Math.round(v) : 1;
+}
+
 export interface LayerView2DRendererOptions {
   colorMode?: ColorMode;
   /** Preceding "ghost" layers drawn beneath the active one (default 1, floor 0). */
@@ -50,11 +58,19 @@ export class LayerView2DRenderer implements PreviewRenderer {
   private readonly view: LayerView2D;
   private ir: ToolpathIR | null = null;
   private readonly listeners = new Set<(e: PreviewRendererEvent) => void>();
+  /** The style the travel toggle restores: the constructor's own, else the default grey. */
+  private readonly travelStyle: TravelStyle;
+  private disposed = false;
 
+  /**
+   * Throws a `RangeError` for an invalid option (`colorMode`, `adjacentLayers`, `ghostOpacity`,
+   * `lineWidth`; see `LayerView2D`).
+   */
   constructor(
     private readonly canvas: HTMLCanvasElement,
     opts: LayerView2DRendererOptions = {}
   ) {
+    this.travelStyle = opts.travel || DEFAULT_TRAVEL;
     this.view = new LayerView2D(canvas, {
       colorMode: opts.colorMode,
       adjacentLayers: opts.adjacentLayers,
@@ -62,6 +78,11 @@ export class LayerView2DRenderer implements PreviewRenderer {
       lineWidth: opts.lineWidth,
       travel: opts.travel
     });
+  }
+
+  /** Redraw, unless disposed: like the 3D renderer, a disposed 2D view never draws again. */
+  private redraw(): void {
+    if (!this.disposed) this.view.render();
   }
 
   private emit(e: PreviewRendererEvent): void {
@@ -78,15 +99,17 @@ export class LayerView2DRenderer implements PreviewRenderer {
   }
 
   resize(width: number, height: number): void {
-    this.canvas.width = Math.max(1, Math.round(width));
-    this.canvas.height = Math.max(1, Math.round(height));
-    this.view.render();
+    // Sizes come from the host page (layout, observers), so a meaningless one is clamped, never thrown on.
+    this.canvas.width = canvasSize(width);
+    this.canvas.height = canvasSize(height);
+    this.redraw();
   }
 
   setIR(ir: ToolpathIR): void {
+    if (this.disposed) return;
     this.ir = ir;
     this.view.setToolpath(ir);
-    this.view.render();
+    this.redraw();
     // Disclose what a flat 2D view cannot faithfully represent (non-planar/CNC), never silently
     // (DD-014 §6/§11) — an honest capability signal on the same channel as 3D-only-option notices.
     for (const message of describe2DDisclosures(ir)) this.disclose('layers', message);
@@ -141,9 +164,10 @@ export class LayerView2DRenderer implements PreviewRenderer {
   }
 
   setLayerRange(_startLayer: number, endLayer: number): void {
-    // A single-layer 2D view shows the TOP of the requested range (the current layer).
+    // A single-layer 2D view shows the TOP of the requested range (the current layer). LayerView2D floors
+    // it and clamps it to the last layer, so the adapters' "show all" (`Infinity`) is the top layer.
     this.view.setLayer(endLayer);
-    this.view.render();
+    this.redraw();
   }
 
   setScrubPosition(_segIndex: number | null): void {
@@ -151,11 +175,12 @@ export class LayerView2DRenderer implements PreviewRenderer {
   }
 
   setKindVisible(kind: MoveKindToggle, visible: boolean): void {
-    // extrusion is the point of the 2D view (never hidden); wipe is a 3D-line concern with no
-    // distinct 2D representation, so only the travel toggle is meaningful here.
-    if (kind !== 'travel') return;
-    this.view.setTravel(visible ? { color: 'rgba(120,120,120,0.9)', lineWidth: 0.5 } : false);
-    this.view.render();
+    // Extrusion is the point of the 2D view (never hidden); wipe is a 3D-line concern with no distinct
+    // 2D representation. Travel and Cut (#588) are the toggles the 2D view honours.
+    if (kind === 'travel') this.view.setTravel(visible ? this.travelStyle : false);
+    else if (kind === 'cut') this.view.setCut(visible);
+    else return;
+    this.redraw();
   }
 
   setShowRetractions(visible: boolean): void {
@@ -165,7 +190,7 @@ export class LayerView2DRenderer implements PreviewRenderer {
   setColorMode(mode: ColorMode): boolean {
     if (!this.isColorModeAvailable(mode.mode)) return false;
     this.view.setColorMode(mode);
-    this.view.render();
+    this.redraw();
     return true;
   }
 
@@ -245,7 +270,7 @@ export class LayerView2DRenderer implements PreviewRenderer {
   setProgress(p: MappedProgress | null): void {
     const projected: LayerProgress | null = p === null ? null : { segIndex: p.segIndex, layerIndex: p.layerIndex };
     this.view.setProgress(projected);
-    this.view.render();
+    this.redraw();
   }
 
   pickSegment(): number | null {
@@ -255,10 +280,11 @@ export class LayerView2DRenderer implements PreviewRenderer {
 
   frame(): void {
     // The 2D view always auto-fits the whole-model frame; framing is just a redraw.
-    this.view.render();
+    this.redraw();
   }
 
   dispose(): void {
+    this.disposed = true;
     this.listeners.clear();
     this.view.setToolpath(null);
     this.ir = null;

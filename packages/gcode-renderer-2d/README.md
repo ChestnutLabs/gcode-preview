@@ -20,6 +20,17 @@ never the whole model.
 
 ## Usage
 
+In an app, you usually reach this view through the controller, which keeps the bundle three-free (about 35 KB at
+startup) and loads the 3D renderer only if a 3D view binds:
+
+```ts
+import { createPreviewController } from '@chestnutlabs/gcode-preview-core';
+
+const preview = createPreviewController({ renderer: { mode: '2d' } });
+```
+
+On the components it is `renderer="2d"`. To drive the view yourself:
+
 ```ts
 import { LayerView2D } from '@chestnutlabs/gcode-renderer-2d';
 
@@ -34,6 +45,18 @@ meaning (for example an inverted `range`), and the previous mode stays in effect
 built from user input first, call `checkColorMode(mode)`, re-exported here from
 [`@chestnutlabs/gcode-colors`](../gcode-colors/README.md).
 
+`setLayer(n)` floors a fractional index, and an index past the last layer (`Infinity` included) shows
+the top layer, so "show everything" never blanks the view. `NaN` is ignored. The constructor also
+throws a `RangeError` for `adjacentLayers: NaN`, a `ghostOpacity` outside `[0, 1]`, a `lineWidth`
+that isn't a finite number above 0, or a `padding` that isn't a finite number of at least 0.
+`setAdjacentLayers(NaN)` throws too. A negative `adjacentLayers` still draws no ghost layers.
+
+CNC and laser files draw too: their Cut moves (the tool engaged in the material) are drawn with the
+extrusion, in file order, coloured by the same colour mode. `cut: false` in the options, or `setCut(false)`,
+hides them, and the draw result counts them in `cutDrawn`. A move that is both an extrusion and a cut
+counts once, as an extrusion. On `GcodePreview` with `renderer="2d"`, the `'cut'` move-kind toggle
+(`showCut` on the framework components, `show-cut` on `<gcode-preview>`) maps to `setCut`.
+
 The drawing core is also exposed as pure functions — `drawLayer(ctx, ir, opts)`, `computeLayerFit`,
 `layerBounds2D`, `rgbToCss` — which take a minimal Canvas-2D-context interface and are fully
 testable in Node with a recording mock.
@@ -41,7 +64,8 @@ testable in Node with a recording mock.
 ## Honesty
 
 A flat per-layer 2D view cannot represent non-XY/CNC toolpaths or 3D-only options. A missing or
-out-of-range layer draws nothing and reports `drawn: false` rather than fabricating geometry.
+out-of-range layer passed to `drawLayer`/`drawLayers` draws nothing and reports `drawn: false` rather
+than fabricating geometry.
 A segment with an `Infinity` or `NaN` X/Y coordinate (possible in a toolpath you build yourself) is
 skipped: it is not drawn, it does not affect the view frame, and the draw result counts it in
 `skippedNonFinite`, for the layers it drew. `summarize2DDrawable(ir)` gives the count for the whole toolpath.

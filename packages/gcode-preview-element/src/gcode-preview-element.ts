@@ -11,6 +11,7 @@
  * No framework peer dependency — this is the plain-DOM / Angular / vanilla path.
  */
 import {
+  CaptureUnsupportedError,
   createPreviewController,
   type CaptureOptions,
   type GcodePreviewControls,
@@ -22,9 +23,7 @@ import {
 } from '@chestnutlabs/gcode-preview-core';
 import type {
   BuildVolumeDef,
-  CameraMode,
   CameraState,
-  CameraView,
   ColorMode,
   PixelRatioOption,
   Theme,
@@ -37,6 +36,19 @@ import type {
   ProgressObservation
 } from '@chestnutlabs/toolpath-core';
 import type { WireParseOptions, WorkerLike } from '@chestnutlabs/gcode-parser';
+
+import {
+  CAMERA_MODES,
+  CAMERA_VIEWS,
+  FRAME_CONTENTS,
+  INTERACTION_QUALITIES,
+  PROGRESSIVE_PREVIEWS,
+  QUALITIES,
+  QUALITY_MODES,
+  RENDERERS,
+  assertEnum,
+  pickEnum
+} from './enums.js';
 
 export type GcodePreviewSource = Uint8Array | ArrayBuffer | File | null;
 
@@ -59,6 +71,9 @@ export type ElementRendererOptions = Omit<
 type PreviewControllerRenderer = NonNullable<Parameters<typeof createPreviewController>[0]>['renderer'];
 
 /** Observed scalar/boolean/number attributes; rich options are property-only. */
+/** The perspective lens every renderer starts with, in degrees (#520: a mount value of 50 asks for nothing). */
+const DEFAULT_LENS = 50;
+
 const OBSERVED = [
   'quality',
   'quality-mode',
@@ -71,6 +86,7 @@ const OBSERVED = [
   'view',
   'show-travel',
   'show-wipe',
+  'show-cut',
   'show-retractions',
   'show-volume-cage',
   'scrub',
@@ -81,6 +97,11 @@ const OBSERVED = [
 
 /** The default tag name (DD-009 §4.5). */
 export const DEFAULT_TAG = 'gcode-preview';
+
+/** `adjacent-layers` markup → the renderer option: absent or non-numeric (`NaN`) is `undefined`, the default. */
+function markupAdjacentLayers(attr: string | null): number | undefined {
+  return attr === null ? undefined : parseScrub(attr);
+}
 
 export class GcodePreviewElement extends HTMLElement {
   static get observedAttributes(): string[] {
@@ -101,6 +122,9 @@ export class GcodePreviewElement extends HTMLElement {
   private lastFov: number | undefined;
   /** The last valid `pixel-ratio`, kept across a bad attribute value and a reconnect. */
   private lastPixelRatio: PixelRatioOption | undefined;
+  /** The last numeric `scrub` / `scrub-time` (null = cleared), kept across a non-numeric value and a reconnect. */
+  private lastScrub: number | null = null;
+  private lastScrubTime: number | null = null;
   private _progress: ProgressObservation | null = null;
   private _createWorker: (() => WorkerLike) | undefined;
   private _rendererOptions: ElementRendererOptions | undefined;
@@ -113,8 +137,21 @@ export class GcodePreviewElement extends HTMLElement {
     return this._source;
   }
   set source(v: GcodePreviewSource) {
+    // The same source again is no change (as in the React, Vue and Svelte adapters): no re-parse. To reload
+    // the same bytes, pass a new array or call parse().
+    if (v === this._source) return;
     this._source = v;
-    if (this.controller !== null && v !== null) void this.controller.parse(v, this._parseOptions);
+    if (this.controller === null || v === null) return;
+    const c = this.controller;
+    void c.parse(v, this._parseOptions);
+    // A renderer shows a new file uncut, so re-send the view attributes that still hold a value: the
+    // controller applies them to the file this parse loads. scrub-time goes last, so it wins (as at connect).
+    const r = this.layerRange;
+    if (r !== null) c.controls.setLayerRange(r[0], r[1]);
+    const scrub = this.scrub;
+    if (scrub !== null) c.controls.setScrubPosition(scrub);
+    const scrubTime = this.scrubTime;
+    if (scrubTime !== null) c.controls.setScrubTime(scrubTime);
   }
   get parseOptions(): WireParseOptions | undefined {
     return this._parseOptions;
@@ -127,7 +164,7 @@ export class GcodePreviewElement extends HTMLElement {
   }
   set buildVolume(v: BuildVolumeDef | MachineGeometry | undefined) {
     this._buildVolume = v;
-    if (this.controller !== null && v !== undefined && 'bed' in v) this.controller.controls.setBuildVolume(v);
+    if (this.controller !== null && v != null && 'bed' in v) this.controller.controls.setBuildVolume(v);
   }
   get colorMode(): ColorMode | undefined {
     return this._colorMode;
@@ -178,6 +215,7 @@ export class GcodePreviewElement extends HTMLElement {
     return this.getAttribute('renderer');
   }
   set renderer(v: string | null) {
+    assertEnum('renderer', RENDERERS, v);
     this.reflect('renderer', v);
   }
   /** 2D only: preceding "ghost" layers (DD-031 E1). Construction-time; reflected accessor over the attribute. */
@@ -194,24 +232,28 @@ export class GcodePreviewElement extends HTMLElement {
     return this.getAttribute('quality');
   }
   set quality(v: string | null) {
+    assertEnum('quality', QUALITIES, v);
     this.reflect('quality', v);
   }
   get qualityMode(): string | null {
     return this.getAttribute('quality-mode');
   }
   set qualityMode(v: string | null) {
+    assertEnum('qualityMode', QUALITY_MODES, v);
     this.reflect('quality-mode', v);
   }
   get progressivePreview(): string | null {
     return this.getAttribute('progressive-preview');
   }
   set progressivePreview(v: string | null) {
+    assertEnum('progressivePreview', PROGRESSIVE_PREVIEWS, v);
     this.reflect('progressive-preview', v);
   }
   get cameraMode(): string | null {
     return this.getAttribute('camera-mode');
   }
   set cameraMode(v: string | null) {
+    assertEnum('cameraMode', CAMERA_MODES, v);
     this.reflect('camera-mode', v);
   }
   /**
@@ -253,6 +295,7 @@ export class GcodePreviewElement extends HTMLElement {
     return this.getAttribute('frame-content');
   }
   set frameContent(v: string | null) {
+    assertEnum('frameContent', FRAME_CONTENTS, v);
     this.reflect('frame-content', v);
   }
   /** #306/2 (DD-020): 'auto' reduces detail while the camera moves. */
@@ -260,6 +303,7 @@ export class GcodePreviewElement extends HTMLElement {
     return this.getAttribute('interaction-quality');
   }
   set interactionQuality(v: string | null) {
+    assertEnum('interactionQuality', INTERACTION_QUALITIES, v);
     this.reflect('interaction-quality', v);
   }
   /** #268/#275/M6: preset orientation attribute (top/front/iso/…). */
@@ -267,6 +311,7 @@ export class GcodePreviewElement extends HTMLElement {
     return this.getAttribute('view');
   }
   set view(v: string | null) {
+    assertEnum('view', CAMERA_VIEWS, v);
     this.reflect('view', v);
   }
   /** #268/#275/M6: restore a saved pose (property-only — objects can't be attributes). Pair with the
@@ -292,6 +337,13 @@ export class GcodePreviewElement extends HTMLElement {
   set showWipe(v: boolean) {
     this.setAttribute('show-wipe', v ? 'true' : 'false');
   }
+  /** #584: default true; only `show-cut="false"` hides CNC/laser cutting moves. */
+  get showCut(): boolean {
+    return this.getAttribute('show-cut') !== 'false';
+  }
+  set showCut(v: boolean) {
+    this.setAttribute('show-cut', v ? 'true' : 'false');
+  }
   /** Default false; only `show-retractions="true"` shows markers. */
   get showRetractions(): boolean {
     return this.getAttribute('show-retractions') === 'true';
@@ -306,17 +358,18 @@ export class GcodePreviewElement extends HTMLElement {
   set showVolumeCage(v: boolean) {
     this.setAttribute('show-volume-cage', v ? 'true' : 'false');
   }
+  /** Segment-index scrub cut. A non-numeric value (`scrub="abc"`, `NaN`) is ignored: the last numeric one stays. */
   get scrub(): number | null {
     const a = this.getAttribute('scrub');
-    return a === null ? null : Number(a);
+    return a === null ? null : (parseScrub(a) ?? this.lastScrub);
   }
   set scrub(v: number | null) {
     this.reflect('scrub', v);
   }
-  /** Time-based scrub cut in ms of print time (#181). */
+  /** Time-based scrub cut in ms of print time (#181). A non-numeric value is ignored, like `scrub`. */
   get scrubTime(): number | null {
     const a = this.getAttribute('scrub-time');
-    return a === null ? null : Number(a);
+    return a === null ? null : (parseScrub(a) ?? this.lastScrubTime);
   }
   set scrubTime(v: number | null) {
     this.reflect('scrub-time', v);
@@ -354,7 +407,9 @@ export class GcodePreviewElement extends HTMLElement {
   }
   /** Capture the current view as an image `Blob` (DD-030 D1). Delegates to `controls.capture`. */
   capture(opts?: CaptureOptions): Promise<Blob> {
-    return this.requireController().controls.capture(opts);
+    // Before connect there is no canvas: reject like the controller does, never a synchronous throw.
+    if (this.controller === null) return Promise.reject(new CaptureUnsupportedError('no canvas bound (not connected)'));
+    return this.controller.controls.capture(opts);
   }
   observeProgress(obs: ProgressObservation): MappedProgress | null {
     return this.controller?.observeProgress(obs) ?? null;
@@ -382,31 +437,48 @@ export class GcodePreviewElement extends HTMLElement {
     root.append(style, canvas);
     this.canvasEl = canvas;
 
-    const isMachine = this._buildVolume !== undefined && 'bed' in this._buildVolume;
+    const isMachine = this._buildVolume != null && 'bed' in this._buildVolume;
+    // An enum attribute that is not exactly one of its values is bad markup: ignored (the default), never a throw.
+    const mode: RendererMode | undefined = pickEnum(RENDERERS, this.getAttribute('renderer'));
+    const quality = pickEnum(QUALITIES, this.getAttribute('quality')) ?? 'auto';
+    const cameraMode = pickEnum(CAMERA_MODES, this.getAttribute('camera-mode')) ?? null;
+    const cameraFov = this.acceptFov(this.getAttribute('camera-fov'));
+    const pixelRatio = this.acceptPixelRatio(this.getAttribute('pixel-ratio'));
     this.controller = createPreviewController({
       createWorker: this._createWorker,
       renderer: {
         // DD-014 D5: construction-time renderer selection (mode switching post-mount is out of scope).
-        mode: (this.getAttribute('renderer') as RendererMode | null) ?? undefined,
+        mode,
         buildVolume: isMachine ? undefined : (this._buildVolume as BuildVolumeDef | undefined),
-        quality: (this.getAttribute('quality') as 'auto' | 'lines' | 'tubes' | null) ?? 'auto',
-        qualityMode: (this.getAttribute('quality-mode') as 'full' | 'adaptive' | 'fast' | null) ?? undefined,
-        progressivePreview: (this.getAttribute('progressive-preview') as 'lines' | 'hold' | 'off' | null) ?? undefined,
-        cameraMode: (this.getAttribute('camera-mode') as CameraMode | null) ?? undefined,
-        cameraFov: this.acceptFov(this.getAttribute('camera-fov')),
-        pixelRatio: this.acceptPixelRatio(this.getAttribute('pixel-ratio')),
-        frameContent: (this.getAttribute('frame-content') as 'object' | 'all' | null) ?? undefined,
-        interactionQuality: (this.getAttribute('interaction-quality') as 'off' | 'auto' | null) ?? undefined,
+        quality,
+        qualityMode: pickEnum(QUALITY_MODES, this.getAttribute('quality-mode')),
+        progressivePreview: pickEnum(PROGRESSIVE_PREVIEWS, this.getAttribute('progressive-preview')),
+        cameraMode: cameraMode ?? undefined,
+        cameraFov,
+        pixelRatio,
+        frameContent: pickEnum(FRAME_CONTENTS, this.getAttribute('frame-content')),
+        interactionQuality: pickEnum(INTERACTION_QUALITIES, this.getAttribute('interaction-quality')),
         colorMode: this._colorMode,
         tube: this._tube,
         theme: this._theme,
-        adjacentLayers: this.hasAttribute('adjacent-layers') ? Number(this.getAttribute('adjacent-layers')) : undefined,
+        // A non-numeric attribute is bad markup: ignored (the default), never a throw out of connectedCallback.
+        adjacentLayers: markupAdjacentLayers(this.getAttribute('adjacent-layers')),
         ...this._rendererOptions
       },
       parseDefaults: this._parseOptions
     });
     this.controller.onEvent((e) => this.reemit(e));
     this.controller.bindCanvas(canvas);
+    // #520: the 2D renderer cannot honour these four 3D-only construction settings, so one set to a
+    // non-default value is also applied through controls, and 2D reports `renderer-unsupported` once per
+    // connect. 3D was built with them, so it skips this (a re-applied quality would rebuild).
+    if (mode === '2d') {
+      const c = this.controller.controls;
+      if (quality !== 'auto') c.setQuality(quality);
+      if (cameraMode !== null && cameraMode !== 'perspective') c.setCameraMode(cameraMode);
+      if (cameraFov !== undefined && cameraFov !== DEFAULT_LENS) c.setCameraFov(cameraFov);
+      if (pixelRatio !== undefined) c.setPixelRatio(pixelRatio);
+    }
     if (isMachine) this.controller.controls.setBuildVolume(this._buildVolume as MachineGeometry);
     this.applyRuntimeState();
     if (this._source !== null) void this.controller.parse(this._source, this._parseOptions);
@@ -427,18 +499,27 @@ export class GcodePreviewElement extends HTMLElement {
     if (this.controller === null) return; // connectedCallback applies the initial state
     const c = this.controller.controls;
     switch (name) {
-      case 'quality':
-        c.setQuality((value as 'auto' | 'lines' | 'tubes' | null) ?? 'auto');
+      case 'quality': {
+        // Removed means the default; any other value must be a valid one (bad markup is ignored).
+        const q = value === null ? 'auto' : pickEnum(QUALITIES, value);
+        if (q !== undefined) c.setQuality(q);
         break;
-      case 'quality-mode':
-        if (value !== null) c.setQualityMode(value as 'full' | 'adaptive' | 'fast');
+      }
+      case 'quality-mode': {
+        const v = pickEnum(QUALITY_MODES, value);
+        if (v !== undefined) c.setQualityMode(v);
         break;
-      case 'progressive-preview':
-        if (value !== null) c.setProgressivePreview(value as 'lines' | 'hold' | 'off');
+      }
+      case 'progressive-preview': {
+        const v = pickEnum(PROGRESSIVE_PREVIEWS, value);
+        if (v !== undefined) c.setProgressivePreview(v);
         break;
-      case 'camera-mode':
-        if (value !== null) c.setCameraMode(value as CameraMode);
+      }
+      case 'camera-mode': {
+        const v = pickEnum(CAMERA_MODES, value);
+        if (v !== undefined) c.setCameraMode(v);
         break;
+      }
       case 'camera-fov': {
         const fov = this.acceptFov(value);
         if (fov !== undefined) c.setCameraFov(fov);
@@ -449,20 +530,29 @@ export class GcodePreviewElement extends HTMLElement {
         if (ratio !== undefined) c.setPixelRatio(ratio);
         break;
       }
-      case 'frame-content':
-        if (value !== null) c.setFrameContent(value as 'object' | 'all');
+      case 'frame-content': {
+        const v = pickEnum(FRAME_CONTENTS, value);
+        if (v !== undefined) c.setFrameContent(v);
         break;
-      case 'interaction-quality':
-        if (value !== null) c.setInteractionQuality(value as 'off' | 'auto');
+      }
+      case 'interaction-quality': {
+        const v = pickEnum(INTERACTION_QUALITIES, value);
+        if (v !== undefined) c.setInteractionQuality(v);
         break;
-      case 'view':
-        if (value !== null) c.setView(value as CameraView);
+      }
+      case 'view': {
+        const v = pickEnum(CAMERA_VIEWS, value);
+        if (v !== undefined) c.setView(v);
         break;
+      }
       case 'show-travel':
         c.setKindVisible('travel', value !== 'false');
         break;
       case 'show-wipe':
         c.setKindVisible('wipe', value !== 'false');
+        break;
+      case 'show-cut':
+        c.setKindVisible('cut', value !== 'false');
         break;
       case 'show-volume-cage':
         c.setBuildVolumeCage(value !== 'false');
@@ -470,12 +560,16 @@ export class GcodePreviewElement extends HTMLElement {
       case 'show-retractions':
         c.setShowRetractions(value === 'true');
         break;
-      case 'scrub':
-        c.setScrubPosition(value === null ? null : Number(value));
+      case 'scrub': {
+        const s = this.acceptScrub(value);
+        if (s !== undefined) c.setScrubPosition(s);
         break;
-      case 'scrub-time':
-        c.setScrubTime(value === null ? null : Number(value));
+      }
+      case 'scrub-time': {
+        const t = this.acceptScrubTime(value);
+        if (t !== undefined) c.setScrubTime(t);
         break;
+      }
       case 'layer-range': {
         const r = parseLayerRange(value);
         if (r === null) c.setLayerRange(0, Number.POSITIVE_INFINITY);
@@ -496,21 +590,25 @@ export class GcodePreviewElement extends HTMLElement {
     const c = this.requireController().controls;
     c.setKindVisible('travel', this.showTravel);
     c.setKindVisible('wipe', this.showWipe);
+    c.setKindVisible('cut', this.showCut);
     c.setShowRetractions(this.showRetractions);
     c.setBuildVolumeCage(this.showVolumeCage);
     const r = this.layerRange;
     if (r === null) c.setLayerRange(0, Number.POSITIVE_INFINITY);
     else c.setLayerRange(r[0], r[1]);
-    c.setScrubPosition(this.scrub);
-    c.setScrubTime(this.scrubTime);
+    c.setScrubPosition(this.acceptScrub(this.getAttribute('scrub')) ?? this.lastScrub);
+    // scrub-time only when it has a number (setScrubTime(null) clears the cut, which would drop `scrub`);
+    // it is applied last, so it wins when both are set.
+    const scrubTime = this.acceptScrubTime(this.getAttribute('scrub-time')) ?? this.lastScrubTime;
+    if (scrubTime !== null) c.setScrubTime(scrubTime);
     this.applyHiddenRoles(this.hiddenFeatureRoles);
     this.applyProgress();
     // Camera framing set BEFORE connect: attributeChangedCallback/the cameraState setter both no-op
     // while controller === null, so the initial `view` attribute and any pre-connect cameraState must
     // be applied here or they're silently dropped (the <gcode-model-viewer> element already does this).
     // Apply the preset view first, then let an explicit cameraState override it.
-    const view = this.getAttribute('view');
-    if (view !== null) c.setView(view as CameraView);
+    const view = pickEnum(CAMERA_VIEWS, this.getAttribute('view'));
+    if (view !== undefined) c.setView(view);
     if (this._cameraState !== null) c.setCameraState(this._cameraState);
   }
 
@@ -555,6 +653,27 @@ export class GcodePreviewElement extends HTMLElement {
     return this.lastPixelRatio;
   }
 
+  /**
+   * The `scrub` attribute as a segment index: removed (`null`) clears and is remembered, a number
+   * (including `±Infinity`) is accepted and remembered, and anything that is not a number (`'abc'`,
+   * `'NaN'`) returns `undefined` so the caller keeps the previous cut. A bad markup value never throws
+   * from the attribute callback (the controller throws `RangeError` on `NaN`) and never blocks a parse.
+   */
+  private acceptScrub(value: string | null): number | null | undefined {
+    if (value === null) return (this.lastScrub = null);
+    const n = parseScrub(value);
+    if (n !== undefined) this.lastScrub = n;
+    return n;
+  }
+
+  /** The `scrub-time` attribute in ms, with the same rules as {@link acceptScrub}. */
+  private acceptScrubTime(value: string | null): number | null | undefined {
+    if (value === null) return (this.lastScrubTime = null);
+    const n = parseScrub(value);
+    if (n !== undefined) this.lastScrubTime = n;
+    return n;
+  }
+
   private reflect(attr: string, v: string | number | null): void {
     if (v === null) this.removeAttribute(attr);
     else this.setAttribute(attr, String(v));
@@ -586,9 +705,12 @@ export class GcodePreviewElement extends HTMLElement {
       case 'camera-changed':
         emit('camerachange', e.state);
         break;
-      case 'parse-error':
-        emit('parse-error', { code: e.code, message: e.message });
+      case 'parse-error': {
+        // The whole error, `cause` and `reason` included, without the event's `type`.
+        const { type: _type, ...error } = e;
+        emit('parse-error', error);
         break;
+      }
       case 'parse-cancelled':
         emit('parse-cancelled');
         break;
@@ -614,9 +736,15 @@ export class GcodePreviewElement extends HTMLElement {
       case 'machine-geometry-discovered':
         emit('machine-geometry-discovered', { machine: e.machine });
         break;
-      case 'error':
+      case 'error': {
+        const { type: _type, ...error } = e;
         if (e.code === 'machine-geometry-mismatch') emit('machine-geometry-mismatch', { message: e.message });
-        else emit('error', { code: e.code, message: e.message });
+        else emit('error', error);
+        break;
+      }
+      case 'renderer-unsupported':
+        // #520: the renderer cannot honour a requested setting (e.g. a lens on the 2D renderer); once per request.
+        emit('renderer-unsupported', { feature: e.feature, message: e.message });
         break;
       default:
         break;
@@ -626,7 +754,7 @@ export class GcodePreviewElement extends HTMLElement {
 
 function parseLayerRange(value: string | null): [number, number] | null {
   if (value === null) return null;
-  const parts = value.split(',').map((s) => Number(s.trim()));
+  const parts = value.split(',').map((s) => Number(s));
   if (parts.length !== 2 || parts.some((n) => Number.isNaN(n))) return null;
   return [parts[0], parts[1]];
 }
@@ -636,7 +764,7 @@ function parseRoleList(value: string | null): number[] {
   if (value === null || value.trim() === '') return [];
   return value
     .split(',')
-    .map((s) => Number(s.trim()))
+    .map((s) => Number(s))
     .filter((n) => Number.isFinite(n));
 }
 
@@ -656,6 +784,12 @@ function parsePixelRatio(value: string | null): PixelRatioOption | undefined {
   // Number(null) and Number('') are 0 and NaN fails both bounds: the range alone decides.
   const n = Number(value);
   return n > 0 && n <= 4 ? n : undefined;
+}
+
+/** A scrub attribute value as a number, or `undefined` when it is not one (`Number(value)` is `NaN`). */
+function parseScrub(value: string): number | undefined {
+  const n = Number(value);
+  return Number.isNaN(n) ? undefined : n;
 }
 
 /** A `camera-fov` attribute value as a lens in [10, 120], else `undefined` (DD-032). */

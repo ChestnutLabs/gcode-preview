@@ -1,0 +1,34 @@
+; Canned drilling cycle fixture (#189). Hand-written by Chestnut Labs, MIT.
+; The numbers follow the worked examples in the LinuxCNC G-code manual (G81 section): start at
+; X1 Y2 Z3 in the XY plane, a hole 0.6 deep below an R plane at 1.8 / 2.8.
+G21 G17 G90
+G0 X1 Y2 Z3
+; Example 1: absolute G81, retract to the start height (G98). Clear Z 2.8, depth 1.5.
+G98 G81 X4 Y5 Z1.5 R2.8
+G80
+; Example 2: incremental G81 repeated 3 times. Each repeat steps X4 Y5 from the last hole.
+G0 X1 Y2 Z3
+G91 G98 G81 X4 Y5 Z-0.6 R1.8 L3
+G80
+; Example 3: absolute G81 starting BELOW the R plane. Z first rises to R, once, before the XY move.
+G90
+G0 X1 Y2 Z1
+G81 X4 Y5 Z0.5 R2.8
+G80
+; G99 retracts to R between holes; bare X/Y lines repeat the cycle at new positions.
+G0 X0 Y0 Z5
+G99 G81 X10 Y0 Z-1 R2
+X20 Y0
+X30 Y0
+G80
+; G82 dwells at the bottom of each hole (P seconds). L2 in place under G90.
+G0 X0 Y10 Z5
+G98 G82 X10 Y10 Z-1 R2 P0.5 L2
+G80
+; G83 pecks 1 mm at a time, retracting to R between pecks. L3 incremental: a row of three holes.
+G0 X0 Y20 Z5
+G91 G98 G83 X10 Y0 Z-4 R-3 Q1 L3
+G80
+G90
+G0 Z5
+M2

@@ -31,10 +31,11 @@ import type { FeatureRoleValue, MachineGeometry, MappedProgress, ToolpathIR } fr
 export type RendererMode = '2d' | '3d';
 
 /**
- * Move classes whose visibility can be toggled independently (DD-009 travel toggle + DD-016 wipe).
- * `'wipe'` is honored by the 3D renderer as its own chunk; the flat 2D view treats it as a no-op.
+ * Move classes whose visibility can be toggled independently (DD-009 travel toggle + DD-016 wipe + #584 cut).
+ * `'wipe'` and `'cut'` (CNC/laser cutting moves) are honored by the 3D renderer as their own chunks. The flat
+ * 2D view honours `'travel'` and `'cut'` (#588); `'wipe'` is a no-op there.
  */
-export type MoveKindToggle = 'extrude' | 'travel' | 'wipe';
+export type MoveKindToggle = 'extrude' | 'travel' | 'wipe' | 'cut';
 
 /**
  * Renderer events seen by the controller. The 3D renderer emits {@link RendererEvent}; either

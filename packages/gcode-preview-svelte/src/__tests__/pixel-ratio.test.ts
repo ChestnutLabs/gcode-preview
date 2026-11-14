@@ -19,8 +19,9 @@ describe('Svelte <GcodePreview> pixelRatio', () => {
   it('is passed to the renderer options at construction', () => {
     expect(TOOLPATH).toMatch(/renderer: \{[^}]*\n\s+pixelRatio,\n/);
   });
-  it('re-applies on change only when defined', () => {
-    expect(TOOLPATH).toMatch(/\$: if \(pixelRatio !== undefined\) preview\.controls\.setPixelRatio\(pixelRatio\);/);
+  it('re-applies on change only when defined and different (#520)', () => {
+    expect(TOOLPATH).toMatch(/\$: applyPixelRatio\(pixelRatio\);/);
+    expect(TOOLPATH).toMatch(/if \(ratio == null \|\| ratio === appliedPixelRatio\) return;/);
   });
 });
 

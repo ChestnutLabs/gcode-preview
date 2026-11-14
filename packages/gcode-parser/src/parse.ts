@@ -42,7 +42,14 @@ import {
   type Warning
 } from '@chestnutlabs/toolpath-core';
 import { BudgetExceededError, SegmentWriter } from './growable.js';
-import { FLOAT32_MAX, NUMBER_OUT_OF_RANGE_WARN, Rs274Context, lineUsesParametric } from './rs274.js';
+import {
+  FLOAT32_MAX,
+  NUMBER_OUT_OF_RANGE_WARN,
+  Rs274Context,
+  lineUsesParametric,
+  scanParenComments,
+  stripParenComments
+} from './rs274.js';
 import { RS274_FLOW_WARN, interpretOWordProgram, programUsesOWords, type FlowLine } from './rs274-flow.js';
 
 export interface ParseLimits {
@@ -76,6 +83,8 @@ export const DEFAULT_LIMITS: ParseLimits = {
   maxCallDepth: 50
 };
 
+const MAX_INPUT_BYTES_CEILING = 0xffffffff;
+
 /**
  * Thrown before parsing when a caller's option is invalid (#508). `code` is `E_PARSE_OPTION`; through a
  * parse session it arrives as a `ParseSessionError`-style rejection carrying the same code.
@@ -103,6 +112,12 @@ export function resolveParseLimits(limits?: Partial<ParseLimits>): ParseLimits {
     // isSafeInteger is false for NaN, Infinity, fractions, null, strings and objects
     if (!(Number.isSafeInteger(value) && (value as number) >= 0)) {
       throw new ParseOptionError(`limits.${key} must be a non-negative integer (got ${String(value)})`);
+    }
+    // srcByte is a Uint32 column (UNRESOLVED_LAYER = 0xffffffff): an input past 2^32-1 bytes would wrap
+    if (key === 'maxInputBytes' && (value as number) > MAX_INPUT_BYTES_CEILING) {
+      throw new ParseOptionError(
+        `limits.maxInputBytes must be at most ${MAX_INPUT_BYTES_CEILING} (got ${String(value)})`
+      );
     }
     out[key] = value as number;
   }
@@ -241,6 +256,59 @@ interface Cmd {
 
 const SPLIT_LETTERS = /([a-zA-Z])/g;
 
+/** Millimetres per inch: G20 words are multiplied by this so the IR is always mm (#578). */
+const MM_PER_INCH = 25.4;
+/** Info code, once per file: the file declared G20 and its inch words were converted to mm (#578). */
+const UNITS_CONVERTED_WARN = 'units-converted';
+/** Words that carry a length and are scaled under G20: axes, arc centre offsets, arc / canned-retract R,
+ *  G83 peck Q, feedrate (in/min → mm/min) and E (Marlin scales E under G20 too). P, L, S, T are not lengths. */
+const INCH_LENGTH_WORDS = ['x', 'y', 'z', 'i', 'j', 'k', 'r', 'q', 'f', 'e'] as const;
+
+/** Warning code: a `(` comment that is never closed or is nested (LinuxCNC errors on both). */
+const UNBALANCED_PAREN_WARN = 'unbalanced-paren-comment';
+/** A text-argument line (#592): everything after its leading command word is TEXT, not G-code. It starts
+ *  (after an optional `N` line number) with a multi-letter word (a dialect/macro command such as
+ *  `EXCLUDE_OBJECT_START NAME=cube_(1`, `RESPOND MSG=…`, `SET_PIN …`) or with one of Marlin's text-argument
+ *  M-codes: `M117` message, `M118` echo, `M486` object name, `M23` / `M28` / `M32` / `M33` / `M928` file name
+ *  (any case). Such a line is lexed by {@link lexTextLine}, never by the plain or the parametric lexer; it is
+ *  never reported as an unbalanced comment, and its `;` comment starts at the first `;` as it always did.
+ *  Group 1 is the M-code number; it is absent for a multi-letter command. */
+const TEXT_ARGUMENT_LINE = /^\s*(?:n\d+\s*)?(?:[A-Za-z_][A-Za-z_]|m(117|118|486|23|28|32|33|928)(?!\d))/i;
+/** The M486 words that are numbers (object index, count, cancel, un-cancel, current); `A` starts the name. */
+const M486_NUMERIC_WORDS = ['s', 't', 'p', 'u', 'c'] as const;
+
+/** True for a {@link TEXT_ARGUMENT_LINE}. A line that starts `G<digit>` (most FDM lines) or `;` is never
+ *  one, and skips the regex. */
+function isTextArgumentLine(line: string): boolean {
+  const c0 = line.charCodeAt(0);
+  if (c0 === 59) return false; // ';'
+  if (c0 === 71 || c0 === 103) {
+    const c1 = line.charCodeAt(1);
+    if (c1 >= 48 && c1 <= 57) return false; // 'G' / 'g' + digit
+  }
+  return TEXT_ARGUMENT_LINE.test(line);
+}
+
+/**
+ * Lex a text-argument line (#592): only its leading command word counts. A multi-letter command has no
+ * code and no words (dialects still match its raw line); M117 / M118 / M23 / M28 / M32 / M33 / M928 are
+ * their code alone; M486 is its code plus the numeric S / T / P / U / C words written before the first `A`.
+ * No letter inside the text is ever read as a G / M / T word or a parameter.
+ */
+function lexTextLine(line: string, onOutOfRange?: (key: string) => void): Cmd {
+  const m = TEXT_ARGUMENT_LINE.exec(line)!;
+  if (m[1] === undefined) return { codes: [], params: {} };
+  const code = `m${m[1]}`;
+  if (code !== 'm486') return { codes: [code], params: {} };
+  const rest = line.slice(m[0].length); // lexLine drops any `;` comment itself
+  const a = rest.search(/a/i);
+  // Lexed after the M486 word so a T is its count, not a tool change; any code in it is dropped.
+  const { params: all } = lexLine('M486' + (a === -1 ? rest : rest.slice(0, a)), onOutOfRange);
+  const params: Record<string, number> = {};
+  for (const k of M486_NUMERIC_WORDS) if (all[k] !== undefined) params[k] = all[k];
+  return { codes: [code], params };
+}
+
 /**
  * Lex a line into its G/M/T command words plus the axis/param words. Real CNC G-code routinely puts
  * several commands on one line and prefixes lines with `N` line numbers; both are handled here.
@@ -248,7 +316,11 @@ const SPLIT_LETTERS = /([a-zA-Z])/g;
  * command word, so `codes = [thatCommand]` and behavior is byte-identical to the inherited lexer.
  */
 function lexLine(line: string, onOutOfRange?: (key: string) => void): Cmd {
-  const body = line.trim().split(';')[0];
+  // `( … )` is a comment in RS274NGC / Fanuc / Mach, never code: strip it before the `;` split (so a `;`
+  // inside parens does not truncate the line), exactly as the parametric path does. A line without `(`
+  // (every FDM slicer line) skips the scan and is byte-identical.
+  const code = line.indexOf('(') === -1 ? line : stripParenComments(line);
+  const body = code.trim().split(';')[0];
   const parts = body
     .split(SPLIT_LETTERS)
     .slice(1)
@@ -363,13 +435,13 @@ export function createEngine(input: string | Uint8Array, opts: ParseOptions): En
     extrusionDistance: 0,
     warningsByCode: {}
   };
-  const warn = (code: string, message: string, srcByte?: number): void => {
+  const warn = (code: string, message: string, srcByte?: number, severity: 'info' | 'warn' = 'warn'): void => {
     stats.warningsByCode[code] = (stats.warningsByCode[code] ?? 0) + 1;
     const existing = warnings.get(code);
     if (existing) {
       existing.count = (existing.count ?? 1) + 1;
     } else if (warnings.size < limits.maxWarnings) {
-      warnings.set(code, { code, message, severity: 'warn', srcByte, count: 1 });
+      warnings.set(code, { code, message, severity, srcByte, count: 1 });
     }
   };
 
@@ -438,11 +510,19 @@ export function createEngine(input: string | Uint8Array, opts: ParseOptions): En
   let cannedQ = 0; // peck increment (G83)
   let cannedInitialZ = 0; // Z when the cycle activated — the G98 retract plane
   let cannedRetractInitial = true; // G98 (retract to initial Z) vs G99 (retract to R); modal, default G98
+  let cannedZSet = false; // a Z / R word was ever given (else the cycle runs on the 0 default, which is disclosed)
+  let cannedRSet = false;
+  let cannedRWord = 0; // the R / Z words as last written (sticky numbers); G91 re-derives the planes from them
+  let cannedZWord = 0;
   let cannedCyclesSeen = false; // any G81/G82/G83 expanded → cannedCycles capability 'known'
   // RS274NGC parametric programs (DD-017 Phase 1, #189 phase 7). The store + expression evaluator resolve
   // `#params`/`[expr]` on any line that uses them; non-parametric lines never touch it (byte-identical).
-  // The system-parameter allow-list (#5420–#5422 = current position) reads live engine position.
-  const rs274 = new Rs274Context(warn, () => ({ x: sx, y: sy, z: sz }));
+  // The system-parameter allow-list (#5420–#5422 = current position) reads live engine position. The engine
+  // tracks millimetres, but LinuxCNC returns these in the program's units, so under G20 they read inches
+  // (and the inch word they feed is scaled back to mm once, at the point of use: no double scaling, #578).
+  const rs274 = new Rs274Context(warn, () =>
+    units === 'in' ? { x: sx / MM_PER_INCH, y: sy / MM_PER_INCH, z: sz / MM_PER_INCH } : { x: sx, y: sy, z: sz }
+  );
 
   // Per-axis position certainty (DD-010 D4 amendment, #158). A G31 probe endpoint is reached at
   // RUNTIME (workpiece contact), not the commanded value, so it marks the probed axes uncertain. A
@@ -767,19 +847,51 @@ export function createEngine(input: string | Uint8Array, opts: ParseOptions): En
     // from the word made the segment count NaN, so the arc collapsed to a single chord (#522).
     let ia = oa ?? 0;
     let ib = ob ?? 0;
+    // Disclosure tolerance for "this arc does not close": LinuxCNC rejects such arcs, Marlin draws them, so the
+    // parser draws them too and says so. 0.005 mm plus 0.1% of the radius absorbs slicer rounding. Coordinates are
+    // already millimetres here (G20 words are converted at lexing, #578), so one tolerance serves both units.
+    const arcTolerance = (radius: number): number => 0.005 + 0.001 * radius;
     if (r) {
       const deltaA = ta - sa;
       const deltaB = tb - sb;
       const minR = Math.sqrt(Math.pow(deltaA / 2, 2) + Math.pow(deltaB / 2, 2));
+      if (Math.abs(r) < minR - arcTolerance(minR)) {
+        warn(
+          'arc-radius-too-small',
+          `G2/G3 radius ${Math.abs(r)} is smaller than half the chord ${minR}; the radius was raised to half the chord (a half circle).`,
+          currentSrcByte
+        );
+      }
       // A negative R selects the arc longer than 180°: clamp the magnitude only, so the sign survives
       // to the long-way test below (clamping the signed value turned every negative R into +minR).
       r = r < 0 ? -Math.max(-r, minR) : Math.max(r, minR);
       const dSquared = Math.pow(deltaA, 2) + Math.pow(deltaB, 2);
-      const hSquared = Math.pow(r, 2) - dSquared / 4;
-      let hDivD = Math.sqrt(hSquared / dSquared);
-      if ((cw && r < 0.0) || (!cw && r > 0.0)) hDivD = -hDivD;
-      ia = deltaA / 2 + deltaB * hDivD;
-      ib = deltaB / 2 - deltaA * hDivD;
+      if (dSquared === 0) {
+        // Start == target with R: the centre is undefined (LinuxCNC rejects it). Dividing by the zero chord
+        // made the centre NaN; draw a point and say so.
+        warn(
+          'arc-radius-degenerate',
+          'G2/G3 arc with an R radius has the same start and target; the centre is undefined, so no arc is drawn (use I/J for a full circle).',
+          currentSrcByte
+        );
+        ia = 0;
+        ib = 0;
+      } else {
+        const hSquared = Math.pow(r, 2) - dSquared / 4;
+        // With r raised to exactly half the chord, r² − d²/4 is 0 in exact arithmetic but can round to a tiny
+        // negative; its square root was NaN, and the half circle collapsed to one straight chord. Clamp at 0.
+        let hDivD = Math.sqrt(Math.max(0, hSquared / dSquared));
+        if ((cw && r < 0.0) || (!cw && r > 0.0)) hDivD = -hDivD;
+        ia = deltaA / 2 + deltaB * hDivD;
+        ib = deltaB / 2 - deltaA * hDivD;
+      }
+    }
+    if (p.p !== undefined && Math.trunc(p.p) !== 1) {
+      warn(
+        'arc-turns-ignored',
+        `G2/G3 P${p.p} (number of turns) is not applied; the arc is drawn as a single sweep.`,
+        currentSrcByte
+      );
     }
 
     // No I/J(/K) and no R: nothing defines the arc. The zero offsets make it a straight move to the target
@@ -798,6 +910,17 @@ export function createEngine(input: string | Uint8Array, opts: ParseOptions): En
     const arcRadius = Math.sqrt(ia * ia + ib * ib);
     const arcCurrentAngle = Math.atan2(-ib, -ia);
     const finalTheta = Math.atan2(tb - centerB, ta - centerA);
+    const endRadius = Math.hypot(ta - centerA, tb - centerB);
+    // Only an I/J/K arc can miss its target: an R arc's centre is derived from the target, and a full circle
+    // ends where it starts, so both close by construction.
+    const offsetsStated = oa !== undefined || ob !== undefined;
+    if (offsetsStated && Math.abs(endRadius - arcRadius) > arcTolerance(arcRadius)) {
+      warn(
+        'arc-end-off-circle',
+        `G2/G3 target is ${endRadius} from the centre but the start is ${arcRadius}; the arc spirals and the last segment jumps to the target.`,
+        currentSrcByte
+      );
+    }
 
     let totalArc;
     if (wholeCircle) {
@@ -806,8 +929,8 @@ export function createEngine(input: string | Uint8Array, opts: ParseOptions): En
       totalArc = cw ? arcCurrentAngle - finalTheta : finalTheta - arcCurrentAngle;
       if (totalArc < 0.0) totalArc += 2 * Math.PI;
     }
+    // One segment per 0.5 mm of arc. An inch arc is already in mm here, so it needs no ×25 compensation (#578).
     let totalSegments = (arcRadius * totalArc) / 0.5;
-    if (units == 'in') totalSegments *= 25;
     if (totalSegments < 1) totalSegments = 1;
     let arcAngleIncrement = totalArc / totalSegments;
     arcAngleIncrement *= cw ? -1 : 1;
@@ -875,7 +998,57 @@ export function createEngine(input: string | Uint8Array, opts: ParseOptions): En
   // Canned drilling cycle (DD-012 phase 2, #189): expand G81/G82/G83 into explicit sub-moves so the
   // holes are real geometry (today they emit nothing). Rapids are Travel; the plunge(s) are Cut. Z/R/Q
   // and the initial plane are captured when the cycle is defined and retained across modal repeats.
+  // Under G91 the cycle's R plane is `current Z + R` and its depth is `R plane + Z`, so each block (a fresh
+  // G8x or a bare X/Y repeat) re-derives both planes from the sticky words (a word given on this very block
+  // was stored by the caller just before). A word that was never given reads as 0 in the active distance mode
+  // (an increment of 0: the R plane is the current Z, the depth is the R plane); the missing-word warning
+  // still fires. G90 never calls this: absolute planes are stored once.
+  const rederiveIncrementalPlanes = (): void => {
+    cannedR = sz + cannedRWord;
+    cannedZ = cannedR + cannedZWord;
+  };
+
+  // L repeat count (LinuxCNC §43.6): the whole hole sequence runs L times, each repeat from the XY the last one
+  // ended at, so under G91 the X/Y increment steps along a row of holes and under G90 the hole is repeated in
+  // place. Absent → 1. An L that is not a positive integer (0, negative, a fraction, NaN) draws once and warns
+  // (`canned-cycle-bad-repeat`, deduped by code). The planes are NOT re-derived per repeat (the clear Z is
+  // fixed when the block starts). The repeat count is bounded by `maxProgramIterations` (DD-017), independent
+  // of how many segments a hole emits, and disclosed (`canned-cycle-repeat-limit`) when it bites.
   const runCannedCycle = (p: Record<string, number>): boolean => {
+    const l = p.l;
+    let repeats = 1;
+    if (l !== undefined) {
+      if (Number.isInteger(l) && l >= 1) {
+        repeats = Math.min(l, limits.maxProgramIterations);
+        if (repeats < l) {
+          warn(
+            'canned-cycle-repeat-limit',
+            `L${l} exceeds the program iteration limit ${limits.maxProgramIterations}; the cycle repeats ${repeats} times.`,
+            currentSrcByte
+          );
+        }
+      } else {
+        warn(
+          'canned-cycle-bad-repeat',
+          `L${String(l)} is not a positive integer repeat count; the cycle runs once.`,
+          currentSrcByte
+        );
+      }
+    }
+    for (let i = 0; i < repeats; i++) if (!runCannedHole(p)) return false;
+    return true;
+  };
+
+  const runCannedHole = (p: Record<string, number>): boolean => {
+    // 0. Preliminary Z move. LinuxCNC g-code.html §43.6: "If the current Z position is below the R position,
+    // the Z axis does a rapid move to the R position. This happens only once, regardless of the value of L."
+    // It happens BEFORE the XY rapid, at the old XY (Example 2: "The first preliminary move is a maximum rapid
+    // move along the Z axis to (X1,Y2,Z4.8), since OLD_Z < clear Z"). Checked at every hole start: after the
+    // first hole's retract Z is at or above R, so it cannot fire again.
+    if (sz < cannedR) {
+      sz = cannedR;
+      if (!emitSegment(sx, sy, sz, 0, MoveKind.Travel)) return false;
+    }
     // 1. Rapid to the hole XY at the current Z.
     sx = nextAxis(sx, p.x, offX());
     sy = nextAxis(sy, p.y, offY());
@@ -901,7 +1074,9 @@ export function createEngine(input: string | Uint8Array, opts: ParseOptions): En
       if (!emitSegment(sx, sy, sz, 0, MoveKind.Cut)) return false; // single plunge
     }
     // 4. Retract (rapid) to the initial plane (G98) or the R plane (G99).
-    sz = cannedRetractInitial ? cannedInitialZ : cannedR;
+    // LinuxCNC: retract "to the original Z position (if that is above the R position and the retract mode
+    // is G98, OLD_Z), or otherwise to the R position".
+    sz = cannedRetractInitial ? Math.max(cannedInitialZ, cannedR) : cannedR;
     if (!emitSegment(sx, sy, sz, 0, MoveKind.Travel)) return false;
     return true;
   };
@@ -915,6 +1090,49 @@ export function createEngine(input: string | Uint8Array, opts: ParseOptions): En
       currentSrcByte
     );
 
+  // Units (#578): IR coordinates are always millimetres; `header.units` records what the file declared.
+  // G20/G21 take effect for the WHOLE line they are on, before its words are read (RS274NGC order of
+  // execution), so `G0 X1 G20` is an inch move. Under G20 every length word is scaled once, here, before
+  // the modal F latch, the observer and every handler; the stored state (position, G92/G10 offsets, canned
+  // planes) is therefore mm and a later G21 needs no rescale. FDM files never declare G20: their lines
+  // take only the `codes` scan and the units test below, so the corpus stays byte-identical.
+  // A `G20`/`G21` inside message text (`M117 Printing G20 part`) is text: lexTextLine never yields it (#592).
+  let unitsConvertedWarned = false;
+  const applyUnits = (cmd: Cmd): void => {
+    for (const code of cmd.codes) {
+      if (code === 'g20') {
+        units = 'in';
+        unitsSeen = true;
+        if (!unitsConvertedWarned) {
+          unitsConvertedWarned = true;
+          warn(
+            UNITS_CONVERTED_WARN,
+            'G20 inch units: coordinates, offsets and feedrates under G20 are converted to millimetres (x 25.4).',
+            currentSrcByte,
+            'info'
+          );
+        }
+      } else if (code === 'g21') {
+        units = 'mm';
+        unitsSeen = true;
+      }
+    }
+    if (units !== 'in') return;
+    const params = cmd.params;
+    for (const key of INCH_LENGTH_WORDS) {
+      const v = params[key];
+      if (v === undefined) continue;
+      const mm = v * MM_PER_INCH;
+      // A word that fits float32 in inches can overflow it in mm: drop and disclose it exactly as the lexer
+      // does for an out-of-range mm word, never store ±Infinity.
+      if (Math.abs(mm) <= FLOAT32_MAX) params[key] = mm;
+      else {
+        delete params[key];
+        warnOutOfRange(key);
+      }
+    }
+  };
+
   const processLine = (rawLine: string, offset: number): void => {
     stats.lines++;
     currentSrcByte = offset;
@@ -923,9 +1141,14 @@ export function createEngine(input: string | Uint8Array, opts: ParseOptions): En
       warn('line-too-long', `line exceeds maxLineLength=${limits.maxLineLength}; skipped`, offset);
       return;
     }
+    // A text-argument line (#592) is decided once, here, before the comment scan, units and both lexers.
+    const textLine = isTextArgumentLine(rawLine);
     // DD-005 §4.3 read-only observation points — no effect on lexing or state.
+    // A `;` inside `( … )` is part of that paren comment, not the start of a `;` comment — the same split
+    // the lexer makes. A line without `(` (every FDM line) keeps the plain `indexOf` and skips the scan.
+    const parens = textLine || rawLine.indexOf('(') === -1 ? null : scanParenComments(rawLine);
     if (onComment !== undefined) {
-      const ci = rawLine.indexOf(';');
+      const ci = parens === null ? rawLine.indexOf(';') : parens.semi;
       if (ci !== -1) onComment(rawLine.slice(ci + 1), offset);
     }
     // RS274NGC parametric programs (DD-017 Phase 1): a line using `#`/`[` is resolved by the parameter +
@@ -935,12 +1158,28 @@ export function createEngine(input: string | Uint8Array, opts: ParseOptions): En
     // Hot-path gate: a cheap `#`/`[` scan of the RAW line — no allocation. Every FDM line fails this and
     // takes the untouched lexer (byte-identical). A `#`/`[` that turns out to be only inside a comment
     // routes through the resolver, which strips comments and returns 'plain' → the normal lexer.
-    if (lineUsesParametric(rawLine)) {
+    // A text-argument line carries only its leading command word; a `#`/`[` in its text is not parametric.
+    if (textLine) {
+      cmd = lexTextLine(rawLine, warnOutOfRange);
+    } else if (lineUsesParametric(rawLine)) {
       const r = rs274.lexLine(rawLine, offset);
       if (r.kind === 'assign' || r.kind === 'empty') return; // assignment applied / nothing to do
       cmd = r.kind === 'cmd' ? { codes: r.codes, params: r.params } : lexLine(rawLine, warnOutOfRange); // 'plain' → normal
     } else {
       cmd = lexLine(rawLine, warnOutOfRange);
+    }
+    applyUnits(cmd);
+    // LinuxCNC rejects an unclosed or nested `(` comment; the plain lexer tolerates both (an unclosed `(`
+    // swallows the rest of the line). Disclose it, once per file. Dialect extended commands (Klipper
+    // `EXCLUDE_OBJECT_START NAME=cube_(1`) legitimately carry bare parentheses and are not checked.
+    if (parens !== null && (parens.unclosed || parens.nested)) {
+      warn(
+        UNBALANCED_PAREN_WARN,
+        parens.unclosed
+          ? 'a "(" comment is never closed; the rest of the line is treated as a comment'
+          : 'a "(" comment is nested inside another; the outer parentheses close at the matching ")"',
+        currentSrcByte
+      );
     }
     // Skip only genuinely empty lines. A line with no lexable words but real content (a dialect
     // extended command like `EXCLUDE_OBJECT_START NAME=cube`, a macro) must NOT be dropped — the
@@ -964,8 +1203,10 @@ export function createEngine(input: string | Uint8Array, opts: ParseOptions): En
         onCommand({ gcode: '', params: cmd.params, rawLine, srcByte: offset, segIndex: writer.count });
       }
       if (cmd.params.x !== undefined || cmd.params.y !== undefined || cmd.params.z !== undefined) {
-        if (cannedCycle !== null) ok = runCannedCycle(cmd.params);
-        else if (modalMotion === 'g2' || modalMotion === 'g3') ok = g2(cmd.params, modalMotion === 'g2');
+        if (cannedCycle !== null) {
+          if (!xyzAbsolute) rederiveIncrementalPlanes();
+          ok = runCannedCycle(cmd.params);
+        } else if (modalMotion === 'g2' || modalMotion === 'g3') ok = g2(cmd.params, modalMotion === 'g2');
         else if (modalMotion === 'g0' || modalMotion === 'g1') ok = g0(cmd.params, modalMotion === 'g0');
       }
     } else
@@ -999,8 +1240,35 @@ export function createEngine(input: string | Uint8Array, opts: ParseOptions): En
             cannedCyclesSeen = true;
             cannedCycle = gcode as 'g81' | 'g82' | 'g83';
             cannedInitialZ = sz;
-            if (cmd.params.z !== undefined) cannedZ = nextAxis(sz, cmd.params.z, offZ());
-            if (cmd.params.r !== undefined) cannedR = nextAxis(sz, cmd.params.r, offZ());
+            // R and Z are sticky NUMBERS (kept as written in cannedRWord/cannedZWord). Under G90 the planes
+            // are absolute and stored here once. Under G91 they are derived only by rederiveIncrementalPlanes()
+            // below: R from this block's current Z first, then Z from the NEW R plane, as in LinuxCNC. So a
+            // later G91 block that omits one re-applies it from its own current Z, never a stale absolute plane.
+            if (cmd.params.r !== undefined) {
+              cannedRWord = cmd.params.r;
+              if (xyzAbsolute) cannedR = nextAxis(sz, cmd.params.r, offZ());
+              cannedRSet = true;
+            }
+            if (cmd.params.z !== undefined) {
+              cannedZWord = cmd.params.z;
+              if (xyzAbsolute) cannedZ = nextAxis(sz, cmd.params.z, offZ());
+              cannedZSet = true;
+            }
+            if (!xyzAbsolute) rederiveIncrementalPlanes();
+            if (!cannedZSet || !cannedRSet) {
+              warn(
+                'canned-cycle-missing-word',
+                `${gcode.toUpperCase()} has no ${cannedZSet ? 'R' : cannedRSet ? 'Z' : 'Z or R'} word and none was set earlier; 0 is used.`,
+                currentSrcByte
+              );
+            }
+            if (arcPlane !== 'xy') {
+              warn(
+                'canned-cycle-plane',
+                `${gcode.toUpperCase()} drills along Z in the XY plane only; the active plane is ${arcPlane.toUpperCase()}.`,
+                currentSrcByte
+              );
+            }
             if (cmd.params.q !== undefined) cannedQ = Math.abs(cmd.params.q);
             modalMotion = null;
             ok = runCannedCycle(cmd.params);
@@ -1015,13 +1283,8 @@ export function createEngine(input: string | Uint8Array, opts: ParseOptions): En
             cannedRetractInitial = false;
             break;
           case 'g20':
-            units = 'in';
-            unitsSeen = true;
-            break;
           case 'g21':
-            units = 'mm';
-            unitsSeen = true;
-            break;
+            break; // applied by applyUnits() before this line's words were read (#578)
           case 'g28':
             sx = 0;
             sy = 0;

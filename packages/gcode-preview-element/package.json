@@ -1,6 +1,6 @@
 {
   "name": "@chestnutlabs/gcode-preview-element",
-  "version": "0.23.0",
+  "version": "0.24.0",
   "description": "Framework-free <gcode-preview> Web Component for the Chestnut Labs G-code viewer (DD-007 D1 / DD-009 D5): a custom element bridging @chestnutlabs/gcode-preview-core, no framework peer dependency.",
   "keywords": [
     "gcode",
@@ -26,7 +26,10 @@
     "node": ">=22"
   },
   "type": "module",
-  "sideEffects": false,
+  "sideEffects": [
+    "./dist/define.js",
+    "./dist/model/define.js"
+  ],
   "main": "./dist/index.js",
   "module": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -62,10 +65,10 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@chestnutlabs/gcode-model-renderer": "0.23.0",
-    "@chestnutlabs/gcode-parser": "0.23.0",
-    "@chestnutlabs/gcode-preview-core": "0.23.0",
-    "@chestnutlabs/gcode-renderer-three": "0.23.0",
-    "@chestnutlabs/toolpath-core": "0.23.0"
+    "@chestnutlabs/gcode-model-renderer": "0.24.0",
+    "@chestnutlabs/gcode-parser": "0.24.0",
+    "@chestnutlabs/gcode-preview-core": "0.24.0",
+    "@chestnutlabs/gcode-renderer-three": "0.24.0",
+    "@chestnutlabs/toolpath-core": "0.24.0"
   }
 }

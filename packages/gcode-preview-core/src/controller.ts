@@ -36,7 +36,23 @@ import type {
   Theme,
   TubeOptions
 } from '@chestnutlabs/gcode-renderer-three';
-import { CaptureUnsupportedError } from '@chestnutlabs/gcode-renderer-three';
+// Static value imports come from the three-free `./lite` entry only; the main entry is reached through
+// import() (bindCanvas, renderStill) so a 2D-only bundle never ships three.js (DD-014 D4).
+import {
+  CaptureUnsupportedError,
+  checkBuildVolume,
+  checkCameraFov,
+  checkCameraMode,
+  checkCameraState,
+  checkCameraView,
+  checkFrameContent,
+  checkInteractionQuality,
+  checkPixelRatio,
+  checkProgressivePreview,
+  checkQualityMode,
+  checkRendererMode,
+  checkTheme
+} from '@chestnutlabs/gcode-renderer-three/lite';
 import { LayerView2DRenderer } from './renderer-2d-adapter.js';
 import { checkColorMode } from '@chestnutlabs/gcode-renderer-2d';
 import type { MoveKindToggle, PreviewRenderer, PreviewRendererEvent, RendererMode } from './renderer-interface.js';
@@ -56,11 +72,11 @@ import {
   type Warning
 } from '@chestnutlabs/toolpath-core';
 import { resolveColorMode } from './color-resolve.js';
-import { checkCameraFov, checkPixelRatio } from './lens.js';
 
 /** Session/renderer events, re-emitted, plus the controller's own lifecycle events. */
 export type PreviewEvent =
-  | PreviewRendererEvent
+  | Exclude<PreviewRendererEvent, { type: 'error' }>
+  | ({ type: 'error' } & PreviewError)
   | { type: 'parse-started'; bytes: number }
   | { type: 'parse-progress'; progress: ParseProgress }
   | {
@@ -81,7 +97,7 @@ export type PreviewEvent =
       metadata: DialectMetadata | undefined;
     }
   | { type: 'parse-cancelled' }
-  | { type: 'parse-error'; code: string; message: string }
+  | ({ type: 'parse-error' } & PreviewError)
   | {
       /** File-discovered geometry NOT auto-applied because the consumer configured a
        *  volume (DD-005 consumer-wins precedence) — the host decides. */
@@ -96,7 +112,10 @@ export interface PreviewControllerOptions {
     /**
      * Renderer implementation (DD-014 D5): `'3d'` (default) is the Three.js renderer; `'2d'` is the
      * low-resource Canvas 2D layer view. The 3D renderer is loaded on demand, so a `'2d'` consumer's
-     * bundle never pulls Three.js. 3D-only options below are ignored (and disclosed) in `'2d'`.
+     * bundle never pulls Three.js. 3D-only options below are ignored (and disclosed) in `'2d'`, but they
+     * are still checked: {@link createPreviewController} throws `RangeError` for a bad `mode`, `buildVolume`,
+     * `qualityMode`, `progressivePreview`, `cameraMode`, `cameraFov`, `pixelRatio`, `frameContent`,
+     * `interactionQuality` or `theme`, in every mode, with the 3D renderer's own message.
      */
     mode?: RendererMode;
     buildVolume?: BuildVolumeDef;
@@ -161,7 +180,41 @@ export interface PreviewControllerOptions {
 export type ParseOutcome =
   | { ok: true; result: ParseResult }
   | { ok: false; cancelled: true }
-  | { ok: false; cancelled?: false; error: { code: string; message: string } };
+  | { ok: false; cancelled?: false; error: PreviewError };
+
+/**
+ * Why the 3D renderer failed, on an `E_RENDERER_LOAD` error:
+ * - `'load'`: its code could not be downloaded (offline, or a stale deploy whose chunk now returns 404).
+ *   Reloading the page can help.
+ * - `'start'`: it was downloaded but could not start, usually because the device or browser has no WebGL.
+ *   Read `cause` for the browser's own error. Falling back to `renderer: { mode: '2d' }` helps; reloading doesn't.
+ */
+export type RendererFailureReason = 'load' | 'start';
+
+/** An error as the preview reports it: on `state.error`, the `error` / `parse-error` events and a failed {@link ParseOutcome}. */
+export interface PreviewError {
+  /** A stable code such as `E_WORKER_CREATE_FAILED` or `E_RENDERER_LOAD`: match on this, not on `message`. */
+  code: string;
+  /** Human-readable detail, including the original error's message. */
+  message: string;
+  /**
+   * The original error, when there is one: for example the browser's `SecurityError` behind
+   * `E_WORKER_CREATE_FAILED`, or the error the WebGL renderer threw behind `E_RENDERER_LOAD`. For reading, not
+   * persisting: it may not survive `structuredClone`, and `structuredClone(state)` throws `DataCloneError` when
+   * it can't be cloned. Absent when there is no underlying error.
+   */
+  cause?: unknown;
+  /** Set on `E_RENDERER_LOAD` only. See {@link RendererFailureReason}. */
+  reason?: RendererFailureReason;
+}
+
+/** Build a {@link PreviewError}, leaving out `cause` / `reason` when they don't apply. */
+function previewError(code: string, message: string, cause?: unknown, reason?: RendererFailureReason): PreviewError {
+  const e: PreviewError = { code, message };
+  if (cause !== undefined) e.cause = cause;
+  if (reason !== undefined) e.reason = reason;
+  return e;
+}
 
 export interface GcodePreviewState {
   parsing: boolean;
@@ -203,7 +256,7 @@ export interface GcodePreviewState {
   hasRetractions: boolean;
   /** True when the current file carries M600 color-change boundaries (DD-031 G6). */
   hasColorChanges: boolean;
-  error: { code: string; message: string } | null;
+  error: PreviewError | null;
 }
 
 /** The discriminant of {@link ColorMode} — the color-mode identifiers, for capability lists. */
@@ -223,12 +276,37 @@ export const ALL_COLOR_MODES: readonly ColorModeName[] = [
   'moveKind'
 ];
 
+/**
+ * Preview controls. A call made before the renderer is ready (the 3D renderer loads on demand) is queued
+ * and replayed in order once it binds. Every control that takes a value core can check (the layer, scrub,
+ * lens, pixel-ratio, colour-mode, theme, build-volume, camera, view, quality, progressive-preview, frame-content
+ * and interaction-quality controls) throws `RangeError` to the caller at once for a bad one, queued or not,
+ * in every mode, with the 3D renderer's own message (its `/lite` checks). A queued call the renderer still
+ * rejects when it binds is reported as `state.error` plus an `error` event with code `E_CONTROL_REJECTED`
+ * (the message names the control), and the calls queued after it still apply.
+ *
+ * Scrub and layer-range calls made before a file is shown (before the first parse completes, or while a
+ * parse is in flight) apply to the file that parse loads: loading a file does not wipe them. The latest
+ * call wins, and a clear (`null`) counts as a call. They wait through a failed, cancelled or superseded
+ * parse for the next successful one. A call made once a file is shown applies to that file only: the
+ * next file starts with the whole toolpath visible, as before.
+ */
 export interface GcodePreviewControls {
+  /**
+   * Clip to an inclusive layer range. Throws `RangeError` for a non-number or NaN end (±Infinity is an
+   * open end). A call made before a file is shown applies to the file being loaded (see above).
+   */
   setLayerRange(startLayer: number, endLayer: number): void;
+  /**
+   * Cut the toolpath after segment `segIndex` (inclusive); null clears. Throws `RangeError` for NaN. A call
+   * made before a file is shown applies to the file being loaded (see above).
+   */
   setScrubPosition(segIndex: number | null): void;
   /**
    * Time-based scrub (#181): cut the toolpath at print time `ms` (kinematic axis). null clears the
-   * cut. Resolves to a segment-index scrub; no-op before a successful parse.
+   * cut. Resolves to a segment-index scrub. A call made before a file is shown (no time axis yet, or a
+   * parse in flight) is resolved on the loaded file's own time axis when that parse completes. Throws
+   * `RangeError` for a non-number or NaN.
    */
   setScrubTime(ms: number | null): void;
   setKindVisible(kind: MoveKindToggle, visible: boolean): void;
@@ -270,11 +348,24 @@ export interface GcodePreviewControls {
   /** Read the current camera as a serializable snapshot (#268), or null before the renderer is ready
    *  / on the 2D renderer (which has no 3D pose). */
   getCameraState(): CameraState | null;
-  /** Restore a camera snapshot verbatim (#268) — no re-fit to the current model. 2D discloses. */
+  /**
+   * Restore a camera snapshot verbatim (#268) — no re-fit to the current model. Throws `RangeError` at once
+   * for a non-finite pose, a `zoom` that is not > 0, or a bad `cameraMode`. 2D discloses.
+   */
   setCameraState(state: CameraState): void;
-  /** Apply a bounded declarative theme (#153, DD-009 D4). */
+  /**
+   * Apply a bounded declarative theme (#153, DD-009 D4). Throws `RangeError` at once (even before the 3D
+   * renderer has loaded, and in 2D) for an out-of-range opacity, `gridMajor.every`, light intensity or plate
+   * thickness, or an unknown `materialPreset` / `bedSurface.mode`.
+   */
   setTheme(theme: Theme): void;
-  /** Marks the volume consumer-configured: file-discovered geometry stops auto-applying. */
+  /**
+   * Marks the volume consumer-configured: file-discovered geometry stops auto-applying. Throws `RangeError`
+   * at once for a volume the grid cannot draw (even before the 3D renderer has loaded, and in 2D); a rejected
+   * volume does not count as configured. A `MachineGeometry` is left to the renderer. `null` or `undefined` does
+   * nothing: the current plate stays (there is no "remove the plate" on the toolpath viewer). That differs on
+   * purpose from the model viewer, whose `setBuildVolume(null)` removes its plate (DD-031).
+   */
   setBuildVolume(def: BuildVolumeDef | MachineGeometry): void;
   /** Show/hide the build-volume wireframe cage independently of the bed/plate (#306/#6). */
   setBuildVolumeCage(visible: boolean): void;
@@ -328,7 +419,10 @@ export interface PreviewController {
   clearProgress(): void;
   /** Current immutable state snapshot (identity changes on every state change). */
   getState(): GcodePreviewState;
-  /** Subscribe to snapshot replacements. Returns the unsubscriber. */
+  /**
+   * Subscribe to snapshot replacements. Returns the unsubscriber. A subscriber that throws does not
+   * stop the other subscribers or change a parse outcome: its error is re-thrown from a microtask.
+   */
   onStateChange(cb: (state: GcodePreviewState) => void): () => void;
   controls: GcodePreviewControls;
   /**
@@ -337,6 +431,7 @@ export interface PreviewController {
    * before bind / during the 3D renderer's on-demand load.
    */
   raw: { session: GcodeParseSession; renderer: () => PreviewRenderer | null };
+  /** Subscribe to events. Returns the unsubscriber. A throwing subscriber is isolated like {@link onStateChange}'s. */
   onEvent(cb: (e: PreviewEvent) => void): () => void;
   dispose(): void;
 }
@@ -359,6 +454,22 @@ const INITIAL_STATE: GcodePreviewState = {
   error: null
 };
 
+/**
+ * The input's size for `parse-started`: a File's `size`, else `byteLength`; 0 when there is none or reading it
+ * throws (a null input, a hostile getter). Never throws, so it can run before the parse's try.
+ */
+function inputSize(input: unknown): number {
+  try {
+    const n =
+      typeof File !== 'undefined' && input instanceof File
+        ? input.size
+        : (input as { byteLength?: unknown }).byteLength;
+    return typeof n === 'number' ? n : 0;
+  } catch {
+    return 0;
+  }
+}
+
 function toBytes(input: Uint8Array | ArrayBuffer): Uint8Array {
   return input instanceof Uint8Array ? input : new Uint8Array(input);
 }
@@ -372,12 +483,81 @@ function ordinal(n: number): string {
   return `${n}${suffix}`;
 }
 
+/**
+ * Call every subscriber with `value`. A subscriber that throws cannot stop the others or the controller's
+ * own work (a parse's outcome, the rest of an event sequence): its error is re-thrown from a microtask, so
+ * it surfaces as an uncaught error and is never swallowed.
+ */
+function notifyAll<T>(subscribers: Set<(value: T) => void>, value: T): void {
+  for (const cb of subscribers) {
+    try {
+      cb(value);
+    } catch (err) {
+      queueMicrotask(() => {
+        throw err;
+      });
+    }
+  }
+}
+
+/**
+ * The renderer options the 3D renderer would reject, checked up front in EVERY mode (2D included) with the
+ * renderer's own rules and messages (`validate.ts`, reached through the three-free `/lite` entry). A bad one
+ * throws `RangeError` from the constructor instead of failing the on-demand 3D load later. A volume shaped
+ * like a file-discovered `MachineGeometry` (`bed`) is left to the renderer, which reports a bad one as an
+ * event instead of throwing.
+ *
+ * `null` and `undefined` both mean "unset" (the renderer default), as they did before these checks: a Vue
+ * prop or Svelte binding can hand over `null` for an option the consumer left empty.
+ */
+function checkRendererOptions(r: PreviewControllerOptions['renderer']): void {
+  if (r == null) return;
+  if (r.mode != null) checkRendererMode(r.mode);
+  if (r.buildVolume != null && !isDiscoveredVolume(r.buildVolume)) checkBuildVolume(r.buildVolume);
+  if (r.qualityMode != null) checkQualityMode(r.qualityMode);
+  if (r.progressivePreview != null) checkProgressivePreview(r.progressivePreview);
+  if (r.cameraMode != null) checkCameraMode(r.cameraMode);
+  if (r.cameraFov != null) checkCameraFov(r.cameraFov);
+  if (r.pixelRatio != null) checkPixelRatio(r.pixelRatio);
+  if (r.frameContent != null) checkFrameContent(r.frameContent);
+  if (r.interactionQuality != null) checkInteractionQuality(r.interactionQuality);
+  // Unconditional: null / undefined are the default theme (checkTheme reads `theme ?? {}`).
+  checkTheme(r.theme);
+}
+
+/**
+ * A `MachineGeometry` (the renderer's setBuildVolume also takes one) rather than a consumer volume. Callers
+ * handle `null` first; a non-object reaches `checkBuildVolume` (a `RangeError`), never `'bed' in` (a `TypeError`).
+ */
+function isDiscoveredVolume(def: BuildVolumeDef | MachineGeometry): def is MachineGeometry {
+  return typeof def === 'object' && 'bed' in def;
+}
+
+/**
+ * A layer index, segment index or print time: any number but NaN (±Infinity is an open end). Checked
+ * before anything is stored or queued, so a call made before the renderer is ready throws to its caller.
+ */
+function checkPosition(control: string, value: unknown): void {
+  if (typeof value !== 'number' || Number.isNaN(value)) {
+    throw new RangeError(`${control} needs a number that is not NaN (got ${String(value)})`);
+  }
+}
+
+/**
+ * Resolve a print time to a segment-index scrub cut via the kinematic axis (#181). `completed` segments are
+ * done, and the renderer's scrub index is INCLUSIVE (draws indices <= it), so the cut is completed - 1
+ * (-1 draws nothing: no segment has finished at that time).
+ */
+function scrubCutAt(axis: ToolpathTime, ms: number): number {
+  return segmentsCompletedAtTime(axis.cumulativeMs, ms) - 1;
+}
+
 export function createPreviewController(options: PreviewControllerOptions = {}): PreviewController {
   let snapshot: GcodePreviewState = { ...INITIAL_STATE };
   const stateListeners = new Set<(s: GcodePreviewState) => void>();
   const mutate = (patch: Partial<GcodePreviewState>): void => {
     snapshot = { ...snapshot, ...patch };
-    for (const cb of stateListeners) cb(snapshot);
+    notifyAll(stateListeners, snapshot);
   };
 
   const session = new GcodeParseSession(options.createWorker === undefined ? {} : { worker: options.createWorker });
@@ -394,14 +574,15 @@ export function createPreviewController(options: PreviewControllerOptions = {}):
   if (options.renderer?.colorMode !== undefined) checkColorMode(options.renderer.colorMode);
   let requestedColorMode: ColorMode | undefined = options.renderer?.colorMode;
   let lastMetadata: DialectMetadata | undefined;
-  let consumerVolumeSet = options.renderer?.buildVolume !== undefined;
-  // The lens (DD-032): validated up front, and passed to every 3D renderer this controller binds, so a
-  // canvas rebind or renderer reload keeps the last lens the consumer set.
-  if (options.renderer?.cameraFov !== undefined) checkCameraFov(options.renderer.cameraFov);
-  let cameraFov: number | undefined = options.renderer?.cameraFov;
-  // The pixel ratio, kept the same way (validated up front, passed to every 3D renderer bound).
-  if (options.renderer?.pixelRatio !== undefined) checkPixelRatio(options.renderer.pixelRatio);
-  let pixelRatio: PixelRatioOption | undefined = options.renderer?.pixelRatio;
+  // `buildVolume: null` is "no consumer volume", so a bed discovered in a file still applies.
+  let consumerVolumeSet = options.renderer?.buildVolume != null;
+  // Every renderer option the 3D renderer checks (lens and pixel ratio included), checked here first.
+  checkRendererOptions(options.renderer);
+  // The lens (DD-032): passed to every 3D renderer this controller binds, so a canvas rebind or renderer
+  // reload keeps the last lens the consumer set.
+  let cameraFov: number | undefined = options.renderer?.cameraFov ?? undefined;
+  // The pixel ratio, kept the same way (passed to every 3D renderer bound).
+  let pixelRatio: PixelRatioOption | undefined = options.renderer?.pixelRatio ?? undefined;
   let activeParse: Promise<unknown> | null = null;
   // Bumped by every parse() call: a call that is no longer the newest after an await was superseded (#529).
   let parseGen = 0;
@@ -412,22 +593,33 @@ export function createPreviewController(options: PreviewControllerOptions = {}):
   // can resolve asynchronously. `bindGen` invalidates a slow load superseded by rebind/dispose;
   // `pendingOps` replays control calls made before the renderer is ready.
   let bindGen = 0;
-  const pendingOps: Array<(r: PreviewRenderer) => void> = [];
-  const withRenderer = (fn: (r: PreviewRenderer) => void): void => {
+  // Each queued call keeps its control name, so a call the renderer rejects on replay is reported by name.
+  const pendingOps: Array<{ control: string; run: (r: PreviewRenderer) => void }> = [];
+  // Scrub and layer-range calls made before a file is shown (no file yet, or a parse in flight). A renderer
+  // resets its clipping when it is given a new IR, so these would be lost if they reached it first. The
+  // latest request of each kind wins (null, a clear, is a request too); the IR the next successful parse
+  // applies consumes them. A failed, cancelled or superseded parse leaves them for the next one.
+  let requestedRange: { start: number; end: number } | null = null;
+  let requestedScrub: { kind: 'segment'; seg: number | null } | { kind: 'time'; ms: number } | null = null;
+  // True from a parse's start until its file takes the requests above (or it fails or is cancelled). Not
+  // `snapshot.parsing`: that stays true through the parse-complete emit and its state changes, so a call a
+  // listener makes there would be kept for the NEXT file too.
+  let awaitingFile = false;
+  /** A call made now is for the incoming file: there is no file yet, or one is loading. */
+  const forIncomingFile = (): boolean => lastIR === null || awaitingFile;
+  const withRenderer = (control: string, fn: (r: PreviewRenderer) => void): void => {
     if (renderer !== null) fn(renderer);
-    else pendingOps.push(fn);
+    else pendingOps.push({ control, run: fn });
   };
 
   const listeners = new Set<(e: PreviewEvent) => void>();
-  const emit = (e: PreviewEvent): void => {
-    for (const cb of listeners) cb(e);
-  };
+  const emit = (e: PreviewEvent): void => notifyAll(listeners, e);
 
   function onRendererEvent(e: PreviewRendererEvent): void {
     if (e.type === 'buildComplete') {
       const decimated =
         e.decimationApplied > 1
-          ? `Showing every ${ordinal(e.decimationApplied)} extrusion segment (layer boundaries kept); ` +
+          ? `Showing every ${ordinal(e.decimationApplied)} drawn segment (layer boundaries kept); ` +
             `travel hidden. ${e.segments.toLocaleString()} segments drawn.`
           : '';
       // #518: segments a renderer skipped for an Infinity/NaN coordinate (2D: x/y; 3D: x/y/z), named by count.
@@ -492,9 +684,31 @@ export function createPreviewController(options: PreviewControllerOptions = {}):
       // DD-005 consumer-wins: only auto-apply file geometry when the consumer set no volume.
       if (lastMachine !== undefined && !consumerVolumeSet) r.setBuildVolume(lastMachine);
     }
-    // Replay control calls made during the (async) load, in order.
-    for (const op of pendingOps) op(r);
-    pendingOps.length = 0;
+    // setIR can emit synchronously (2D `renderer-unsupported`, or a 3D build on a synchronous scheduleFrame),
+    // so a subscriber may already have rebound or disposed: then leave the queue to the new renderer.
+    if (renderer !== r) return;
+    // Replay control calls made during the (async) load, in order. The queue is taken first, so a rebind
+    // never replays a call twice. A call the renderer rejects (e.g. a theme opacity outside [0, 1]) is
+    // reported as E_CONTROL_REJECTED and the rest still apply: the renderer IS bound, so it is neither
+    // a load failure nor a reason to drop later calls. A subscriber may dispose or rebind mid-replay (an
+    // `error` listener, or a renderer event): then `r` is no longer the bound renderer, so stop rather
+    // than drive a disposed one (dispose() also unbinds, so this covers it). Checked after every call, the
+    // last one included, so neither the remaining calls nor the counts below come from the stale renderer.
+    // The new renderer, if any, does its own wiring; the calls not yet run are dropped.
+    for (const op of pendingOps.splice(0)) {
+      try {
+        op.run(r);
+      } catch (err) {
+        const error = previewError(
+          'E_CONTROL_REJECTED',
+          `${op.control} rejected: ${err instanceof Error ? err.message : String(err)}`,
+          err
+        );
+        mutate({ error });
+        emit({ type: 'error', ...error });
+      }
+      if (renderer !== r) return;
+    }
     if (lastIR !== null) {
       mutate({ layerCount: r.layerCount, segmentCount: r.segmentCount });
       // The renderer bound after a parse already completed (on-demand 3D load) — refresh capability
@@ -529,9 +743,11 @@ export function createPreviewController(options: PreviewControllerOptions = {}):
           canvas,
           buildVolume: r.buildVolume,
           quality: r.quality ?? 'auto',
-          qualityMode: r.qualityMode,
-          progressivePreview: r.progressivePreview,
-          cameraMode: r.cameraMode,
+          // An unset (`null`) option reaches the renderer as `undefined`: its own checks treat only `undefined`
+          // as unset (the rest already default a `null` with `??` or a truthiness test).
+          qualityMode: r.qualityMode ?? undefined,
+          progressivePreview: r.progressivePreview ?? undefined,
+          cameraMode: r.cameraMode ?? undefined,
           cameraFov,
           ...(pixelRatio !== undefined ? { pixelRatio } : {}),
           frameContent: r.frameContent,
@@ -554,13 +770,19 @@ export function createPreviewController(options: PreviewControllerOptions = {}):
             : {})
         });
         applyRendererReady(canvas, r3d);
-      })
-      .catch((err: unknown) => {
+      }, rendererFailed('load'))
+      // Anything that throws once the code is here (constructing the renderer and its WebGL context, or
+      // binding it) is a failure to start, not to load.
+      .catch(rendererFailed('start'));
+
+    function rendererFailed(reason: RendererFailureReason): (err: unknown) => void {
+      return (err) => {
         if (disposed || gen !== bindGen) return;
-        const message = err instanceof Error ? err.message : String(err);
-        mutate({ error: { code: 'E_RENDERER_LOAD', message } });
-        emit({ type: 'error', code: 'E_RENDERER_LOAD', message });
-      });
+        const error = previewError('E_RENDERER_LOAD', err instanceof Error ? err.message : String(err), err, reason);
+        mutate({ error });
+        emit({ type: 'error', ...error });
+      };
+    }
   }
 
   const offProgress = session.onProgress((p) => {
@@ -579,6 +801,9 @@ export function createPreviewController(options: PreviewControllerOptions = {}):
   async function parse(input: Uint8Array | ArrayBuffer | File, opts?: WireParseOptions): Promise<ParseOutcome> {
     if (disposed) return { ok: false, error: { code: 'E_DISPOSED', message: 'preview disposed' } };
     const gen = ++parseGen;
+    // Set before the wait below: a parse started while another is still settling (a parse-complete handler
+    // calling parse()) owns the calls made in the same tick, which would otherwise reach the outgoing file.
+    awaitingFile = true;
     if (snapshot.parsing) {
       // §5: parse-during-parse cancels then restarts (session semantics preserved).
       session.cancel();
@@ -588,15 +813,18 @@ export function createPreviewController(options: PreviewControllerOptions = {}):
       if (gen !== parseGen || disposed) return { ok: false, cancelled: true };
     }
     mutate({ parsing: true, parseProgress: null, error: null });
-    const bytes =
-      typeof File !== 'undefined' && input instanceof File
-        ? input.size
-        : (input as Uint8Array | ArrayBuffer).byteLength;
+    const bytes = inputSize(input);
     emit({ type: 'parse-started', bytes });
-    const wire = { ...options.parseDefaults, ...opts };
-    const run = session.parse(input instanceof ArrayBuffer ? toBytes(input) : input, wire);
-    activeParse = run;
+    // Everything after parse-started runs inside the try: a synchronous throw (a null input, a hostile
+    // getter) still ends in exactly one terminal event, and the finally resets `parsing`.
+    let run: Promise<ParseResult> | null = null;
     try {
+      if (typeof input !== 'object' || input === null) {
+        throw new TypeError(`parse input must be a Uint8Array, ArrayBuffer or File (got ${String(input)})`);
+      }
+      const wire = { ...options.parseDefaults, ...opts };
+      run = session.parse(input instanceof ArrayBuffer ? toBytes(input) : input, wire);
+      activeParse = run;
       const result = await run;
       // #529: a newer parse() was issued while this one ran (its cancel can lose the race to completion).
       // Its result is for a file the caller has replaced: never apply it.
@@ -608,6 +836,7 @@ export function createPreviewController(options: PreviewControllerOptions = {}):
       // Time axis (#181): prefer the slicer's own estimate (#183) for the total; the kinematic axis
       // always backs time-scrub. `hasUnknownFeedrate` means the kinematic total is a lower bound.
       timeAxis = computeToolpathTime(result.ir);
+      const axis = timeAxis;
       const slicerSeconds = result.metadata?.printEstimate?.seconds;
       const totalTimeMs = slicerSeconds !== undefined ? slicerSeconds * 1000 : timeAxis.totalMs;
       const timeEstimateSource: 'slicer' | 'kinematic' = slicerSeconds !== undefined ? 'slicer' : 'kinematic';
@@ -623,6 +852,19 @@ export function createPreviewController(options: PreviewControllerOptions = {}):
           renderer.setColorMode(resolveColorMode(requestedColorMode, result.metadata, result.ir) as ColorMode);
         }
         renderer.setIR(result.ir);
+      }
+      // Re-apply the scrub / layer-range requests made for this file, after its setIR reset the clipping.
+      // An unbound renderer queues them behind the earlier calls, so they replay after its own setIR.
+      const range = requestedRange;
+      const scrub = requestedScrub;
+      requestedRange = null;
+      requestedScrub = null;
+      // This file is shown from here on: a call a parse-complete or state listener makes is for it only.
+      awaitingFile = false;
+      if (range !== null) withRenderer('setLayerRange', (r) => r.setLayerRange(range.start, range.end));
+      if (scrub !== null) {
+        const cut = scrub.kind === 'segment' ? scrub.seg : scrubCutAt(axis, scrub.ms);
+        withRenderer(scrub.kind === 'segment' ? 'setScrubPosition' : 'setScrubTime', (r) => r.setScrubPosition(cut));
       }
       mutate({
         summary: {
@@ -665,12 +907,19 @@ export function createPreviewController(options: PreviewControllerOptions = {}):
         emit({ type: 'parse-cancelled' });
         return { ok: false, cancelled: true };
       }
-      const code = err instanceof ParseSessionError ? err.code : 'E_UNKNOWN';
-      const message = err instanceof Error ? err.message : String(err);
-      mutate({ error: { code, message } });
-      emit({ type: 'parse-error', code, message });
-      return { ok: false, error: { code, message } };
+      // The original error: a ParseSessionError carries it on `cause` (e.g. the browser's SecurityError behind
+      // E_WORKER_CREATE_FAILED); anything else thrown here is itself the original.
+      const error =
+        err instanceof ParseSessionError
+          ? previewError(err.code, err.message, err.cause)
+          : previewError('E_UNKNOWN', err instanceof Error ? err.message : String(err), err);
+      mutate({ error });
+      emit({ type: 'parse-error', ...error });
+      return { ok: false, error };
     } finally {
+      // A failed or cancelled parse brings no file. A superseded one leaves the flag to the newer parse
+      // (#531), which is still loading; a state listener below may also have started one.
+      if (gen === parseGen) awaitingFile = false;
       mutate({ parsing: false, parseProgress: null });
       if (activeParse === run) activeParse = null;
     }
@@ -691,18 +940,33 @@ export function createPreviewController(options: PreviewControllerOptions = {}):
 
   const controls: GcodePreviewControls = {
     // Controls queue when the (async) renderer isn't ready yet, then replay in order on bind.
-    setLayerRange: (a, b) => withRenderer((r) => r.setLayerRange(a, b)),
-    setScrubPosition: (s) => withRenderer((r) => r.setScrubPosition(s)),
-    setScrubTime: (ms) => {
-      // Resolve a print time to a segment-index scrub cut via the kinematic axis (#181). `completed` segments
-      // are done, and the renderer's scrub index is INCLUSIVE (draws indices <= it), so the cut is completed - 1
-      // (-1 draws nothing: no segment has finished at that time).
-      const completed = ms === null || timeAxis === null ? null : segmentsCompletedAtTime(timeAxis.cumulativeMs, ms);
-      withRenderer((r) => r.setScrubPosition(completed === null ? null : completed - 1));
+    setLayerRange: (a, b) => {
+      checkPosition('setLayerRange startLayer', a);
+      checkPosition('setLayerRange endLayer', b);
+      requestedRange = forIncomingFile() ? { start: a, end: b } : null;
+      withRenderer('setLayerRange', (r) => r.setLayerRange(a, b));
     },
-    setKindVisible: (k, v) => withRenderer((r) => r.setKindVisible(k, v)),
-    setFeatureRoleVisible: (role, v) => withRenderer((r) => r.setFeatureRoleVisible?.(role, v)),
-    setShowRetractions: (v) => withRenderer((r) => r.setShowRetractions(v)),
+    setScrubPosition: (s) => {
+      if (s !== null) checkPosition('setScrubPosition', s);
+      requestedScrub = forIncomingFile() ? { kind: 'segment', seg: s } : null;
+      withRenderer('setScrubPosition', (r) => r.setScrubPosition(s));
+    },
+    setScrubTime: (ms) => {
+      if (ms !== null) checkPosition('setScrubTime', ms);
+      requestedScrub = forIncomingFile() ? (ms === null ? { kind: 'segment', seg: null } : { kind: 'time', ms }) : null;
+      if (ms === null) {
+        withRenderer('setScrubTime', (r) => r.setScrubPosition(null));
+        return;
+      }
+      // Before a successful parse there is no time axis: the request waits for the file (recorded above).
+      if (timeAxis === null) return;
+      const cut = scrubCutAt(timeAxis, ms);
+      withRenderer('setScrubTime', (r) => r.setScrubPosition(cut));
+    },
+    setKindVisible: (k, v) => withRenderer('setKindVisible', (r) => r.setKindVisible(k, v)),
+    setFeatureRoleVisible: (role, v) =>
+      withRenderer('setFeatureRoleVisible', (r) => r.setFeatureRoleVisible?.(role, v)),
+    setShowRetractions: (v) => withRenderer('setShowRetractions', (r) => r.setShowRetractions(v)),
     // Availability is IR/renderer-dependent; before the renderer is ready we optimistically queue
     // and report true (the mode applies once bound). Callers can re-check after `parse-complete`.
     setColorMode: (m) => {
@@ -714,25 +978,38 @@ export function createPreviewController(options: PreviewControllerOptions = {}):
       requestedColorMode = m;
       const resolved = (resolveColorMode(m, lastMetadata, lastIR) ?? m) as ColorMode;
       if (renderer !== null) return renderer.setColorMode(resolved);
-      pendingOps.push((r) => r.setColorMode(resolved));
+      pendingOps.push({ control: 'setColorMode', run: (r) => r.setColorMode(resolved) });
       return true;
     },
-    setQuality: (q) => withRenderer((r) => r.setQuality(q)),
-    setQualityMode: (m) => withRenderer((r) => r.setQualityMode(m)),
-    setProgressivePreview: (m) => withRenderer((r) => r.setProgressivePreview(m)),
-    setCameraMode: (m) => withRenderer((r) => r.setCameraMode(m)),
+    setQuality: (q) => withRenderer('setQuality', (r) => r.setQuality(q)),
+    // The checks below run synchronously, before anything is stored or queued (as for setCameraFov): a call
+    // made before the on-demand 3D load throws to its caller, not later as E_CONTROL_REJECTED.
+    setQualityMode: (m) => {
+      checkQualityMode(m);
+      withRenderer('setQualityMode', (r) => r.setQualityMode(m));
+    },
+    setProgressivePreview: (m) => {
+      checkProgressivePreview(m);
+      withRenderer('setProgressivePreview', (r) => r.setProgressivePreview(m));
+    },
+    setCameraMode: (m) => {
+      checkCameraMode(m);
+      withRenderer('setCameraMode', (r) => r.setCameraMode(m));
+    },
     setCameraFov: (fov) => {
-      // Synchronous, so a call made before the on-demand 3D load throws here, not later in the replay.
       checkCameraFov(fov);
       cameraFov = fov;
-      withRenderer((r) => r.setCameraFov?.(fov));
+      withRenderer('setCameraFov', (r) => r.setCameraFov?.(fov));
     },
     setPixelRatio: (ratio) => {
       checkPixelRatio(ratio);
       pixelRatio = ratio;
-      withRenderer((r) => r.setPixelRatio?.(ratio));
+      withRenderer('setPixelRatio', (r) => r.setPixelRatio?.(ratio));
     },
-    setView: (v) => withRenderer((r) => r.setView(v)),
+    setView: (v) => {
+      checkCameraView(v);
+      withRenderer('setView', (r) => r.setView(v));
+    },
     // Returns a value, so it can't queue: before the renderer is ready (or on 2D) there is no pose → null.
     getCameraState: () => (renderer !== null ? renderer.getCameraState() : null),
     capture: (opts) =>
@@ -744,16 +1021,37 @@ export function createPreviewController(options: PreviewControllerOptions = {}):
     getRenderStats: () => (renderer !== null ? renderer.getRenderStats() : null),
     pickSegment: (ndcX, ndcY, threshold) => (renderer !== null ? renderer.pickSegment(ndcX, ndcY, threshold) : null),
     isColorModeAvailable: (mode) => (renderer !== null ? renderer.isColorModeAvailable(mode) : true),
-    setCameraState: (s) => withRenderer((r) => r.setCameraState(s)),
-    setTheme: (t) => withRenderer((r) => r.setTheme(t)),
-    setBuildVolume: (def) => {
-      consumerVolumeSet = true;
-      withRenderer((r) => r.setBuildVolume(def));
+    setCameraState: (s) => {
+      checkCameraState(s);
+      withRenderer('setCameraState', (r) => r.setCameraState(s));
     },
-    setBuildVolumeCage: (v) => withRenderer((r) => r.setBuildVolumeCage(v)),
-    setFrameContent: (m) => withRenderer((r) => r.setFrameContent(m)),
-    setInteractionQuality: (m) => withRenderer((r) => r.setInteractionQuality(m)),
-    frame: () => withRenderer((r) => r.frame())
+    setTheme: (t) => {
+      checkTheme(t);
+      withRenderer('setTheme', (r) => r.setTheme(t));
+    },
+    setBuildVolume: (def) => {
+      // Unset (`null` / `undefined`, e.g. a Vue prop or Svelte binding cleared): nothing to apply, and it does
+      // not count as a consumer volume. Before these checks the renderer threw a TypeError (`'bed' in null`).
+      if (def == null) return;
+      // A bad volume throws before it counts as consumer-set, so a later discovered bed still applies.
+      if (!isDiscoveredVolume(def)) checkBuildVolume(def);
+      consumerVolumeSet = true;
+      withRenderer('setBuildVolume', (r) => r.setBuildVolume(def));
+    },
+    setBuildVolumeCage: (v) => withRenderer('setBuildVolumeCage', (r) => r.setBuildVolumeCage(v)),
+    // Unset (`null` / `undefined`) is the default, as before these checks (a stored unset value framed all
+    // and never reduced detail), so a Vue watcher or Svelte reactive statement that clears it keeps working.
+    setFrameContent: (m) => {
+      const mode = m ?? 'all';
+      checkFrameContent(mode);
+      withRenderer('setFrameContent', (r) => r.setFrameContent(mode));
+    },
+    setInteractionQuality: (m) => {
+      const mode = m ?? 'off';
+      checkInteractionQuality(mode);
+      withRenderer('setInteractionQuality', (r) => r.setInteractionQuality(mode));
+    },
+    frame: () => withRenderer('frame', (r) => r.frame())
   };
 
   function dispose(): void {
@@ -763,8 +1061,8 @@ export function createPreviewController(options: PreviewControllerOptions = {}):
     offProgress();
     offPartial();
     session.dispose();
+    // No queue clear: once disposed, nothing replays it (bindCanvas and an in-flight 3D load both return).
     disposeRenderer();
-    pendingOps.length = 0;
     lastIR = null;
     timeAxis = null;
     mapper = null;

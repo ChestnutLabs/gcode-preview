@@ -29,12 +29,16 @@ import type { FeatureRoleValue, MachineGeometry, ProgressObservation } from '@ch
 import type { WireParseOptions, WorkerLike } from '@chestnutlabs/gcode-parser';
 import {
   useGcodePreview,
+  type PreviewError,
   type PreviewEvent,
   type RendererMode,
   type UseGcodePreviewOptions
 } from './use-gcode-preview.js';
 
 export type GcodePreviewSource = Uint8Array | ArrayBuffer | File | null;
+
+/** The perspective lens every renderer starts with, in degrees (#520: a mount value of 50 asks for nothing). */
+const DEFAULT_LENS = 50;
 
 export const GcodePreview = defineComponent({
   name: 'GcodePreview',
@@ -82,6 +86,8 @@ export const GcodePreview = defineComponent({
     showTravel: { type: Boolean, default: true },
     /** DD-016 (#182): show slicer wipe moves. Default true. */
     showWipe: { type: Boolean, default: true },
+    /** #584: show CNC/laser cut moves. Default true. */
+    showCut: { type: Boolean, default: true },
     /** DD-009 D1 (#148): opt-in retraction/deretraction markers. */
     showRetractions: { type: Boolean, default: false },
     /** #306/#6: show the build-volume wireframe cage (independent of the bed/plate). Default true. */
@@ -129,7 +135,7 @@ export const GcodePreview = defineComponent({
       metadata: DialectMetadata | undefined;
     }) => true,
     'camera-change': (_state: CameraState) => true,
-    'parse-error': (_e: { code: string; message: string }) => true,
+    'parse-error': (_e: PreviewError) => true,
     'parse-cancelled': () => true,
     'parse-progress': (_p: { bytesProcessed: number; totalBytes: number }) => true,
     stage: (_e: { stage: PreparationStage; progress?: number; detail?: { built: number; total: number } }) => true,
@@ -139,7 +145,9 @@ export const GcodePreview = defineComponent({
     'machine-geometry-discovered': (_machine: MachineGeometry) => true,
     'progress-presentation-changed': (_e: { mode: string; reason?: string }) => true,
     disclosure: (_text: string) => true,
-    error: (_e: { code: string; message: string }) => true
+    /** #520: the renderer cannot honour a requested setting (e.g. a lens on the 2D renderer); once per request. */
+    'renderer-unsupported': (_e: { feature: string; message: string }) => true,
+    error: (_e: PreviewError) => true
   },
   setup(props, { emit, expose }) {
     const preview = useGcodePreview({
@@ -164,9 +172,10 @@ export const GcodePreview = defineComponent({
       parseDefaults: props.parseOptions
     });
 
-    // A MachineGeometry buildVolume prop applies post-construction (same consumer-wins effect).
+    // A MachineGeometry buildVolume prop applies post-construction (same consumer-wins effect). `!= null`: an
+    // optional Vue prop can be `null` (a cleared value), which means no volume, never `'bed' in null`.
     onMounted(() => {
-      if (props.buildVolume !== undefined && 'bed' in props.buildVolume) {
+      if (props.buildVolume != null && 'bed' in props.buildVolume) {
         preview.controls.setBuildVolume(props.buildVolume);
       }
     });
@@ -186,9 +195,12 @@ export const GcodePreview = defineComponent({
         case 'camera-changed':
           emit('camera-change', e.state);
           break;
-        case 'parse-error':
-          emit('parse-error', { code: e.code, message: e.message });
+        case 'parse-error': {
+          // The whole error, `cause` and `reason` included, without the event's `type`.
+          const { type: _type, ...error } = e;
+          emit('parse-error', error);
           break;
+        }
         case 'parse-cancelled':
           emit('parse-cancelled');
           break;
@@ -214,14 +226,32 @@ export const GcodePreview = defineComponent({
         case 'machine-geometry-discovered':
           emit('machine-geometry-discovered', e.machine);
           break;
-        case 'error':
+        case 'error': {
+          const { type: _type, ...error } = e;
           if (e.code === 'machine-geometry-mismatch') emit('machine-geometry-mismatch', e.message);
-          else emit('error', { code: e.code, message: e.message });
+          else emit('error', error);
+          break;
+        }
+        case 'renderer-unsupported':
+          emit('renderer-unsupported', { feature: e.feature, message: e.message });
           break;
         default:
           break;
       }
     });
+
+    // #520: the 2D renderer cannot honour these four 3D-only construction props, so one set to a non-default
+    // value at mount is also applied through controls, and 2D reports `renderer-unsupported` once. 3D was
+    // built with them, so it skips this (a re-applied quality would rebuild). Subscribed above first.
+    if (props.renderer === '2d') {
+      if (props.quality !== 'auto') preview.controls.setQuality(props.quality);
+      if (props.cameraMode != null && props.cameraMode !== 'perspective')
+        preview.controls.setCameraMode(props.cameraMode);
+      if (props.cameraFov != null && props.cameraFov !== DEFAULT_LENS) {
+        preview.controls.setCameraFov(props.cameraFov);
+      }
+      if (props.pixelRatio != null) preview.controls.setPixelRatio(props.pixelRatio);
+    }
 
     // ---- prop wiring: each prop is a thin call into the composable (D1 shell rule) ----
     //
@@ -235,10 +265,23 @@ export const GcodePreview = defineComponent({
     // The CONSTRUCTION-covered props (`colorMode`, `quality`, `cameraMode`, `cameraFov`, `pixelRatio`, `theme`, and a plain
     // `buildVolume`) are already applied as renderer options at controller creation above, so their
     // watchers stay change-only — making them immediate would just re-apply the same value redundantly.
+    // (On the 2D renderer the four 3D-only ones are also applied once at mount when non-default; see #520.)
+    let sourceParsed = false;
     watch(
       () => props.source,
       (source) => {
-        if (source !== null) void preview.parse(source, props.parseOptions);
+        if (source === null) return;
+        void preview.parse(source, props.parseOptions);
+        // On a source change a renderer shows the new file uncut, so re-send the view props that still hold a
+        // value: the controller applies them to the file that parse loads. scrubTime goes last, so it wins over
+        // scrub (as at mount). The first parse needs none: the immediate watchers below send them at mount.
+        const first = !sourceParsed;
+        sourceParsed = true;
+        if (first) return;
+        const range = props.layerRange;
+        if (range !== null) preview.controls.setLayerRange(range[0], range[1]);
+        if (props.scrub !== null) preview.controls.setScrubPosition(props.scrub);
+        if (props.scrubTime !== null) preview.controls.setScrubTime(props.scrubTime);
       },
       { immediate: true }
     );
@@ -250,14 +293,26 @@ export const GcodePreview = defineComponent({
       },
       { immediate: true }
     );
+    // The scrub values last sent from the props. A null prop is sent (as a clear) only when it replaces a sent
+    // number, so an unset `scrubTime` at mount no longer clears the `scrub` cut.
+    let scrubSent: number | null = null;
+    let scrubTimeSent: number | null = null;
     watch(
       () => props.scrub,
-      (scrub) => preview.controls.setScrubPosition(scrub),
+      (scrub) => {
+        if (scrub === null && scrubSent === null) return;
+        scrubSent = scrub;
+        preview.controls.setScrubPosition(scrub);
+      },
       { immediate: true }
     );
     watch(
       () => props.scrubTime,
-      (t) => preview.controls.setScrubTime(t),
+      (t) => {
+        if (t === null && scrubTimeSent === null) return;
+        scrubTimeSent = t;
+        preview.controls.setScrubTime(t);
+      },
       { immediate: true }
     );
     watch(
@@ -268,6 +323,11 @@ export const GcodePreview = defineComponent({
     watch(
       () => props.showWipe,
       (visible) => preview.controls.setKindVisible('wipe', visible),
+      { immediate: true }
+    );
+    watch(
+      () => props.showCut,
+      (visible) => preview.controls.setKindVisible('cut', visible),
       { immediate: true }
     );
     watch(
@@ -293,29 +353,31 @@ export const GcodePreview = defineComponent({
     watch(
       () => props.qualityMode,
       (mode) => {
-        if (mode !== undefined) preview.controls.setQualityMode(mode);
+        if (mode != null) preview.controls.setQualityMode(mode);
       }
     );
     watch(
       () => props.progressivePreview,
       (mode) => {
-        if (mode !== undefined) preview.controls.setProgressivePreview(mode);
+        if (mode != null) preview.controls.setProgressivePreview(mode);
       }
     );
     watch(
       () => props.cameraMode,
-      (mode) => preview.controls.setCameraMode(mode)
+      (mode) => {
+        if (mode != null) preview.controls.setCameraMode(mode);
+      }
     );
     watch(
       () => props.cameraFov,
       (fov) => {
-        if (fov !== undefined) preview.controls.setCameraFov(fov);
+        if (fov != null) preview.controls.setCameraFov(fov);
       }
     );
     watch(
       () => props.pixelRatio,
       (ratio) => {
-        if (ratio !== undefined) preview.controls.setPixelRatio(ratio);
+        if (ratio != null) preview.controls.setPixelRatio(ratio);
       }
     );
     watch(
@@ -329,7 +391,7 @@ export const GcodePreview = defineComponent({
     watch(
       () => props.view,
       (view) => {
-        if (view !== undefined) preview.controls.setView(view);
+        if (view != null) preview.controls.setView(view);
       },
       { immediate: true }
     );

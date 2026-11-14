@@ -92,6 +92,8 @@ export async function parseGcodeStreamToIR(
   let skippingOverlongLine = false;
   let overlongWarned = false;
   let cancelled = false;
+  /** True once the source reported `done`; anything else is an early exit that must release the source. */
+  let sourceDrained = false;
   let sliceStart = Date.now();
   const partial = makePartialEmitter(engine, hooks);
 
@@ -152,7 +154,10 @@ export async function parseGcodeStreamToIR(
         cancelled = true;
         break;
       }
-      if (done) break;
+      if (done) {
+        sourceDrained = true;
+        break;
+      }
       if (value === undefined || value.byteLength === 0) continue;
 
       bytesRead += value.byteLength;
@@ -187,6 +192,16 @@ export async function parseGcodeStreamToIR(
       }
     }
   } finally {
+    // An early exit (limit hit, cancel, source error) must not leave the source producing: a transferred
+    // main-thread stream or a container's inflate stream would otherwise keep running with nobody reading.
+    // Not awaited — a source that never settles its cancel must not hang the parse.
+    if (!sourceDrained) {
+      try {
+        reader.cancel?.().catch(() => undefined);
+      } catch {
+        /* a source whose cancel throws synchronously is already unusable */
+      }
+    }
     reader.releaseLock?.();
   }
 

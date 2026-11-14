@@ -16,7 +16,16 @@ import SOURCE from '../GcodePreview.svelte?raw';
  * re-applied after mount, so they are intentionally not reactive. Keep this list tight: a new
  * consumer-facing option that *can* change at runtime must be reactive, not added here.
  */
-const INIT_ONLY = new Set(['renderer', 'createWorker', 'rendererOptions', 'adjacentLayers', 'tube']);
+const INIT_ONLY = new Set([
+  'renderer',
+  'createWorker',
+  'rendererOptions',
+  'adjacentLayers',
+  'tube',
+  // Read when `source` changes (and as the parse default at construction), deliberately NOT tracked: an inline
+  // object must not re-parse an unchanged file (#435). Behavior pinned in tools/svelte-compat/shared/compat.mjs.
+  'parseOptions'
+]);
 
 describe('Svelte shell prop reactivity (#274)', () => {
   const props = [...SOURCE.matchAll(/export let (\w+)/g)].map((m) => m[1]);

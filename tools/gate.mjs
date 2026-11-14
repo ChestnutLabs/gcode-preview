@@ -5,7 +5,7 @@
 //   npm run gate               # build + package dists + lint + typeCheck + root and package tests
 //                              # + docs links + typedoc
 //   npm run gate -- --ci       # also the rest of CI's `build` job: license gates, no-runtime-deps,
-//                              # the tarball consumer fixture, and pack:check
+//                              # the tarball consumer fixture, pack:check and bundle:check
 //   npm run gate -- --install  # run `npm ci` first (after a lockfile or branch change)
 //
 // Test workers are capped (default 8; GATE_MAX_WORKERS overrides) because the gate often runs on a
@@ -71,6 +71,7 @@ export function planSteps({ order, ci = false, install = false, maxWorkers = 8 }
   if (ci) {
     steps.push({ name: 'test:consumer-vue', cmd: 'npm run test:consumer-vue' });
     steps.push({ name: 'pack:check', cmd: 'npm run pack:check' });
+    steps.push({ name: 'bundle:check', cmd: 'npm run bundle:check' });
   }
   steps.push({ name: 'docs:build', cmd: 'npm run docs:build' });
   return steps;
@@ -88,9 +89,13 @@ function readManifests(root) {
   return out;
 }
 
-/** Runs one step with the user's terminal attached; returns its exit status (or the signal name). */
-function spawnStep(cmd, cwd) {
-  const r = spawnSync(cmd, { cwd, stdio: 'inherit', shell: true });
+/**
+ * Runs one step with the user's terminal attached; returns its exit status, or the signal name when
+ * the step was killed (status null), so a killed step never reads as exit 0. `spawn` is injectable
+ * for the tests.
+ */
+export function spawnStep(cmd, cwd, spawn = spawnSync) {
+  const r = spawn(cmd, { cwd, stdio: 'inherit', shell: true });
   return r.status ?? r.signal;
 }
 

@@ -29,12 +29,27 @@ build-volume cage **off**, so turn it off with it (`showVolumeCage={false}`); th
 Both viewers take it: `<ModelViewer>` has the same `showVolumeCage` prop and `controls.setBuildVolumeCage(visible)`, and
 turning the cage off keeps the plate, grid and contact shadow.
 
+A file with no extrusion (a CNC carve, a laser job or a pen plotter) works at or below the plate, which is drawn at Z 0.
+For those files the plate and its edge turn see-through (at most 35% opaque) and the contact shadow is left out, so the
+toolpath shows through. A file with any extrusion, including a printer that also cuts, keeps the opaque plate and shadow.
+
 | Look | Backdrop | Plate and grid |
 | --- | --- | --- |
 | `studioTheme('dark')` | dark grey gradient | solid mid-grey plate, white 10 mm grid with stronger 50 mm lines and an outline |
 | `studioTheme('light')` | pale grey gradient | the same plate, dark grid lines |
 
 ![The same 3DBenchy on the Studio light look](https://chestnutlabs.github.io/gcode-preview/media/app-studio-light.png)
+
+### Your own theme: values that throw
+
+A theme you build yourself is checked when you set it. A value the viewer can't draw throws a `RangeError` that
+names the field, instead of quietly drawing something else. The checks: light intensities must be finite and
+`>= 0`, `bedSurface.opacity` and the other opacities must be in `[0, 1]`, `bedSurface.thickness` must be finite
+and `>= 0`, and `bedSurface.mode` (`'none'` / `'solid'`) and `materialPreset` (`'matte'` / `'glossy'`) must be
+one of their names. A typo in either name used to fall back to the default, and now it throws, so check them if
+your theme comes from saved settings. The full table is in the
+[renderer-three README](https://github.com/ChestnutLabs/gcode-preview/blob/dev/packages/gcode-renderer-three/README.md#theme-values-that-throw).
+Both viewers run the same check.
 
 ## Camera lens
 
@@ -48,8 +63,10 @@ camera is orthographic is remembered and applied when you return to perspective.
 
 Imperatively: `controls.setCameraFov(deg)`. On the Web Component the lens is the `camera-fov` attribute: an invalid
 value is ignored and the last valid lens is kept, while setting the `cameraFov` **property** to an invalid value
-throws. The 2D renderer is a flat top-down view, so the `theme` and the cage are ignored, and a lens call records a
-`renderer-unsupported` disclosure instead of changing anything (a deliberate difference between the renderers, not a gap).
+throws. The 2D renderer is a flat top-down view, so the `theme` and the cage are ignored. A lens, as a prop or a call,
+changes nothing and fires the `renderer-unsupported` event once, so you can tell your users (React
+`onRendererUnsupported`, Svelte `on:rendererunsupported`). This is a deliberate difference between the renderers, not a
+gap. The [events table](adapters.md#the-shared-surface) compares it with `disclosure`.
 
 ## Sharpness on high-DPI screens
 
@@ -65,8 +82,8 @@ The drawing buffer has ratio² times the pixels (4× at ratio 2, 2.25× at 1.5; 
 (or pick a number) when many viewers share a page or the GPU is weak. With `interactionQuality: 'auto'` the ratio
 still drops while you orbit and settles back on yours. Imperatively: `controls.setPixelRatio(ratio)`; on the Web
 Component it is the `pixel-ratio` attribute (an invalid value is ignored) and the `pixelRatio` property (an invalid
-value throws). Anything else throws `RangeError` and is never clamped; the 2D renderer records a
-`renderer-unsupported` disclosure.
+value throws). Anything else throws `RangeError` and is never clamped; the 2D renderer fires the
+`renderer-unsupported` event once.
 
 An unsized `controls.capture()` is the resting drawing-buffer size when unset and the canvas's CSS size when set. With
 the built-in renderer, setting a ratio never changes the default capture size; pass `width`/`height` for a crisper

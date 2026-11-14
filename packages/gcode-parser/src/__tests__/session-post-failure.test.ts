@@ -115,13 +115,18 @@ describe('GcodeParseSession — postMessage failure (#453)', () => {
       message: 'could not send the parse to the worker: boom'
     });
 
+    const original = new Error('cannot clone');
     worker.postMessage = () => {
-      throw new Error('cannot clone');
+      throw original;
     };
-    await expect(session.parse('G1 X1')).rejects.toMatchObject({
+    let caught: unknown;
+    await session.parse('G1 X1').catch((err: unknown) => (caught = err));
+    expect(caught).toMatchObject({
       code: 'E_POST_FAILED',
       message: 'could not send the parse to the worker: cannot clone'
     });
+    // The original error rides on `cause`, the same object (as for E_WORKER_CREATE_FAILED).
+    expect((caught as Error).cause).toBe(original);
   });
 
   it('end to end with the real handler: parse, re-parse same bytes fails cleanly, parse a copy works', async () => {
@@ -134,6 +139,27 @@ describe('GcodeParseSession — postMessage failure (#453)', () => {
     await expect(session.parse(bytes)).rejects.toMatchObject({ code: 'E_POST_FAILED' });
     const b = await session.parse(copy);
     expect(b.ir.segments.count).toBe(2);
+    session.dispose();
+  });
+
+  it('a getReader getter that throws while the transfer list is built rejects with E_POST_FAILED, not a wedge', async () => {
+    const worker = cloningWorker();
+    const session = new GcodeParseSession({ worker });
+    const hostile = {
+      get getReader(): never {
+        throw new Error('hostile getter');
+      }
+    };
+    await expect(session.parse(hostile as never)).rejects.toMatchObject({
+      code: 'E_POST_FAILED',
+      message: 'could not send the parse to the worker: hostile getter'
+    });
+    expect(worker.posted.length).toBe(0);
+    // The session is idle again: the next parse is posted, not refused with E_BUSY.
+    const next = session.parse('G1 X1');
+    expect(worker.posted.map((m) => m.type).join(',')).toBe('parse');
+    worker.onmessage?.(done(worker.posted[0]!.id));
+    await expect(next).resolves.toMatchObject({ ir: { header: { complete: true } } });
     session.dispose();
   });
 });

@@ -58,18 +58,45 @@ export function lineUsesParametric(codeSection: string): boolean {
   return codeSection.indexOf('#') !== -1 || codeSection.indexOf('[') !== -1;
 }
 
+/** The one paren scanner behind {@link stripParenComments} and {@link scanParenComments}, so they cannot drift. */
+function walkParens(
+  s: string,
+  stopAtSemi: boolean,
+  keep: boolean
+): { semi: number; unclosed: boolean; nested: boolean; text: string } {
+  let text = '';
+  let depth = 0;
+  let nested = false;
+  for (let i = 0; i < s.length; i++) {
+    const c = s.charCodeAt(i);
+    if (c === 40) {
+      depth++;
+      if (depth > 1) nested = true;
+    } else if (c === 41) {
+      if (depth > 0) depth--; // a stray ')' at depth 0 is ignored
+    } else if (depth === 0) {
+      if (stopAtSemi && c === 59) return { semi: i, unclosed: false, nested, text };
+      if (keep) text += s[i];
+    }
+  }
+  return { semi: -1, unclosed: depth > 0, nested, text };
+}
+
 /** Strip RS274NGC `( … )` comments from a code section (they are comments, never expressions). */
 export function stripParenComments(s: string): string {
-  let out = '';
-  let depth = 0;
-  for (let i = 0; i < s.length; i++) {
-    const c = s[i];
-    if (c === '(') depth++;
-    else if (c === ')') {
-      if (depth > 0) depth--;
-    } else if (depth === 0) out += c;
-  }
-  return out;
+  return walkParens(s, false, true).text;
+}
+
+/**
+ * One scan of a raw line's `( … )` comments, with the same depth rules as {@link stripParenComments}
+ * (a stray `)` at depth 0 is ignored; an unclosed `(` swallows the rest of the line). Returns:
+ * - `semi`: index of the first `;` OUTSIDE parentheses (`-1` if none) — where the `;` comment starts;
+ * - `unclosed` / `nested`: a `(` still open at the `;` (or the end of the line) / a `(` inside a `(`.
+ *   LinuxCNC rejects both; the parser warns and carries on. Nothing after the `;` is examined.
+ */
+export function scanParenComments(s: string): { semi: number; unclosed: boolean; nested: boolean } {
+  const r = walkParens(s, true, false);
+  return { semi: r.semi, unclosed: r.unclosed, nested: r.nested };
 }
 
 /** The result of lexing one parametric line. */

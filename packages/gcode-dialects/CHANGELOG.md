@@ -1,5 +1,56 @@
 # @chestnutlabs/gcode-dialects
 
+## 0.24.0
+
+### Minor Changes
+
+- [#549](https://github.com/ChestnutLabs/gcode-preview/pull/549) [`94d51f3`](https://github.com/ChestnutLabs/gcode-preview/commit/94d51f3b8c19a009ecf41f54180e3e0df8b4d39d) Thanks [@sobechestnut-dev](https://github.com/sobechestnut-dev)! - Dialect annotation now reports every value it drops, accepts 8-digit filament colours, and a custom
+  adapter can no longer run the worker out of memory or leave half its annotations behind.
+
+  The parse still never fails because of file data. No new warning codes: everything below uses the
+  existing `dialect-metadata-invalid`, `dialect-annotation-truncated` and `adapter-failed` codes (in
+  `ir.header.warnings`, deduped with a count).
+  - **Filament colours.** An Orca/Bambu `filament_colour` (or a `setToolInfo` colour) of `#RRGGBBAA` now
+    colours its tool. The alpha is ignored, so a `…00` colour never draws an invisible toolpath. Before,
+    the tool got no colour.
+  - **Beds with no area.** A `bed_shape` (PrusaSlicer) or `printable_area` (Orca) whose points enclose no
+    area (all the same point, or all on one line) gives no `metadata.machine`, with a
+    `dialect-metadata-invalid` warning. Before, it drew a 0 × 0 build plate.
+  - **Cura `;TIME:`.** A value that is not a positive number gives no estimate, with a
+    `dialect-metadata-invalid` warning. Before, it was dropped silently. `;TIME:0` stays silent.
+  - **Comment thumbnails.** A block that is over the size cap, longer than it declared, not base64, empty,
+    closed with a different variant, or never closed is still dropped, and is now reported with
+    `dialect-metadata-invalid`. `ThumbnailCollector` gains `close(sink)` for end of input.
+  - **Budgets.** When an adapter writes more thumbnails (8), raw entries (512), object names (10,000),
+    filaments or tool entries (64) than the annotator keeps, the extras are dropped with one
+    `dialect-annotation-truncated` warning per budget. Before, they were dropped silently.
+  - **Custom adapters (`AnnotationSink`).** `defineObject` accepts only a whole-number value from 1 to
+    10,000 and a string name. Before, a value of 50,000,000 padded `ir.objects` until the worker ran out
+    of memory. `setToolInfo` accepts only a whole-number tool of 0 or more with string fields. Before, a
+    non-string colour threw and failed the whole parse. Dropped input warns `dialect-metadata-invalid`.
+    Built-in adapters never produce such values: file object ids are remapped to 1..N first.
+  - **All or nothing.** If applying an adapter's annotations throws part-way, every IR and metadata field
+    it touched is restored, and the parse records `adapter-failed` for it.
+
+### Patch Changes
+
+- [#575](https://github.com/ChestnutLabs/gcode-preview/pull/575) [`6b03f42`](https://github.com/ChestnutLabs/gcode-preview/commit/6b03f4221e5f0a552959fbed7f85124203d42f57) Thanks [@sobechestnut-dev](https://github.com/sobechestnut-dev)! - CNC, laser and plotter files now frame the work instead of the bed.
+  - **What changes:** for a file whose productive moves are cuts (`MoveKind.Cut`: a feed move while M3/M4 holds, with
+    no extrusion), `ir.bounds` is now the cut extent instead of empty (`Infinity`/`-Infinity`). The 3D viewer and
+    `renderStill` fit the camera to the cut, and the click radius and progress marker scale with it, the same as for a
+    print. A labelled cut also counts toward `ir.objectBounds`, including object labels a dialect adds (Klipper
+    `EXCLUDE_OBJECT`, M486, slicer object comments), so `frameContent: 'object'` frames a labelled cut-only file. A printer with a laser head gets the union of its
+    extrusion and its cuts.
+  - **What stays the same:** FDM files never produce `Cut` moves, so their bounds are unchanged (every FDM file in the test
+    corpus, 21 of them, is byte-identical). Travel, retract and unretract moves are still excluded. `ir.modelBounds` and the
+    `nonModelClassification` capability still look at extrusion only, so a cut-only file still reports
+    `nonModelClassification: 'unavailable'` with an empty `modelBounds`.
+  - **Not covered:** a pen plotter that never sends M3/M4 has no `Cut` moves, so its `bounds` stays empty and the 3D
+    viewer still frames the bed.
+
+- Updated dependencies [[`eb6b74c`](https://github.com/ChestnutLabs/gcode-preview/commit/eb6b74c0f9a8a7b0e28060d672d1021dab2a63d5), [`6b03f42`](https://github.com/ChestnutLabs/gcode-preview/commit/6b03f4221e5f0a552959fbed7f85124203d42f57)]:
+  - @chestnutlabs/toolpath-core@0.24.0
+
 ## 0.23.0
 
 ### Patch Changes

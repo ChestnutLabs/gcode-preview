@@ -33,7 +33,7 @@ export interface ChunkBuildOptions {
 }
 
 export interface GeometryChunk {
-  kind: 'extrude' | 'travel' | 'wipe';
+  kind: 'extrude' | 'travel' | 'wipe' | 'cut';
   /** Inclusive layer range covered by this chunk. */
   layerStart: number;
   layerEnd: number;
@@ -79,6 +79,31 @@ const DEFAULT_TARGET = 250_000;
  */
 export const TUBE_SEGMENT_BUDGET = 400_000;
 
+/**
+ * Finite Extrude and Cut segments (the drawn toolpath that drives auto-decimation) and non-finite skips.
+ * Bit tests, so Cut|ArcSegment (160) and Cut|Seam (192) count.
+ * @internal Exported for tests only; not re-exported from the package index.
+ */
+export function countDrawnSegments(ir: ToolpathIR): {
+  extrudeCount: number;
+  cutCount: number;
+  skippedNonFinite: number;
+} {
+  const seg = ir.segments;
+  let skippedNonFinite = 0;
+  let extrudeCount = 0;
+  let cutCount = 0;
+  for (let i = 0; i < seg.count; i++) {
+    if (!Number.isFinite(seg.x0[i] + seg.y0[i] + seg.z0[i] + seg.x1[i] + seg.y1[i] + seg.z1[i])) {
+      skippedNonFinite++;
+      continue;
+    }
+    if ((seg.kind[i] & MoveKind.Extrude) !== 0) extrudeCount++;
+    else if ((seg.kind[i] & MoveKind.Cut) !== 0) cutCount++;
+  }
+  return { extrudeCount, cutCount, skippedNonFinite };
+}
+
 export function buildChunks(ir: ToolpathIR, opts: ChunkBuildOptions = {}): ChunkBuildResult {
   const seg = ir.segments;
   const target = opts.targetSegmentsPerChunk ?? DEFAULT_TARGET;
@@ -86,15 +111,7 @@ export function buildChunks(ir: ToolpathIR, opts: ChunkBuildOptions = {}): Chunk
   // A segment with any non-finite endpoint coordinate is skipped everywhere below (counted, never drawn).
   const finite = (i: number): boolean =>
     Number.isFinite(seg.x0[i] + seg.y0[i] + seg.z0[i] + seg.x1[i] + seg.y1[i] + seg.z1[i]);
-  let skippedNonFinite = 0;
-  let extrudeCount = 0;
-  for (let i = 0; i < seg.count; i++) {
-    if (!finite(i)) {
-      skippedNonFinite++;
-      continue;
-    }
-    if ((seg.kind[i] & MoveKind.Extrude) !== 0) extrudeCount++;
-  }
+  const { extrudeCount, cutCount, skippedNonFinite } = countDrawnSegments(ir);
   let decimation: number;
   if (typeof opts.decimation === 'number') {
     // An explicit factor must be a whole number ≥ 1 (1 = keep everything). 0, a negative, a fraction, NaN
@@ -104,7 +121,8 @@ export function buildChunks(ir: ToolpathIR, opts: ChunkBuildOptions = {}): Chunk
     }
     decimation = opts.decimation; // explicit caller override wins
   } else {
-    decimation = autoDecimation(extrudeCount);
+    // Cut (CNC/laser) counts toward auto-decimation like Extrude (both are the drawn toolpath); the tube clause below stays Extrude-only because Cut is line-only.
+    decimation = autoDecimation(extrudeCount + cutCount);
     // Tube memory budget (RR-006): raise decimation so kept segments ≤ the budget. Tubes cost ~23× lines
     // per segment, so the lines-calibrated autoDecimation thresholds alone let large forced-tube builds
     // OOM; this bounds them (and is disclosed via decimationApplied).
@@ -124,15 +142,24 @@ export function buildChunks(ir: ToolpathIR, opts: ChunkBuildOptions = {}): Chunk
   for (const layer of ir.layers) {
     let first = -1;
     let last = -1;
+    let cutFirst = -1;
+    let cutLast = -1;
     for (let i = Math.max(0, layer.segStart); i <= layer.segEnd && i < seg.count; i++) {
       if ((seg.kind[i] & MoveKind.Extrude) !== 0 && finite(i)) {
         if (first === -1) first = i;
         last = i;
+      } else if ((seg.kind[i] & MoveKind.Cut) !== 0 && finite(i)) {
+        if (cutFirst === -1) cutFirst = i;
+        cutLast = i;
       }
     }
     if (first !== -1) {
       boundary.add(first);
       boundary.add(last);
+    }
+    if (cutFirst !== -1) {
+      boundary.add(cutFirst);
+      boundary.add(cutLast);
     }
   }
 
@@ -144,6 +171,7 @@ export function buildChunks(ir: ToolpathIR, opts: ChunkBuildOptions = {}): Chunk
   let pendingExtrude: number[] = [];
   let pendingTravel: number[] = [];
   let pendingWipe: number[] = [];
+  let pendingCut: number[] = [];
   let chunkLayerStart = 0;
   let kept = 0;
 
@@ -151,7 +179,8 @@ export function buildChunks(ir: ToolpathIR, opts: ChunkBuildOptions = {}): Chunk
     for (const [kind, list] of [
       ['extrude', pendingExtrude],
       ['travel', pendingTravel],
-      ['wipe', pendingWipe]
+      ['wipe', pendingWipe],
+      ['cut', pendingCut]
     ] as const) {
       if (list.length === 0) continue;
       const positions = new Float32Array(list.length * 6);
@@ -173,6 +202,7 @@ export function buildChunks(ir: ToolpathIR, opts: ChunkBuildOptions = {}): Chunk
     pendingExtrude = [];
     pendingTravel = [];
     pendingWipe = [];
+    pendingCut = [];
     kept = 0;
   };
 
@@ -195,6 +225,14 @@ export function buildChunks(ir: ToolpathIR, opts: ChunkBuildOptions = {}): Chunk
         // subject to travel decimation.
         pendingWipe.push(i);
         kept++;
+      } else if ((seg.kind[i] & MoveKind.Cut) !== 0) {
+        // Cut moves (CNC/laser, #584) are their own toggleable chunk, line-only. They are the whole of a CNC
+        // file, so they follow Extrude's decimation rule (boundary or every Nth) instead of Wipe's keep-all,
+        // and they are NOT dropped with travel.
+        if (boundary.has(i) || i % decimation === 0) {
+          pendingCut.push(i);
+          kept++;
+        }
       } else if (!travelHidden) {
         pendingTravel.push(i);
         kept++;

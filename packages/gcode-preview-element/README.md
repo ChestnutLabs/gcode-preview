@@ -43,12 +43,22 @@ Scalar options are **attributes** (also settable as properties); rich options ar
 | Attribute | Property | Type | Default |
 |---|---|---|---|
 | `quality` | `quality` | `'auto' \| 'lines' \| 'tubes'` | `'auto'` |
+| `quality-mode` | `qualityMode` | `'full' \| 'adaptive' \| 'fast'` | `'adaptive'` |
+| `progressive-preview` | `progressivePreview` | `'auto' \| 'lines' \| 'hold' \| 'off'` | `'lines'` |
 | `renderer` | `renderer` | `'3d' \| '2d'` — **construction-time** | `'3d'` |
-| `adjacent-layers` | `adjacentLayers` | integer (2D ghost layers) — **construction-time** | — |
+| `adjacent-layers` | `adjacentLayers` | integer (2D ghost layers) — **construction-time**. On `renderer="2d"` a non-numeric attribute is ignored and falls back to 1 ghost layer | `1` |
 | `camera-mode` | `cameraMode` | `'perspective' \| 'orthographic'` | `'perspective'` |
+| `camera-fov` | `cameraFov` | degrees, 10–120 | `50` |
+| `pixel-ratio` | `pixelRatio` | number in (0, 4] or `'device'` | renderer's own (1) |
+| `frame-content` | `frameContent` | `'object' \| 'all'` | `'all'` |
+| `interaction-quality` | `interactionQuality` | `'off' \| 'auto'` | `'off'` |
+| `view` | `view` | `'top' \| 'bottom' \| 'front' \| 'back' \| 'left' \| 'right' \| 'iso'` | — |
 | `show-travel` | `showTravel` | `"true" \| "false"` | `true` |
+| `show-wipe` | `showWipe` | `"true" \| "false"` | `true` |
 | `show-retractions` | `showRetractions` | `"true" \| "false"` | `false` |
-| `scrub` | `scrub` | integer | — (all) |
+| `show-volume-cage` | `showVolumeCage` | `"true" \| "false"` | `true` |
+| `scrub` | `scrub` | number (segment index); a non-numeric value is ignored and `scrub="5"` keeps its cut | — (all) |
+| `scrub-time` | `scrubTime` | number (ms of print time); a non-numeric value is ignored | — (all) |
 | `layer-range` | `layerRange` | `"start,end"` / `[number, number]` | — (all) |
 | `hidden-feature-roles` | `hiddenFeatureRoles` | `"6,7"` / `number[]` — hide roles (Skirt, Brim…) | — |
 | — | `source` | `Uint8Array \| ArrayBuffer \| File` | `null` |
@@ -59,19 +69,31 @@ Scalar options are **attributes** (also settable as properties); rich options ar
 | — | `progress` | `ProgressObservation \| null` | `null` |
 | — | `createWorker` | `() => WorkerLike` | batteries default |
 
+> **Bad values.** Markup is treated like file data. An enum attribute whose value is not exactly one of the
+> listed values (case-sensitive) — `quality="foo"`, `view="Top"`, `renderer="4d"` — is ignored: the default applies at
+> mount, the last valid value stays on a change, and nothing throws or stops the viewer. `renderer="foo"` renders the
+> default 3D view. Setting the matching **property** to an invalid value throws `RangeError` and leaves the attribute
+> unchanged. The same rule applies to `<gcode-model-viewer>`'s `view`, `camera-mode` and `interaction-quality`.
+> If the element is removed and added again while an attribute still holds a bad value, the default applies again:
+> the last valid value isn't kept across a reconnect.
+> `capture()` before the element is connected rejects with `CaptureUnsupportedError`.
+
 > `source` is a **property only** (never a URL attribute) — the element does not fetch.
 > `colorMode`, `theme`, `tube`, and `buildVolume` are **property-only** because objects can't be HTML
 > attributes — set them as JS properties. `hidden-feature-roles` gates on `capabilities.featureRoles`
 > (declarative form of `controls.setFeatureRoleVisible`). This is a ~24-option surface; the rest of
 > the declarative props (`qualityMode`, `view`, `cameraState`, `frameContent`, `scrubTime`,
-> `showWipe`, `showVolumeCage`, `interactionQuality`, `parseOptions`, `rendererOptions`, `layerRange`)
+> `showWipe`, `showCut`, `showVolumeCage`, `interactionQuality`, `parseOptions`, `rendererOptions`, `layerRange`)
 > are set the same way.
 
 ### DOM events (`CustomEvent`, kebab-case `detail`)
 
 `ready` · `camerachange` · `parse-error` · `parse-cancelled` · `parse-progress` · `stage` ·
 `build-complete` · `disclosure` · `quality-fallback` · `progress-presentation-changed` ·
-`machine-geometry-discovered` · `machine-geometry-mismatch` · `error`.
+`machine-geometry-discovered` · `machine-geometry-mismatch` · `renderer-unsupported` · `error`.
+
+A `renderer-unsupported` notice for an attribute set at mount fires inside `connectedCallback`, so add the
+listener before `appendChild`; a listener added just after it misses the notice.
 
 A few event `detail`s are DOM-wrapped, an accepted custom-element idiom: `disclosure` detail is
 `{ text }`, `machine-geometry-discovered` is `{ machine }`, and `machine-geometry-mismatch` is
@@ -137,8 +159,8 @@ grid and shadow stay.
 `camera-fov` takes 10-120 degrees (the default is 50). **An invalid attribute value (non-numeric or outside that
 range) is ignored and the last valid lens is kept; setting the `cameraFov` property to an invalid value throws
 `RangeError`.** `<gcode-model-viewer>` reports `placement` (`known` / `inferred` / `approximated`, or `null` with no plate)
-and `placementOffset` in the `ready` event detail and its state. The 2D renderer ignores `theme`; a lens call records a
-`renderer-unsupported` disclosure.
+and `placementOffset` in the `ready` event detail and its state. The 2D renderer ignores `theme`; a lens, as an attribute or a call,
+fires `renderer-unsupported` once.
 See the [Studio look and build plate guide](https://github.com/ChestnutLabs/gcode-preview/blob/dev/docs/manual/guide-looks-lens-plate.md).
 
 ### Pixel ratio
@@ -157,7 +179,7 @@ value throws `RangeError`.** The property getter returns the last valid ratio (`
 or `null` if none was set; `<gcode-model-viewer>`: `undefined` if none). Imperatively: `controls.setPixelRatio(ratio)`.
 An unsized `controls.capture()` is the resting drawing-buffer size when unset and the CSS size when set; with the
 built-in renderer a ratio never changes the default capture size, so pass `width`/`height` for a crisper image. The 2D
-renderer ignores it and records a `renderer-unsupported` disclosure.
+renderer ignores it and fires `renderer-unsupported` once.
 
 ## Examples
 
@@ -173,6 +195,8 @@ driving this published element (no raw renderer or parser imports):
 
 Run it with `npm install --prefix tools/example-webcomponent && npm run dev --prefix
 tools/example-webcomponent` (port 5204).
+
+Invalid numbers throw a `RangeError`, and a control the renderer rejects surfaces as an `error` with code `E_CONTROL_REJECTED`; both are described in [Adapters](../../docs/manual/adapters.md).
 
 ## Workers
 

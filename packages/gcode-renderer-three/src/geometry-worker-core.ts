@@ -58,7 +58,9 @@ export function handleGeometryMessage(req: GeometryBuildRequest): {
 }
 
 /**
- * Run the tube kernel on a self-contained chunk payload (pure; host-agnostic). Returns the response plus
+ * Run the tube kernel on a self-contained chunk payload (pure; host-agnostic). Throws if the kernel does.
+ * A consumer building its own worker should call {@link handleGeometryMessage} instead, which turns a throw
+ * into an id-tagged {@link GeometryBuildError} so the pool fails only the request that failed. Returns the response plus
  * the list of `ArrayBuffer`s to transfer. Byte-identical to the inline `buildTubeChunk` — it *is* the
  * same kernel, fed the same `positions`.
  */

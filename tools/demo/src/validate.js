@@ -253,7 +253,10 @@ function renderReport(a) {
   const controller = raw['cnc.controller'];
   const tier = raw['cnc.validationTier'];
   const powerLabel = raw['cnc.toolPowerLabel'] || 'tool power (S)';
-  const units = ir.header.units;
+  // IR coordinates are always mm (#578); header.units is only what the file declared. For a G20 file,
+  // show the inch figure next to the mm one so it can be checked against an inch drawing.
+  const inchFile = ir.header.units === 'in';
+  const inches = (lo, hi) => ((hi - lo) / 25.4).toFixed(2);
 
   const detected = dialects.length > 0 && !!machineClass;
 
@@ -329,10 +332,11 @@ function renderReport(a) {
 
   html += claim(
     'envelope',
-    `Work envelope <b>${dim(b.min.x, b.max.x)} × ${dim(b.min.y, b.max.y)} × ${dim(
-      b.min.z,
-      b.max.z
-    )} ${units}</b> (X×Y×Z). Does that match the real part's dimensions?`,
+    `Work envelope <b>${dim(b.min.x, b.max.x)} × ${dim(b.min.y, b.max.y)} × ${dim(b.min.z, b.max.z)} mm</b> (X×Y×Z)${
+      inchFile
+        ? `, ${inches(b.min.x, b.max.x)} × ${inches(b.min.y, b.max.y)} × ${inches(b.min.z, b.max.z)} in as the file wrote it`
+        : ''
+    }. Does that match the real part's dimensions?`,
     ''
   );
 
@@ -458,7 +462,7 @@ function exportReport(a, dest) {
   lines.push(
     `- Envelope: ${(b.max.x - b.min.x).toFixed(1)} × ${(b.max.y - b.min.y).toFixed(1)} × ${(b.max.z - b.min.z).toFixed(
       1
-    )} ${ir.header.units}`
+    )} mm${ir.header.units === 'in' ? ' (the file is in inches, converted to mm)' : ''}`
   );
   lines.push('');
   lines.push('## Findings');

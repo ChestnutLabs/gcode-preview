@@ -15,6 +15,8 @@
  * and the origin tripod (RGB axes) — are intentionally not themeable.
  */
 
+import { checkTheme } from './validate.js';
+
 /** A color three's `Color` accepts: `0xRRGGBB` or a CSS string. */
 export type ThemeColor = number | string;
 
@@ -136,29 +138,17 @@ export const DEFAULT_THEME: ResolvedTheme = {
   bedSurface: { mode: 'none' } // bare grid by default — no behavior change
 };
 
-/** NaN or an out-of-range opacity would render nonsense silently — reject it (RangeError, as tubes.ts). */
-function checkOpacity(name: string, value: number | undefined): void {
-  if (value === undefined) return;
-  if (!(value >= 0 && value <= 1)) {
-    throw new RangeError(`theme ${name} must be a number in [0,1] (got ${String(value)})`);
-  }
-}
-
 /**
  * Resolve a partial theme over {@link DEFAULT_THEME} (replace semantics). Throws `RangeError` for an
- * opacity outside [0,1] (or NaN) or a non-finite / non-positive `gridMajor.every`. `every` is NOT
- * required to be a multiple of the grid pitch: the build volume snaps it (see `BuildVolumeStyle.gridMajor`),
- * so a later grid-pitch change never makes an earlier theme throw.
+ * opacity outside [0,1] (or NaN; grid, major, outline, shadow and plate opacities), a non-finite /
+ * non-positive `gridMajor.every`, a light intensity or plate `thickness` that is not a finite number of at least 0,
+ * or a `materialPreset` / `bedSurface.mode` that is not one of its names. `every` is NOT required to be
+ * a multiple of the grid pitch: the build volume snaps it (see `BuildVolumeStyle.gridMajor`), so a later
+ * grid-pitch change never makes an earlier theme throw.
  */
 export function resolveTheme(theme?: Theme): ResolvedTheme {
   const t = theme ?? {};
-  checkOpacity('gridOpacity', t.gridOpacity);
-  checkOpacity('gridMajor.opacity', t.gridMajor?.opacity);
-  checkOpacity('bedOutline.opacity', t.bedOutline?.opacity);
-  checkOpacity('contactShadow.opacity', t.contactShadow?.opacity);
-  if (t.gridMajor !== undefined && !(Number.isFinite(t.gridMajor.every) && t.gridMajor.every > 0)) {
-    throw new RangeError(`theme gridMajor.every must be a positive number (got ${String(t.gridMajor.every)})`);
-  }
+  checkTheme(t);
   return {
     ...DEFAULT_THEME,
     ...(t.background !== undefined ? { background: t.background } : {}),

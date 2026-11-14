@@ -18,7 +18,8 @@ function run(lines: string[]): Got[] {
   const got: Got[] = [];
   const sink = {
     addThumbnail: (t: { width: number; height: number; mime: string; bytes: Uint8Array }) =>
-      got.push({ width: t.width, height: t.height, mime: t.mime, bytes: Array.from(t.bytes) })
+      got.push({ width: t.width, height: t.height, mime: t.mime, bytes: Array.from(t.bytes) }),
+    warn: () => undefined
   } as unknown as AnnotationSink;
   const c = new ThumbnailCollector();
   for (const l of lines) c.feed(l, sink);

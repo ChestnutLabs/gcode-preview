@@ -54,6 +54,8 @@
   export let showTravel = true;
   /** DD-016 (#182): show slicer wipe moves. Default true. */
   export let showWipe = true;
+  /** #584: show CNC/laser cut moves. Default true. */
+  export let showCut = true;
   /** DD-009 D1 (#148): opt-in retraction/deretraction markers. */
   export let showRetractions = false;
   /** #306/#6: show the build-volume wireframe cage (independent of the bed/plate). Default true. */
@@ -73,7 +75,8 @@
   export let rendererOptions = undefined;
 
   const dispatch = createEventDispatcher();
-  const isMachine = buildVolume !== undefined && 'bed' in buildVolume;
+  // `!= null`: a `buildVolume={null}` binding means no volume, never `'bed' in null` (#590).
+  const isMachine = buildVolume != null && 'bed' in buildVolume;
 
   /** The full store/action handle — reachable via `bind:this={c}` then `c.preview`. */
   export const preview = createGcodePreview({
@@ -82,8 +85,9 @@
       mode: renderer,
       buildVolume: isMachine ? undefined : buildVolume,
       quality,
-      qualityMode,
-      progressivePreview,
+      // An empty value is unset, as in the reactive setters below (`$: if (qualityMode)`), never a bad value.
+      qualityMode: qualityMode || undefined,
+      progressivePreview: progressivePreview || undefined,
       cameraMode,
       cameraFov,
       pixelRatio,
@@ -113,9 +117,12 @@
       case 'camera-changed':
         dispatch('camerachange', e.state);
         break;
-      case 'parse-error':
-        dispatch('parseerror', { code: e.code, message: e.message });
+      case 'parse-error': {
+        // The whole error, `cause` and `reason` included, without the event's `type`.
+        const { type: _type, ...error } = e;
+        dispatch('parseerror', error);
         break;
+      }
       case 'parse-cancelled':
         dispatch('parsecancelled');
         break;
@@ -142,9 +149,15 @@
       case 'machine-geometry-discovered':
         dispatch('machinegeometrydiscovered', e.machine);
         break;
-      case 'error':
+      case 'error': {
+        const { type: _type, ...error } = e;
         if (e.code === 'machine-geometry-mismatch') dispatch('machinegeometrymismatch', e.message);
-        else dispatch('error', { code: e.code, message: e.message });
+        else dispatch('error', error);
+        break;
+      }
+      case 'renderer-unsupported':
+        // #520: the renderer cannot honour a requested setting (e.g. a lens on the 2D renderer); once per request.
+        dispatch('rendererunsupported', { feature: e.feature, message: e.message });
         break;
       default:
         break;
@@ -154,27 +167,95 @@
   // ---- prop wiring: each prop is a thin reactive call into the handle (D1 shell rule) ----
   // buildVolume must be reactive too (#274) — matching Vue's watch and React's useEffect. A machine
   // geometry is (re)applied via the handle; a plain BuildVolumeDef is an init-time renderer option
-  // (above) that a post-mount change re-applies here as well.
+  // (above) that a post-mount change re-applies here as well (React and Vue do the same).
   $: if (buildVolume !== undefined) preview.controls.setBuildVolume(buildVolume);
-  $: if (source !== null && source !== undefined) void preview.parse(source, parseOptions);
+  // Only `source` re-parses. `parseOptions` is read inside the function, so the `$:` block does not track it:
+  // an inline `parseOptions={{ ... }}` is a new object every render and must not re-parse an unchanged file
+  // (React reads it from a ref and Vue untracked, so all three adapters agree). #435.
+  // On a source change the view props are read here too, untracked, and re-sent when they hold a value: a
+  // renderer shows the new file uncut, and the controller applies them to the file this parse loads. scrubTime
+  // goes last, so it wins over scrub (as at mount). The first parse needs none: the blocks below send them.
+  let sourceParsed = false;
+  // The source last parsed. Svelte counts any object prop as changed whenever it is set again, even to the same
+  // value (a spread `{...props}`, or a parent re-setting `source={file}`), so the same bytes again would re-parse.
+  // The same source again is no change, as in the React, Vue and Web Component adapters; to reload the same
+  // bytes, pass a new array or call `parse()`. Clearing `source` resets it.
+  let lastSource = null;
+  function parseSource(bytes) {
+    if (bytes === lastSource) return;
+    lastSource = bytes;
+    void preview.parse(bytes, parseOptions);
+    const first = !sourceParsed;
+    sourceParsed = true;
+    if (first) return;
+    if (layerRange !== null && layerRange !== undefined) preview.controls.setLayerRange(layerRange[0], layerRange[1]);
+    if (scrub !== null && scrub !== undefined) preview.controls.setScrubPosition(scrub);
+    if (scrubTime !== null && scrubTime !== undefined) preview.controls.setScrubTime(scrubTime);
+  }
+  // The scrub values last sent from the props. A nullish prop is sent (as a clear) only when it replaces a sent
+  // number, so an unset `scrubTime` at mount no longer clears the `scrub` cut.
+  let scrubSent = null;
+  let scrubTimeSent = null;
+  function sendScrub(v) {
+    if (v === null && scrubSent === null) return;
+    scrubSent = v;
+    preview.controls.setScrubPosition(v);
+  }
+  function sendScrubTime(v) {
+    if (v === null && scrubTimeSent === null) return;
+    scrubTimeSent = v;
+    preview.controls.setScrubTime(v);
+  }
+  $: if (source !== null && source !== undefined) parseSource(source);
+  else lastSource = null;
   $: if (layerRange === null || layerRange === undefined) preview.controls.setLayerRange(0, Number.POSITIVE_INFINITY);
   else preview.controls.setLayerRange(layerRange[0], layerRange[1]);
-  $: preview.controls.setScrubPosition(scrub ?? null);
-  $: preview.controls.setScrubTime(scrubTime ?? null);
+  $: sendScrub(scrub ?? null);
+  $: sendScrubTime(scrubTime ?? null);
   $: preview.controls.setKindVisible('travel', showTravel);
   $: preview.controls.setKindVisible('wipe', showWipe);
+  $: preview.controls.setKindVisible('cut', showCut);
   $: preview.controls.setShowRetractions(showRetractions);
   $: preview.controls.setBuildVolumeCage(showVolumeCage);
   $: if (colorMode !== undefined) preview.controls.setColorMode(colorMode);
-  $: preview.controls.setQuality(quality);
+  // #520: what the controls last received for the four 3D-only construction props; each applies only when
+  // its value differs. 3D was built with the construction values, so mount is a no-op there (a re-applied
+  // quality would rebuild). 2D starts from the documented defaults, so only a non-default mount value is
+  // applied, and the 2D renderer reports it once.
+  const is2D = renderer === '2d';
+  let appliedQuality = is2D ? 'auto' : quality;
+  function applyQuality(q) {
+    if (q === appliedQuality) return;
+    appliedQuality = q;
+    preview.controls.setQuality(q);
+  }
+  let appliedCameraMode = is2D ? 'perspective' : cameraMode;
+  function applyCameraMode(mode) {
+    if (mode == null || mode === appliedCameraMode) return;
+    appliedCameraMode = mode;
+    preview.controls.setCameraMode(mode);
+  }
+  let appliedCameraFov = is2D ? 50 : cameraFov; // 50: the default lens
+  function applyCameraFov(fov) {
+    if (fov == null || fov === appliedCameraFov) return;
+    appliedCameraFov = fov;
+    preview.controls.setCameraFov(fov);
+  }
+  let appliedPixelRatio = is2D ? undefined : pixelRatio;
+  function applyPixelRatio(ratio) {
+    if (ratio == null || ratio === appliedPixelRatio) return;
+    appliedPixelRatio = ratio;
+    preview.controls.setPixelRatio(ratio);
+  }
+  $: applyQuality(quality);
   $: if (qualityMode) preview.controls.setQualityMode(qualityMode);
   $: if (progressivePreview) preview.controls.setProgressivePreview(progressivePreview);
-  $: preview.controls.setCameraMode(cameraMode);
-  $: if (cameraFov !== undefined) preview.controls.setCameraFov(cameraFov);
-  $: if (pixelRatio !== undefined) preview.controls.setPixelRatio(pixelRatio);
+  $: applyCameraMode(cameraMode);
+  $: applyCameraFov(cameraFov);
+  $: applyPixelRatio(pixelRatio);
   $: preview.controls.setFrameContent(frameContent);
   $: preview.controls.setInteractionQuality(interactionQuality);
-  $: if (view !== undefined) preview.controls.setView(view);
+  $: if (view != null) preview.controls.setView(view);
   $: if (cameraState !== undefined && cameraState !== null) preview.controls.setCameraState(cameraState);
   $: if (theme !== undefined) preview.controls.setTheme(theme);
   $: if (progress === null || progress === undefined) preview.clearProgress();

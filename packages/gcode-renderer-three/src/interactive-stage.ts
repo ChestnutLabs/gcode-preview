@@ -26,12 +26,15 @@ import {
 } from './stage.js';
 import {
   CaptureUnsupportedError,
+  checkCaptureArea,
+  checkCaptureSize,
   encodeRGBAToBlob,
   flipRowsRGBA,
   resolveCaptureSize,
   type CaptureOptions
 } from './capture.js';
 import { InteractionQualityController } from './interaction-quality.js';
+import { checkCameraMode, checkCameraState } from './validate.js';
 
 /**
  * Camera projection (#150, DD-009 D3). `perspective` is the default interactive view; `orthographic`
@@ -68,6 +71,9 @@ export const VIEW_DIRECTIONS: Record<CameraView, readonly [number, number, numbe
   right: [1, 0, 0],
   iso: [1, 1, 1]
 };
+
+// The camera checks live in the three-free validate.ts (one source of truth with gcode-preview-core).
+export { checkCameraMode, checkCameraState } from './validate.js';
 
 /** The subset of three's `OrbitControls` the stage drives — injectable for headless control-wiring tests. */
 export interface ControlsLike {
@@ -221,6 +227,7 @@ export class InteractiveStage {
   constructor(opts: InteractiveStageOptions) {
     // Validate before any GL resource exists, so a bad value never leaks a context.
     if (opts.pixelRatio !== undefined) checkPixelRatio(opts.pixelRatio);
+    if (opts.cameraMode !== undefined) checkCameraMode(opts.cameraMode);
     this.displayEnv = opts.displayEnv ?? (globalThis as DisplayEnv);
     this.canvas = opts.canvas;
     this.scene = opts.scene;
@@ -241,7 +248,6 @@ export class InteractiveStage {
       },
       opts.interactionQuality ?? 'off'
     );
-    if (opts.pixelRatio !== undefined) this.applyPixelRatioOption(opts.pixelRatio);
 
     // Both cameras exist for the stage's lifetime; setCameraMode/frameTo keep their pose in sync so a
     // projection toggle never jumps the view (#150). The ortho frustum is placeholder until frameTo/resize.
@@ -251,6 +257,8 @@ export class InteractiveStage {
     this.orthographicCamera.position.set(-100, 200, 250);
     this.cameraModeState = opts.cameraMode ?? 'perspective';
     this.activeCameraRef = this.cameraModeState === 'orthographic' ? this.orthographicCamera : this.perspectiveCamera;
+    // After the cameras: a ratio change repaints, and a frame needs a camera.
+    if (opts.pixelRatio !== undefined) this.applyPixelRatioOption(opts.pixelRatio);
 
     const domEl = this.gl.domElement;
     // OrbitControls needs a real DOM element; an OffscreenCanvas (headless still-render) has no pointer
@@ -266,16 +274,24 @@ export class InteractiveStage {
         // OrbitControls fires `change` for pointer, wheel, touch AND keyboard moves (keyboard dispatches no
         // `start`/`end`), so user intent is "a `change` the stage did not cause itself".
         const onUserMove = opts.onInteractionStart;
+        // Pointer/wheel/touch gestures bracket their `change`s with `start`…`end`; keyboard moves do not.
+        let pointerGesture = false;
+        this.controls.addEventListener('start', () => {
+          pointerGesture = true;
+        });
         this.controls.addEventListener('change', () => {
           // The stage's own moves (fit, view presets) are a single repaint, never an interaction frame:
           // they get no `end`, so DD-020's reduced detail would never be restored.
           if (this.programmaticMove) return;
           onUserMove?.();
           this.onInteractionFrame();
+          // A keyboard move never gets an `end`, so arm the restore here or the reduced detail would stick.
+          if (!pointerGesture) this.settleInteraction();
         });
         // Two-way camera state (#275/M6): after a gesture settles, publish the new pose. `end` fires once
         // per gesture (not per frame like `change`).
         this.controls.addEventListener('end', () => {
+          pointerGesture = false;
           this.settleInteraction();
           this.onCameraChanged?.(this.getCameraState());
         });
@@ -313,6 +329,7 @@ export class InteractiveStage {
 
   /** Switch camera projection (#150, DD-009 D3); the pose is copied so the view never jumps. */
   setCameraMode(mode: CameraMode): void {
+    checkCameraMode(mode);
     if (this.disposedFlag || mode === this.cameraModeState) return;
     const prev = this.activeCameraRef;
     const next = mode === 'orthographic' ? this.orthographicCamera : this.perspectiveCamera;
@@ -429,6 +446,7 @@ export class InteractiveStage {
 
   /** Restore a {@link CameraState} verbatim (#268) — no re-fit to the current model's bounds. */
   setCameraState(state: CameraState): void {
+    checkCameraState(state);
     if (this.disposedFlag) return;
     this.setCameraMode(state.cameraMode); // activates the right camera; no-op if unchanged
     const cam = this.activeCameraRef;
@@ -640,8 +658,17 @@ export class InteractiveStage {
    * With no `width`/`height` and no `pixelRatio` set, the image is the resting drawing-buffer size, as
    * before (also mid-gesture). With a `pixelRatio` set it is the canvas's CSS size, so setting one never
    * changes it; pass `width`/`height` for a crisper image.
+   *
+   * @param opts - Capture size, background, and pixel-ratio options.
+   * @param borrow - Library-internal hook, not a supported consumer API: the library's own renderers use it
+   *   to change the scene for the capture only (e.g. `ToolpathRenderer` hides the build volume for
+   *   `includeBuildVolume: false`). It is called synchronously just before the off-screen render and must
+   *   return an undo function, which the stage calls right after the readback (before the first `await`),
+   *   also when the render throws, so the change never reaches a live frame or an overlapping capture.
+   *   Consumers should leave it unset.
    */
-  async capture(opts: CaptureOptions = {}): Promise<Blob> {
+  async capture(opts: CaptureOptions = {}, borrow?: () => () => void): Promise<Blob> {
+    checkCaptureSize(opts);
     if (this.disposedFlag || this.contextLost || !supportsCapture(this.gl)) {
       const why = this.disposedFlag
         ? 'stage disposed'
@@ -657,6 +684,7 @@ export class InteractiveStage {
     const q = this.interactionQuality;
     const divisor = this.hostRatio === null ? q.reduction : q.currentRatio;
     const { w, h } = resolveCaptureSize(opts, this.canvas.width / divisor, this.canvas.height / divisor);
+    checkCaptureArea(w, h);
     // The render target's texture MUST declare sRGB so three applies the same linear→sRGB output
     // encoding it gives the canvas. A default (NoColorSpace/linear) target makes readRenderTargetPixels
     // return LINEAR bytes — the whole capture (background AND geometry colours) comes back too dark
@@ -668,7 +696,15 @@ export class InteractiveStage {
     const prevAspect = this.aspect;
     const prevBackground = this.scene.background;
     const overrideBackground = opts.background !== undefined;
+    let rgba: Uint8Array;
+    let undoBorrow: (() => void) | undefined;
+    // Everything that borrows the live stage (render target, background, aspect) is synchronous and restored
+    // BEFORE the first await: two overlapping captures would otherwise each save the other's borrowed aspect /
+    // background as "live" and leave the view stuck at the capture's shape. A throw in render/readback must also
+    // hand the renderer back its canvas (setRenderTarget(null)), or every later live frame draws into the
+    // disposed target.
     try {
+      undoBorrow = borrow?.();
       if (overrideBackground) {
         this.scene.background =
           opts.background === 'transparent' ? null : new Color(opts.background as string | number);
@@ -679,15 +715,17 @@ export class InteractiveStage {
       gl.render(this.scene, this.activeCameraRef);
       const buffer = new Uint8Array(w * h * 4);
       gl.readRenderTargetPixels(target, 0, 0, w, h, buffer);
-      gl.setRenderTarget(null);
-      return await encodeRGBAToBlob(flipRowsRGBA(buffer, w, h), w, h, opts.format ?? 'image/png', opts.quality);
+      rgba = flipRowsRGBA(buffer, w, h);
     } finally {
+      gl.setRenderTarget(null);
       target.dispose();
+      undoBorrow?.();
       if (overrideBackground) this.scene.background = prevBackground;
       this.aspect = prevAspect;
       this.updateCameraProjection();
       this.render(); // repaint the live canvas (we redirected the renderer to a target)
     }
+    return encodeRGBAToBlob(rgba, w, h, opts.format ?? 'image/png', opts.quality);
   }
 
   dispose(): void {

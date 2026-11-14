@@ -73,6 +73,8 @@ workers concept page.
   after (skirt ring present vs gone). In the gallery.
 - `getRenderStats` diagnostics in-context — **captured**: `app-diagnostics` (the Feature Lab Diagnostics tab
   reading capabilities/backend/GPU/geometry/counts/timings beside the render). In the gallery.
+- Parse notes in-context — **captured**: the same `app-diagnostics` shot shows the parse warnings of a
+  `parse-complete` event grouped by code with a count and the first message. In the gallery.
 
 Genuinely deferred, each with a recorded reason (valid dispositions, not silent omissions):
 
@@ -210,7 +212,9 @@ are now closed:
 | Renderer build stages (`stage` event) | ✅ | ❌ | — | ✅ (prose) | gallery | concept-workers | needs animation |
 | Interaction-aware quality | ✅ | ❌ | — | ✅ (prose) | gallery | concept-workers | needs animation |
 | Disclosed decimation / degradation | ✅ | ✅ (disclosure) | — | ✅ (prose) | gallery | concept-workers | needs screenshot (disclosure text) |
+| 2D unsupported-setting notice (`renderer-unsupported` event, #520) | ✅ | ❌ (Feature Lab is 3D-only) | — | — | — | adapters | not visually meaningful: an event with a text message, no 3D view to show; documented in the adapters events table |
 | Render diagnostics (`getRenderStats`) | ✅ | ✅ (panel) | `app-diagnostics` | ✅ | gallery | concept-workers | covered — current Feature Lab Diagnostics tab (capability badges + stats) in the gallery |
+| Parse notes (parser + dialect warnings, grouped by code) | ✅ | ✅ (Diagnostics tab) | `app-diagnostics` | ✅ | gallery | concept-ir-capabilities | covered — Feature Lab Diagnostics tab lists each warning code with a count and its first message; `unsupported-command` gets a generic label with the first message as an example |
 | Geometry worker pool (parallel tubes) | ✅ | ❌ | — | mention | gallery | concept-workers | not visually meaningful (diagnostics panel proxies it) |
 | WebGL context-loss recovery | ✅ | ❌ | — | mention | — | — | not visually meaningful |
 
@@ -261,6 +265,10 @@ are now closed:
 | Cut vs rapid classification | ✅ | validate page | `cnc-cut-vs-rapid` | ✅ | gallery (CNC) | motion-coverage | needs better coverage (legend/context) |
 | Tool power channel (laser/RPM) | ✅ | validate page | — | mention | gallery (CNC) | — | needs demo exposure + needs screenshot |
 | Canned drilling cycles (G81/82/83) | ✅ | ❌ | — | mention | gallery (CNC) | motion-coverage | needs screenshot |
+| Arc / canned-cycle drawing warnings (`arc-radius-too-small`, `canned-cycle-plane`, …, #553) | ✅ | validate page (All parser warnings), Feature Lab Diagnostics (Parse notes) | `app-diagnostics` (as notes) | — | — | motion-coverage | not visually meaningful: warning text in `ir.header.warnings`; the drawn approximation looks like an ordinary arc or cycle |
+| `( … )` comments ignored on plain lines (#544) | ✅ | ❌ | — | — | — | motion-coverage | not visually meaningful: a parse correctness fix (no stray move), nothing new to show |
+| Cut moves frame the work (CNC/laser/plotter `bounds`, #575; travel-only framing, see-through plate and no contact shadow for files with no printing moves, #580/#587) | ✅ | Feature Lab (Easel CNC sample) | `app-cnc-cut-framing` | — | — | concept-dialects-containers + guide-looks-lens-plate | covered — the shot shows the camera centred on the work and the plate see-through, with Travel moves off and Cut moves on (#597). The doc-theme CNC renders (`cnc-cut-vs-rapid`, `parametric-bolt-circle`) set their own camera and use no plate; `cnc-cut-vs-rapid` re-rendered byte-identical and `parametric-bolt-circle` was regenerated (the plunge strokes at the hole ends are now cut-coloured, #597) |
+| Canned-cycle preliminary Z-up move (#569) | ✅ | ❌ | — | — | — | concept-dialects-containers | not visually meaningful: one short vertical travel segment at a hole's start, no new control or panel |
 | Validation tiers (validated vs experimental) | ✅ | validate page | — | ✅ (prose) | gallery (CNC) | compatibility | not visually meaningful (prose/table) |
 | Parametric RS274NGC programs (params/expr/O-word/subs) | ✅ | ✅ (fixture) | `parametric-bolt-circle` | ✅ | gallery (CNC) | concept-parametric-programs | covered — demo fixture + media + README + gallery (program paired with geometry) |
 

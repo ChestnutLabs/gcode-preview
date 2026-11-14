@@ -4,6 +4,12 @@
 [xyz-tools/gcode-preview#179](https://github.com/xyz-tools/gcode-preview/issues/179), 2026-07-23).
 **Updated 2026-07-25** for **E10 phase 1** (DD-010): `M82`/`M83`, `G90`/`G91`, and the `G92`
 E-datum are now modeled.
+**Updated 2026-11-12** (post-v0.23.0, #544 / #553): `( … )` comments on plain lines are ignored;
+arcs and canned cycles that cannot be drawn exactly as written now carry a warning; under `G91` a
+canned-cycle `Z` is measured from the `R` plane. See
+[Moves drawn differently from what was written](#moves-drawn-differently-from-what-was-written).
+**Updated 2026-11-12** ([#578](https://github.com/ChestnutLabs/gcode-preview/issues/578)): `G20` inch files are
+converted to millimetres, so they draw at their real size.
 
 This page records which **position-affecting** G/M-codes the parser/interpreter
 (`@chestnutlabs/gcode-parser`) honors. The interpreter began as a **byte-exact port of the
@@ -17,8 +23,9 @@ remaining gaps plainly — and disclosing them at runtime via the `extrusionMode
 | Code(s) | Effect on position | Status | Evidence |
 |---|---|---|---|
 | `G0` / `G1` | linear move | **honored** | core motion |
-| `G2` / `G3` | arc move (I/J/K center or R) incl. full circles, all planes | **honored** | E2/E3, #157 |
-| `G20` / `G21` | units inch / mm | **honored** | `units` channel |
+| `G2` / `G3` | arc move (I/J/K center or R) incl. full circles, all planes | **honored** — an arc that cannot be drawn as written is drawn the nearest way and warned (see below); `P` turn counts other than 1 are not applied (`arc-turns-ignored`) | E2/E3, #157, #553 |
+| `G81` / `G82` / `G83` | canned drilling cycles (+ `G80`, `G98`/`G99`, modal bare-`X`/`Y` repeat) | **honored** (DD-012 D5) — under `G91`, `Z` is incremental from the `R` plane, as in LinuxCNC (#553); `G84`–`G89` `unavailable` | `arc-cycle-disclosure.test.ts` |
+| `G20` / `G21` | units inch / mm | **honored: converted to mm** — every length word read under `G20` (axes, `I`/`J`/`K`, `R`, `Q`, `G92`/`G10` offsets, `F`, `E`) is multiplied by 25.4, so the IR is always millimetres; `G20`/`G21` apply to the whole line they are on and can switch mid-file. `header.units` keeps the file's declaration (`'in'`), and a `units-converted` info warning says the file was converted ([#578](https://github.com/ChestnutLabs/gcode-preview/issues/578)) | `g20-units.test.ts`; `corpus-cnc-plotter.test.ts` |
 | `G28` | homing (position reset to origin) | **honored** | interpreter |
 | `T0`–`T7` | tool select | **honored** | `tool` channel |
 | **`G90` / `G91`** | **absolute / relative positioning** | **honored** (E10 phase 1, #155) — `positioningMode` capability | `motion-model.test.ts` |
@@ -27,6 +34,48 @@ remaining gaps plainly — and disclosing them at runtime via the `extrusionMode
 | **`G53` / `G54`–`G59`** | **machine / work coordinate systems** | **honored** (E10 phase 3, #158) — active WCS + offsets (`G10 L2/L20`), `G53` one-shot machine-coord bypass, `coordinateSystem` capability | `motion-model.test.ts` |
 | **`G31`** | **probe toward a target** | **honored** (E10 phase 3, #158) — endpoint is runtime-dependent; the probed axis is marked uncertain and disclosed (`probe-position-runtime-dependent`), never advanced to the un-reached commanded value | `motion-model.test.ts` |
 | `G4` | dwell | n/a (not position-affecting) | — |
+| `( … )` comments | text in parentheses on any line | **ignored**, as on `#`/`[ ]` lines (#544): `G1 X1 (then G1 X99)` moves to X1 only; an unclosed `(` comments out the rest of the line; a `;` inside the parentheses does not cut the line | `lexer-paren-comments.test.ts` |
+
+## Moves drawn differently from what was written
+
+Some arcs and cycles cannot be drawn exactly as written: a controller such as LinuxCNC would reject
+them, while Marlin-style firmware draws them anyway. The parser draws them the nearest way and records a
+warning in `ir.header.warnings` (also delivered with the `ready` event), so a viewer can say the
+drawing is approximate. These codes are new after v0.23.0 (#553):
+
+| Warning code | Raised when | What is drawn |
+|---|---|---|
+| `arc-radius-too-small` | a `G2`/`G3` `R` is smaller than half the chord | a half circle (the radius is raised to half the chord) |
+| `arc-radius-degenerate` | an `R` arc's start and target are the same point | no arc (the centre is undefined); use I/J for a full circle |
+| `arc-end-off-circle` | an I/J/K arc's target is not on the circle through its start | a spiral; the last segment jumps to the target |
+| `arc-turns-ignored` | a `P` turn count other than 1 | a single sweep |
+| `canned-cycle-missing-word` | a `G81`/`G82`/`G83` with no `Z` or `R`, and none set earlier | the cycle, with 0 for the missing word in the active distance mode (G90: plane 0; G91: an increment of 0, so the R plane is the current Z) |
+| `canned-cycle-plane` | a canned cycle while `G18`/`G19` is active | the cycle, still drilling along Z in the XY plane |
+| `canned-cycle-bad-repeat` | a canned cycle whose `L` is not a positive whole number (`L0`, a negative, a fraction such as `L1.5`) | the cycle once |
+| `canned-cycle-repeat-limit` | a canned cycle whose `L` is above the program iteration limit (`maxProgramIterations`, default 1,000,000) | the cycle, repeated that many times |
+| `unbalanced-paren-comment` | a `( … )` comment is never closed, or one is nested inside another (LinuxCNC rejects both) | the line as before: an unclosed `(` hides the rest of the line; a nested one closes at its matching `)`. Lines that start with a multi-letter command word (`EXCLUDE_OBJECT_START NAME=cube_(1`) or with a text-argument M-code (see below) are not checked |
+
+**Text-argument lines.** A line that starts with a multi-letter command word (Klipper/RepRapFirmware
+commands and macros such as `RESPOND MSG=…` or `EXCLUDE_OBJECT_START NAME=…`) or with `M117`, `M118`,
+`M486`, `M23`, `M28`, `M32`, `M33` or `M928` carries only that leading command. The rest of the line is
+text: `M117 Homing G28` does not home and `NAME=part2` is not a tool change. `M486` keeps its numeric
+`S`/`T`/`P`/`U`/`C` words; its `A` object name is text. A `[` or `#` in such a line does not make the
+file a parametric program.
+
+Under `G91`, a canned cycle's `R` and `Z` are kept as the numbers written (as LinuxCNC does): a later
+`G81` block, or a bare `X`/`Y` repeat, that leaves one out applies it again from its own current Z, so
+with `G99` (or `G98` when the R plane is above the start Z) each hole's plane moves up by `R`. A `G98` cycle retracts to the higher of the start Z and the R plane.
+
+`L` repeats the whole hole `L` times, each from where the last one ended: under `G91` the `X`/`Y` step carries along a row of holes, under `G90` the same hole is drilled again in place. A start Z below the R plane rises to R once, before the first hole, however large `L` is (#569).
+
+The existing `arc-missing-center` warning (no I/J/K and no R: drawn as a straight move) is unchanged.
+The bundled `mach3` demo file raises `arc-radius-too-small` for its `G02 … R0.255` arcs. Since #578 an
+`arc-radius-too-small` arc is always drawn as the half circle; before, rounding could turn it into one
+straight line.
+
+An inch (`G20`) file also carries a `units-converted` warning with severity `info`, once per file. Nothing is
+drawn differently: it says that the file's inch values were converted to millimetres, so `header.units` reads
+`'in'` while every coordinate is in mm. The `mach3` demo file is an inch file.
 
 ## Firmware conditioning (DD-010)
 

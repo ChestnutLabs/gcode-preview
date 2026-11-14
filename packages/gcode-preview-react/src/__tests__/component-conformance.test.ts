@@ -7,9 +7,12 @@ import {
   SuiteStubWorker,
   emitSuiteBuild,
   makeSuiteStubGL,
-  runComponentConformanceSuite
+  runComponentConformanceSuite,
+  type MountedComponent
 } from '@chestnutlabs/gcode-preview-core/testing';
 import { GcodePreview, type GcodePreviewHandle } from '../index';
+
+type ParseOptions = Parameters<NonNullable<MountedComponent['setParseOptions']>>[0];
 
 (globalThis as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -28,25 +31,36 @@ runComponentConformanceSuite(
       const ref = createRef<GcodePreviewHandle>();
       const host = document.body.appendChild(document.createElement('div'));
       let root: Root | null = null;
+      let source: Uint8Array | null = null;
+      let parseOptions: ParseOptions;
+      const el = () =>
+        createElement(GcodePreview, {
+          ref,
+          source,
+          parseOptions,
+          renderer: opts.renderer,
+          quality: 'lines',
+          cameraFov: opts.cameraFov,
+          pixelRatio: opts.pixelRatio,
+          scrub: opts.scrub,
+          scrubTime: opts.scrubTime,
+          layerRange: opts.layerRange,
+          createWorker: () => new SuiteStubWorker(undefined, opts.ir),
+          rendererOptions: {
+            createRenderer: opts.createGL ?? (() => makeSuiteStubGL(canvas)),
+            scheduleFrame: (f: () => void) => f(),
+            chunksPerTick: 8
+          },
+          onReady: (e) => cb.onReady(e.segments),
+          onBuildComplete: (e) => cb.onBuildComplete(e.segments),
+          onDisclosure: (text) => cb.onDisclosure(text),
+          onRendererUnsupported: (e) => cb.onRendererUnsupported?.(e.feature, e.message),
+          onError: (e) => cb.onError?.(e),
+          onParseError: (e) => cb.onParseError?.(e)
+        });
       await act(async () => {
         root = createRoot(host);
-        root.render(
-          createElement(GcodePreview, {
-            ref,
-            source: null,
-            renderer: opts.renderer,
-            quality: 'lines',
-            createWorker: () => new SuiteStubWorker(undefined, opts.ir),
-            rendererOptions: {
-              createRenderer: () => makeSuiteStubGL(canvas),
-              scheduleFrame: (f: () => void) => f(),
-              chunksPerTick: 8
-            },
-            onReady: (e) => cb.onReady(e.segments),
-            onBuildComplete: (e) => cb.onBuildComplete(e.segments),
-            onDisclosure: (text) => cb.onDisclosure(text)
-          })
-        );
+        root.render(el());
       });
       return {
         emitBuild: async (decimation, segments) => {
@@ -60,6 +74,19 @@ runComponentConformanceSuite(
           });
           return out;
         },
+        setCameraMode: async (mode) => {
+          await act(async () => ref.current?.controls.setCameraMode(mode));
+        },
+        setSource: async (bytes) => {
+          source = bytes;
+          await act(async () => root?.render(el()));
+        },
+        setParseOptions: async (o) => {
+          parseOptions = o;
+          await act(async () => root?.render(el()));
+        },
+        firstChunkDrawCount: () => ref.current!.raw.renderer()!.chunkMeshes[0].geometry.drawRange.count,
+        controls: () => ref.current!.controls,
         settle,
         unmount: async () => {
           await act(async () => root?.unmount());

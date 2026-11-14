@@ -305,6 +305,26 @@
         max-height: 300px;
         overflow: auto;
       }
+      .gp-notes {
+        list-style: none;
+        margin: 0;
+        padding: 0;
+        display: grid;
+        gap: var(--gp-space-2);
+        font-size: 11.5px;
+        line-height: 1.45;
+      }
+      .gp-notes .gp-note-count {
+        font-family: var(--gp-mono);
+        color: var(--gp-text-muted);
+      }
+      .gp-notes .gp-note-eg {
+        display: block;
+        font-family: var(--gp-mono);
+        font-size: 10.5px;
+        color: var(--gp-text-muted);
+        overflow-wrap: anywhere;
+      }
       .gp-panel[hidden] {
         display: none;
       }
@@ -437,6 +457,7 @@
               <h3>Move visibility</h3>
               <label class="gp-toggle" id="travelRow"><span>Travel moves</span><input type="checkbox" id="travel" /></label>
               <label class="gp-toggle" id="wipeRow"><span>Wipe moves</span><input type="checkbox" id="wipe" checked /></label>
+              <label class="gp-toggle" id="cutRow"><span>Cut moves</span><input type="checkbox" id="cut" checked /></label>
               <label class="gp-toggle" id="retractRow"><span>Retraction markers</span><input type="checkbox" id="retractions" /></label>
               <div class="gp-panel" data-context="adhesion" style="padding: var(--gp-space-3) 0 0" hidden>
                 <label class="gp-toggle" id="adhesionRow"><span>Hide brim / skirt</span><input type="checkbox" id="hideAdhesion" /></label>
@@ -613,6 +634,14 @@
             <section class="gp-panel" data-panel="diagnostics" hidden>
               <h3>Capabilities</h3>
               <div id="capBadges" class="gp-row" style="margin-bottom: var(--gp-space-3)"></div>
+              <h3>Parse notes</h3>
+              <p class="gp-hint">
+                What the parser inferred, approximated, kept as metadata, or found unavailable. The preview is still
+                shown.
+              </p>
+              <div id="parseNotes" style="margin-bottom: var(--gp-space-3)"></div>
+              <h3>Last error</h3>
+              <div id="errorDetail" style="margin-bottom: var(--gp-space-3)"></div>
               <h3>Render diagnostics</h3>
               <button class="gp-btn" id="showStats">Read render stats</button>
               <pre id="renderStats">Load a file, then read the render stats (backend, GPU, geometry, timings).</pre>

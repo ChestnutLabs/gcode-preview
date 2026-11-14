@@ -63,11 +63,11 @@ are proprietary binary formats, not G-code.
 | Capability | Mechanism | Status |
 |---|---|---|
 | Multi-tool / AMS / IDEX | core `tool` channel (T commands) + adapter `filament_type/colour` → `ir.tools` material/color | **full** (`dialect-multitool-ams`, 2026-07-23) |
-| Arc moves (G2/G3) | core parser (golden-gated) | **full** since E2 |
+| Arc moves (G2/G3) | core parser (golden-gated) | **full** since E2; an arc that cannot be drawn as written is warned ([motion coverage](gcode-motion-coverage.md#moves-drawn-differently-from-what-was-written)) |
 | Per-file build plate in the viewer | `metadata.machine` → `setBuildVolume` (DD-005 §4.2) | mechanism shipped (phase 1); data arrives phases 2–3 |
 | Non-extrusion move classification (`Cut`) | core parser: a no-`E` move while a tool is engaged (`M3`/`M4`, `M5` off) → `MoveKind.Cut` (DD-012 D2, #189) | **full** mechanism (`cutMoves: 'known'`); a per-dialect experimental tier reports it `inferred` |
 | Tool-power channel (`toolPower`) | opt-in `ModalChannel` — the modal `S` while engaged, requested via `ParseOptions.modalChannels` (DD-012 D3) | **full** mechanism; `NaN` when the tool is off, never a fabricated 0; consumed by the `power` color mode |
-| Canned drilling cycles | parser expands `G81`/`G82`/`G83` (+ `G80`, `G98`/`G99`, and modal bare-`X`/`Y` repeat) to real geometry (DD-012 D5) | **full** for `G81`/`G82`/`G83` incl. `G83` peck; `G84`–`G89` `unavailable` (disclosed) |
+| Canned drilling cycles | parser expands `G81`/`G82`/`G83` (+ `G80`, `G98`/`G99`, and modal bare-`X`/`Y` repeat) to real geometry (DD-012 D5) | **full** for `G81`/`G82`/`G83` incl. `G83` peck; `G84`–`G89` `unavailable` (disclosed). A missing `Z`/`R` or a `G18`/`G19` plane is warned (`canned-cycle-missing-word`, `canned-cycle-plane`); under `G91`, `Z` is from the `R` plane ([motion coverage](gcode-motion-coverage.md#moves-drawn-differently-from-what-was-written)) |
 | Modal motion continuation | a coordinate-only line repeats the last `G0`–`G3` motion mode — the CNC/LinuxCNC form (DD-012 phase 2) | **full** since #189; FDM unaffected (slicers always emit the `G` word) |
 
 ## Live progress tiers (DD-006, E5)

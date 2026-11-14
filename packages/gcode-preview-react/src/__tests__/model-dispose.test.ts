@@ -29,8 +29,11 @@ vi.mock('@chestnutlabs/gcode-model-renderer', async (importOriginal) => {
 // Import AFTER vi.mock so the hook binds to the spied factory.
 const { useModelViewer } = await import('../model/index');
 
+let lastHandle: ReturnType<typeof useModelViewer> | null = null;
+
 function Probe() {
   const viewer = useModelViewer({ createRenderer: MODEL_STUB_GL, createControls: MODEL_STUB_CONTROLS });
+  lastHandle = viewer;
   return createElement('canvas', { ref: viewer.canvasRef });
 }
 
@@ -57,5 +60,33 @@ describe('<ModelViewer> (react) — disposes its controller on unmount (regressi
 
     const disposedAfter = spy.disposes.some((d) => d.mock.calls.length > 0);
     expect(disposedAfter).toBe(true); // unmount must dispose the controller
+  });
+
+  it('a handle call after unmount is refused (E_MODEL_PREVIEW_DISPOSED), never a rebuilt controller that hangs', async () => {
+    (globalThis as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true;
+    spy.disposes.length = 0;
+    const host = document.createElement('div');
+    document.body.appendChild(host);
+    let root: Root | null = null;
+    await act(async () => {
+      root = createRoot(host);
+      root.render(createElement(Probe));
+    });
+    const handle = lastHandle!;
+    const created = spy.disposes.length;
+    await act(async () => root?.unmount());
+    host.remove();
+    const outcome = await Promise.race([
+      handle.setSource({ kind: 'stl', bytes: new Uint8Array(84) }).then(
+        () => 'resolved',
+        (e: unknown) => (e as Error).message
+      ),
+      new Promise<string>((r) => setTimeout(() => r('HANG'), 2_000))
+    ]);
+    expect(outcome).toBe('E_MODEL_PREVIEW_DISPOSED');
+    await expect(handle.controls.setSource({ kind: 'stl', bytes: new Uint8Array(84) })).rejects.toThrow(
+      'E_MODEL_PREVIEW_DISPOSED'
+    );
+    expect(spy.disposes.length).toBe(created); // no controller was rebuilt after the unmount
   });
 });

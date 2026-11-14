@@ -19,25 +19,23 @@
  * identity is NOT promised (antialiasing varies); cache by job identity.
  */
 import { GcodeParseSession, type SessionOptions, type WireParseOptions } from '@chestnutlabs/gcode-parser';
-import {
-  ToolpathRenderer,
-  createDefaultGLRenderer,
-  createBrowserGeometryWorker,
-  machineToVolume,
-  type BuildVolumeDef,
-  type CameraMode,
-  type ColorMode,
-  type GeometryWorkerLike,
-  type GLRendererLike,
-  type QualityMode,
-  type QualityPolicy,
-  type RenderTargetCanvas,
-  type Theme,
-  type ThemeColor,
-  type TubeOptions
+// Type-only: the renderer itself is loaded with `await import()` inside renderStill, so this module
+// adds no static value import of the main entry (a 2D-only bundle must not ship three.js; see `./lite`).
+import type {
+  BuildVolumeDef,
+  CameraMode,
+  ColorMode,
+  GeometryWorkerLike,
+  GLRendererLike,
+  QualityMode,
+  QualityPolicy,
+  RenderTargetCanvas,
+  Theme,
+  ThemeColor,
+  TubeOptions
 } from '@chestnutlabs/gcode-renderer-three';
 import { type MachineGeometry, type ToolpathIR } from '@chestnutlabs/toolpath-core';
-import { checkCameraFov } from './lens.js';
+import { checkCameraFov } from '@chestnutlabs/gcode-renderer-three/lite';
 
 /** Explicit camera pose (scene coordinates), overriding the deterministic frame(). */
 export interface StillCameraPose {
@@ -50,7 +48,7 @@ export interface StillCameraPose {
 export interface RenderStillOptions {
   /** Target surface: an OffscreenCanvas (worker/headless) or a DOM canvas. Required. */
   canvas: RenderTargetCanvas;
-  /** Output size. Defaults to the canvas's current width/height. */
+  /** Output size. Defaults to the canvas's current width/height. Must be finite and greater than 0, else `RangeError`. */
   width?: number;
   height?: number;
   /** Quality tier (default 'auto': tubes ≤ 1 M segments, else lines). */
@@ -78,15 +76,20 @@ export interface RenderStillOptions {
   background?: 'transparent' | ThemeColor;
   /** Bed geometry — a renderer volume or discovered MachineGeometry. */
   buildVolume?: BuildVolumeDef | MachineGeometry;
-  /** Inclusive layer clip [start, end]. Omitted → whole model. */
+  /** Inclusive layer clip [start, end]. Omitted → whole model. A NaN bound rejects with `RangeError`. */
   layerRange?: [number, number];
-  /** Draw only up to this segment (progress-style clip). null/omitted → whole model. */
+  /** Draw only up to this segment (progress-style clip). null/omitted → whole model. NaN → `RangeError`. */
   scrub?: number | null;
   /** Include travel moves (default false — a still is a clean model-only image by default). */
   showTravel?: boolean;
   /** Include slicer wipe moves (default false — same clean-still default as {@link showTravel}). */
   showWipe?: boolean;
-  /** Camera: an explicit pose, or omitted for deterministic bounds framing. */
+  /** Include CNC/laser Cut moves (default true — unlike travel/wipe, cuts ARE the model of a CNC file). */
+  showCut?: boolean;
+  /**
+   * Camera: an explicit pose, or omitted for deterministic bounds framing. `position` / `target` must be
+   * finite and `fov` in [10, 120] (the same rule as `cameraFov`), else `RangeError` before any work.
+   */
   camera?: StillCameraPose;
   /** Worker factory for the bytes path (batteries default when omitted). */
   createWorker?: SessionOptions['worker'];
@@ -187,8 +190,57 @@ function isToolpathIR(v: unknown): v is ToolpathIR {
   );
 }
 
-function toVolume(def: BuildVolumeDef | MachineGeometry): BuildVolumeDef {
+function toVolume(
+  def: BuildVolumeDef | MachineGeometry,
+  machineToVolume: (m: MachineGeometry) => BuildVolumeDef
+): BuildVolumeDef {
   return 'bed' in def ? machineToVolume(def) : def;
+}
+
+/** A clip position: a number that is not NaN (±Infinity reads as "past the end", like the controller). */
+function checkClip(name: string, value: unknown): void {
+  if (typeof value !== 'number' || Number.isNaN(value)) {
+    throw new RangeError(`renderStill ${name} needs a number that is not NaN (got ${String(value)})`);
+  }
+}
+
+/** Three finite scene coordinates. A NaN or missing coordinate would render a blank still silently. */
+function checkPoint(name: string, p: readonly unknown[]): void {
+  for (let i = 0; i < 3; i++) {
+    const v = p[i];
+    // Number.isFinite is false for every non-number (no coercion), so it also rejects a string or undefined.
+    if (!Number.isFinite(v)) {
+      throw new RangeError(`renderStill camera.${name} must be three finite numbers (got ${String(v)} at [${i}])`);
+    }
+  }
+}
+
+/**
+ * The option rules, checked before any parse or GL work so a bad still fails fast with `RangeError`
+ * (never clamped): output size finite and greater than 0, pose fov in [10, 120], pose position/target finite,
+ * `scrub` / `layerRange` not NaN.
+ */
+function checkStillOptions(options: RenderStillOptions, width: number, height: number): void {
+  if (options.cameraFov !== undefined) checkCameraFov(options.cameraFov);
+  for (const [name, v] of [
+    ['width', width],
+    ['height', height]
+  ] as const) {
+    if (!(Number.isFinite(v) && v > 0)) {
+      throw new RangeError(`renderStill ${name} must be a positive finite number (got ${String(v)})`);
+    }
+  }
+  const pose = options.camera;
+  if (pose !== undefined) {
+    if (pose.fov !== undefined) checkCameraFov(pose.fov);
+    checkPoint('position', pose.position);
+    checkPoint('target', pose.target);
+  }
+  if (options.scrub !== undefined && options.scrub !== null) checkClip('scrub', options.scrub);
+  if (options.layerRange !== undefined) {
+    checkClip('layerRange[0]', options.layerRange[0]);
+    checkClip('layerRange[1]', options.layerRange[1]);
+  }
 }
 
 /**
@@ -200,10 +252,10 @@ export async function renderStill(
   source: Uint8Array | ArrayBuffer | ToolpathIR,
   options: RenderStillOptions
 ): Promise<RenderStillResult> {
-  if (options.cameraFov !== undefined) checkCameraFov(options.cameraFov);
   const { canvas } = options;
   const width = options.width ?? canvas.width;
   const height = options.height ?? canvas.height;
+  checkStillOptions(options, width, height);
 
   let ir: ToolpathIR;
   let parsed = false;
@@ -220,6 +272,12 @@ export async function renderStill(
       session.dispose();
     }
   }
+
+  // Loaded on demand, like the controller's 3D renderer: a static import here would put three.js in
+  // every bundle that imports core, 2D-only ones included.
+  const { ToolpathRenderer, createDefaultGLRenderer, createBrowserGeometryWorker, machineToVolume } = await import(
+    '@chestnutlabs/gcode-renderer-three'
+  );
 
   // `background` shorthand (#306): a solid color merges into the theme; 'transparent' leaves the scene
   // background unset AND creates an alpha GL context so the card shows through. Explicit theme.background
@@ -277,7 +335,7 @@ export async function renderStill(
     ...(options.tube ? { tube: options.tube } : {}),
     ...(options.tubeByteBudget !== undefined ? { tubeByteBudget: options.tubeByteBudget } : {}),
     ...(options.qualityMode !== undefined ? { qualityMode: options.qualityMode } : {}),
-    ...(options.buildVolume ? { buildVolume: toVolume(options.buildVolume) } : {}),
+    ...(options.buildVolume ? { buildVolume: toVolume(options.buildVolume, machineToVolume) } : {}),
     preserveDrawingBuffer: true,
     scheduleFrame: (cb) => queueMicrotask(cb),
     ...(resolvedCreateRenderer ? { createRenderer: resolvedCreateRenderer } : {})
@@ -322,6 +380,7 @@ export async function renderStill(
     // time so a still honors the clean-thumbnail defaults (both off) and frames as a model-only image.
     renderer.setKindVisible('travel', options.showTravel === true);
     renderer.setKindVisible('wipe', options.showWipe === true);
+    renderer.setKindVisible('cut', options.showCut !== false);
     if (options.colorMode) renderer.setColorMode(options.colorMode);
     if (options.layerRange) renderer.setLayerRange(options.layerRange[0], options.layerRange[1]);
     if (options.scrub !== undefined) renderer.setScrubPosition(options.scrub);
@@ -339,12 +398,11 @@ export async function renderStill(
       }
       renderer.camera.position.set(pose.position[0], pose.position[1], pose.position[2]);
       renderer.camera.lookAt(pose.target[0], pose.target[1], pose.target[2]);
-      renderer.render();
     } else {
       renderer.frame(); // deterministic bounds framing + render
     }
-    // frame()/setColorMode already render; one explicit render guarantees the
-    // final state is on the (preserved) drawing buffer for read-back.
+    // The one render that puts the final pose on the (preserved) drawing buffer for read-back. The pose
+    // branch relies on it; frame() renders too, so on that branch this is a harmless repeat.
     renderer.render();
 
     return {

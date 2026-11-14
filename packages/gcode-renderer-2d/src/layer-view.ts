@@ -58,6 +58,11 @@ export interface DrawLayerOptions {
   lineWidth?: number;
   /** Draw travel moves too, in this style. Omitted/false → extrusion only (the default). */
   travel?: TravelStyle | false;
+  /**
+   * Draw CNC/laser Cut moves (default true: on a CNC file the cuts ARE the toolpath). They are drawn in
+   * the same pass as extrusion, coloured by the same colorer. `false` hides them (the 'cut' kind toggle).
+   */
+  cut?: boolean;
   /** Layer opacity in [0,1] via `globalAlpha` (default 1). Used to dim adjacent "ghost" layers. */
   opacity?: number;
   /**
@@ -82,6 +87,8 @@ export interface DrawLayerResult {
   layerCount: number;
   extrudeDrawn: number;
   travelDrawn: number;
+  /** Cut moves drawn (a segment with both the Extrude and Cut bits counts once, as extrusion). */
+  cutDrawn: number;
   /**
    * Segments in the layer that were NOT drawn because an XY endpoint is non-finite (`Infinity` /
    * `NaN`, e.g. from a consumer-built IR). Skipped segments are excluded from the counts above and
@@ -123,23 +130,23 @@ function finiteXY(seg: ToolpathIR['segments'], i: number): boolean {
 
 /** Whole-toolpath draw summary for the 2D view (#518): see {@link summarize2DDrawable}. */
 export interface Drawable2DSummary {
-  /** Extrusion and travel segments with finite x/y endpoints: what the view can draw. */
+  /** Extrusion, Cut, and travel segments with finite x/y endpoints: what the view can draw. */
   drawable: number;
-  /** Extrusion and travel segments the view never draws because an x/y endpoint is Infinity or NaN. */
+  /** Extrusion, Cut, and travel segments the view never draws because an x/y endpoint is Infinity or NaN. */
   skippedNonFinite: number;
 }
 
 /**
  * Count, across the whole toolpath (every layer, travel included whether or not it is shown), the
- * segments the 2D view can draw and the ones it skips for a non-finite x/y (#518). Only extrusion and
- * travel are counted, the two kinds {@link drawLayer} draws. Z is ignored: the view is flat top-down.
+ * segments the 2D view can draw and the ones it skips for a non-finite x/y (#518). Only extrusion, Cut,
+ * and travel are counted, the kinds {@link drawLayer} draws. Z is ignored: the view is flat top-down.
  */
 export function summarize2DDrawable(ir: ToolpathIR): Drawable2DSummary {
   const seg = ir.segments;
   let drawable = 0;
   let skippedNonFinite = 0;
   for (let i = 0; i < seg.count; i++) {
-    if ((seg.kind[i] & (MoveKind.Extrude | MoveKind.Travel)) === 0) continue;
+    if ((seg.kind[i] & (MoveKind.Extrude | MoveKind.Travel | MoveKind.Cut)) === 0) continue;
     if (finiteXY(seg, i)) drawable++;
     else skippedNonFinite++;
   }
@@ -219,8 +226,9 @@ export function computeLayerFit(bounds: LayerBounds2D, width: number, height: nu
 }
 
 /**
- * Draw one layer of `ir` to `ctx`. Extrusion moves are colored via {@link DrawLayerOptions.colorMode}
- * (single-sourced with the 3D renderer); travel moves are drawn only when `travel` is given. The
+ * Draw one layer of `ir` to `ctx`. Extrusion and Cut moves are colored via {@link DrawLayerOptions.colorMode}
+ * (single-sourced with the 3D renderer); Cut moves unless `cut: false`, travel moves only when `travel`
+ * is given. The
  * caller is responsible for clearing the canvas and for capability-gating the color mode. Returns an
  * honest count; a missing/out-of-range layer draws nothing and reports `drawn: false`.
  */
@@ -232,6 +240,7 @@ export function drawLayer(ctx: CanvasContext2DLike, ir: ToolpathIR, opts: DrawLa
     layerCount,
     extrudeDrawn: 0,
     travelDrawn: 0,
+    cutDrawn: 0,
     skippedNonFinite: 0,
     drawn: false
   };
@@ -241,6 +250,7 @@ export function drawLayer(ctx: CanvasContext2DLike, ir: ToolpathIR, opts: DrawLa
   const colorOf = createSegmentColorer(ir, opts.colorMode);
   const extrudeWidth = opts.lineWidth ?? 1;
   const showTravel = opts.travel ? opts.travel : null;
+  const showCut = opts.cut !== false;
   const [start, end] = layerRange(l, seg.count);
   let skippedNonFinite = 0;
 
@@ -270,15 +280,20 @@ export function drawLayer(ctx: CanvasContext2DLike, ir: ToolpathIR, opts: DrawLa
     }
   }
 
-  // Extrusion, colored per-segment. With a progress cut, segments after `progressCutSeg` in this
-  // layer are the not-yet-printed part — drawn dimmed (never hidden), the 2D "completed cut" (DD-006).
+  // Extrusion and Cut (the productive moves), colored per-segment, in one pass so their order is the
+  // file's. FDM never sets Cut, so for FDM this is exactly the extrusion pass. With a progress cut,
+  // segments after `progressCutSeg` in this layer are the not-yet-printed part — drawn dimmed (never
+  // hidden), the 2D "completed cut" (DD-006).
   ctx.lineWidth = extrudeWidth;
   const baseOpacity = opts.opacity ?? 1;
   const upcomingOpacity = baseOpacity * (opts.upcomingOpacity ?? 0.15);
   const cut = opts.progressCutSeg;
   let extrudeDrawn = 0;
+  let cutDrawn = 0;
   for (let i = start; i < end; i++) {
-    if ((seg.kind[i] & MoveKind.Extrude) === 0) continue;
+    const k = seg.kind[i];
+    const extrude = (k & MoveKind.Extrude) !== 0;
+    if (!extrude && !(showCut && (k & MoveKind.Cut) !== 0)) continue;
     if (!finiteXY(seg, i)) {
       skippedNonFinite++;
       continue;
@@ -291,11 +306,12 @@ export function drawLayer(ctx: CanvasContext2DLike, ir: ToolpathIR, opts: DrawLa
     ctx.moveTo(ax, ay);
     ctx.lineTo(bx, by);
     ctx.stroke();
-    extrudeDrawn++;
+    if (extrude) extrudeDrawn++;
+    else cutDrawn++;
   }
 
   ctx.globalAlpha = prevAlpha;
-  return { layer: opts.layer, layerCount, extrudeDrawn, travelDrawn, skippedNonFinite, drawn: true };
+  return { layer: opts.layer, layerCount, extrudeDrawn, travelDrawn, cutDrawn, skippedNonFinite, drawn: true };
 }
 
 /**
@@ -364,6 +380,8 @@ export interface DrawLayersOptions {
   lineWidth?: number;
   /** Draw travel moves too (default hidden). Applied to the active layer only. */
   travel?: TravelStyle | false;
+  /** Draw CNC/laser Cut moves (default true), on the ghosts and the active layer alike. */
+  cut?: boolean;
   /** Opacity of each ghost layer in [0,1] (default 0.25). The active layer is always fully opaque. */
   ghostOpacity?: number;
   /** Live-progress cut (DD-006). Applied only when its `layerIndex` is the active layer. */
@@ -386,6 +404,8 @@ export interface DrawLayersResult {
   /** Extrusion segments drawn across the active layer + ghosts. */
   extrudeDrawn: number;
   travelDrawn: number;
+  /** Cut segments drawn across the active layer + ghosts. */
+  cutDrawn: number;
   /** Segments skipped for a non-finite XY endpoint, summed over the active layer + ghosts (#501). */
   skippedNonFinite: number;
   drawn: boolean;
@@ -405,6 +425,7 @@ export function drawLayers(ctx: CanvasContext2DLike, ir: ToolpathIR, opts: DrawL
     ghostLayers: [],
     extrudeDrawn: 0,
     travelDrawn: 0,
+    cutDrawn: 0,
     skippedNonFinite: 0,
     drawn: false
   };
@@ -419,20 +440,23 @@ export function drawLayers(ctx: CanvasContext2DLike, ir: ToolpathIR, opts: DrawL
   const ghostLayers: number[] = [];
   let extrudeDrawn = 0;
   let travelDrawn = 0;
+  let cutDrawn = 0;
   let skippedNonFinite = 0;
 
-  // Ghosts first (oldest→newest), dimmed, extrusion only — a depth cue, not the focus.
+  // Ghosts first (oldest→newest), dimmed, extrusion and Cut only — a depth cue, not the focus.
   for (let li = firstGhost; li < opts.layer; li++) {
     const r = drawLayer(ctx, ir, {
       layer: li,
       colorMode: opts.colorMode,
       fit: opts.fit,
       lineWidth: opts.lineWidth,
-      opacity: ghostOpacity
+      opacity: ghostOpacity,
+      cut: opts.cut
     });
     if (r.drawn) {
       ghostLayers.push(li);
       extrudeDrawn += r.extrudeDrawn;
+      cutDrawn += r.cutDrawn;
       skippedNonFinite += r.skippedNonFinite;
     }
   }
@@ -447,13 +471,24 @@ export function drawLayers(ctx: CanvasContext2DLike, ir: ToolpathIR, opts: DrawL
     fit: opts.fit,
     lineWidth: opts.lineWidth,
     travel: opts.travel,
+    cut: opts.cut,
     progressCutSeg
   });
   extrudeDrawn += active.extrudeDrawn;
   travelDrawn += active.travelDrawn;
+  cutDrawn += active.cutDrawn;
   skippedNonFinite += active.skippedNonFinite;
 
-  return { layer: opts.layer, layerCount, ghostLayers, extrudeDrawn, travelDrawn, skippedNonFinite, drawn: true };
+  return {
+    layer: opts.layer,
+    layerCount,
+    ghostLayers,
+    extrudeDrawn,
+    travelDrawn,
+    cutDrawn,
+    skippedNonFinite,
+    drawn: true
+  };
 }
 
 export interface LayerView2DOptions {
@@ -465,6 +500,8 @@ export interface LayerView2DOptions {
   lineWidth?: number;
   /** Travel style, or false to hide travel (default: hidden). */
   travel?: TravelStyle | false;
+  /** Draw CNC/laser Cut moves (default true); see {@link LayerView2D.setCut}. */
+  cut?: boolean;
   /** Padding inset in device px (default 8). */
   padding?: number;
   /** Preceding "ghost" layers drawn beneath the active one (default 1, floor 0). */
@@ -474,6 +511,31 @@ export interface LayerView2DOptions {
 }
 
 const DEFAULT_COLOR_MODE: ColorMode = { mode: 'single', color: [0.55, 0.72, 0.55] };
+
+/**
+ * Consumer-option checks (RangeError, the option keeps its previous value). `undefined` means "use the
+ * default" and is never passed here. `adjacentLayers` keeps its documented floor: any negative count draws
+ * no ghosts and `Infinity` draws every layer below, so only NaN is meaningless.
+ */
+function checkAdjacentLayers(n: number): void {
+  if (Number.isNaN(n)) throw new RangeError(`LayerView2D: adjacentLayers must be a number (got ${n}).`);
+}
+
+function checkGhostOpacity(v: number): void {
+  if (!(v >= 0 && v <= 1)) throw new RangeError(`LayerView2D: ghostOpacity must be in [0, 1] (got ${v}).`);
+}
+
+function checkLineWidth(v: number): void {
+  if (!(Number.isFinite(v) && v > 0)) {
+    throw new RangeError(`LayerView2D: lineWidth must be a finite number > 0 (got ${v}).`);
+  }
+}
+
+function checkPadding(v: number): void {
+  if (!(Number.isFinite(v) && v >= 0)) {
+    throw new RangeError(`LayerView2D: padding must be a finite number >= 0 (got ${v}).`);
+  }
+}
 
 /**
  * A thin lifecycle wrapper binding a `ToolpathIR` to a `<canvas>`: pick a layer, pick a color
@@ -490,6 +552,7 @@ export class LayerView2D {
   private colorMode: ColorMode;
   private lineWidth: number;
   private travel: TravelStyle | false;
+  private cut: boolean;
   private padding: number;
   private adjacentLayers: number;
   private ghostOpacity: number;
@@ -499,26 +562,39 @@ export class LayerView2D {
     private readonly canvas: HTMLCanvasElement,
     opts: LayerView2DOptions = {}
   ) {
-    // Validate before storing: a bad mode throws here, never later from render().
+    // Validate before storing: a bad option throws here, never later from render().
     if (opts.colorMode !== undefined) checkColorMode(opts.colorMode);
-    this.layer = opts.layer ?? 0;
+    if (opts.lineWidth !== undefined) checkLineWidth(opts.lineWidth);
+    if (opts.padding !== undefined) checkPadding(opts.padding);
+    if (opts.adjacentLayers !== undefined) checkAdjacentLayers(opts.adjacentLayers);
+    if (opts.ghostOpacity !== undefined) checkGhostOpacity(opts.ghostOpacity);
+    this.layer = 0;
+    if (opts.layer !== undefined) this.setLayer(opts.layer);
     this.colorMode = opts.colorMode ?? DEFAULT_COLOR_MODE;
     this.lineWidth = opts.lineWidth ?? 1;
     this.travel = opts.travel ?? false;
+    this.cut = opts.cut ?? true;
     this.padding = opts.padding ?? 8;
-    this.adjacentLayers = opts.adjacentLayers ?? 1; // normalized by drawLayers
+    this.adjacentLayers = opts.adjacentLayers ?? 1; // floored by drawLayers
     this.ghostOpacity = opts.ghostOpacity ?? 0.25;
   }
 
   setToolpath(ir: ToolpathIR | null): void {
     this.ir = ir;
     // Cache the stable whole-model frame once (a scan is O(segments); render() stays layer-bounded).
+    // The requested layer is kept as is: render() clamps it to this toolpath's last layer, so a request
+    // past the end (an `Infinity` "show all" included) still means the top layer of the next toolpath.
     this.bounds = ir ? modelBounds2D(ir) : { minX: 0, minY: 0, maxX: 0, maxY: 0, hasContent: false };
-    if (ir && this.layer > ir.layers.length - 1) this.layer = Math.max(0, ir.layers.length - 1);
   }
 
+  /**
+   * Select the active layer. Fractions are floored, a negative index selects layer 0, and an index past
+   * the last layer (`Infinity` included) selects the top layer at render time. NaN is ignored (the current
+   * layer stays), like any other imperative control fed a meaningless value.
+   */
   setLayer(layer: number): void {
-    this.layer = layer < 0 ? 0 : layer;
+    if (Number.isNaN(layer)) return;
+    this.layer = layer < 0 ? 0 : Math.floor(layer);
   }
 
   /** Throws a `RangeError` for an invalid mode (see `checkColorMode`); the previous mode stays in effect. */
@@ -527,8 +603,12 @@ export class LayerView2D {
     this.colorMode = colorMode;
   }
 
-  /** Number of preceding ghost layers drawn beneath the active one (floored; ≤ 0 draws none). */
+  /**
+   * Number of preceding ghost layers drawn beneath the active one (floored; ≤ 0 draws none). Throws a
+   * `RangeError` for NaN; the previous count stays in effect.
+   */
   setAdjacentLayers(n: number): void {
+    checkAdjacentLayers(n);
     this.adjacentLayers = n;
   }
 
@@ -540,6 +620,11 @@ export class LayerView2D {
   /** Show/hide travel moves on the active layer (`false` hides). */
   setTravel(travel: TravelStyle | false): void {
     this.travel = travel;
+  }
+
+  /** Show/hide CNC/laser Cut moves on every drawn layer (`false` hides; shown by default). */
+  setCut(visible: boolean): void {
+    this.cut = visible;
   }
 
   /**
@@ -558,12 +643,15 @@ export class LayerView2D {
   /** Clear and redraw the active layer + ghosts. Returns the draw result (drawn:false when empty). */
   render(): DrawLayersResult {
     const ctx = this.canvas.getContext('2d');
+    // The effective layer: the request clamped to this toolpath's last layer (0 with no toolpath).
+    const layer = Math.min(this.layer, Math.max(0, this.layerCount - 1));
     const empty: DrawLayersResult = {
-      layer: this.layer,
+      layer,
       layerCount: this.layerCount,
       ghostLayers: [],
       extrudeDrawn: 0,
       travelDrawn: 0,
+      cutDrawn: 0,
       skippedNonFinite: 0,
       drawn: false
     };
@@ -572,12 +660,13 @@ export class LayerView2D {
     if (!this.ir) return empty;
     const fit = computeLayerFit(this.bounds, this.canvas.width, this.canvas.height, this.padding);
     return drawLayers(ctx, this.ir, {
-      layer: this.layer,
+      layer,
       adjacentLayers: this.adjacentLayers,
       colorMode: this.colorMode,
       fit,
       lineWidth: this.lineWidth,
       travel: this.travel,
+      cut: this.cut,
       ghostOpacity: this.ghostOpacity,
       progress: this.progress
     });
