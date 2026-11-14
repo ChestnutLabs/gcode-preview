@@ -1,5 +1,48 @@
 # @chestnutlabs/gcode-renderer-2d
 
+## 0.24.0
+
+### Minor Changes
+
+- [#604](https://github.com/ChestnutLabs/gcode-preview/pull/604) [`ffd8ce7`](https://github.com/ChestnutLabs/gcode-preview/commit/ffd8ce785489292791ea031b16d8f591e3461e7b) Thanks [@sobechestnut-dev](https://github.com/sobechestnut-dev)! - The 2D view now draws CNC and laser Cut moves. A CNC file used to show nothing in 2D with travel hidden.
+  - **Drawing:** Cut moves are drawn with the extrusion, in file order, coloured by the same colour mode (`moveKind`
+    gives them the cut colour). Ghost layers and the live-progress dimming include them.
+  - **New toggle:** `cut` on `drawLayer`, `drawLayers` and `LayerView2D` options (default `true`), and
+    `LayerView2D.setCut(visible)`. On `GcodePreview` with `renderer="2d"`, `setKindVisible('cut', visible)` and
+    `showCut` / `show-cut` now take effect.
+  - **Counts:** the draw results gain `cutDrawn`. A move that is both an extrusion and a cut counts once, as
+    extrusion. `summarize2DDrawable` and the 2D `build-complete` segment count include Cut moves.
+  - FDM files have no Cut moves and draw exactly as before (pinned by draw-stream digests of four real files).
+
+### Patch Changes
+
+- [#554](https://github.com/ChestnutLabs/gcode-preview/pull/554) [`c0c799a`](https://github.com/ChestnutLabs/gcode-preview/commit/c0c799a6f5f24fd309cf9ac9a1c59da73c6f679f) Thanks [@sobechestnut-dev](https://github.com/sobechestnut-dev)! - The 2D view no longer goes blank when you clear the layer range. With `renderer: '2d'`, setting
+  `layerRange` back to `null` (React, Vue, Svelte) or removing the `<gcode-preview>` layer-range attribute
+  after a file had loaded left an empty canvas. It now shows the top layer, as the 3D view does.
+  - **Layer requests:** `setLayerRange(start, end)` in 2D shows layer `end`, now floored (a slider value of
+    `2.5` shows layer 2). An `end` past the last layer, `Infinity` included, shows the top layer, and it
+    stays the top layer when you load a file with more layers. A `NaN` end is ignored. `LayerView2D.setLayer`
+    behaves the same way.
+  - **Option checks:** `LayerView2D` and the core `LayerView2DRenderer` now throw a `RangeError` for
+    `adjacentLayers: NaN`, a `ghostOpacity` outside `[0, 1]` or `NaN`, and a `lineWidth` that isn't a finite
+    number above 0. `LayerView2D` also rejects a negative or non-finite `padding`, and `setAdjacentLayers(NaN)`
+    throws with the previous count kept. Before, these drew wrongly with no error (a `NaN` opacity drew the
+    ghost layers at full strength). Through the core controller, a bad `adjacentLayers` or `ghostOpacity`
+    throws from `bindCanvas`. On `<gcode-preview renderer="2d">` a non-numeric `adjacent-layers` attribute is
+    bad markup: it is ignored (one ghost layer, the default) and the element still draws.
+  - **Travel toggle:** turning travel back on in 2D keeps the travel style you gave the renderer, instead of
+    switching to the default grey.
+  - **After `dispose()`:** the 2D renderer no longer draws, matching the 3D renderer. A size that is `NaN`,
+    infinite or below 1 is clamped to 1 pixel instead of emptying the canvas.
+  - **Core `testing.ts`:** `AdapterHarness.create` accepts an optional `renderer: '2d'`. One new behavioral
+    case runs the layer-range clip-and-restore check on 2D, and `installSuite2DProbe()` gives a DOM shim such
+    as happy-dom a recording Canvas 2D context. A harness that ignores `renderer: '2d'` fails the case with an
+    explicit message.
+
+- Updated dependencies [[`1ff1bbf`](https://github.com/ChestnutLabs/gcode-preview/commit/1ff1bbf7cc39b2faf9b21ecd25fac56d1b82b8bf), [`b0b1922`](https://github.com/ChestnutLabs/gcode-preview/commit/b0b1922ce7a4f3c3f3952185d1fdd47fcc115480), [`eb6b74c`](https://github.com/ChestnutLabs/gcode-preview/commit/eb6b74c0f9a8a7b0e28060d672d1021dab2a63d5), [`6b03f42`](https://github.com/ChestnutLabs/gcode-preview/commit/6b03f4221e5f0a552959fbed7f85124203d42f57)]:
+  - @chestnutlabs/gcode-colors@0.24.0
+  - @chestnutlabs/toolpath-core@0.24.0
+
 ## 0.23.0
 
 ### Minor Changes
